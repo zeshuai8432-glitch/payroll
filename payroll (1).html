@@ -1,0 +1,1730 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>點工薪資與案場人事成本管理</title>
+<style>
+  :root {
+    --bg: #f4f5f3; --surface: #ffffff; --ink: #1f2421; --muted: #6b6f6c;
+    --line: #e4e6e2; --line2: #cfd2cd; --accent: #2f5d50; --accent2: #c25a2b;
+    --warn-bg: #faeeda; --warn-ink: #854f0b; --danger: #a32d2d; --info: #185fa5;
+    --radius: 12px;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", sans-serif;
+    line-height: 1.6; }
+  .top { background: var(--accent); color: #fff; padding: 14px 20px; display: flex; align-items: center; gap: 12px; position: sticky; top: 0; z-index: 50; }
+  .top h1 { margin: 0; font-size: 16px; font-weight: 600; letter-spacing: .5px; }
+  .top .burger { display: none; background: none; border: none; color: #fff; font-size: 22px; cursor: pointer; padding: 0 4px; line-height: 1; }
+  .layout { display: flex; min-height: calc(100vh - 50px); }
+  .sidebar { width: 210px; flex-shrink: 0; background: var(--surface); border-right: 1px solid var(--line); padding: 14px 0; overflow-y: auto; }
+  .nav-group { margin-bottom: 6px; }
+  .nav-group-label { font-size: 11px; color: var(--muted); padding: 10px 20px 4px; letter-spacing: .5px; }
+  .nav-item { display: block; width: 100%; text-align: left; padding: 9px 20px; font-size: 14px; cursor: pointer; border: none; background: none; color: var(--ink); border-left: 3px solid transparent; }
+  .nav-item:hover { background: var(--bg); }
+  .nav-item.active { border-left-color: var(--accent); background: var(--bg); color: var(--accent); font-weight: 600; }
+  .main { flex: 1; min-width: 0; padding: 20px 24px 60px; max-width: 1080px; }
+  .scrim { display: none; }
+  @media (max-width: 760px) {
+    .top .burger { display: block; }
+    .sidebar { position: fixed; top: 50px; left: 0; bottom: 0; z-index: 60; transform: translateX(-100%); transition: transform .2s; box-shadow: 2px 0 12px rgba(0,0,0,.15); }
+    .sidebar.open { transform: translateX(0); }
+    .scrim.show { display: block; position: fixed; inset: 50px 0 0 0; background: rgba(0,0,0,.3); z-index: 55; }
+    .main { padding: 16px; }
+  }
+  .container { max-width: 1080px; margin: 0 auto; padding: 20px 24px 60px; }
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+    padding: 16px 20px; margin-bottom: 16px; }
+  .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end; }
+  .field { display: flex; flex-direction: column; gap: 4px; }
+  .field label { font-size: 12px; color: var(--muted); }
+  input, select { height: 36px; padding: 0 10px; border: 1px solid var(--line2);
+    border-radius: 8px; font-size: 14px; background: #fff; font-family: inherit; }
+  input[type=checkbox] { width: 18px; height: 18px; }
+  .metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 16px; }
+  .metric { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; }
+  .metric .l { font-size: 12px; color: var(--muted); }
+  .metric .v { font-size: 24px; font-weight: 600; margin-top: 2px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; color: var(--muted); font-weight: 500; padding: 9px 8px;
+    border-bottom: 1px solid var(--line2); white-space: nowrap; }
+  td { padding: 9px 8px; border-bottom: 1px solid var(--line); }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .btn { height: 36px; background: var(--accent); color: #fff; border: none; border-radius: 8px;
+    padding: 0 16px; cursor: pointer; font-size: 14px; font-family: inherit; }
+  .btn:hover { opacity: .92; }
+  .act { cursor: pointer; background: none; border: none; font-size: 13px; padding: 2px 6px;
+    color: var(--info); font-family: inherit; }
+  .act.danger { color: var(--danger); }
+  .act.muted { color: var(--muted); cursor: default; }
+  .tag { display: inline-block; font-size: 11px; padding: 1px 8px; border-radius: 999px;
+    background: var(--warn-bg); color: var(--warn-ink); margin-left: 6px; }
+  .empty { color: var(--muted); font-size: 14px; padding: 24px 0; text-align: center; }
+  .sub { font-size: 12px; color: var(--muted); margin: 0 0 12px; }
+  details summary { cursor: pointer; font-size: 13px; color: var(--info); }
+  .moon { color: var(--info); }
+  .scroll { overflow-x: auto; }
+  .inline { display: flex; gap: 6px; align-items: center; }
+  .inline input { height: 30px; width: 100px; }
+
+  /* 列印用浮層 */
+  #print-overlay { position: fixed; inset: 0; background: #fff; z-index: 9999; overflow: auto; padding: 24px; }
+  #print-overlay .pbar { position: sticky; top: 0; background: #fff; padding-bottom: 12px; margin-bottom: 12px; border-bottom: 1px solid var(--line2); display: flex; gap: 10px; justify-content: flex-end; }
+  #print-overlay .pdoc { max-width: 800px; margin: 0 auto; color: #1f2421; }
+  #print-overlay h1 { font-size: 18px; margin: 0 0 2px; }
+  #print-overlay .meta { font-size: 12px; color: #555; margin-bottom: 16px; }
+  #print-overlay table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  #print-overlay th, #print-overlay td { border: 1px solid #cfd2cd; padding: 6px 8px; }
+  #print-overlay th { background: #eef1ee; text-align: left; }
+  #print-overlay td.num, #print-overlay th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  #print-overlay .total-row td { font-weight: 700; background: #f6f7f5; }
+  #print-overlay .sign { margin-top: 32px; font-size: 13px; display: flex; gap: 48px; }
+  #print-overlay .sign div { border-top: 1px solid #1f2421; padding-top: 6px; min-width: 160px; }
+  #print-overlay .sub { font-size: 11px; color: #777; margin-top: 8px; }
+  #print-overlay .sec { font-size: 13px; font-weight: 700; margin: 16px 0 6px; }
+  #print-overlay h2.sec { font-size: 14px; margin: 18px 0 6px; padding-top: 10px; border-top: 1px solid #cfd2cd; }
+  @media print {
+    body > .top, body > .layout { display: none !important; }
+    #print-overlay { position: static; padding: 0; }
+    #print-overlay .pbar { display: none !important; }
+    @page { size: A4; margin: 16mm; }
+  }
+</style>
+</head>
+<body>
+<div class="top">
+  <button class="burger" id="burger" aria-label="選單">☰</button>
+  <h1>點工薪資管理系統</h1>
+  <div style="margin-left:auto;display:flex;align-items:center;gap:10px">
+    <span id="cloud-status" style="font-size:12px;opacity:.9">連線中…</span>
+    <button id="cloud-refresh" style="background:rgba(255,255,255,.18);color:#fff;border:none;border-radius:6px;padding:5px 10px;cursor:pointer;font-size:13px">↻ 重新整理</button>
+  </div>
+</div>
+<div class="layout">
+  <nav class="sidebar" id="sidebar"></nav>
+  <div class="scrim" id="scrim"></div>
+  <main class="main" id="body"></main>
+</div>
+
+<script>
+const LS = 'pm_data_v2';
+const CLOUD_URL = 'https://script.google.com/macros/s/AKfycbyMPs38UNzAwX3bcD2n9nQBz0HofUW9qFweSOnmoySs8VW2bJYHn47RdyZLQ8bD8SNWTg/exec';
+let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], tools:[], locations:[], assets:[], advances:[], accounts:[], ledger:[], deals:[], billings:[], contracts:{}, tab:'entry' };
+let cloudStatus='連線中…';
+let entryDate='', entrySite=''; // 登記出工：記住上次選的日期與案場
+
+const round = n => Math.round(n);
+const money = n => '$' + round(n).toLocaleString();
+const esc = s => String(s==null?'':s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2,7);
+const empName = id => { const e=state.employees.find(x=>x.id===id); return e?e.name:'（已移除）'; };
+const siteName = id => { const s=state.sites.find(x=>x.id===id); return s?s.name:'（已移除）'; };
+
+function applyData(d){
+  if(!d) return;
+  state.employees=d.employees||[]; state.sites=d.sites||[]; state.attendance=d.attendance||[]; state.adjustments=d.adjustments||[]; state.loans=d.loans||[]; state.tools=d.tools||[]; state.locations=d.locations||[]; state.assets=d.assets||[]; state.advances=d.advances||[]; state.accounts=d.accounts||[]; state.ledger=d.ledger||[]; state.deals=d.deals||[]; state.billings=d.billings||[]; state.contracts=d.contracts||{};
+  state.employees.forEach(e=>{ if(e.active===undefined) e.active=true; });
+}
+function packData(){
+  return {employees:state.employees,sites:state.sites,attendance:state.attendance,adjustments:state.adjustments,loans:state.loans,tools:state.tools,locations:state.locations,assets:state.assets,advances:state.advances,accounts:state.accounts,ledger:state.ledger,deals:state.deals,billings:state.billings,contracts:state.contracts};
+}
+
+// 先讀本機快取（讓畫面秒開），再從雲端拉最新
+function loadLocal(){
+  try { const raw=localStorage.getItem(LS); if(raw) applyData(JSON.parse(raw)); } catch(e){}
+}
+async function loadCloud(){
+  setCloud('讀取雲端中…');
+  try {
+    const res=await fetch(CLOUD_URL, {method:'GET'});
+    const j=await res.json();
+    if(j&&j.ok&&j.data){ applyData(JSON.parse(j.data)); try{localStorage.setItem(LS,j.data);}catch(e){} setCloud('已同步'); }
+    else { setCloud('雲端尚無資料'); }
+  } catch(e){ setCloud('雲端讀取失敗（顯示本機資料）'); }
+  render();
+}
+
+let saveTimer=null, saving=false, pendingSave=false;
+function saveData(){
+  // 本機立即存（不怕當掉）
+  try{ localStorage.setItem(LS, JSON.stringify(packData())); }catch(e){}
+  // 雲端防抖動：1秒內多次變更只送一次
+  if(saveTimer) clearTimeout(saveTimer);
+  setCloud('儲存中…');
+  saveTimer=setTimeout(pushCloud, 800);
+}
+async function pushCloud(){
+  if(saving){ pendingSave=true; return; }
+  saving=true;
+  try {
+    await fetch(CLOUD_URL, {method:'POST', body: JSON.stringify(packData())});
+    setCloud('已同步');
+  } catch(e){ setCloud('雲端儲存失敗（已存本機）'); }
+  saving=false;
+  if(pendingSave){ pendingSave=false; pushCloud(); }
+}
+function setCloud(s){ cloudStatus=s; const el=document.getElementById('cloud-status'); if(el) el.textContent=s; }
+
+// 保留舊名稱相容
+function loadData(){ loadLocal(); }
+
+function computeRecords(records){
+  const byKey={};
+  records.forEach(r=>{ const k=r.empId+'|'+r.date; (byKey[k]=byKey[k]||[]).push(r); });
+  const out={};
+  Object.values(byKey).forEach(group=>{
+    const attended=group.filter(r=>(Number(r.hours)||0)>0);
+    const totalAllowance=group.filter(r=>r.night).length*400;
+    group.forEach(r=>{
+      const daily=Number(r.dailyRate)||0, hourly=daily/8, h=Number(r.hours)||0;
+      const wage=hourly*h;  // 每小時同時薪，各案場各自算
+      const allow=(attended.length>0&&h>0)?totalAllowance/attended.length:0;
+      out[r.id]={wage,allow,total:wage+allow};
+    });
+  });
+  return out;
+}
+
+function tabsBar(){
+  const groups=[
+    ['薪資作業',[['entry','登記出工'],['payroll','員工薪資']]],
+    ['財務管理',[['loans','借支管理'],['tools','工具管理'],['advances','代墊款'],['accounts','公積金帳戶'],['deals','分潤結算'],['billing','請款追蹤'],['recon','對帳匯出']]],
+    ['設定',[['sites','案場成本'],['manage','員工/案場']]],
+  ];
+  return groups.map(([label,items])=>`
+    <div class="nav-group">
+      <div class="nav-group-label">${label}</div>
+      ${items.map(([id,t])=>`<button class="nav-item ${state.tab===id?'active':''}" data-tab="${id}">${t}</button>`).join('')}
+    </div>`).join('');
+}
+function render(){
+  document.getElementById('sidebar').innerHTML=tabsBar();
+  const body=document.getElementById('body');
+  body.innerHTML = state.tab==='entry'?viewEntry():state.tab==='payroll'?viewPayroll():state.tab==='sites'?viewSites():state.tab==='loans'?viewLoans():state.tab==='tools'?viewTools():state.tab==='advances'?viewAdvances():state.tab==='accounts'?viewAccounts():state.tab==='deals'?viewDeals():state.tab==='billing'?viewBilling():state.tab==='recon'?viewRecon():viewManage();
+  bind();
+}
+
+function viewEntry(){
+  const activeEmps=state.employees.filter(e=>e.active);
+  const empOpts=activeEmps.map(e=>`<option value="${e.id}">${esc(e.name)}（日薪 ${e.daily}）</option>`).join('');
+  const siteOpts=state.sites.map(s=>`<option value="${s.id}">${esc(s.name)}</option>`).join('');
+  const needEmp=activeEmps.length===0, needSite=state.sites.length===0;
+  const noSetup=needEmp||needSite;
+  let setupMsg='';
+  if(noSetup){
+    const missing=[needEmp?'在職員工':null, needSite?'案場（工地）':null].filter(Boolean).join(' 和 ');
+    setupMsg=`<div style="text-align:center;padding:24px 12px">
+      <div style="font-size:15px;font-weight:600;margin-bottom:6px">還不能登記出工</div>
+      <div class="sub" style="margin-bottom:14px">登記出工前，需要先建立 <b>${missing}</b>。${needSite?'（剛建好的員工要能登記，得先有案場可選。）':''}</div>
+      <button class="btn" id="goto-manage">前往「員工/案場」設定 →</button>
+    </div>`;
+  }
+  const today=new Date().toISOString().slice(0,10);
+  const curDate=entryDate||today;
+  const curSite=entrySite|| (state.sites[0]?state.sites[0].id:'');
+  // 今天(所選日期)這個案場已登記哪幾位
+  let todayNote='';
+  if(curSite){
+    const done=state.attendance.filter(r=>r.date===curDate&&r.siteId===curSite);
+    if(done.length>0){
+      const names=done.map(r=>`${esc(empName(r.empId))}${r.hours?`(${r.hours}h)`:''}`).join('、');
+      todayNote=`<div class="sub" style="margin:8px 0 0;padding:8px 10px;background:var(--bg);border-radius:8px">📋 ${esc(siteName(curSite))}・${esc(curDate)} 已登記 ${done.length} 位：${names}</div>`;
+    } else {
+      todayNote=`<div class="sub" style="margin:8px 0 0">📋 ${esc(siteName(curSite))}・${esc(curDate)} 尚無人登記。</div>`;
+    }
+  }
+  const comp=computeRecords(state.attendance);
+  const sorted=[...state.attendance].sort((a,b)=>b.date.localeCompare(a.date)||a.empId.localeCompare(b.empId));
+  const rows=sorted.slice(0,100).map(r=>{
+    const c=comp[r.id]||{wage:0,allow:0,total:0};
+    return `<tr>
+      <td>${esc(r.date)}</td><td>${esc(empName(r.empId))}</td><td>${esc(siteName(r.siteId))}</td>
+      <td class="num">${r.hours}</td><td class="num">${r.night?'<span class="moon">●夜</span>':'—'}</td>
+      <td class="num">${money(c.wage)}</td>
+      <td class="num">${c.allow>0?money(c.allow):'—'}</td>
+      <td class="num" style="font-weight:600">${money(c.total)}</td>
+      <td><button class="act danger" data-del="${r.id}">刪</button></td>
+    </tr>`;
+  }).join('');
+  const empOptsSel=activeEmps.map(e=>`<option value="${e.id}">${esc(e.name)}（日薪 ${e.daily}）</option>`).join('');
+  const siteOptsSel=state.sites.map(s=>`<option value="${s.id}" ${s.id===curSite?'selected':''}>${esc(s.name)}</option>`).join('');
+  return `
+  <div class="card">
+    <p class="sub">登記一筆出工。日期與案場會保留，方便連續登記同案場多人。同一人同一天跑多案場就分開登記多筆。</p>
+    ${noSetup?setupMsg:`
+    <div class="row">
+      <div class="field"><label>日期</label><input type="date" id="f-date" value="${curDate}"></div>
+      <div class="field"><label>員工</label><select id="f-emp">${empOptsSel}</select></div>
+      <div class="field"><label>案場</label><select id="f-site">${siteOptsSel}</select></div>
+      <div class="field"><label>工時（小時）</label><input type="number" id="f-hours" min="0" max="24" step="0.5" value="8" style="width:110px"></div>
+      <div class="field"><label>過夜外宿</label><div style="height:36px;display:flex;align-items:center"><input type="checkbox" id="f-night"></div></div>
+      <button class="btn" id="f-add">＋ 新增</button>
+    </div>
+    ${todayNote}`}
+  </div>
+  <div class="card">
+    <div style="font-size:14px;font-weight:600;margin-bottom:8px">出工紀錄 ${state.attendance.length>100?'<span style="color:var(--muted);font-size:12px">（顯示最近 100 筆）</span>':''}</div>
+    ${state.attendance.length===0?'<div class="empty">尚無出工紀錄。</div>':`
+    <div class="scroll"><table>
+      <thead><tr><th>日期</th><th>員工</th><th>案場</th><th class="num">工時</th><th class="num">過夜</th><th class="num">工資</th><th class="num">津貼</th><th class="num">小計</th><th></th></tr></thead>
+      <tbody>${rows}</tbody></table></div>`}
+  </div>`;
+}
+
+// 計薪週期以每月 11 號起算：一個週期 = 某月11號 ～ 次月10號
+// 「本月週期」：找出包含今天的那個週期
+function cycleContaining(d){
+  const day=d.getDate();
+  let startY=d.getFullYear(), startM=d.getMonth();
+  if(day>11){
+    // 12號之後，屬於本月11號起算的新週期
+  } else {
+    // 今天在 1~11 號，仍屬於上個月11號起算的週期
+    startM-=1; if(startM<0){ startM=11; startY-=1; }
+  }
+  const from=new Date(startY,startM,11);
+  const to=new Date(startY,startM+1,10);
+  const fmt=x=>`${x.getFullYear()}-${String(x.getMonth()+1).padStart(2,'0')}-${String(x.getDate()).padStart(2,'0')}`;
+  return {from:fmt(from),to:fmt(to)};
+}
+function defaultPayRange(){ return cycleContaining(new Date()); }
+function prevPayRange(){
+  const cur=cycleContaining(new Date());
+  const f=new Date(cur.from+'T00:00:00');
+  const pf=new Date(f.getFullYear(),f.getMonth()-1,11);
+  const pt=new Date(f.getFullYear(),f.getMonth(),10);
+  const fmt=x=>`${x.getFullYear()}-${String(x.getMonth()+1).padStart(2,'0')}-${String(x.getDate()).padStart(2,'0')}`;
+  return {from:fmt(pf),to:fmt(pt)};
+}
+// 預設調整項類型
+const ADD_TYPES=['獎金','全勤獎金','其他加給'];
+const DED_TYPES=['借支扣還','勞保自負額','健保自負額','工具遺失賠償','其他扣款'];
+
+// 建立某計薪區間的完整發薪資料（出工薪資 + 加扣項 = 實發）
+function buildPayroll(from,to){
+  const inRange=d=> (!from||d>=from) && (!to||d<=to);
+  const comp=computeRecords(state.attendance);
+  const byEmp={};
+  state.attendance.filter(r=>inRange(r.date)).forEach(r=>{ const c=comp[r.id]; if(!c)return;
+    const e=byEmp[r.empId]=byEmp[r.empId]||{empId:r.empId,hours:0,wage:0,allow:0,gross:0,days:new Set(),adds:[],deds:[]};
+    e.hours+=Number(r.hours)||0; e.wage+=c.wage; e.allow+=c.allow; e.gross+=c.total; e.days.add(r.date);
+  });
+  // 套用區間內的調整項
+  state.adjustments.filter(a=>inRange(a.date)).forEach(a=>{
+    const e=byEmp[a.empId]=byEmp[a.empId]||{empId:a.empId,hours:0,wage:0,allow:0,gross:0,days:new Set(),adds:[],deds:[]};
+    (a.kind==='add'?e.adds:e.deds).push(a);
+  });
+  Object.values(byEmp).forEach(e=>{
+    e.addTotal=e.adds.reduce((s,a)=>s+(Number(a.amount)||0),0);
+    e.dedTotal=e.deds.reduce((s,a)=>s+(Number(a.amount)||0),0);
+    e.net=e.gross+e.addTotal-e.dedTotal;
+  });
+  return byEmp;
+}
+
+function viewPayroll(){
+  if(!state.payFrom||!state.payTo){ const d=defaultPayRange(); state.payFrom=d.from; state.payTo=d.to; }
+  const byEmp=buildPayroll(state.payFrom,state.payTo);
+  const isPartner=id=>{ const e=state.employees.find(x=>x.id===id); return e&&e.partner; };
+  const allIds=Object.keys(byEmp).sort((a,b)=>byEmp[b].net-byEmp[a].net);
+  const empIds=allIds.filter(id=>!isPartner(id));       // 一般員工：發薪、計入總額
+  const partnerIds=allIds.filter(id=>isPartner(id));    // 股東：走代墊款、不計入
+  // 總額只算一般員工
+  const grossSum=empIds.reduce((s,id)=>s+byEmp[id].gross,0);
+  const netSum=empIds.reduce((s,id)=>s+byEmp[id].net,0);
+
+  const rowFor=(id,partner)=>{ const e=byEmp[id]; const emp=state.employees.find(x=>x.id===id);
+    if(partner){
+      return `<tr style="color:var(--muted)"><td>${esc(empName(id))}<span class="tag" style="background:#e3efe9;color:var(--accent)">股東·走代墊款</span></td>
+        <td class="num">${e.days.size}</td><td class="num">${Math.round(e.hours*10)/10}</td>
+        <td class="num">${money(e.gross)}</td>
+        <td class="num" colspan="2" style="text-align:center;font-style:italic">由代墊款發放</td>
+        <td class="num">—</td>
+        <td></td></tr>`;
+    }
+    return `<tr><td>${esc(empName(id))}${emp&&!emp.active?'<span class="tag">已停用</span>':''}</td>
+      <td class="num">${e.days.size}</td><td class="num">${Math.round(e.hours*10)/10}</td>
+      <td class="num">${money(e.gross)}</td>
+      <td class="num" style="color:var(--accent)">${e.addTotal?'+'+money(e.addTotal):'—'}</td>
+      <td class="num" style="color:var(--danger)">${e.dedTotal?'−'+money(e.dedTotal):'—'}</td>
+      <td class="num" style="font-weight:600">${money(e.net)}</td>
+      <td><button class="act" data-payslip="${id}">明細單</button></td></tr>`;
+  };
+  let rows=empIds.map(id=>rowFor(id,false)).join('');
+  if(state.showPartners) rows+=partnerIds.map(id=>rowFor(id,true)).join('');
+
+  // 調整項輸入區
+  const activeEmps=state.employees.filter(e=>e.active);
+  const empOpts=activeEmps.map(e=>`<option value="${e.id}">${esc(e.name)}</option>`).join('');
+  const addOpts=ADD_TYPES.map(t=>`<option value="${t}">${t}</option>`).join('');
+  const dedOpts=DED_TYPES.map(t=>`<option value="${t}">${t}</option>`).join('');
+  const inRange=d=> (!state.payFrom||d>=state.payFrom) && (!state.payTo||d<=state.payTo);
+  const adjRows=state.adjustments.filter(a=>inRange(a.date)).sort((a,b)=>b.date.localeCompare(a.date)).map(a=>`<tr>
+    <td>${esc(a.date)}</td><td>${esc(empName(a.empId))}</td>
+    <td><span class="tag" style="background:${a.kind==='add'?'#e3efe9':'#f6e1e1'};color:${a.kind==='add'?'var(--accent)':'var(--danger)'}">${a.kind==='add'?'加項':'扣項'}</span> ${esc(a.label)}</td>
+    <td class="num">${a.kind==='add'?'+':'−'}${money(a.amount)}</td>
+    <td>${esc(a.note||'')}</td>
+    <td><button class="act danger" data-deladj="${a.id}">刪</button></td>
+  </tr>`).join('');
+
+  // 本期借支扣款提示：尚未還清、且本期還沒扣過的借支
+  const loanReminders=state.loans.filter(l=>loanBalance(l)>0 && !loanDeductedInRange(l.id,state.payFrom,state.payTo)).map(l=>{
+    const bal=loanBalance(l), suggest=Math.min(l.perPeriod,bal);
+    return `<tr>
+      <td>${esc(empName(l.empId))}</td>
+      <td class="num">${money(bal)}</td>
+      <td class="num">${money(suggest)}</td>
+      <td><button class="act" data-repay="${l.id}" style="border:1px solid var(--accent);border-radius:6px;padding:3px 10px;color:var(--accent)">扣這期 ${money(suggest)}</button></td>
+    </tr>`;
+  }).join('');
+
+  return `
+  <div class="card">
+    <div style="font-size:14px;font-weight:600;margin-bottom:4px">計薪期間</div>
+    <p class="sub">計薪週期以每月 11 號起算（本期＝上月11號～本月10號）。可隨時手動改起訖日期。</p>
+    <div class="row">
+      <div class="field"><label>起</label><input type="date" id="pay-from" value="${state.payFrom}"></div>
+      <div class="field"><label>訖</label><input type="date" id="pay-to" value="${state.payTo}"></div>
+      <button class="act" id="pay-thismonth" style="height:36px;border:1px solid var(--line2);border-radius:8px;padding:0 12px">本期</button>
+      <button class="act" id="pay-lastmonth" style="height:36px;border:1px solid var(--line2);border-radius:8px;padding:0 12px">上期</button>
+      <button class="act" id="pay-all" style="height:36px;border:1px solid var(--line2);border-radius:8px;padding:0 12px">全部</button>
+    </div>
+  </div>
+  <div class="metrics">
+    <div class="metric"><div class="l">區間</div><div class="v" style="font-size:15px">${state.payFrom||'—'} ～ ${state.payTo||'—'}</div></div>
+    <div class="metric"><div class="l">員工數</div><div class="v">${empIds.length}${partnerIds.length?`<span style="font-size:12px;color:var(--muted)"> +${partnerIds.length}股東</span>`:''}</div></div>
+    <div class="metric"><div class="l">出工薪資</div><div class="v" style="font-size:20px">${money(grossSum)}</div></div>
+    <div class="metric"><div class="l">實發總額</div><div class="v">${money(netSum)}</div></div>
+  </div>
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;gap:8px;flex-wrap:wrap">
+      <div style="font-size:14px;font-weight:600">本期薪資</div>
+      <div style="display:flex;gap:8px">
+        ${partnerIds.length?`<button class="act" id="toggle-partners" style="border:1px solid var(--line2);border-radius:8px;padding:0 12px;height:36px">${state.showPartners?'隱藏股東':'顯示股東'}</button>`:''}
+        <button class="btn" id="export-summary" ${rows===''?'disabled style="opacity:.5"':''}>匯出總表 PDF</button>
+      </div>
+    </div>
+    ${rows===''?'<div class="empty">此區間內尚無可計算的薪資。</div>':`
+    <div class="scroll"><table>
+      <thead><tr><th>員工</th><th class="num">出勤天</th><th class="num">總工時</th><th class="num">出工薪資</th><th class="num">加項</th><th class="num">扣項</th><th class="num">實發金額</th><th></th></tr></thead>
+      <tbody>${rows}</tbody></table></div>
+    <p class="sub" style="margin:10px 0 0">實發總額與員工數只計一般員工。股東工資計入案場成本，但從「代墊款」分頁發放，不在此重複發。出工薪資＝工資＋津貼。實發＝出工薪資＋加項−扣項。</p>`}
+  </div>
+  ${loanReminders===''?'':`<div class="card" style="border-color:var(--accent)">
+    <div style="font-size:14px;font-weight:600;margin-bottom:4px">💡 本期借支扣款提示</div>
+    <p class="sub">以下員工有未還清借支、且本期尚未扣款。點「扣這期」即把該筆金額加入本期扣項（可在下方加扣項清單微調或刪除）。</p>
+    <div class="scroll"><table>
+      <thead><tr><th>員工</th><th class="num">尚欠</th><th class="num">本期建議扣</th><th></th></tr></thead>
+      <tbody>${loanReminders}</tbody></table></div>
+  </div>`}
+  <div class="card">
+    <div style="font-size:14px;font-weight:600;margin-bottom:4px">本期加項／扣項</div>
+    <p class="sub">獎金、全勤為加項；借支扣還、勞健保自負額、工具遺失賠償等為扣項。日期請填在本計薪區間內，才會算進本期。</p>
+    <div class="row" style="margin-bottom:10px">
+      <div class="field"><label>日期</label><input type="date" id="adj-date" value="${state.payTo||''}"></div>
+      <div class="field"><label>員工</label><select id="adj-emp">${empOpts}</select></div>
+      <div class="field"><label>性質</label><select id="adj-kind"><option value="add">加項（+）</option><option value="ded">扣項（−）</option></select></div>
+      <div class="field"><label>項目</label><select id="adj-label">${addOpts}</select></div>
+      <div class="field"><label>金額</label><input type="number" id="adj-amount" min="0" step="100" style="width:120px"></div>
+      <div class="field" style="flex:1;min-width:140px"><label>備註（選填）</label><input id="adj-note" placeholder="例：6月借支"></div>
+      <button class="btn" id="adj-add">＋ 新增</button>
+    </div>
+    ${adjRows===''?'<div class="empty">本期尚無加扣項。</div>':`<div class="scroll"><table>
+      <thead><tr><th>日期</th><th>員工</th><th>項目</th><th class="num">金額</th><th>備註</th><th></th></tr></thead>
+      <tbody>${adjRows}</tbody></table></div>`}
+  </div>`;
+}
+
+function viewSites(){
+  const comp=computeRecords(state.attendance);
+  const bySite={};
+  // 先放入所有案場（即使無出勤），帶期初成本
+  state.sites.forEach(s=>{ bySite[s.id]={hours:0,wage:0,allow:0,total:0,emp:{},opening:Number(s.opening)||0}; });
+  state.attendance.forEach(r=>{ const c=comp[r.id]; if(!c)return;
+    const s=bySite[r.siteId]=bySite[r.siteId]||{hours:0,wage:0,allow:0,total:0,emp:{},opening:0};
+    s.hours+=Number(r.hours)||0; s.wage+=c.wage; s.allow+=c.allow; s.total+=c.total;
+    s.emp[r.empId]=(s.emp[r.empId]||0)+c.total;
+  });
+  // 每個案場最終成本 = 期初 + 出勤
+  Object.values(bySite).forEach(s=>{ s.grandTotal=s.total+(s.opening||0); });
+  const grand=Object.values(bySite).reduce((s,x)=>s+x.grandTotal,0);
+  // 顯示所有已建立的案場（即使無出勤、無期初），以及任何有出勤紀錄的案場
+  const ids=Object.keys(bySite).sort((a,b)=>bySite[b].grandTotal-bySite[a].grandTotal);
+  const cards=ids.map(sid=>{ const s=bySite[sid];
+    const empBreak=Object.entries(s.emp).sort((a,b)=>b[1]-a[1]).map(([eid,v])=>`<tr><td>${esc(empName(eid))}</td><td class="num">${money(v)}</td></tr>`).join('');
+    const pct=grand>0?Math.round(s.grandTotal/grand*100):0;
+    return `<div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px">
+        <div style="font-size:15px;font-weight:600">${esc(siteName(sid))}</div>
+        <div style="font-size:18px;font-weight:600">${money(s.grandTotal)}</div>
+      </div>
+      <p class="sub">總工時 ${Math.round(s.hours*10)/10} 小時 · 占總人事成本 ${pct}%　|　${s.opening>0?`期初 ${money(s.opening)}・`:''}系統工資 ${money(s.wage)}・津貼 ${money(s.allow)}</p>
+      <div class="row" style="margin-bottom:6px">
+        <div class="field"><label>期初人事成本（從Excel抄入，選填）</label><input type="number" data-opening="${sid}" value="${s.opening||''}" placeholder="未設定" min="0" step="1000" style="width:170px"></div>
+      </div>
+      ${empBreak?`<details><summary>系統內各員工金額明細</summary>
+        <table style="margin-top:8px"><thead><tr><th>員工</th><th class="num">金額</th></tr></thead><tbody>${empBreak}</tbody></table>
+      </details>`:''}
+    </div>`;
+  }).join('');
+  return `
+  <div class="metrics">
+    <div class="metric"><div class="l">案場數</div><div class="v">${ids.length}</div></div>
+    <div class="metric"><div class="l">總人事成本</div><div class="v">${money(grand)}</div></div>
+  </div>
+  <p class="sub" style="margin:-6px 0 12px">每個案場的總成本＝期初人事成本（從Excel抄入的歷史）＋系統內登記出勤算出的工資與津貼。填了期初的案場，下方數字就含歷史。<button class="btn" id="export-sites" style="margin-left:10px" ${ids.length===0?'disabled style="opacity:.5"':''}>匯出 PDF</button></p>
+  ${cards===''?'<div class="card"><div class="empty">尚無案場成本資料。可在案場卡片填期初成本，或到登記出工累積。</div></div>':cards}`;
+}
+
+function viewManage(){
+  const empRows=state.employees.map(e=>{
+    const hasRecords=state.attendance.some(r=>r.empId===e.id);
+    const delBtn=hasRecords?'<span class="act muted" title="已有出工紀錄，無法刪除">🔒</span>':`<button class="act danger" data-delemp="${e.id}">刪</button>`;
+    const toggle=e.active?`<button class="act" data-toggle="${e.id}">停用</button>`:`<button class="act" data-toggle="${e.id}">復用</button>`;
+    return `<tr><td>${esc(e.name)}${e.partner?'<span class="tag" style="background:#e3efe9;color:var(--accent)">股東</span>':''}${!e.active?'<span class="tag">已停用</span>':''}</td>
+      <td class="num">${money(e.daily)}</td>
+      <td><button class="act" data-renemp="${e.id}">改名</button></td>
+      <td><button class="act" data-raise="${e.id}">調薪</button></td>
+      <td><button class="act" data-partner="${e.id}">${e.partner?'取消股東':'設為股東'}</button></td>
+      <td>${toggle}</td><td>${delBtn}</td></tr>`;
+  }).join('');
+  const siteRows=state.sites.map(s=>{
+    const hasRecords=state.attendance.some(r=>r.siteId===s.id);
+    const delBtn=hasRecords?'<span class="act muted" title="已有出工紀錄，無法刪除">🔒</span>':`<button class="act danger" data-delsite="${s.id}">刪</button>`;
+    return `<tr><td>${esc(s.name)}</td><td><button class="act" data-rensite="${s.id}">改名</button></td><td>${delBtn}</td></tr>`;
+  }).join('');
+  return `
+  <div class="card">
+    <div style="font-size:14px;font-weight:600;margin-bottom:4px">員工</div>
+    <p class="sub">調薪只影響之後登記的出工，舊紀錄維持當時日薪。離職請用「停用」保留歷史；只有從沒登記過出工的員工才能真正刪除。標記為「股東」的人會出現在代墊款分頁。</p>
+    <div class="row" style="margin-bottom:10px">
+      <div class="field"><label>姓名</label><input id="e-name" placeholder="例：潘東澤"></div>
+      <div class="field"><label>日薪</label><input id="e-daily" type="number" min="0" step="100" value="3000" style="width:120px"></div>
+      <button class="btn" id="e-add">＋ 新增員工</button>
+    </div>
+    ${state.employees.length===0?'<div class="empty">尚無員工。</div>':`<table><thead><tr><th>姓名</th><th class="num">目前日薪</th><th></th><th></th><th></th><th></th><th></th></tr></thead><tbody>${empRows}</tbody></table>`}
+  </div>
+  <div class="card">
+    <div style="font-size:14px;font-weight:600;margin-bottom:4px">案場</div>
+    <p class="sub">改名會套用到所有相關紀錄（同一個案場、新名字）。只有從沒登記過出工的案場才能刪除，以保護歷史成本。</p>
+    <div class="row" style="margin-bottom:10px">
+      <div class="field" style="flex:1;min-width:200px"><label>案場名稱</label><input id="s-name" placeholder="例：台北元利四季 12F"></div>
+      <button class="btn" id="s-add">＋ 新增案場</button>
+    </div>
+    ${state.sites.length===0?'<div class="empty">尚無案場。</div>':`<table><thead><tr><th>名稱</th><th></th><th></th></tr></thead><tbody>${siteRows}</tbody></table>`}
+  </div>`;
+}
+
+function bind(){
+  document.querySelectorAll('.nav-item').forEach(b=>b.onclick=()=>{ state.tab=b.dataset.tab; closeSidebar(); render(); });
+
+  const pf=document.getElementById('pay-from'); if(pf) pf.onchange=()=>{ state.payFrom=pf.value; render(); };
+  const pt=document.getElementById('pay-to'); if(pt) pt.onchange=()=>{ state.payTo=pt.value; render(); };
+  const pm=document.getElementById('pay-thismonth'); if(pm) pm.onclick=()=>{ const d=defaultPayRange(); state.payFrom=d.from; state.payTo=d.to; render(); };
+  const plm=document.getElementById('pay-lastmonth'); if(plm) plm.onclick=()=>{ const d=prevPayRange(); state.payFrom=d.from; state.payTo=d.to; render(); };
+  const pa=document.getElementById('pay-all'); if(pa) pa.onclick=()=>{ state.payFrom=''; state.payTo=''; render(); };
+  const tp=document.getElementById('toggle-partners'); if(tp) tp.onclick=()=>{ state.showPartners=!state.showPartners; render(); };
+
+  // 加扣項：性質改變時切換項目清單
+  const adjKind=document.getElementById('adj-kind'), adjLabel=document.getElementById('adj-label');
+  if(adjKind&&adjLabel) adjKind.onchange=()=>{
+    const opts=(adjKind.value==='add'?ADD_TYPES:DED_TYPES).map(t=>`<option value="${t}">${t}</option>`).join('');
+    adjLabel.innerHTML=opts;
+  };
+  const adjAdd=document.getElementById('adj-add');
+  if(adjAdd) adjAdd.onclick=()=>{
+    const date=document.getElementById('adj-date').value;
+    const empId=document.getElementById('adj-emp').value;
+    const kind=document.getElementById('adj-kind').value;
+    const label=document.getElementById('adj-label').value;
+    const amount=parseFloat(document.getElementById('adj-amount').value);
+    const note=document.getElementById('adj-note').value.trim();
+    if(!date||!empId||!label||isNaN(amount)||amount<0) return;
+    state.adjustments.push({id:uid(),date,empId,kind,label,amount,note});
+    saveData(); render();
+  };
+  document.querySelectorAll('[data-deladj]').forEach(b=>b.onclick=()=>{ state.adjustments=state.adjustments.filter(a=>a.id!==b.dataset.deladj); saveData(); render(); });
+  const es=document.getElementById('export-summary'); if(es) es.onclick=()=>exportSummaryPDF();
+  const ed=document.getElementById('export-deals'); if(ed) ed.onclick=()=>exportDealsPDF();
+  const eb=document.getElementById('export-billing'); if(eb) eb.onclick=()=>exportBillingPDF();
+  const esi=document.getElementById('export-sites'); if(esi) esi.onclick=()=>exportSitesPDF();
+  document.querySelectorAll('[data-payslip]').forEach(b=>b.onclick=()=>exportPayslipPDF(b.dataset.payslip));
+
+  const gotoM=document.getElementById('goto-manage'); if(gotoM) gotoM.onclick=()=>{ state.tab='manage'; render(); };
+
+  const fDate=document.getElementById('f-date'); if(fDate) fDate.onchange=()=>{ entryDate=fDate.value; render(); };
+  const fSite=document.getElementById('f-site'); if(fSite) fSite.onchange=()=>{ entrySite=fSite.value; render(); };
+
+  const add=document.getElementById('f-add');
+  if(add) add.onclick=()=>{
+    const date=document.getElementById('f-date').value;
+    const empId=document.getElementById('f-emp').value;
+    const siteId=document.getElementById('f-site').value;
+    const hours=parseFloat(document.getElementById('f-hours').value);
+    const night=document.getElementById('f-night').checked;
+    const emp=state.employees.find(e=>e.id===empId);
+    if(!date||!empId||!siteId||isNaN(hours)||!emp) return;
+    // 防呆：同人同日是否已登記
+    const sameDay=state.attendance.filter(r=>r.empId===empId&&r.date===date);
+    if(sameDay.length>0){
+      const sameSite=sameDay.find(r=>r.siteId===siteId);
+      let msg;
+      if(sameSite){
+        msg=`${emp.name} 在 ${date} 的「${siteName(siteId)}」已經登記過 ${sameSite.hours} 小時了。\n\n這很可能是重複登記。確定還要再記一筆嗎？`;
+      } else {
+        const where=sameDay.map(r=>`${siteName(r.siteId)} ${r.hours}h`).join('、');
+        msg=`${emp.name} 在 ${date} 已經登記過：${where}。\n\n如果他今天還跑了「${siteName(siteId)}」這個案場，可以繼續；否則請取消。\n\n確定要再記一筆嗎？`;
+      }
+      if(!confirm(msg)) return;
+    }
+    state.attendance.push({id:uid(),date,empId,siteId,hours,night,dailyRate:emp.daily});
+    // 保留日期與案場，方便連續登記
+    entryDate=date; entrySite=siteId;
+    saveData(); render();
+  };
+  document.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>{ state.attendance=state.attendance.filter(r=>r.id!==b.dataset.del); saveData(); render(); });
+
+  const ea=document.getElementById('e-add');
+  if(ea) ea.onclick=()=>{
+    const name=document.getElementById('e-name').value.trim();
+    const daily=parseFloat(document.getElementById('e-daily').value);
+    if(!name||isNaN(daily)) return;
+    state.employees.push({id:uid(),name,daily,active:true}); saveData(); render();
+  };
+  document.querySelectorAll('[data-raise]').forEach(b=>b.onclick=()=>{
+    const e=state.employees.find(x=>x.id===b.dataset.raise); if(!e)return;
+    const cell=b.closest('td');
+    cell.innerHTML=`<span class="inline"><input type="number" min="0" step="100" value="${e.daily}" id="raise-in"><button class="act" id="raise-ok">✓</button><button class="act muted" id="raise-cancel" style="cursor:pointer">✕</button></span>`;
+    const inp=cell.querySelector('#raise-in'); inp.focus();
+    cell.querySelector('#raise-ok').onclick=()=>{ const v=parseFloat(inp.value); if(!isNaN(v)){ e.daily=v; saveData(); } render(); };
+    cell.querySelector('#raise-cancel').onclick=()=>render();
+  });
+  document.querySelectorAll('[data-toggle]').forEach(b=>b.onclick=()=>{ const e=state.employees.find(x=>x.id===b.dataset.toggle); if(e){ e.active=!e.active; saveData(); render(); } });
+  document.querySelectorAll('[data-partner]').forEach(b=>b.onclick=()=>{ const e=state.employees.find(x=>x.id===b.dataset.partner); if(e){ e.partner=!e.partner; saveData(); render(); } });
+  document.querySelectorAll('[data-delemp]').forEach(b=>b.onclick=()=>{ state.employees=state.employees.filter(e=>e.id!==b.dataset.delemp); saveData(); render(); });
+  document.querySelectorAll('[data-renemp]').forEach(b=>b.onclick=()=>{
+    const e=state.employees.find(x=>x.id===b.dataset.renemp); if(!e)return;
+    const cell=b.closest('td');
+    cell.innerHTML=`<span class="inline"><input value="${esc(e.name)}" id="ren-in" style="width:120px"><button class="act" id="ren-ok">✓</button><button class="act muted" id="ren-cancel" style="cursor:pointer">✕</button></span>`;
+    const inp=cell.querySelector('#ren-in'); inp.focus();
+    cell.querySelector('#ren-ok').onclick=()=>{ const v=inp.value.trim(); if(v){ e.name=v; saveData(); } render(); };
+    cell.querySelector('#ren-cancel').onclick=()=>render();
+  });
+
+  const sa=document.getElementById('s-add');
+  if(sa) sa.onclick=()=>{ const name=document.getElementById('s-name').value.trim(); if(!name)return; state.sites.push({id:uid(),name}); saveData(); render(); };
+  document.querySelectorAll('[data-delsite]').forEach(b=>b.onclick=()=>{ state.sites=state.sites.filter(s=>s.id!==b.dataset.delsite); saveData(); render(); });
+  document.querySelectorAll('[data-opening]').forEach(inp=>inp.onchange=()=>{
+    const s=state.sites.find(x=>x.id===inp.dataset.opening); if(!s) return;
+    const v=parseFloat(inp.value);
+    if(isNaN(v)||v<=0) delete s.opening; else s.opening=v;
+    saveData(); render();
+  });
+  document.querySelectorAll('[data-rensite]').forEach(b=>b.onclick=()=>{
+    const s=state.sites.find(x=>x.id===b.dataset.rensite); if(!s)return;
+    const cell=b.closest('td');
+    cell.innerHTML=`<span class="inline"><input value="${esc(s.name)}" id="rens-in" style="width:160px"><button class="act" id="rens-ok">✓</button><button class="act muted" id="rens-cancel" style="cursor:pointer">✕</button></span>`;
+    const inp=cell.querySelector('#rens-in'); inp.focus();
+    cell.querySelector('#rens-ok').onclick=()=>{ const v=inp.value.trim(); if(v){ s.name=v; saveData(); } render(); };
+    cell.querySelector('#rens-cancel').onclick=()=>render();
+  });
+
+  const la=document.getElementById('loan-add');
+  if(la) la.onclick=()=>{
+    const date=document.getElementById('loan-date').value;
+    const empId=document.getElementById('loan-emp').value;
+    const amount=parseFloat(document.getElementById('loan-amount').value);
+    const perPeriod=parseFloat(document.getElementById('loan-per').value);
+    const note=document.getElementById('loan-note').value.trim();
+    if(!date||!empId||isNaN(amount)||amount<=0||isNaN(perPeriod)||perPeriod<=0) return;
+    state.loans.push({id:uid(),date,empId,amount,perPeriod,note});
+    saveData(); render();
+  };
+  document.querySelectorAll('[data-delloan]').forEach(b=>b.onclick=()=>{
+    if(!confirm('刪除這筆借支？已扣除的紀錄不會跟著刪除。')) return;
+    state.loans=state.loans.filter(l=>l.id!==b.dataset.delloan); saveData(); render();
+  });
+  document.querySelectorAll('[data-repay]').forEach(b=>b.onclick=()=>{
+    const loan=state.loans.find(l=>l.id===b.dataset.repay); if(!loan) return;
+    const bal=loanBalance(loan);
+    const amt=Math.min(loan.perPeriod, bal);
+    if(amt<=0) return;
+    state.adjustments.push({id:uid(),date:state.payTo||new Date().toISOString().slice(0,10),empId:loan.empId,kind:'ded',label:'借支扣還',amount:amt,note:(loan.note?loan.note+' ':'')+'借支分期',loanId:loan.id});
+    saveData(); render();
+  });
+
+  // 工具遺失：設定分攤
+  const ts=document.getElementById('tool-setup');
+  if(ts) ts.onclick=()=>{
+    const date=document.getElementById('tool-date').value;
+    const brand=document.getElementById('tool-brand').value.trim();
+    const model=document.getElementById('tool-model').value.trim();
+    const amount=parseFloat(document.getElementById('tool-amount').value);
+    if(!date||isNaN(amount)||amount<=0){ alert('請填遺失日與金額'); return; }
+    toolDraft={date,brand,model,amount,picks:{}};
+    render();
+  };
+  // 勾選/取消分攤人
+  document.querySelectorAll('[data-toolpick]').forEach(cb=>cb.onclick=()=>{
+    if(!toolDraft) return;
+    const id=cb.dataset.toolpick;
+    if(cb.checked) toolDraft.picks[id]=0; else delete toolDraft.picks[id];
+    // 重新平均
+    toolDraft.picks=evenSplit(toolDraft.amount, Object.keys(toolDraft.picks));
+    render();
+  });
+  // 微調個別金額
+  document.querySelectorAll('[data-toolamt]').forEach(inp=>inp.onchange=()=>{
+    if(!toolDraft) return;
+    const id=inp.dataset.toolamt; const v=parseFloat(inp.value);
+    toolDraft.picks[id]=isNaN(v)?0:v;
+    render();
+  });
+  const te=document.getElementById('tool-even');
+  if(te) te.onclick=()=>{ if(!toolDraft) return; toolDraft.picks=evenSplit(toolDraft.amount, Object.keys(toolDraft.picks)); render(); };
+  const tcancel=document.getElementById('tool-cancel');
+  if(tcancel) tcancel.onclick=()=>{ toolDraft=null; render(); };
+  const tconfirm=document.getElementById('tool-confirm');
+  if(tconfirm) tconfirm.onclick=()=>{
+    if(!toolDraft) return;
+    const ids=Object.keys(toolDraft.picks); if(ids.length===0) return;
+    const toolId=uid();
+    const shares={};
+    ids.forEach(id=>{ shares[id]=Number(toolDraft.picks[id])||0; });
+    state.tools.push({id:toolId,date:toolDraft.date,brand:toolDraft.brand,model:toolDraft.model,amount:toolDraft.amount,shares});
+    // 各分攤人帶入當期扣項（日期用遺失日，會落在該計薪週期）
+    ids.forEach(id=>{
+      const amt=Number(toolDraft.picks[id])||0; if(amt<=0) return;
+      state.adjustments.push({id:uid(),date:toolDraft.date,empId:id,kind:'ded',label:'工具遺失賠償',amount:amt,note:`${toolDraft.brand||''} ${toolDraft.model||''}`.trim(),toolId});
+    });
+    toolDraft=null; saveData(); render();
+  };
+  document.querySelectorAll('[data-deltool]').forEach(b=>b.onclick=()=>{
+    if(!confirm('刪除這筆工具遺失？相關的扣項也會一併刪除。')) return;
+    const tid=b.dataset.deltool;
+    state.tools=state.tools.filter(t=>t.id!==tid);
+    state.adjustments=state.adjustments.filter(a=>a.toolId!==tid);
+    saveData(); render();
+  });
+
+  // 工具資產
+  const asAdd=document.getElementById('as-add');
+  if(asAdd) asAdd.onclick=()=>{
+    const name=document.getElementById('as-name').value.trim();
+    if(!name){ alert('請填工具名稱'); return; }
+    const brand=document.getElementById('as-brand').value.trim();
+    const model=document.getElementById('as-model').value.trim();
+    const buyDate=document.getElementById('as-buy').value;
+    const price=parseFloat(document.getElementById('as-price').value);
+    const locKey=document.getElementById('as-loc').value;
+    state.assets.push({id:uid(),name,brand,model,buyDate,price:isNaN(price)?null:price,locKey});
+    saveData(); render();
+  };
+  document.querySelectorAll('[data-assetloc]').forEach(sel=>sel.onchange=()=>{
+    const a=state.assets.find(x=>x.id===sel.dataset.assetloc); if(!a) return;
+    a.locKey=sel.value; saveData(); render();
+  });
+  document.querySelectorAll('[data-delasset]').forEach(b=>b.onclick=()=>{
+    state.assets=state.assets.filter(a=>a.id!==b.dataset.delasset); saveData(); render();
+  });
+
+  // 地點
+  const locAdd=document.getElementById('loc-add');
+  if(locAdd) locAdd.onclick=()=>{
+    const name=document.getElementById('loc-name').value.trim();
+    const kind=document.getElementById('loc-kind').value;
+    if(!name) return;
+    state.locations.push({id:uid(),name,kind}); saveData(); render();
+  };
+  document.querySelectorAll('[data-delloc]').forEach(b=>b.onclick=()=>{
+    state.locations=state.locations.filter(l=>l.id!==b.dataset.delloc); saveData(); render();
+  });
+
+  // 代墊款
+  const avf=document.getElementById('adv-from'); if(avf) avf.onchange=()=>{ advFrom=avf.value; render(); };
+  const avt=document.getElementById('adv-to'); if(avt) avt.onchange=()=>{ advTo=avt.value; render(); };
+  const avtp=document.getElementById('adv-thisperiod'); if(avtp) avtp.onclick=()=>{ const d=defaultPayRange(); advFrom=d.from; advTo=d.to; render(); };
+  const avlp=document.getElementById('adv-lastperiod'); if(avlp) avlp.onclick=()=>{ const d=prevPayRange(); advFrom=d.from; advTo=d.to; render(); };
+  const avAdd=document.getElementById('adv-add');
+  if(avAdd) avAdd.onclick=()=>{
+    const date=document.getElementById('adv-date').value;
+    const empId=document.getElementById('adv-emp').value;
+    const amount=parseFloat(document.getElementById('adv-amount').value);
+    const purpose=document.getElementById('adv-purpose').value.trim();
+    if(!date||!empId||isNaN(amount)||amount<=0){ alert('請填日期、金額'); return; }
+    state.advances.push({id:uid(),date,empId,amount,purpose});
+    saveData(); render();
+  };
+  document.querySelectorAll('[data-deladv]').forEach(b=>b.onclick=()=>{
+    state.advances=state.advances.filter(a=>a.id!==b.dataset.deladv); saveData(); render();
+  });
+  document.querySelectorAll('[data-postadv]').forEach(b=>b.onclick=()=>{ advPosting=b.dataset.postadv; render(); });
+  document.querySelectorAll('[data-postcancel]').forEach(b=>b.onclick=()=>{ advPosting=null; render(); });
+  document.querySelectorAll('[data-postpick]').forEach(b=>b.onclick=()=>{
+    const [pid,accId]=b.dataset.postpick.split('::');
+    const byEmp=buildPayroll(advFrom,advTo);
+    const wage=byEmp[pid]?byEmp[pid].gross:0;
+    const advTotal=state.advances.filter(a=>a.empId===pid && (!advFrom||a.date>=advFrom) && (!advTo||a.date<=advTo)).reduce((s,a)=>s+(Number(a.amount)||0),0);
+    const due=wage+advTotal;
+    if(due<=0){ advPosting=null; render(); return; }
+    const postKey=`${advFrom}~${advTo}|${pid}`;
+    state.ledger.push({id:uid(),date:advTo||new Date().toISOString().slice(0,10),accId,kind:'out',amount:due,note:`代墊款報銷 ${empName(pid)}（${advFrom}~${advTo}）`,fromAdvance:postKey});
+    advPosting=null; saveData(); render();
+  });
+  document.querySelectorAll('[data-unpost]').forEach(b=>b.onclick=()=>{
+    if(!confirm('撤銷這筆入帳？帳戶裡對應的支出會一併刪除。')) return;
+    state.ledger=state.ledger.filter(t=>t.id!==b.dataset.unpost); saveData(); render();
+  });
+
+  // 公積金帳戶
+  const accAdd=document.getElementById('acc-add');
+  if(accAdd) accAdd.onclick=()=>{
+    const name=document.getElementById('acc-name').value.trim();
+    const opening=parseFloat(document.getElementById('acc-opening').value);
+    if(!name){ alert('請填帳戶名稱'); return; }
+    state.accounts.push({id:uid(),name,opening:isNaN(opening)?0:opening});
+    saveData(); render();
+  };
+  document.querySelectorAll('[data-delacc]').forEach(b=>b.onclick=()=>{
+    state.accounts=state.accounts.filter(a=>a.id!==b.dataset.delacc); saveData(); render();
+  });
+  document.querySelectorAll('[data-editopen]').forEach(b=>b.onclick=()=>{
+    const a=state.accounts.find(x=>x.id===b.dataset.editopen); if(!a) return;
+    const cell=b.closest('td');
+    cell.innerHTML=`<span class="inline"><input type="number" step="1000" value="${a.opening||0}" id="open-in" style="width:120px"><button class="act" id="open-ok">✓</button><button class="act muted" id="open-cancel" style="cursor:pointer">✕</button></span>`;
+    const inp=cell.querySelector('#open-in'); inp.focus();
+    cell.querySelector('#open-ok').onclick=()=>{ const v=parseFloat(inp.value); if(!isNaN(v)){ a.opening=v; saveData(); } render(); };
+    cell.querySelector('#open-cancel').onclick=()=>render();
+  });
+  const ledAdd=document.getElementById('led-add');
+  if(ledAdd) ledAdd.onclick=()=>{
+    const date=document.getElementById('led-date').value;
+    const accId=document.getElementById('led-acc').value;
+    const kind=document.getElementById('led-kind').value;
+    const amount=parseFloat(document.getElementById('led-amount').value);
+    const note=document.getElementById('led-note').value.trim();
+    if(!date||!accId||isNaN(amount)||amount<=0){ alert('請填日期、帳戶、金額'); return; }
+    state.ledger.push({id:uid(),date,accId,kind,amount,note});
+    saveData(); render();
+  };
+  document.querySelectorAll('[data-delledger]').forEach(b=>b.onclick=()=>{
+    state.ledger=state.ledger.filter(t=>t.id!==b.dataset.delledger); saveData(); render();
+  });
+  const ledFilter=document.getElementById('led-filter');
+  if(ledFilter) ledFilter.onchange=()=>{ ledgerAcc=ledFilter.value||null; render(); };
+  const ledFrom=document.getElementById('led-from'); if(ledFrom) ledFrom.onchange=()=>{ ledgerFrom=ledFrom.value; render(); };
+  const ledTo=document.getElementById('led-to'); if(ledTo) ledTo.onchange=()=>{ ledgerTo=ledTo.value; render(); };
+  const ledClr=document.getElementById('led-clearrange'); if(ledClr) ledClr.onclick=()=>{ ledgerFrom=''; ledgerTo=''; render(); };
+  const expLed=document.getElementById('export-ledger'); if(expLed) expLed.onclick=()=>exportLedgerPDF();
+
+  // 分潤結算
+  const dAdd=document.getElementById('d-add');
+  if(dAdd) dAdd.onclick=()=>{
+    const name=document.getElementById('d-name').value.trim();
+    const type=document.getElementById('d-type').value;
+    const date=document.getElementById('d-date').value;
+    const amount=parseFloat(document.getElementById('d-amount').value);
+    const cost=parseFloat(document.getElementById('d-cost').value);
+    const tax=parseFloat(document.getElementById('d-tax').value);
+    const scheme=document.getElementById('d-scheme').value;
+    const ownerId=document.getElementById('d-owner').value;
+    const owner=document.getElementById('d-client').value.trim();
+    if(!name||isNaN(amount)){ alert('請填案場名稱與請款金額'); return; }
+    state.deals.push({id:uid(),name,type,date,amount,cost:isNaN(cost)?0:cost,tax:isNaN(tax)?0:tax,scheme,ownerId,owner,posted:false});
+    saveData(); render();
+  };
+  document.querySelectorAll('[data-deldeal]').forEach(b=>b.onclick=()=>{
+    const d=state.deals.find(x=>x.id===b.dataset.deldeal);
+    if(d&&d.posted&&!confirm('此案場已結帳入帳，刪除會一併移除帳戶裡的公積金收入。確定刪除？')) return;
+    state.ledger=state.ledger.filter(t=>t.fromDeal!==b.dataset.deldeal);
+    state.deals=state.deals.filter(x=>x.id!==b.dataset.deldeal); saveData(); render();
+  });
+  document.querySelectorAll('[data-postdeal]').forEach(b=>b.onclick=()=>{ dealPosting=b.dataset.postdeal; render(); });
+  document.querySelectorAll('[data-dealcancel]').forEach(b=>b.onclick=()=>{ dealPosting=null; render(); });
+  document.querySelectorAll('[data-dealpick]').forEach(b=>b.onclick=()=>{
+    const [did,accId]=b.dataset.dealpick.split('::');
+    const d=state.deals.find(x=>x.id===did); if(!d) return;
+    const c=dealCalc(d);
+    if(c.fund!==0){
+      state.ledger.push({id:uid(),date:d.date||new Date().toISOString().slice(0,10),accId,kind:c.fund>=0?'in':'out',amount:Math.abs(c.fund),note:`分潤結算·${d.name}（公積金${c.fund>=0?'收入':'虧損'}）`,fromDeal:did});
+    }
+    d.posted=true; d.postAcc=accId; dealPosting=null; saveData(); render();
+  });
+  document.querySelectorAll('[data-unpostdeal]').forEach(b=>b.onclick=()=>{
+    if(!confirm('撤銷結帳？帳戶裡對應的公積金收支會一併刪除，累計獎金也會扣回。')) return;
+    const did=b.dataset.unpostdeal;
+    state.ledger=state.ledger.filter(t=>t.fromDeal!==did);
+    const d=state.deals.find(x=>x.id===did); if(d){ d.posted=false; delete d.postAcc; }
+    saveData(); render();
+  });
+
+  // 請款追蹤
+  const bAdd=document.getElementById('b-add');
+  if(bAdd) bAdd.onclick=()=>{
+    const date=document.getElementById('b-date').value;
+    const site=document.getElementById('b-site').value.trim();
+    const amount=parseFloat(document.getElementById('b-amount').value);
+    const method=document.getElementById('b-method').value.trim();
+    const client=document.getElementById('b-client').value.trim();
+    const settled=document.getElementById('b-settled').value==='1';
+    if(!date||!site||isNaN(amount)||amount<=0){ alert('請填請款日、案場、金額'); return; }
+    state.billings.push({id:uid(),date,site,amount,method,client,settled});
+    saveData(); render();
+  };
+  document.querySelectorAll('[data-togglesettle]').forEach(b=>b.onclick=()=>{
+    const bill=state.billings.find(x=>x.id===b.dataset.togglesettle); if(bill){ bill.settled=!bill.settled; saveData(); render(); }
+  });
+  document.querySelectorAll('[data-delbill]').forEach(b=>b.onclick=()=>{
+    state.billings=state.billings.filter(x=>x.id!==b.dataset.delbill); saveData(); render();
+  });
+  document.querySelectorAll('[data-contract]').forEach(inp=>inp.onchange=()=>{
+    const name=inp.dataset.contract; const v=parseFloat(inp.value);
+    if(isNaN(v)||v<=0) delete state.contracts[name]; else state.contracts[name]=v;
+    saveData(); render();
+  });
+
+  // 對帳匯出
+  const rf=document.getElementById('recon-from'); if(rf) rf.onchange=()=>{ reconFrom=rf.value; render(); };
+  const rt=document.getElementById('recon-to'); if(rt) rt.onchange=()=>{ reconTo=rt.value; render(); };
+  const rtp=document.getElementById('recon-thisperiod'); if(rtp) rtp.onclick=()=>{ const d=defaultPayRange(); reconFrom=d.from; reconTo=d.to; render(); };
+  const rcl=document.getElementById('recon-clear'); if(rcl) rcl.onclick=()=>{ reconFrom=''; reconTo=''; render(); };
+  document.querySelectorAll('[data-reconpick]').forEach(cb=>cb.onchange=()=>{ reconPick[cb.dataset.reconpick]=cb.checked; render(); });
+  const rex=document.getElementById('recon-export'); if(rex) rex.onclick=()=>exportRecon();
+}
+
+// ---- PDF 匯出（以列印視窗產生，可存成 PDF 或直接列印）----
+function printHTML(title, inner){
+  // 移除舊浮層
+  const old=document.getElementById('print-overlay'); if(old) old.remove();
+  const ov=document.createElement('div');
+  ov.id='print-overlay';
+  ov.innerHTML=`
+    <div class="pbar">
+      <button class="btn" id="po-print">列印 / 存成 PDF</button>
+      <button class="act" id="po-close" style="border:1px solid var(--line2);border-radius:8px;padding:0 14px">關閉</button>
+    </div>
+    <div class="pdoc">${inner}</div>`;
+  document.body.appendChild(ov);
+  document.getElementById('po-print').onclick=()=>window.print();
+  document.getElementById('po-close').onclick=()=>ov.remove();
+  ov.scrollTop=0;
+}
+
+function exportSummaryPDF(){
+  const byEmp=buildPayroll(state.payFrom,state.payTo);
+  const isPartner=id=>{ const e=state.employees.find(x=>x.id===id); return e&&e.partner; };
+  const ids=Object.keys(byEmp).filter(id=>!isPartner(id)).sort((a,b)=>byEmp[b].net-byEmp[a].net);
+  if(ids.length===0) return;
+  let gG=0,gA=0,gD=0,gN=0;
+  const rows=ids.map(id=>{ const e=byEmp[id]; gG+=e.gross;gA+=e.addTotal;gD+=e.dedTotal;gN+=e.net;
+    return `<tr><td>${esc(empName(id))}</td><td class="num">${e.days.size}</td><td class="num">${Math.round(e.hours*10)/10}</td>
+      <td class="num">${money(e.gross)}</td><td class="num">${e.addTotal?money(e.addTotal):'-'}</td>
+      <td class="num">${e.dedTotal?money(e.dedTotal):'-'}</td><td class="num">${money(e.net)}</td></tr>`;
+  }).join('');
+  const inner=`<h1>薪資總表</h1>
+    <div class="meta">計薪期間：${state.payFrom||'起始'} ～ ${state.payTo||'迄今'}　|　列印日期：${new Date().toISOString().slice(0,10)}　|　共 ${ids.length} 人</div>
+    <table><thead><tr><th>員工</th><th class="num">出勤天</th><th class="num">總工時</th><th class="num">出工薪資</th><th class="num">加項</th><th class="num">扣項</th><th class="num">實發金額</th></tr></thead>
+    <tbody>${rows}
+      <tr class="total-row"><td>合計</td><td class="num"></td><td class="num"></td><td class="num">${money(gG)}</td><td class="num">${money(gA)}</td><td class="num">${money(gD)}</td><td class="num">${money(gN)}</td></tr>
+    </tbody></table>
+    <p class="sub">出工薪資＝工資＋津貼（工資為各案場工時×時薪，各案場各自計算）。實發＝出工薪資＋加項−扣項。金額四捨五入至整數。</p>`;
+  printHTML('薪資總表 '+(state.payFrom||''), inner);
+}
+
+function exportPayslipPDF(empId){
+  const byEmp=buildPayroll(state.payFrom,state.payTo);
+  const e=byEmp[empId]; if(!e) return;
+  const addRows=e.adds.map(a=>`<tr><td>${esc(a.label)}</td><td>${esc(a.note||'')}</td><td class="num">+${money(a.amount)}</td></tr>`).join('');
+  const dedRows=e.deds.map(a=>`<tr><td>${esc(a.label)}</td><td>${esc(a.note||'')}</td><td class="num">−${money(a.amount)}</td></tr>`).join('');
+  // 該員工本期各日出工明細
+  const inRange=d=> (!state.payFrom||d>=state.payFrom) && (!state.payTo||d<=state.payTo);
+  const comp=computeRecords(state.attendance);
+  const myRecs=state.attendance.filter(r=>r.empId===empId&&inRange(r.date)).sort((a,b)=>a.date.localeCompare(b.date));
+  const recRows=myRecs.map(r=>{ const c=comp[r.id]||{wage:0,allow:0,total:0};
+    return `<tr><td>${esc(r.date)}</td><td>${esc(siteName(r.siteId))}</td><td class="num">${r.hours}</td><td class="num">${r.night?'是':'-'}</td>
+      <td class="num">${money(c.wage)}</td><td class="num">${c.allow>0?money(c.allow):'-'}</td></tr>`;
+  }).join('');
+  const inner=`<h1>薪資明細單</h1>
+    <div class="meta">員工：${esc(empName(empId))}　|　計薪期間：${state.payFrom||'起始'} ～ ${state.payTo||'迄今'}　|　出勤 ${e.days.size} 天 / ${Math.round(e.hours*10)/10} 小時</div>
+    <div class="sec">一、出工明細</div>
+    <table><thead><tr><th>日期</th><th>案場</th><th class="num">工時</th><th class="num">過夜</th><th class="num">工資</th><th class="num">津貼</th></tr></thead>
+    <tbody>${recRows||'<tr><td colspan="6">本期無出工</td></tr>'}
+      <tr class="total-row"><td colspan="4">出工薪資小計</td><td class="num">${money(e.wage)}</td><td class="num">${money(e.allow)}</td></tr>
+    </tbody></table>
+    <div class="sec">二、加項</div>
+    <table><thead><tr><th>項目</th><th>備註</th><th class="num">金額</th></tr></thead>
+    <tbody>${addRows||'<tr><td colspan="3">無</td></tr>'}<tr class="total-row"><td colspan="2">加項小計</td><td class="num">+${money(e.addTotal)}</td></tr></tbody></table>
+    <div class="sec">三、扣項</div>
+    <table><thead><tr><th>項目</th><th>備註</th><th class="num">金額</th></tr></thead>
+    <tbody>${dedRows||'<tr><td colspan="3">無</td></tr>'}<tr class="total-row"><td colspan="2">扣項小計</td><td class="num">−${money(e.dedTotal)}</td></tr></tbody></table>
+    <table style="margin-top:14px"><tbody>
+      <tr><td>出工薪資</td><td class="num">${money(e.gross)}</td></tr>
+      <tr><td>加項合計</td><td class="num">+${money(e.addTotal)}</td></tr>
+      <tr><td>扣項合計</td><td class="num">−${money(e.dedTotal)}</td></tr>
+      <tr class="total-row"><td>實發金額</td><td class="num">${money(e.net)}</td></tr>
+    </tbody></table>
+    <div class="sign"><div>員工簽收</div><div>主管核章</div></div>
+    <p class="sub">本明細之日薪採各筆出工登記當時鎖定金額；工資以時薪（日薪÷8）×工時計、各案場各自計算；外宿津貼每晚400元按當日出勤案場平均分攤。金額四捨五入至整數。</p>`;
+  printHTML('薪資明細單 '+esc(empName(empId)), inner);
+}
+
+// 公積金帳戶收支明細 PDF（含日期區間）
+function exportLedgerPDF(){
+  const inLedRange=d=> (!ledgerFrom||d>=ledgerFrom) && (!ledgerTo||d<=ledgerTo);
+  const txs=state.ledger.filter(t=>(!ledgerAcc||t.accId===ledgerAcc)&&inLedRange(t.date)).sort((a,b)=>a.date.localeCompare(b.date)||a.id.localeCompare(b.id));
+  if(txs.length===0) return;
+  const accLabel=ledgerAcc?accountName(ledgerAcc):'全部帳戶';
+  const range=(ledgerFrom||ledgerTo)?`${ledgerFrom||'起始'} ～ ${ledgerTo||'迄今'}`:'全部期間';
+  let tin=0,tout=0;
+  const rows=txs.map(t=>{ tin+=t.kind==='in'?(Number(t.amount)||0):0; tout+=t.kind==='out'?(Number(t.amount)||0):0;
+    return `<tr><td>${esc(t.date)}</td><td>${esc(accountName(t.accId))}</td><td>${esc(t.note||'')}</td>
+      <td class="num">${t.kind==='in'?money(t.amount):'-'}</td><td class="num">${t.kind==='out'?money(t.amount):'-'}</td></tr>`;
+  }).join('');
+  // 若指定單一帳戶，附目前餘額
+  const balLine=ledgerAcc?`　|　該帳戶目前餘額：${money(accountBalance(ledgerAcc))}`:'';
+  const inner=`<h1>公積金帳戶收支明細</h1>
+    <div class="meta">帳戶：${esc(accLabel)}　|　期間：${range}${balLine}　|　列印日：${new Date().toISOString().slice(0,10)}</div>
+    <table><thead><tr><th>日期</th><th>帳戶</th><th>項目/來源</th><th class="num">收入</th><th class="num">支出</th></tr></thead>
+    <tbody>${rows}
+      <tr class="total-row"><td colspan="3">區間合計</td><td class="num">${money(tin)}</td><td class="num">${money(tout)}</td></tr>
+      <tr class="total-row"><td colspan="3">區間淨額（收−支）</td><td class="num" colspan="2">${money(tin-tout)}</td></tr>
+    </tbody></table>
+    <p class="sub">金額四捨五入至整數。</p>`;
+  printHTML('帳戶收支明細', inner);
+}
+
+// 分潤結算明細 PDF
+function exportDealsPDF(){
+  if(state.deals.length===0) return;
+  let gA=0,gC=0,gT=0,gP=0,gB=0,gF=0;
+  const rows=[...state.deals].sort((a,b)=>(b.date||'').localeCompare(a.date||'')).map(d=>{
+    const c=dealCalc(d); const sc=SCHEMES[d.scheme]||SCHEMES['new'];
+    gA+=Number(d.amount)||0; gC+=Number(d.cost)||0; gT+=Number(d.tax)||0; gP+=c.profit; gB+=c.bonus; gF+=c.fund;
+    return `<tr><td>${esc(d.name)}<br><span style="font-size:10px;color:#777">${d.type||'代工'}·${sc.label.split('（')[0]}·${esc(d.ownerId?empName(d.ownerId):'—')}${d.posted?'·已結帳':''}</span></td>
+      <td class="num">${money(d.amount)}</td><td class="num">${money(d.cost)}</td><td class="num">${money(d.tax)}</td>
+      <td class="num">${money(c.profit)}</td><td class="num">${money(c.bonus)}</td><td class="num">${money(c.fund)}</td></tr>`;
+  }).join('');
+  const inner=`<h1>案場損益及分潤結算明細</h1>
+    <div class="meta">列印日：${new Date().toISOString().slice(0,10)}　|　共 ${state.deals.length} 案</div>
+    <table><thead><tr><th>案場</th><th class="num">金額</th><th class="num">成本</th><th class="num">稅金</th><th class="num">淨利</th><th class="num">負責人獎金</th><th class="num">進公積金</th></tr></thead>
+    <tbody>${rows}
+      <tr class="total-row"><td>合計</td><td class="num">${money(gA)}</td><td class="num">${money(gC)}</td><td class="num">${money(gT)}</td><td class="num">${money(gP)}</td><td class="num">${money(gB)}</td><td class="num">${money(gF)}</td></tr>
+    </tbody></table>
+    <p class="sub">淨利＝金額−成本−稅金。獎金與公積金依各案制度拆分；虧損時獎金為0、虧損全由公積金吸收。金額四捨五入至整數。</p>`;
+  printHTML('分潤結算明細', inner);
+}
+
+// 請款追蹤明細 PDF
+function exportBillingPDF(){
+  if(state.billings.length===0) return;
+  const groups={};
+  state.billings.forEach(b=>{ const k=b.site||'（未填案場）'; (groups[k]=groups[k]||[]).push(b); });
+  const names=Object.keys(groups).sort((a,b)=>a.localeCompare(b));
+  let secs='';
+  let GB=0,GS=0;
+  names.forEach(name=>{
+    const list=groups[name].sort((a,b)=>(a.date||'').localeCompare(b.date||''));
+    const billed=list.reduce((s,b)=>s+(Number(b.amount)||0),0);
+    const settled=list.filter(b=>b.settled).reduce((s,b)=>s+(Number(b.amount)||0),0);
+    GB+=billed; GS+=settled;
+    const contract=Number(state.contracts[name])||0;
+    const cline=contract>0?`　合約總額 ${money(contract)}　未請款 ${money(contract-billed)}`:'';
+    const rows=list.map(b=>`<tr><td>${esc(b.date||'')}</td><td class="num">${money(b.amount)}</td><td>${esc(b.method||'')}</td><td>${esc(b.client||'')}</td><td>${b.settled?'已結算':'未結算'}</td></tr>`).join('');
+    secs+=`<div class="sec">${esc(name)}　已請款 ${money(billed)}・已結算 ${money(settled)}・未結算 ${money(billed-settled)}${cline}</div>
+      <table><thead><tr><th>請款日</th><th class="num">金額</th><th>方式</th><th>業主</th><th>結算</th></tr></thead><tbody>${rows}</tbody></table>`;
+  });
+  const inner=`<h1>案場請款追蹤明細</h1>
+    <div class="meta">列印日：${new Date().toISOString().slice(0,10)}　|　累計請款 ${money(GB)}・已結算 ${money(GS)}・未結算 ${money(GB-GS)}</div>
+    ${secs}
+    <p class="sub">金額四捨五入至整數。</p>`;
+  printHTML('請款追蹤明細', inner);
+}
+
+// 案場成本明細 PDF
+function exportSitesPDF(){
+  const comp=computeRecords(state.attendance);
+  const bySite={};
+  state.sites.forEach(s=>{ bySite[s.id]={hours:0,wage:0,allow:0,total:0,emp:{},opening:Number(s.opening)||0,name:s.name}; });
+  state.attendance.forEach(r=>{ const c=comp[r.id]; if(!c)return;
+    const s=bySite[r.siteId]=bySite[r.siteId]||{hours:0,wage:0,allow:0,total:0,emp:{},opening:0,name:siteName(r.siteId)};
+    s.hours+=Number(r.hours)||0; s.wage+=c.wage; s.allow+=c.allow; s.total+=c.total; s.emp[r.empId]=(s.emp[r.empId]||0)+c.total;
+  });
+  const ids=Object.keys(bySite); if(ids.length===0) return;
+  ids.forEach(id=>{ bySite[id].grand=bySite[id].total+bySite[id].opening; });
+  const grand=ids.reduce((s,id)=>s+bySite[id].grand,0);
+  ids.sort((a,b)=>bySite[b].grand-bySite[a].grand);
+  const rows=ids.map(id=>{ const s=bySite[id];
+    return `<tr><td>${esc(s.name||siteName(id))}</td><td class="num">${Math.round(s.hours*10)/10}</td><td class="num">${money(s.opening)}</td><td class="num">${money(s.wage)}</td><td class="num">${money(s.allow)}</td><td class="num" style="font-weight:700">${money(s.grand)}</td></tr>`;
+  }).join('');
+  const inner=`<h1>案場人事成本明細</h1>
+    <div class="meta">列印日：${new Date().toISOString().slice(0,10)}　|　總人事成本 ${money(grand)}</div>
+    <table><thead><tr><th>案場</th><th class="num">系統工時</th><th class="num">期初成本</th><th class="num">系統工資</th><th class="num">津貼</th><th class="num">總成本</th></tr></thead>
+    <tbody>${rows}
+      <tr class="total-row"><td>合計</td><td class="num"></td><td class="num"></td><td class="num"></td><td class="num"></td><td class="num">${money(grand)}</td></tr>
+    </tbody></table>
+    <p class="sub">總成本＝期初人事成本（歷史抄入）＋系統內登記出勤的工資與津貼。金額四捨五入至整數。</p>`;
+  printHTML('案場成本明細', inner);
+}
+
+// ---- 借支 ----
+// 每筆借支已扣金額 = 所有「來源為此借支」的扣項調整加總
+function loanRepaid(loanId){
+  return state.adjustments.filter(a=>a.loanId===loanId && a.kind==='ded').reduce((s,a)=>s+(Number(a.amount)||0),0);
+}
+function loanBalance(loan){ return Math.max(0, (Number(loan.amount)||0) - loanRepaid(loan.id)); }
+// 本期是否已對此借支扣過款
+function loanDeductedInRange(loanId,from,to){
+  const inRange=d=>(!from||d>=from)&&(!to||d<=to);
+  return state.adjustments.some(a=>a.loanId===loanId && a.kind==='ded' && inRange(a.date));
+}
+
+function viewLoans(){
+  const activeEmps=state.employees.filter(e=>e.active);
+  const empOpts=activeEmps.map(e=>`<option value="${e.id}">${esc(e.name)}</option>`).join('');
+  const loans=[...state.loans].sort((a,b)=>b.date.localeCompare(a.date));
+  const outstanding=loans.filter(l=>loanBalance(l)>0).reduce((s,l)=>s+loanBalance(l),0);
+  const rows=loans.map(l=>{
+    const repaid=loanRepaid(l.id), bal=loanBalance(l), done=bal<=0;
+    const pct=l.amount>0?Math.round(repaid/l.amount*100):0;
+    return `<tr>
+      <td>${esc(l.date)}</td><td>${esc(empName(l.empId))}</td>
+      <td class="num">${money(l.amount)}</td>
+      <td class="num">${money(l.perPeriod)}</td>
+      <td class="num">${money(repaid)}（${pct}%）</td>
+      <td class="num" style="font-weight:600;color:${done?'var(--accent)':'var(--danger)'}">${done?'已還清':money(bal)}</td>
+      <td>${esc(l.note||'')}</td>
+      <td><button class="act danger" data-delloan="${l.id}">刪</button></td>
+    </tr>`;
+  }).join('');
+  return `
+  <div class="metrics">
+    <div class="metric"><div class="l">借支筆數</div><div class="v">${loans.length}</div></div>
+    <div class="metric"><div class="l">尚未還清總額</div><div class="v">${money(outstanding)}</div></div>
+  </div>
+  <div class="card">
+    <div style="font-size:14px;font-weight:600;margin-bottom:4px">新增借支</div>
+    <p class="sub">登記一筆借款：借出日、總額、每期固定扣款額。系統會追蹤已扣與剩餘，發薪時在薪資分頁提示應扣金額，由你確認後帶入該期扣項。</p>
+    <div class="row" style="margin-bottom:10px">
+      <div class="field"><label>借款日</label><input type="date" id="loan-date" value="${new Date().toISOString().slice(0,10)}"></div>
+      <div class="field"><label>員工</label><select id="loan-emp">${empOpts}</select></div>
+      <div class="field"><label>借款總額</label><input type="number" id="loan-amount" min="0" step="500" style="width:120px"></div>
+      <div class="field"><label>每期扣款</label><input type="number" id="loan-per" min="0" step="500" style="width:120px"></div>
+      <div class="field" style="flex:1;min-width:140px"><label>備註（選填）</label><input id="loan-note" placeholder="例：預支生活費"></div>
+      <button class="btn" id="loan-add">＋ 新增借支</button>
+    </div>
+    ${rows===''?'<div class="empty">尚無借支紀錄。</div>':`<div class="scroll"><table>
+      <thead><tr><th>借款日</th><th>員工</th><th class="num">總額</th><th class="num">每期扣</th><th class="num">已扣</th><th class="num">剩餘</th><th>備註</th><th></th></tr></thead>
+      <tbody>${rows}</tbody></table></div>`}
+  </div>`;
+}
+
+// ---- 地點與工具資產 ----
+// 統一地點清單：案場（type=site）+ 自訂地點（type=loc，倉庫/貨車等）
+function allLocations(){
+  const a=state.sites.map(s=>({key:'site:'+s.id, name:s.name, kind:'案場'}));
+  const b=state.locations.map(l=>({key:'loc:'+l.id, name:l.name, kind:l.kind||'地點'}));
+  return a.concat(b);
+}
+function locLabel(key){
+  if(!key) return '（未指定）';
+  const f=allLocations().find(x=>x.key===key);
+  return f?f.name:'（已移除）';
+}
+
+// ---- 工具遺失 ----
+// 分攤草稿：使用者勾選分攤人、調整金額時暫存於此
+let toolDraft=null; // {date,brand,model,amount,picks:{empId:amount}}
+
+function viewTools(){
+  const activeEmps=state.employees.filter(e=>e.active);
+  const tools=[...state.tools].sort((a,b)=>b.date.localeCompare(a.date));
+  const totalLost=tools.reduce((s,t)=>s+(Number(t.amount)||0),0);
+
+  // 已登記的工具遺失清單
+  const rows=tools.map(t=>{
+    const shareList=Object.entries(t.shares||{}).map(([eid,v])=>`${esc(empName(eid))} ${money(v)}`).join('、');
+    return `<tr>
+      <td>${esc(t.date)}</td><td>${esc(t.brand||'')}</td><td>${esc(t.model||'')}</td>
+      <td class="num">${money(t.amount)}</td>
+      <td>${shareList||'<span style="color:var(--muted)">—</span>'}</td>
+      <td><button class="act danger" data-deltool="${t.id}">刪</button></td>
+    </tr>`;
+  }).join('');
+
+  // 分攤草稿區
+  let draftBlock='';
+  if(toolDraft){
+    const picks=toolDraft.picks||{};
+    const pickIds=Object.keys(picks);
+    const sumPicked=pickIds.reduce((s,id)=>s+(Number(picks[id])||0),0);
+    const diff=(Number(toolDraft.amount)||0)-sumPicked;
+    const empChecks=activeEmps.map(e=>{
+      const on=picks[e.id]!==undefined;
+      return `<label style="display:inline-flex;align-items:center;gap:6px;margin:4px 12px 4px 0;font-size:14px">
+        <input type="checkbox" data-toolpick="${e.id}" ${on?'checked':''}> ${esc(e.name)}
+        ${on?`<input type="number" data-toolamt="${e.id}" value="${Math.round(Number(picks[e.id])||0)}" style="width:90px;height:30px" step="50">`:''}
+      </label>`;
+    }).join('');
+    draftBlock=`<div class="card" style="border-color:var(--accent)">
+      <div style="font-size:14px;font-weight:600;margin-bottom:4px">分攤設定：${esc(toolDraft.brand||'')} ${esc(toolDraft.model||'')}　總額 ${money(toolDraft.amount)}</div>
+      <p class="sub">勾選要分攤的員工，系統預設平均分；可逐人微調金額。確認後會把各人金額帶入其當期（以遺失日所屬計薪週期）扣項。</p>
+      <div style="margin-bottom:8px">${empChecks}</div>
+      <div class="sub" style="margin-bottom:8px">已分配 ${money(sumPicked)} / 總額 ${money(toolDraft.amount)}　${Math.abs(diff)>=1?`<span style="color:var(--danger)">尚有 ${money(diff)} 未分配</span>`:'<span style="color:var(--accent)">✓ 剛好分完</span>'}</div>
+      <div class="row">
+        <button class="act" id="tool-even" style="border:1px solid var(--line2);border-radius:8px;padding:0 12px;height:36px">重新平均分</button>
+        <button class="btn" id="tool-confirm" ${Math.abs(diff)>=1||pickIds.length===0?'disabled style="opacity:.5"':''}>確認並帶入扣項</button>
+        <button class="act muted" id="tool-cancel" style="cursor:pointer;height:36px">取消</button>
+      </div>
+    </div>`;
+  }
+
+  return `
+  ${assetSection()}
+  ${locationSection()}
+  <div class="card">
+    <div style="font-size:14px;font-weight:600;margin-bottom:4px">工具遺失賠償</div>
+    <p class="sub">填好一筆遺失工具，按「設定分攤」後勾選要分攤的員工。金額會在分攤確認後一次帶入各人當期扣項（全額均攤、不分期）。</p>
+    <div class="row">
+      <div class="field"><label>遺失日</label><input type="date" id="tool-date" value="${new Date().toISOString().slice(0,10)}"></div>
+      <div class="field"><label>廠牌</label><input id="tool-brand" placeholder="例：HILTI" style="width:120px"></div>
+      <div class="field"><label>型號</label><input id="tool-model" placeholder="例：PM30" style="width:140px"></div>
+      <div class="field"><label>金額</label><input type="number" id="tool-amount" min="0" step="100" style="width:120px"></div>
+      <button class="btn" id="tool-setup">設定分攤 →</button>
+    </div>
+  </div>
+  ${draftBlock}
+  <div class="card">
+    <div style="font-size:14px;font-weight:600;margin-bottom:8px">工具遺失紀錄 ${tools.length?`<span style="color:var(--muted);font-size:12px">累計 ${money(totalLost)}</span>`:''}</div>
+    ${rows===''?'<div class="empty">尚無工具遺失紀錄。</div>':`<div class="scroll"><table>
+      <thead><tr><th>遺失日</th><th>廠牌</th><th>型號</th><th class="num">金額</th><th>分攤明細</th><th></th></tr></thead>
+      <tbody>${rows}</tbody></table></div>`}
+  </div>`;
+}
+
+function assetSection(){
+  const locOpts=allLocations().map(l=>`<option value="${l.key}">${esc(l.name)}（${l.kind}）</option>`).join('');
+  const noLoc=allLocations().length===0;
+  // 依目前位置分組顯示，達成「反查某地點有哪些工具」
+  const groups={};
+  state.assets.forEach(a=>{ const k=a.locKey||'__none__'; (groups[k]=groups[k]||[]).push(a); });
+  const groupKeys=Object.keys(groups).sort((a,b)=> (a==='__none__'?1:0)-(b==='__none__'?1:0) || locLabel(a).localeCompare(locLabel(b)));
+  const grouped=groupKeys.map(k=>{
+    const items=groups[k].sort((x,y)=>(x.name||'').localeCompare(y.name||''));
+    const rows=items.map(a=>`<tr>
+      <td>${esc(a.name)}</td><td>${esc(a.brand||'')}</td><td>${esc(a.model||'')}</td>
+      <td>${esc(a.buyDate||'')}</td><td class="num">${a.price?money(a.price):'—'}</td>
+      <td><select data-assetloc="${a.id}" style="height:30px;max-width:170px"><option value="">（未指定）</option>${allLocations().map(l=>`<option value="${l.key}" ${a.locKey===l.key?'selected':''}>${esc(l.name)}</option>`).join('')}</select></td>
+      <td><button class="act danger" data-delasset="${a.id}">刪</button></td>
+    </tr>`).join('');
+    return `<div style="margin-top:10px">
+      <div style="font-size:13px;font-weight:600;color:var(--accent);margin-bottom:2px">📍 ${k==='__none__'?'未指定位置':esc(locLabel(k))}　<span style="color:var(--muted);font-weight:400">${items.length} 件</span></div>
+      <div class="scroll"><table>
+        <thead><tr><th>名稱</th><th>廠牌</th><th>型號</th><th>購入日</th><th class="num">價格</th><th>目前位置</th><th></th></tr></thead>
+        <tbody>${rows}</tbody></table></div>
+    </div>`;
+  }).join('');
+  return `
+  <div class="card">
+    <div style="font-size:14px;font-weight:600;margin-bottom:4px">工具資產</div>
+    <p class="sub">登記你現有的工具，並標記目前所在位置。下方依位置分組，方便反查某地點（工地／倉庫／貨車）有哪些工具。改位置直接在該列下拉選即可。</p>
+    ${noLoc?'<div class="empty">請先在下方「地點管理」建立至少一個地點（或先到設定建立案場）。</div>':`
+    <div class="row">
+      <div class="field"><label>名稱</label><input id="as-name" placeholder="例：電鑽" style="width:140px"></div>
+      <div class="field"><label>廠牌</label><input id="as-brand" placeholder="HILTI" style="width:110px"></div>
+      <div class="field"><label>型號</label><input id="as-model" placeholder="TE6" style="width:110px"></div>
+      <div class="field"><label>購入日</label><input type="date" id="as-buy"></div>
+      <div class="field"><label>價格</label><input type="number" id="as-price" min="0" step="100" style="width:110px"></div>
+      <div class="field"><label>目前位置</label><select id="as-loc">${locOpts}</select></div>
+      <button class="btn" id="as-add">＋ 新增工具</button>
+    </div>`}
+    ${state.assets.length===0?'<div class="empty" style="margin-top:8px">尚無工具資產。</div>':grouped}
+  </div>`;
+}
+
+function locationSection(){
+  const rows=state.locations.map(l=>{
+    const inUse=state.assets.some(a=>a.locKey==='loc:'+l.id);
+    const del=inUse?'<span class="act muted" title="有工具在此地點，無法刪除">🔒</span>':`<button class="act danger" data-delloc="${l.id}">刪</button>`;
+    return `<tr><td>${esc(l.name)}</td><td>${esc(l.kind||'')}</td><td>${del}</td></tr>`;
+  }).join('');
+  return `
+  <div class="card">
+    <div style="font-size:14px;font-weight:600;margin-bottom:4px">地點管理</div>
+    <p class="sub">案場會自動成為可選位置。這裡額外新增非案場的地點，例如倉庫、貨車。</p>
+    <div class="row" style="margin-bottom:10px">
+      <div class="field"><label>地點名稱</label><input id="loc-name" placeholder="例：高雄倉庫、貨車BYG" style="width:180px"></div>
+      <div class="field"><label>類型</label><select id="loc-kind"><option>倉庫</option><option>貨車</option><option>其他</option></select></div>
+      <button class="btn" id="loc-add">＋ 新增地點</button>
+    </div>
+    ${state.locations.length===0?'<div class="empty">尚無自訂地點。案場已可直接當位置選用。</div>':`<table><thead><tr><th>名稱</th><th>類型</th><th></th></tr></thead><tbody>${rows}</tbody></table>`}
+  </div>`;
+}
+
+// ---- 代墊款 ----
+let advFrom=null, advTo=null, advPosting=null;
+function viewAdvances(){
+  if(!advFrom||!advTo){ const d=defaultPayRange(); advFrom=d.from; advTo=d.to; }
+  const partners=state.employees.filter(e=>e.partner);
+  const inRange=dt=> (!advFrom||dt>=advFrom) && (!advTo||dt<=advTo);
+  // 各股東當期工資（出工薪資 gross）
+  const byEmp=buildPayroll(advFrom,advTo);
+  // 當期代墊款
+  const advs=state.advances.filter(a=>inRange(a.date));
+
+  const partnerOpts=partners.map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join('');
+
+  const cards=partners.map(p=>{
+    const wage=byEmp[p.id]?byEmp[p.id].gross:0;
+    const mine=advs.filter(a=>a.empId===p.id).sort((a,b)=>a.date.localeCompare(b.date));
+    const advTotal=mine.reduce((s,a)=>s+(Number(a.amount)||0),0);
+    const due=wage+advTotal;
+    const advRows=mine.map(a=>`<tr>
+      <td>${esc(a.date)}</td><td>${esc(a.purpose||'')}</td><td class="num">${money(a.amount)}</td>
+      <td><button class="act danger" data-deladv="${a.id}">刪</button></td>
+    </tr>`).join('');
+    // 是否已就本期此股東入帳
+    const postKey=`${advFrom}~${advTo}|${p.id}`;
+    const posted=state.ledger.find(t=>t.fromAdvance===postKey);
+    const postBtn=due<=0?'':(posted
+      ? `<span class="tag" style="background:#e3efe9;color:var(--accent)">已入帳 ${money(posted.amount)}（${esc(accountName(posted.accId))}）</span> <button class="act danger" data-unpost="${posted.id}">撤銷入帳</button>`
+      : (state.accounts.length===0
+        ? '<span class="sub">（先到公積金帳戶建立帳戶才能入帳）</span>'
+        : (advPosting===p.id
+          ? `<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+              <span class="sub" style="margin:0">從哪個帳戶支出 ${money(due)}？</span>
+              ${state.accounts.map(a=>`<button class="act" data-postpick="${p.id}::${a.id}" style="border:1px solid var(--accent);border-radius:6px;padding:3px 12px;color:var(--accent)">${esc(a.name)}</button>`).join('')}
+              <button class="act muted" data-postcancel="1" style="cursor:pointer">取消</button>
+            </div>`
+          : `<button class="act" data-postadv="${p.id}" style="border:1px solid var(--accent);border-radius:6px;padding:3px 12px;color:var(--accent)">入帳為支出 →</button>`)));
+    return `<div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px">
+        <div style="font-size:15px;font-weight:600">${esc(p.name)}</div>
+        <div style="font-size:18px;font-weight:600">應領 ${money(due)}</div>
+      </div>
+      <div class="sub">工資 ${money(wage)}（本期出工薪資自動帶入）＋ 代墊款 ${money(advTotal)} ＝ 應領 ${money(due)}</div>
+      ${advRows===''?'<div class="empty" style="padding:10px 0">本期尚無代墊款。</div>':`<div class="scroll"><table>
+        <thead><tr><th>日期</th><th>用途</th><th class="num">金額</th><th></th></tr></thead><tbody>${advRows}</tbody></table></div>`}
+      <div style="margin-top:8px">${postBtn}</div>
+    </div>`;
+  }).join('');
+
+  const grandDue=partners.reduce((s,p)=>{ const w=byEmp[p.id]?byEmp[p.id].gross:0; const at=advs.filter(a=>a.empId===p.id).reduce((x,a)=>x+(Number(a.amount)||0),0); return s+w+at; },0);
+
+  return `
+  <div class="card">
+    <div style="font-size:14px;font-weight:600;margin-bottom:4px">代墊款報銷</div>
+    <p class="sub">每期（11號週期）列出各股東：工資（本期出工薪資自動帶入）＋ 代墊款 ＝ 應領。代墊款請填用途說明，方便日後對帳。</p>
+    <div class="row">
+      <div class="field"><label>起</label><input type="date" id="adv-from" value="${advFrom}"></div>
+      <div class="field"><label>訖</label><input type="date" id="adv-to" value="${advTo}"></div>
+      <button class="act" id="adv-thisperiod" style="height:36px;border:1px solid var(--line2);border-radius:8px;padding:0 12px">本期</button>
+      <button class="act" id="adv-lastperiod" style="height:36px;border:1px solid var(--line2);border-radius:8px;padding:0 12px">上期</button>
+    </div>
+  </div>
+  ${partners.length===0?'<div class="card"><div class="empty">尚未標記股東。請到「員工/案場」分頁把股東（潘東澤、潘建龍）設為股東。</div></div>':`
+  <div class="card">
+    <div style="font-size:14px;font-weight:600;margin-bottom:4px">新增代墊款</div>
+    <div class="row">
+      <div class="field"><label>日期</label><input type="date" id="adv-date" value="${advTo}"></div>
+      <div class="field"><label>股東</label><select id="adv-emp">${partnerOpts}</select></div>
+      <div class="field"><label>金額</label><input type="number" id="adv-amount" min="0" step="100" style="width:120px"></div>
+      <div class="field" style="flex:1;min-width:200px"><label>用途說明</label><input id="adv-purpose" placeholder="例：酷擊五金材料、Hilti租金、台北住宿"></div>
+      <button class="btn" id="adv-add">＋ 新增</button>
+    </div>
+  </div>
+  <div class="metric" style="margin-bottom:16px"><div class="l">本期應領總額（全體股東）</div><div class="v">${money(grandDue)}</div></div>
+  ${cards}`}`;
+}
+
+function evenSplit(amount, ids){
+  const out={}; const n=ids.length; if(n===0) return out;
+  const each=Math.round((amount/n)/1)*1; // 先平均
+  let acc=0;
+  ids.forEach((id,i)=>{ if(i<n-1){ out[id]=Math.round(amount/n); acc+=out[id]; } else { out[id]=Math.round(amount-acc); } });
+  return out;
+}
+
+function openSidebar(){ document.getElementById('sidebar').classList.add('open'); document.getElementById('scrim').classList.add('show'); }
+function closeSidebar(){ document.getElementById('sidebar').classList.remove('open'); document.getElementById('scrim').classList.remove('show'); }
+document.getElementById('burger').onclick=()=>{
+  const sb=document.getElementById('sidebar');
+  if(sb.classList.contains('open')) closeSidebar(); else openSidebar();
+};
+document.getElementById('scrim').onclick=closeSidebar;
+
+// ---- 公積金帳戶 ----
+function accountName(id){ const a=state.accounts.find(x=>x.id===id); return a?a.name:'（已移除）'; }
+function accountBalance(accId){
+  const acc=state.accounts.find(a=>a.id===accId); if(!acc) return 0;
+  const opening=Number(acc.opening)||0;
+  const delta=state.ledger.filter(t=>t.accId===accId).reduce((s,t)=>s + (t.kind==='in'?1:-1)*(Number(t.amount)||0), 0);
+  return opening+delta;
+}
+let ledgerAcc=null, ledgerFrom='', ledgerTo=''; // 帳戶檢視篩選
+
+function viewAccounts(){
+  const accs=state.accounts;
+  const totalBal=accs.reduce((s,a)=>s+accountBalance(a.id),0);
+
+  // 預設若無帳戶，提示建立
+  const accMetrics=accs.map(a=>`<div class="metric"><div class="l">${esc(a.name)}</div><div class="v" style="font-size:20px">${money(accountBalance(a.id))}</div></div>`).join('');
+
+  // 交易篩選（帳戶 + 日期區間）
+  const inLedRange=d=> (!ledgerFrom||d>=ledgerFrom) && (!ledgerTo||d<=ledgerTo);
+  const txs=state.ledger.filter(t=>(!ledgerAcc||t.accId===ledgerAcc)&&inLedRange(t.date)).sort((a,b)=>b.date.localeCompare(a.date)||b.id.localeCompare(a.id));
+  const txRows=txs.slice(0,300).map(t=>`<tr>
+    <td>${esc(t.date)}</td><td>${esc(accountName(t.accId))}</td>
+    <td>${esc(t.note||'')}${t.fromAdvance?'<span class="tag" style="background:#e3efe9;color:var(--accent)">代墊報銷</span>':''}</td>
+    <td class="num" style="color:var(--accent)">${t.kind==='in'?money(t.amount):'—'}</td>
+    <td class="num" style="color:var(--danger)">${t.kind==='out'?money(t.amount):'—'}</td>
+    <td><button class="act danger" data-delledger="${t.id}">刪</button></td>
+  </tr>`).join('');
+  const rangeIn=txs.filter(t=>t.kind==='in').reduce((s,t)=>s+(Number(t.amount)||0),0);
+  const rangeOut=txs.filter(t=>t.kind==='out').reduce((s,t)=>s+(Number(t.amount)||0),0);
+
+  const accOpts=accs.map(a=>`<option value="${a.id}">${esc(a.name)}</option>`).join('');
+  const filterOpts=`<option value="">全部帳戶</option>`+accs.map(a=>`<option value="${a.id}" ${ledgerAcc===a.id?'selected':''}>${esc(a.name)}</option>`).join('');
+
+  return `
+  <div class="metrics">
+    ${accMetrics}
+    <div class="metric" style="background:var(--accent);color:#fff"><div class="l" style="color:#fff;opacity:.85">總餘額</div><div class="v">${money(totalBal)}</div></div>
+  </div>
+
+  <div class="card">
+    <div style="font-size:14px;font-weight:600;margin-bottom:4px">帳戶管理</div>
+    <p class="sub">建立帳戶並設定「期初餘額」（承接上期的金額）。餘額＝期初＋所有收入−所有支出，系統自動計算。</p>
+    <div class="row" style="margin-bottom:10px">
+      <div class="field"><label>帳戶名稱</label><input id="acc-name" placeholder="例：東澤工程帳戶" style="width:180px"></div>
+      <div class="field"><label>期初餘額</label><input type="number" id="acc-opening" min="0" step="1000" value="0" style="width:130px"></div>
+      <button class="btn" id="acc-add">＋ 新增帳戶</button>
+    </div>
+    ${accs.length===0?'<div class="empty">尚無帳戶，請先新增。</div>':`<table><thead><tr><th>帳戶</th><th class="num">期初</th><th class="num">目前餘額</th><th></th></tr></thead>
+      <tbody>${accs.map(a=>{
+        const inUse=state.ledger.some(t=>t.accId===a.id);
+        const del=inUse?'<span class="act muted" title="已有交易，無法刪除">🔒</span>':`<button class="act danger" data-delacc="${a.id}">刪</button>`;
+        return `<tr><td>${esc(a.name)}</td><td class="num">${money(a.opening||0)}</td><td class="num" style="font-weight:600">${money(accountBalance(a.id))}</td><td><button class="act" data-editopen="${a.id}">改期初</button> ${del}</td></tr>`;
+      }).join('')}</tbody></table>`}
+  </div>
+
+  ${accs.length===0?'':`
+  <div class="card">
+    <div style="font-size:14px;font-weight:600;margin-bottom:4px">記一筆收支</div>
+    <div class="row">
+      <div class="field"><label>日期</label><input type="date" id="led-date" value="${new Date().toISOString().slice(0,10)}"></div>
+      <div class="field"><label>帳戶</label><select id="led-acc">${accOpts}</select></div>
+      <div class="field"><label>性質</label><select id="led-kind"><option value="out">支出（−）</option><option value="in">收入（+）</option></select></div>
+      <div class="field"><label>金額</label><input type="number" id="led-amount" min="0" step="100" style="width:120px"></div>
+      <div class="field" style="flex:1;min-width:200px"><label>項目/來源說明</label><input id="led-note" placeholder="例：酷擊五金材料、Hilti租金、台北住宿"></div>
+      <button class="btn" id="led-add">＋ 記帳</button>
+    </div>
+  </div>
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:8px">
+      <div style="font-size:14px;font-weight:600">收支明細 ${txs.length>300?'<span style="color:var(--muted);font-size:12px">（顯示最近300筆）</span>':''}</div>
+      <button class="btn" id="export-ledger" ${txRows===''?'disabled style="opacity:.5"':''}>匯出 PDF</button>
+    </div>
+    <div class="row" style="margin-bottom:10px">
+      <div class="field"><label>帳戶</label><select id="led-filter" style="height:36px">${filterOpts}</select></div>
+      <div class="field"><label>起</label><input type="date" id="led-from" value="${ledgerFrom}"></div>
+      <div class="field"><label>訖</label><input type="date" id="led-to" value="${ledgerTo}"></div>
+      <button class="act" id="led-clearrange" style="height:36px;border:1px solid var(--line2);border-radius:8px;padding:0 12px">清除日期</button>
+      ${(ledgerFrom||ledgerTo)?`<div class="sub" style="margin:0;align-self:center">區間內　收入 ${money(rangeIn)}・支出 ${money(rangeOut)}</div>`:''}
+    </div>
+    ${txRows===''?'<div class="empty">此條件下尚無收支紀錄。</div>':`<div class="scroll"><table>
+      <thead><tr><th>日期</th><th>帳戶</th><th>項目/來源</th><th class="num">收入</th><th class="num">支出</th><th></th></tr></thead>
+      <tbody>${txRows}</tbody></table></div>`}
+  </div>`}`;
+}
+
+// ---- 案場損益及分潤結算 ----
+const SCHEMES={
+  'new':{label:'新制 30/70（負責人30%·公積金70%）', bonus:0.30, fund:0.70},
+  'old':{label:'舊制 0/100（全進公積金）', bonus:0, fund:1.00},
+};
+function dealCalc(d){
+  const amount=Number(d.amount)||0, cost=Number(d.cost)||0, tax=Number(d.tax)||0;
+  const profit=amount-cost-tax;
+  const sc=SCHEMES[d.scheme]||SCHEMES['new'];
+  // 虧損時獎金為0、虧損全進公積金
+  const bonus=profit>0?profit*sc.bonus:0;
+  const fund=profit-bonus;
+  return {profit,bonus,fund};
+}
+let dealPosting=null; // 正在選帳戶入帳的 deal id
+
+function viewDeals(){
+  const partners=state.employees.filter(e=>e.partner);
+  const partnerOpts=partners.map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join('');
+  const schemeOpts=Object.entries(SCHEMES).map(([k,v])=>`<option value="${k}">${v.label}</option>`).join('');
+
+  // 累計（只算已入帳的）
+  let totFund=0; const bonusByPartner={};
+  state.deals.forEach(d=>{ if(!d.posted) return; const c=dealCalc(d);
+    totFund+=c.fund;
+    if(d.ownerId) bonusByPartner[d.ownerId]=(bonusByPartner[d.ownerId]||0)+c.bonus;
+  });
+  const bonusCards=partners.map(p=>`<div class="metric"><div class="l">${esc(p.name)} 累計獎金</div><div class="v" style="font-size:18px">${money(bonusByPartner[p.id]||0)}</div></div>`).join('');
+
+  const rows=[...state.deals].sort((a,b)=>(b.date||'').localeCompare(a.date||'')).map(d=>{
+    const c=dealCalc(d);
+    const sc=SCHEMES[d.scheme]||SCHEMES['new'];
+    let action;
+    if(d.posted){
+      action=`<span class="tag" style="background:#e3efe9;color:var(--accent)">已結帳</span><button class="act danger" data-unpostdeal="${d.id}">撤銷</button>`;
+    } else if(state.accounts.length===0){
+      action='<span class="sub">需先建帳戶</span>';
+    } else if(dealPosting===d.id){
+      action=`<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center"><span class="sub" style="margin:0">公積金 ${money(c.fund)} 入哪個帳戶？</span>${state.accounts.map(a=>`<button class="act" data-dealpick="${d.id}::${a.id}" style="border:1px solid var(--accent);border-radius:6px;padding:2px 10px;color:var(--accent)">${esc(a.name)}</button>`).join('')}<button class="act muted" data-dealcancel="1" style="cursor:pointer">取消</button></div>`;
+    } else {
+      action=`<button class="act" data-postdeal="${d.id}" style="border:1px solid var(--accent);border-radius:6px;padding:2px 10px;color:var(--accent)">結帳入帳 →</button>`;
+    }
+    return `<tr>
+      <td>${esc(d.name)}<div style="font-size:11px;color:var(--muted)">${d.type||'代工'}·${sc.label.split('（')[0]}·${esc(d.ownerId?empName(d.ownerId):'—')}${d.owner?'｜業主'+esc(d.owner):''}</div></td>
+      <td class="num">${money(d.amount)}</td>
+      <td class="num">${money(d.cost)}</td>
+      <td class="num">${money(d.tax)}</td>
+      <td class="num" style="font-weight:600;color:${c.profit<0?'var(--danger)':'var(--ink)'}">${money(c.profit)}</td>
+      <td class="num" style="color:var(--accent)">${money(c.bonus)}</td>
+      <td class="num">${money(c.fund)}</td>
+      <td>${action} <button class="act danger" data-deldeal="${d.id}">刪</button></td>
+    </tr>`;
+  }).join('');
+
+  return `
+  <div class="metrics">
+    <div class="metric" style="background:var(--accent);color:#fff"><div class="l" style="color:#fff;opacity:.85">累計進公積金（已結帳）</div><div class="v">${money(totFund)}</div></div>
+    ${bonusCards}
+  </div>
+  <div class="card">
+    <div style="font-size:14px;font-weight:600;margin-bottom:4px">新增案場損益</div>
+    <p class="sub">填請款金額、工資/成本、發票稅金，選制度與負責人。淨利＝金額−成本−稅金；依制度拆成負責人獎金與公積金。虧損時獎金為0、虧損全由公積金吸收。算好後按「結帳入帳」才會把公積金記進帳戶、獎金計入累計。</p>
+    <div class="row">
+      <div class="field" style="flex:1;min-width:160px"><label>案場名稱</label><input id="d-name" placeholder="例：義享影城"></div>
+      <div class="field"><label>類型</label><select id="d-type"><option>代工</option><option>分潤/代料</option></select></div>
+      <div class="field"><label>日期</label><input type="date" id="d-date" value="${new Date().toISOString().slice(0,10)}"></div>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <div class="field"><label>請款金額</label><input type="number" id="d-amount" min="0" step="1000" style="width:130px"></div>
+      <div class="field"><label>工資/成本</label><input type="number" id="d-cost" min="0" step="1000" style="width:130px"></div>
+      <div class="field"><label>發票稅金</label><input type="number" id="d-tax" min="0" step="100" value="0" style="width:120px"></div>
+      <div class="field"><label>制度</label><select id="d-scheme">${schemeOpts}</select></div>
+      <div class="field"><label>負責人</label><select id="d-owner"><option value="">（未指定）</option>${partnerOpts}</select></div>
+      <div class="field" style="flex:1;min-width:120px"><label>業主（選填）</label><input id="d-client" placeholder="品佑、廣昕…"></div>
+      <button class="btn" id="d-add">＋ 新增</button>
+    </div>
+  </div>
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:8px">
+      <div style="font-size:14px;font-weight:600">案場損益清單</div>
+      <button class="btn" id="export-deals" ${state.deals.length===0?'disabled style="opacity:.5"':''}>匯出 PDF</button>
+    </div>
+    ${rows===''?'<div class="empty">尚無案場損益紀錄。</div>':`<div class="scroll"><table>
+      <thead><tr><th>案場</th><th class="num">金額</th><th class="num">成本</th><th class="num">稅金</th><th class="num">淨利</th><th class="num">負責人獎金</th><th class="num">進公積金</th><th></th></tr></thead>
+      <tbody>${rows}</tbody></table></div>`}
+  </div>`;
+}
+
+// ---- 案場請款追蹤 ----
+function viewBilling(){
+  // 依案場名稱分組
+  const groups={};
+  state.billings.forEach(b=>{ const k=b.site||'（未填案場）'; (groups[k]=groups[k]||[]).push(b); });
+  const siteNames=Object.keys(groups).sort((a,b)=>a.localeCompare(b));
+
+  const totalBilled=state.billings.reduce((s,b)=>s+(Number(b.amount)||0),0);
+  const totalSettled=state.billings.filter(b=>b.settled).reduce((s,b)=>s+(Number(b.amount)||0),0);
+  const totalUnsettled=totalBilled-totalSettled;
+
+  const cards=siteNames.map(name=>{
+    const list=groups[name].sort((a,b)=>(a.date||'').localeCompare(b.date||''));
+    const billed=list.reduce((s,b)=>s+(Number(b.amount)||0),0);
+    const settled=list.filter(b=>b.settled).reduce((s,b)=>s+(Number(b.amount)||0),0);
+    const unsettled=billed-settled;
+    const contract=Number(state.contracts[name])||0;
+    let progress='';
+    if(contract>0){
+      const pct=Math.min(100,Math.round(billed/contract*100));
+      const remain=contract-billed;
+      progress=`<div class="sub" style="margin:4px 0 8px">合約總額 ${money(contract)}　已請款 ${money(billed)}（${pct}%）　${remain>0?`尚未請款 <b>${money(remain)}</b>`:(remain<0?`<span style="color:var(--danger)">超出合約 ${money(-remain)}</span>`:'已請足')}
+        <div style="height:6px;background:var(--line);border-radius:3px;margin-top:6px;overflow:hidden"><div style="height:100%;width:${pct}%;background:var(--accent)"></div></div></div>`;
+    }
+    const rows=list.map(b=>`<tr>
+      <td>${esc(b.date||'')}</td><td class="num">${money(b.amount)}</td>
+      <td>${esc(b.method||'')}</td><td>${esc(b.client||'')}</td>
+      <td><button class="act ${b.settled?'':'muted'}" data-togglesettle="${b.id}" style="${b.settled?'color:var(--accent)':''}">${b.settled?'✓ 已結算':'未結算'}</button></td>
+      <td>${esc(b.note||'')}</td>
+      <td><button class="act danger" data-delbill="${b.id}">刪</button></td>
+    </tr>`).join('');
+    return `<div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px;flex-wrap:wrap;gap:8px">
+        <div style="font-size:15px;font-weight:600">${esc(name)}</div>
+        <div style="font-size:14px">已請款 <b>${money(billed)}</b>　|　已結算 <span style="color:var(--accent)">${money(settled)}</span>　|　未結算 <span style="color:var(--danger)">${money(unsettled)}</span></div>
+      </div>
+      ${progress}
+      <div class="row" style="margin:6px 0 10px">
+        <div class="field"><label>合約總額（選填）</label><input type="number" data-contract="${esc(name)}" value="${contract||''}" placeholder="未設定" min="0" step="10000" style="width:150px"></div>
+      </div>
+      <div class="scroll"><table>
+        <thead><tr><th>請款日</th><th class="num">金額</th><th>方式</th><th>業主</th><th>結算</th><th>備註</th><th></th></tr></thead>
+        <tbody>${rows}</tbody></table></div>
+    </div>`;
+  }).join('');
+
+  const siteDatalist=state.sites.map(s=>`<option value="${esc(s.name)}">`).join('');
+
+  return `
+  <div class="metrics">
+    <div class="metric"><div class="l">累計請款</div><div class="v" style="font-size:20px">${money(totalBilled)}</div></div>
+    <div class="metric"><div class="l">已結算</div><div class="v" style="font-size:20px;color:var(--accent)">${money(totalSettled)}</div></div>
+    <div class="metric"><div class="l">未結算（在外面的錢）</div><div class="v" style="font-size:20px;color:var(--danger)">${money(totalUnsettled)}</div></div>
+  </div>
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;flex-wrap:wrap;gap:8px">
+      <div style="font-size:14px;font-weight:600">新增請款</div>
+      <button class="btn" id="export-billing" ${state.billings.length===0?'disabled style="opacity:.5"':''}>匯出 PDF</button>
+    </div>
+    <p class="sub">記一筆請款。同一案場可多次請款，下方會自動按案場彙總。合約總額在各案場卡片填（選填）；填了才會顯示「還剩多少沒請」的進度。</p>
+    <datalist id="site-list">${siteDatalist}</datalist>
+    <div class="row">
+      <div class="field"><label>請款日</label><input type="date" id="b-date" value="${new Date().toISOString().slice(0,10)}"></div>
+      <div class="field" style="flex:1;min-width:140px"><label>案場名稱</label><input id="b-site" list="site-list" placeholder="輸入或選案場"></div>
+      <div class="field"><label>金額</label><input type="number" id="b-amount" min="0" step="1000" style="width:130px"></div>
+      <div class="field"><label>請款方式</label><input id="b-method" placeholder="匯款" style="width:100px"></div>
+      <div class="field"><label>業主</label><input id="b-client" placeholder="品佑、廣昕" style="width:110px"></div>
+      <div class="field"><label>結算</label><select id="b-settled"><option value="">未結算</option><option value="1">已結算</option></select></div>
+      <button class="btn" id="b-add">＋ 新增</button>
+    </div>
+  </div>
+  ${cards===''?'<div class="card"><div class="empty">尚無請款紀錄。</div></div>':cards}`;
+}
+
+// ---- 對帳匯出 ----
+let reconFrom='', reconTo='', reconPick={payroll:true,advances:true,ledger:true,deals:true,billing:true,sites:true};
+const RECON_ITEMS=[
+  ['payroll','員工薪資總表','可套期間'],
+  ['advances','代墊款明細','可套期間'],
+  ['ledger','公積金帳戶收支','可套期間'],
+  ['billing','請款追蹤明細','累計至今'],
+  ['deals','分潤結算明細','累計至今'],
+  ['sites','案場成本明細','累計至今'],
+];
+function viewRecon(){
+  const checks=RECON_ITEMS.map(([k,label,tag])=>`
+    <label style="display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--line);border-radius:8px;margin-bottom:8px;cursor:pointer">
+      <input type="checkbox" data-reconpick="${k}" ${reconPick[k]?'checked':''} style="width:18px;height:18px">
+      <span style="flex:1;font-size:14px">${label}</span>
+      <span class="tag" style="background:${tag==='可套期間'?'#e3efe9':'var(--bg)'};color:${tag==='可套期間'?'var(--accent)':'var(--muted)'}">${tag}</span>
+    </label>`).join('');
+  const anyPicked=Object.values(reconPick).some(Boolean);
+  return `
+  <div class="card">
+    <div style="font-size:14px;font-weight:600;margin-bottom:4px">對帳匯出（合併成一份 PDF）</div>
+    <p class="sub">勾選要納入的明細，按「合併匯出」會把它們接成同一份 PDF，一次列印或存檔。標「可套期間」的會只印你選的日期區間；標「累計至今」的本質是看累計，會整份帶入並註明。</p>
+    <div class="row" style="margin-bottom:14px">
+      <div class="field"><label>起（套用於可套期間的明細）</label><input type="date" id="recon-from" value="${reconFrom}"></div>
+      <div class="field"><label>訖</label><input type="date" id="recon-to" value="${reconTo}"></div>
+      <button class="act" id="recon-thisperiod" style="height:36px;border:1px solid var(--line2);border-radius:8px;padding:0 12px">本期(11號)</button>
+      <button class="act" id="recon-clear" style="height:36px;border:1px solid var(--line2);border-radius:8px;padding:0 12px">清除日期</button>
+    </div>
+    ${checks}
+    <button class="btn" id="recon-export" ${anyPicked?'':'disabled style="opacity:.5"'} style="margin-top:6px">合併匯出 PDF</button>
+  </div>`;
+}
+
+// 各明細「區段」HTML 建構（給合併匯出用；回傳一段 HTML 或 ''）
+function reconSection(key, from, to){
+  const inRange=d=> (!from||d>=from) && (!to||d<=to);
+  const rangeTxt=(from||to)?`${from||'起始'} ～ ${to||'迄今'}`:'全部期間';
+  if(key==='payroll'){
+    const byEmp=buildPayroll(from,to);
+    const isP=id=>{ const e=state.employees.find(x=>x.id===id); return e&&e.partner; };
+    const ids=Object.keys(byEmp).filter(id=>!isP(id)).sort((a,b)=>byEmp[b].net-byEmp[a].net);
+    if(ids.length===0) return '';
+    let gG=0,gA=0,gD=0,gN=0;
+    const rows=ids.map(id=>{ const e=byEmp[id]; gG+=e.gross;gA+=e.addTotal;gD+=e.dedTotal;gN+=e.net;
+      return `<tr><td>${esc(empName(id))}</td><td class="num">${e.days.size}</td><td class="num">${money(e.gross)}</td><td class="num">${e.addTotal?money(e.addTotal):'-'}</td><td class="num">${e.dedTotal?money(e.dedTotal):'-'}</td><td class="num">${money(e.net)}</td></tr>`;
+    }).join('');
+    return `<h2 class="sec">員工薪資總表（${rangeTxt}）</h2>
+      <table><thead><tr><th>員工</th><th class="num">出勤天</th><th class="num">出工薪資</th><th class="num">加項</th><th class="num">扣項</th><th class="num">實發</th></tr></thead>
+      <tbody>${rows}<tr class="total-row"><td>合計</td><td class="num"></td><td class="num">${money(gG)}</td><td class="num">${money(gA)}</td><td class="num">${money(gD)}</td><td class="num">${money(gN)}</td></tr></tbody></table>`;
+  }
+  if(key==='advances'){
+    const partners=state.employees.filter(e=>e.partner);
+    const byEmp=buildPayroll(from,to);
+    if(partners.length===0) return '';
+    const rows=partners.map(p=>{
+      const wage=byEmp[p.id]?byEmp[p.id].gross:0;
+      const adv=state.advances.filter(a=>a.empId===p.id&&inRange(a.date)).reduce((s,a)=>s+(Number(a.amount)||0),0);
+      return `<tr><td>${esc(p.name)}</td><td class="num">${money(wage)}</td><td class="num">${money(adv)}</td><td class="num" style="font-weight:700">${money(wage+adv)}</td></tr>`;
+    }).join('');
+    return `<h2 class="sec">代墊款明細（${rangeTxt}）</h2>
+      <table><thead><tr><th>股東</th><th class="num">工資</th><th class="num">代墊款</th><th class="num">應領</th></tr></thead><tbody>${rows}</tbody></table>`;
+  }
+  if(key==='ledger'){
+    const txs=state.ledger.filter(t=>inRange(t.date)).sort((a,b)=>a.date.localeCompare(b.date));
+    if(txs.length===0) return '';
+    let tin=0,tout=0;
+    const rows=txs.map(t=>{ tin+=t.kind==='in'?(Number(t.amount)||0):0; tout+=t.kind==='out'?(Number(t.amount)||0):0;
+      return `<tr><td>${esc(t.date)}</td><td>${esc(accountName(t.accId))}</td><td>${esc(t.note||'')}</td><td class="num">${t.kind==='in'?money(t.amount):'-'}</td><td class="num">${t.kind==='out'?money(t.amount):'-'}</td></tr>`;
+    }).join('');
+    return `<h2 class="sec">公積金帳戶收支（${rangeTxt}）</h2>
+      <table><thead><tr><th>日期</th><th>帳戶</th><th>項目</th><th class="num">收入</th><th class="num">支出</th></tr></thead>
+      <tbody>${rows}<tr class="total-row"><td colspan="3">合計</td><td class="num">${money(tin)}</td><td class="num">${money(tout)}</td></tr></tbody></table>`;
+  }
+  if(key==='billing'){
+    if(state.billings.length===0) return '';
+    const groups={}; state.billings.forEach(b=>{ const k=b.site||'（未填）'; (groups[k]=groups[k]||[]).push(b); });
+    let GB=0,GS=0; const rows=Object.keys(groups).sort().map(name=>{
+      const list=groups[name]; const billed=list.reduce((s,b)=>s+(Number(b.amount)||0),0); const settled=list.filter(b=>b.settled).reduce((s,b)=>s+(Number(b.amount)||0),0);
+      GB+=billed; GS+=settled;
+      return `<tr><td>${esc(name)}</td><td class="num">${money(billed)}</td><td class="num">${money(settled)}</td><td class="num">${money(billed-settled)}</td></tr>`;
+    }).join('');
+    return `<h2 class="sec">請款追蹤明細（累計至今）</h2>
+      <table><thead><tr><th>案場</th><th class="num">已請款</th><th class="num">已結算</th><th class="num">未結算</th></tr></thead>
+      <tbody>${rows}<tr class="total-row"><td>合計</td><td class="num">${money(GB)}</td><td class="num">${money(GS)}</td><td class="num">${money(GB-GS)}</td></tr></tbody></table>`;
+  }
+  if(key==='deals'){
+    if(state.deals.length===0) return '';
+    let gP=0,gB=0,gF=0;
+    const rows=[...state.deals].sort((a,b)=>(b.date||'').localeCompare(a.date||'')).map(d=>{ const c=dealCalc(d); gP+=c.profit;gB+=c.bonus;gF+=c.fund;
+      return `<tr><td>${esc(d.name)}</td><td class="num">${money(d.amount)}</td><td class="num">${money(d.cost)}</td><td class="num">${money(d.tax)}</td><td class="num">${money(c.profit)}</td><td class="num">${money(c.bonus)}</td><td class="num">${money(c.fund)}</td></tr>`;
+    }).join('');
+    return `<h2 class="sec">分潤結算明細（累計至今）</h2>
+      <table><thead><tr><th>案場</th><th class="num">金額</th><th class="num">成本</th><th class="num">稅金</th><th class="num">淨利</th><th class="num">獎金</th><th class="num">公積金</th></tr></thead>
+      <tbody>${rows}<tr class="total-row"><td>合計</td><td class="num"></td><td class="num"></td><td class="num"></td><td class="num">${money(gP)}</td><td class="num">${money(gB)}</td><td class="num">${money(gF)}</td></tr></tbody></table>`;
+  }
+  if(key==='sites'){
+    const comp=computeRecords(state.attendance); const bySite={};
+    state.sites.forEach(s=>{ bySite[s.id]={hours:0,wage:0,allow:0,total:0,opening:Number(s.opening)||0,name:s.name}; });
+    state.attendance.forEach(r=>{ const c=comp[r.id]; if(!c)return; const s=bySite[r.siteId]=bySite[r.siteId]||{hours:0,wage:0,allow:0,total:0,opening:0,name:siteName(r.siteId)};
+      s.hours+=Number(r.hours)||0; s.wage+=c.wage; s.allow+=c.allow; s.total+=c.total; });
+    const ids=Object.keys(bySite); if(ids.length===0) return '';
+    ids.forEach(id=>bySite[id].grand=bySite[id].total+bySite[id].opening);
+    const grand=ids.reduce((s,id)=>s+bySite[id].grand,0); ids.sort((a,b)=>bySite[b].grand-bySite[a].grand);
+    const rows=ids.map(id=>{ const s=bySite[id]; return `<tr><td>${esc(s.name||siteName(id))}</td><td class="num">${money(s.opening)}</td><td class="num">${money(s.wage)}</td><td class="num">${money(s.allow)}</td><td class="num" style="font-weight:700">${money(s.grand)}</td></tr>`; }).join('');
+    return `<h2 class="sec">案場成本明細（累計至今）</h2>
+      <table><thead><tr><th>案場</th><th class="num">期初</th><th class="num">系統工資</th><th class="num">津貼</th><th class="num">總成本</th></tr></thead>
+      <tbody>${rows}<tr class="total-row"><td>合計</td><td class="num"></td><td class="num"></td><td class="num"></td><td class="num">${money(grand)}</td></tr></tbody></table>`;
+  }
+  return '';
+}
+function exportRecon(){
+  const picked=RECON_ITEMS.map(([k])=>k).filter(k=>reconPick[k]);
+  const sections=picked.map(k=>reconSection(k,reconFrom,reconTo)).filter(Boolean);
+  if(sections.length===0){ alert('勾選的項目目前都沒有可匯出的資料'); return; }
+  const range=(reconFrom||reconTo)?`${reconFrom||'起始'} ～ ${reconTo||'迄今'}`:'全部期間';
+  const inner=`<h1>對帳彙總</h1>
+    <div class="meta">可套期間明細區間：${range}　|　列印日：${new Date().toISOString().slice(0,10)}</div>
+    ${sections.join('<div style="height:18px"></div>')}`;
+  printHTML('對帳彙總', inner);
+}
+
+document.getElementById('cloud-refresh').onclick=()=>loadCloud();
+
+loadLocal(); render(); loadCloud();
+</script>
+</body>
+</html>
