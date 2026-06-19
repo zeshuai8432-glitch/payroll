@@ -113,7 +113,7 @@ const LS = 'pm_data_v2';
 const CLOUD_URL = 'https://script.google.com/macros/s/AKfycbyMPs38UNzAwX3bcD2n9nQBz0HofUW9qFweSOnmoySs8VW2bJYHn47RdyZLQ8bD8SNWTg/exec';
 let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], tools:[], locations:[], assets:[], advances:[], accounts:[], ledger:[], deals:[], billings:[], contracts:{}, tab:'entry' };
 let cloudStatus='連線中…';
-let entryDate='', entrySite=''; // 登記出工：記住上次選的日期與案場
+let entryDate='', entrySite='', entryEmp=''; // 登記出工：記住上次選的日期、案場、員工
 let entryOpenDates={}, entryEditId=null; // 出工紀錄分組收合狀態與正在編輯的紀錄
 
 const round = n => Math.round(n);
@@ -210,7 +210,7 @@ function computeRecords(records){
 function tabsBar(){
   const groups=[
     ['薪資作業',[['entry','登記出工'],['payroll','員工薪資']]],
-    ['財務管理',[['loans','借支管理'],['tools','工具管理'],['advances','代墊款'],['accounts','公積金帳戶'],['deals','分潤結算'],['billing','請款追蹤'],['recon','對帳匯出']]],
+    ['財務管理',[['loans','借支管理'],['tools','工具管理'],['advances','代墊款'],['accounts','公積金帳戶'],['deals','分潤結算'],['billing','請款追蹤'],['yearend','年度總結'],['recon','對帳匯出']]],
     ['設定',[['sites','案場成本'],['manage','員工/案場']]],
   ];
   return groups.map(([label,items])=>`
@@ -222,7 +222,7 @@ function tabsBar(){
 function render(){
   document.getElementById('sidebar').innerHTML=tabsBar();
   const body=document.getElementById('body');
-  body.innerHTML = state.tab==='entry'?viewEntry():state.tab==='payroll'?viewPayroll():state.tab==='sites'?viewSites():state.tab==='loans'?viewLoans():state.tab==='tools'?viewTools():state.tab==='advances'?viewAdvances():state.tab==='accounts'?viewAccounts():state.tab==='deals'?viewDeals():state.tab==='billing'?viewBilling():state.tab==='recon'?viewRecon():viewManage();
+  body.innerHTML = state.tab==='entry'?viewEntry():state.tab==='payroll'?viewPayroll():state.tab==='sites'?viewSites():state.tab==='loans'?viewLoans():state.tab==='tools'?viewTools():state.tab==='advances'?viewAdvances():state.tab==='accounts'?viewAccounts():state.tab==='deals'?viewDeals():state.tab==='billing'?viewBilling():state.tab==='yearend'?viewYearEnd():state.tab==='recon'?viewRecon():viewManage();
   bind();
 }
 
@@ -271,7 +271,7 @@ function viewEntry(){
       const c=comp[r.id]||{wage:0,allow:0,total:0};
       const editing=(entryEditId===r.id);
       const hoursCell=editing
-        ? `<span class="inline"><input type="number" id="edit-hours" value="${r.hours}" min="0" max="24" step="0.5" style="width:80px;height:30px"><span style="font-size:11px;color:var(--muted)">時</span><button class="act" id="edit-ok" data-editok="${r.id}">✓</button><button class="act muted" id="edit-cancel" style="cursor:pointer">✕</button></span>`
+        ? `<span class="inline"><input type="number" id="edit-hours" value="${r.hours}" min="0" max="24" step="1" style="width:80px;height:30px"><span style="font-size:11px;color:var(--muted)">時</span><button class="act" id="edit-ok" data-editok="${r.id}">✓</button><button class="act muted" id="edit-cancel" style="cursor:pointer">✕</button></span>`
         : `${gongH(r.hours)} <button class="act" data-edithours="${r.id}" style="font-size:12px">改</button>`;
       return `<tr>
         <td>${esc(siteName(r.siteId))}</td>
@@ -294,7 +294,7 @@ function viewEntry(){
         <tbody>${rows}</tbody></table></div>`:''}
     </div>`;
   }).join('');
-  const empOptsSel=activeEmps.map(e=>`<option value="${e.id}">${esc(e.name)}（日薪 ${e.daily}）</option>`).join('');
+  const empOptsSel=activeEmps.map(e=>`<option value="${e.id}" ${e.id===entryEmp?'selected':''}>${esc(e.name)}（日薪 ${e.daily}）</option>`).join('');
   const siteOptsSel=state.sites.map(s=>`<option value="${s.id}" ${s.id===curSite?'selected':''}>${esc(s.name)}</option>`).join('');
   return `
   <div class="card">
@@ -304,7 +304,7 @@ function viewEntry(){
       <div class="field"><label>日期</label><input type="date" id="f-date" value="${curDate}"></div>
       <div class="field"><label>員工</label><select id="f-emp">${empOptsSel}</select></div>
       <div class="field"><label>案場</label><select id="f-site">${siteOptsSel}</select></div>
-      <div class="field"><label>工時（小時）</label><input type="number" id="f-hours" min="0" max="24" step="0.5" value="8" style="width:110px"></div>
+      <div class="field"><label>工時（小時，整數）</label><input type="number" id="f-hours" min="0" max="24" step="1" value="8" style="width:110px"></div>
       <div class="field"><label>過夜外宿</label><div style="height:36px;display:flex;align-items:center"><input type="checkbox" id="f-night"></div></div>
       <button class="btn" id="f-add">＋ 新增</button>
     </div>
@@ -597,8 +597,9 @@ function bind(){
 
   const gotoM=document.getElementById('goto-manage'); if(gotoM) gotoM.onclick=()=>{ state.tab='manage'; render(); };
 
-  const fDate=document.getElementById('f-date'); if(fDate) fDate.onchange=()=>{ entryDate=fDate.value; render(); };
-  const fSite=document.getElementById('f-site'); if(fSite) fSite.onchange=()=>{ entrySite=fSite.value; render(); };
+  const fDate=document.getElementById('f-date'); if(fDate) fDate.onchange=()=>{ entryDate=fDate.value; const fe=document.getElementById('f-emp'); if(fe) entryEmp=fe.value; render(); };
+  const fSite=document.getElementById('f-site'); if(fSite) fSite.onchange=()=>{ entrySite=fSite.value; const fe=document.getElementById('f-emp'); if(fe) entryEmp=fe.value; render(); };
+  const fEmp=document.getElementById('f-emp'); if(fEmp) fEmp.onchange=()=>{ entryEmp=fEmp.value; };
 
   const add=document.getElementById('f-add');
   if(add) add.onclick=()=>{
@@ -609,6 +610,7 @@ function bind(){
     const night=document.getElementById('f-night').checked;
     const emp=state.employees.find(e=>e.id===empId);
     if(!date||!empId||!siteId||isNaN(hours)||!emp) return;
+    if(!Number.isInteger(hours)){ alert('工時請輸入整數小時（例如 8、9），不接受小數。'); return; }
     // 防呆：同人同日是否已登記
     const sameDay=state.attendance.filter(r=>r.empId===empId&&r.date===date);
     if(sameDay.length>0){
@@ -623,8 +625,8 @@ function bind(){
       if(!confirm(msg)) return;
     }
     state.attendance.push({id:uid(),date,empId,siteId,hours,night,dailyRate:emp.daily});
-    // 保留日期與案場，方便連續登記
-    entryDate=date; entrySite=siteId;
+    // 保留日期與案場（員工不保留，登記後清空方便接著選下一個人）
+    entryDate=date; entrySite=siteId; entryEmp='';
     saveData(); render();
   };
   document.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>{ state.attendance=state.attendance.filter(r=>r.id!==b.dataset.del); saveData(); render(); });
@@ -885,12 +887,12 @@ function bind(){
     const date=document.getElementById('d-date').value;
     const amount=parseFloat(document.getElementById('d-amount').value);
     const cost=parseFloat(document.getElementById('d-cost').value);
-    const tax=parseFloat(document.getElementById('d-tax').value);
+    const taxPct=parseFloat(document.getElementById('d-taxpct').value);
     const scheme=document.getElementById('d-scheme').value;
     const ownerId=document.getElementById('d-owner').value;
     const owner=document.getElementById('d-client').value.trim();
     if(!name||isNaN(amount)){ alert('請填案場名稱與請款金額'); return; }
-    state.deals.push({id:uid(),name,type,date,amount,cost:isNaN(cost)?0:cost,tax:isNaN(tax)?0:tax,scheme,ownerId,owner,posted:false});
+    state.deals.push({id:uid(),name,type,date,amount,cost:isNaN(cost)?0:cost,taxPct:isNaN(taxPct)?0:taxPct,scheme,ownerId,owner,posted:false});
     saveData(); render();
   };
   document.querySelectorAll('[data-deldeal]').forEach(b=>b.onclick=()=>{
@@ -950,6 +952,11 @@ function bind(){
   const rcl=document.getElementById('recon-clear'); if(rcl) rcl.onclick=()=>{ reconFrom=''; reconTo=''; render(); };
   document.querySelectorAll('[data-reconpick]').forEach(cb=>cb.onchange=()=>{ reconPick[cb.dataset.reconpick]=cb.checked; render(); });
   const rex=document.getElementById('recon-export'); if(rex) rex.onclick=()=>exportRecon();
+
+  // 年度總結
+  const yf=document.getElementById('ye-from'); if(yf) yf.onchange=()=>{ yearFrom=yf.value; render(); };
+  const yt=document.getElementById('ye-to'); if(yt) yt.onchange=()=>{ yearTo=yt.value; render(); };
+  const yc=document.getElementById('ye-clear'); if(yc) yc.onclick=()=>{ yearFrom=''; yearTo=''; render(); };
 }
 
 // ---- PDF 匯出（以列印視窗產生，可存成 PDF 或直接列印）----
@@ -1059,9 +1066,9 @@ function exportDealsPDF(){
   let gA=0,gC=0,gT=0,gP=0,gB=0,gF=0;
   const rows=[...state.deals].sort((a,b)=>(b.date||'').localeCompare(a.date||'')).map(d=>{
     const c=dealCalc(d); const sc=SCHEMES[d.scheme]||SCHEMES['new'];
-    gA+=Number(d.amount)||0; gC+=Number(d.cost)||0; gT+=Number(d.tax)||0; gP+=c.profit; gB+=c.bonus; gF+=c.fund;
+    gA+=Number(d.amount)||0; gC+=Number(d.cost)||0; gT+=c.tax; gP+=c.profit; gB+=c.bonus; gF+=c.fund;
     return `<tr><td>${esc(d.name)}<br><span style="font-size:10px;color:#777">${d.type||'代工'}·${sc.label.split('（')[0]}·${esc(d.ownerId?empName(d.ownerId):'—')}${d.posted?'·已結帳':''}</span></td>
-      <td class="num">${money(d.amount)}</td><td class="num">${money(d.cost)}</td><td class="num">${money(d.tax)}</td>
+      <td class="num">${money(d.amount)}</td><td class="num">${money(d.cost)}</td><td class="num">${money(c.tax)}</td>
       <td class="num">${money(c.profit)}</td><td class="num">${money(c.bonus)}</td><td class="num">${money(c.fund)}</td></tr>`;
   }).join('');
   const inner=`<h1>案場損益及分潤結算明細</h1>
@@ -1503,13 +1510,16 @@ const SCHEMES={
   'old':{label:'舊制 0/100（全進公積金）', bonus:0, fund:1.00},
 };
 function dealCalc(d){
-  const amount=Number(d.amount)||0, cost=Number(d.cost)||0, tax=Number(d.tax)||0;
+  const amount=Number(d.amount)||0, cost=Number(d.cost)||0;
+  // 稅金：優先用稅率%（taxPct），沒有才用舊的固定金額 tax
+  let tax;
+  if(d.taxPct!==undefined && d.taxPct!=='' && d.taxPct!==null) tax=amount*(Number(d.taxPct)||0)/100;
+  else tax=Number(d.tax)||0;
   const profit=amount-cost-tax;
   const sc=SCHEMES[d.scheme]||SCHEMES['new'];
-  // 虧損時獎金為0、虧損全進公積金
   const bonus=profit>0?profit*sc.bonus:0;
   const fund=profit-bonus;
-  return {profit,bonus,fund};
+  return {profit,bonus,fund,tax};
 }
 let dealPosting=null; // 正在選帳戶入帳的 deal id
 
@@ -1537,13 +1547,13 @@ function viewDeals(){
     } else if(dealPosting===d.id){
       action=`<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center"><span class="sub" style="margin:0">公積金 ${money(c.fund)} 入哪個帳戶？</span>${state.accounts.map(a=>`<button class="act" data-dealpick="${d.id}::${a.id}" style="border:1px solid var(--accent);border-radius:6px;padding:2px 10px;color:var(--accent)">${esc(a.name)}</button>`).join('')}<button class="act muted" data-dealcancel="1" style="cursor:pointer">取消</button></div>`;
     } else {
-      action=`<button class="act" data-postdeal="${d.id}" style="border:1px solid var(--accent);border-radius:6px;padding:2px 10px;color:var(--accent)">結帳入帳 →</button>`;
+      action=`<button class="act" data-postdeal="${d.id}" style="border:1px solid var(--accent);border-radius:6px;padding:2px 10px;color:var(--accent)">入公積金帳戶 →</button>`;
     }
     return `<tr>
       <td>${esc(d.name)}<div style="font-size:11px;color:var(--muted)">${d.type||'代工'}·${sc.label.split('（')[0]}·${esc(d.ownerId?empName(d.ownerId):'—')}${d.owner?'｜業主'+esc(d.owner):''}</div></td>
       <td class="num">${money(d.amount)}</td>
       <td class="num">${money(d.cost)}</td>
-      <td class="num">${money(d.tax)}</td>
+      <td class="num">${money(c.tax)}${d.taxPct!==undefined&&d.taxPct!==''?`<div style="font-size:10px;color:var(--muted)">${d.taxPct}%</div>`:''}</td>
       <td class="num" style="font-weight:600;color:${c.profit<0?'var(--danger)':'var(--ink)'}">${money(c.profit)}</td>
       <td class="num" style="color:var(--accent)">${money(c.bonus)}</td>
       <td class="num">${money(c.fund)}</td>
@@ -1558,7 +1568,7 @@ function viewDeals(){
   </div>
   <div class="card">
     <div style="font-size:14px;font-weight:600;margin-bottom:4px">新增案場損益</div>
-    <p class="sub">填請款金額、工資/成本、發票稅金，選制度與負責人。淨利＝金額−成本−稅金；依制度拆成負責人獎金與公積金。虧損時獎金為0、虧損全由公積金吸收。算好後按「結帳入帳」才會把公積金記進帳戶、獎金計入累計。</p>
+    <p class="sub">填請款金額、工資/成本、發票稅率(%)，選制度與負責人。稅金＝金額×稅率%；淨利＝金額−成本−稅金；依制度拆成負責人獎金與公積金。虧損時獎金為0、虧損全由公積金吸收。<b>分潤只算帳面，按「入帳」才把公積金記進帳戶（錢真的進公積金時再按；若錢先進別的帳戶，先別按）。</b></p>
     <div class="row">
       <div class="field" style="flex:1;min-width:160px"><label>案場名稱</label><input id="d-name" placeholder="例：義享影城"></div>
       <div class="field"><label>類型</label><select id="d-type"><option>代工</option><option>分潤/代料</option></select></div>
@@ -1567,7 +1577,7 @@ function viewDeals(){
     <div class="row" style="margin-top:8px">
       <div class="field"><label>請款金額</label><input type="number" id="d-amount" min="0" step="1000" style="width:130px"></div>
       <div class="field"><label>工資/成本</label><input type="number" id="d-cost" min="0" step="1000" style="width:130px"></div>
-      <div class="field"><label>發票稅金</label><input type="number" id="d-tax" min="0" step="100" value="0" style="width:120px"></div>
+      <div class="field"><label>發票稅率(%)</label><input type="number" id="d-taxpct" min="0" step="0.1" value="0" style="width:110px"></div>
       <div class="field"><label>制度</label><select id="d-scheme">${schemeOpts}</select></div>
       <div class="field"><label>負責人</label><select id="d-owner"><option value="">（未指定）</option>${partnerOpts}</select></div>
       <div class="field" style="flex:1;min-width:120px"><label>業主（選填）</label><input id="d-client" placeholder="品佑、廣昕…"></div>
@@ -1748,7 +1758,7 @@ function reconSection(key, from, to){
     if(state.deals.length===0) return '';
     let gP=0,gB=0,gF=0;
     const rows=[...state.deals].sort((a,b)=>(b.date||'').localeCompare(a.date||'')).map(d=>{ const c=dealCalc(d); gP+=c.profit;gB+=c.bonus;gF+=c.fund;
-      return `<tr><td>${esc(d.name)}</td><td class="num">${money(d.amount)}</td><td class="num">${money(d.cost)}</td><td class="num">${money(d.tax)}</td><td class="num">${money(c.profit)}</td><td class="num">${money(c.bonus)}</td><td class="num">${money(c.fund)}</td></tr>`;
+      return `<tr><td>${esc(d.name)}</td><td class="num">${money(d.amount)}</td><td class="num">${money(d.cost)}</td><td class="num">${money(c.tax)}</td><td class="num">${money(c.profit)}</td><td class="num">${money(c.bonus)}</td><td class="num">${money(c.fund)}</td></tr>`;
     }).join('');
     return `<h2 class="sec">分潤結算明細（累計至今）</h2>
       <table><thead><tr><th>案場</th><th class="num">金額</th><th class="num">成本</th><th class="num">稅金</th><th class="num">淨利</th><th class="num">獎金</th><th class="num">公積金</th></tr></thead>
@@ -1781,6 +1791,55 @@ function exportRecon(){
 }
 
 document.getElementById('cloud-refresh').onclick=()=>loadCloud();
+
+// ---- 年度總結 ----
+let yearFrom='', yearTo='';
+function viewYearEnd(){
+  const inRange=d=> (!yearFrom||d>=yearFrom) && (!yearTo||d<=yearTo);
+  const partners=state.employees.filter(e=>e.partner);
+  let bookFund=0, postedFund=0; const bonusByP={};
+  state.deals.filter(d=>inRange(d.date)).forEach(d=>{ const c=dealCalc(d);
+    bookFund+=c.fund;
+    if(d.posted) postedFund+=c.fund;
+    if(d.ownerId) bonusByP[d.ownerId]=(bonusByP[d.ownerId]||0)+c.bonus;
+  });
+  const notYetIn=bookFund-postedFund;
+  const accRows=state.accounts.map(a=>`<tr><td>${esc(a.name)}</td><td class="num" style="font-weight:600">${money(accountBalance(a.id))}</td></tr>`).join('');
+  const totalAcc=state.accounts.reduce((s,a)=>s+accountBalance(a.id),0);
+  const partnerRows=partners.map(p=>{
+    const bonus=bonusByP[p.id]||0;
+    const loanLeft=state.loans.filter(l=>l.empId===p.id).reduce((s,l)=>s+loanBalance(l),0);
+    return `<tr><td>${esc(p.name)}</td><td class="num" style="color:var(--accent)">${money(bonus)}</td><td class="num">${loanLeft>0?money(loanLeft):'—'}</td></tr>`;
+  }).join('');
+  const dateInputs=`<div class="row" style="margin-bottom:12px">
+    <div class="field"><label>起（依分潤日期）</label><input type="date" id="ye-from" value="${yearFrom}"></div>
+    <div class="field"><label>訖</label><input type="date" id="ye-to" value="${yearTo}"></div>
+    <button class="act" id="ye-clear" style="height:36px;border:1px solid var(--line2);border-radius:8px;padding:0 12px">全部</button>
+  </div>`;
+  return `
+  <div class="card">
+    <div style="font-size:14px;font-weight:600;margin-bottom:4px">年度總結</div>
+    <p class="sub">把「帳面上公積金該累積多少（從分潤結算來，不論是否已入帳）」對照「實際各帳戶的錢」，看出年底要怎麼把錢結清。可選分潤日期區間（例如某一年度）。</p>
+    ${dateInputs}
+  </div>
+  <div class="metrics">
+    <div class="metric"><div class="l">帳面公積金（分潤累計）</div><div class="v" style="font-size:19px">${money(bookFund)}</div></div>
+    <div class="metric"><div class="l">已入帳公積金</div><div class="v" style="font-size:19px;color:var(--accent)">${money(postedFund)}</div></div>
+    <div class="metric" style="background:${notYetIn>0?'var(--warn-bg)':'var(--bg)'}"><div class="l" style="${notYetIn>0?'color:var(--warn-ink)':''}">尚未入帳（待結清）</div><div class="v" style="font-size:19px;${notYetIn>0?'color:var(--warn-ink)':''}">${money(notYetIn)}</div></div>
+  </div>
+  <div class="card">
+    <div style="font-size:14px;font-weight:600;margin-bottom:4px">公積金結清說明</div>
+    <p class="sub">「帳面公積金」是所有案場分潤後該進公積金的總和。「已入帳」是你實際按過「入公積金帳戶」的部分。兩者的差 <b>${money(notYetIn)}</b> 就是<b>還沒撥進公積金的錢</b>——可能還躺在廣昕、品佑等帳戶裡。年底結清時，從那些帳戶把這筆撥進公積金帳戶、並在分潤頁按「入公積金帳戶」補登，帳面與實際就對平了。</p>
+  </div>
+  <div class="card">
+    <div style="font-size:14px;font-weight:600;margin-bottom:8px">各帳戶實際餘額</div>
+    ${accRows===''?'<div class="empty">尚無帳戶。</div>':`<table><thead><tr><th>帳戶</th><th class="num">目前餘額</th></tr></thead><tbody>${accRows}<tr class="total-row" style="font-weight:600"><td>合計</td><td class="num">${money(totalAcc)}</td></tr></tbody></table>`}
+  </div>
+  <div class="card">
+    <div style="font-size:14px;font-weight:600;margin-bottom:8px">各股東年度概覽</div>
+    ${partnerRows===''?'<div class="empty">尚未標記股東。</div>':`<table><thead><tr><th>股東</th><th class="num">年度總獎金（分潤）</th><th class="num">借支未還</th></tr></thead><tbody>${partnerRows}</tbody></table>`}
+  </div>`;
+}
 
 loadLocal(); render(); loadCloud();
 </script>
