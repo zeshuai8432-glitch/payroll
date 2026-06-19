@@ -588,7 +588,7 @@ function bind(){
     state.adjustments.push({id:uid(),date,empId,kind,label,amount,note});
     saveData(); render();
   };
-  document.querySelectorAll('[data-deladj]').forEach(b=>b.onclick=()=>{ state.adjustments=state.adjustments.filter(a=>a.id!==b.dataset.deladj); saveData(); render(); });
+  document.querySelectorAll('[data-deladj]').forEach(b=>b.onclick=()=>{ if(!confirm('確定刪除這筆加扣項？')) return; state.adjustments=state.adjustments.filter(a=>a.id!==b.dataset.deladj); saveData(); render(); });
   const es=document.getElementById('export-summary'); if(es) es.onclick=()=>exportSummaryPDF();
   const ed=document.getElementById('export-deals'); if(ed) ed.onclick=()=>exportDealsPDF();
   const eb=document.getElementById('export-billing'); if(eb) eb.onclick=()=>exportBillingPDF();
@@ -629,7 +629,7 @@ function bind(){
     entryDate=date; entrySite=siteId; entryEmp='';
     saveData(); render();
   };
-  document.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>{ state.attendance=state.attendance.filter(r=>r.id!==b.dataset.del); saveData(); render(); });
+  document.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>{ const r=state.attendance.find(x=>x.id===b.dataset.del); if(!confirm(`確定刪除這筆出工？\n${r?esc(r.date)+'・'+empName(r.empId)+'・'+siteName(r.siteId):''}`)) return; state.attendance=state.attendance.filter(r=>r.id!==b.dataset.del); saveData(); render(); });
   document.querySelectorAll('[data-togglegroup]').forEach(b=>b.onclick=()=>{
     const dk=b.dataset.togglegroup;
     const cur=entryOpenDates[dk];
@@ -663,7 +663,7 @@ function bind(){
   });
   document.querySelectorAll('[data-toggle]').forEach(b=>b.onclick=()=>{ const e=state.employees.find(x=>x.id===b.dataset.toggle); if(e){ e.active=!e.active; saveData(); render(); } });
   document.querySelectorAll('[data-partner]').forEach(b=>b.onclick=()=>{ const e=state.employees.find(x=>x.id===b.dataset.partner); if(e){ e.partner=!e.partner; saveData(); render(); } });
-  document.querySelectorAll('[data-delemp]').forEach(b=>b.onclick=()=>{ state.employees=state.employees.filter(e=>e.id!==b.dataset.delemp); saveData(); render(); });
+  document.querySelectorAll('[data-delemp]').forEach(b=>b.onclick=()=>{ const e=state.employees.find(x=>x.id===b.dataset.delemp); if(!confirm(`確定刪除員工「${e?esc(e.name):''}」？`)) return; state.employees=state.employees.filter(e=>e.id!==b.dataset.delemp); saveData(); render(); });
   document.querySelectorAll('[data-renemp]').forEach(b=>b.onclick=()=>{
     const e=state.employees.find(x=>x.id===b.dataset.renemp); if(!e)return;
     const cell=b.closest('td');
@@ -675,7 +675,7 @@ function bind(){
 
   const sa=document.getElementById('s-add');
   if(sa) sa.onclick=()=>{ const name=document.getElementById('s-name').value.trim(); if(!name)return; state.sites.push({id:uid(),name}); saveData(); render(); };
-  document.querySelectorAll('[data-delsite]').forEach(b=>b.onclick=()=>{ state.sites=state.sites.filter(s=>s.id!==b.dataset.delsite); saveData(); render(); });
+  document.querySelectorAll('[data-delsite]').forEach(b=>b.onclick=()=>{ const s=state.sites.find(x=>x.id===b.dataset.delsite); if(!confirm(`確定刪除案場「${s?esc(s.name):''}」？`)) return; state.sites=state.sites.filter(s=>s.id!==b.dataset.delsite); saveData(); render(); });
   document.querySelectorAll('[data-opening]').forEach(inp=>inp.onchange=()=>{
     const s=state.sites.find(x=>x.id===inp.dataset.opening); if(!s) return;
     const v=parseFloat(inp.value);
@@ -787,6 +787,7 @@ function bind(){
     a.locKey=sel.value; saveData(); render();
   });
   document.querySelectorAll('[data-delasset]').forEach(b=>b.onclick=()=>{
+    const a=state.assets.find(x=>x.id===b.dataset.delasset); if(!confirm(`確定刪除工具「${a?esc(a.name):''}」？`)) return;
     state.assets=state.assets.filter(a=>a.id!==b.dataset.delasset); saveData(); render();
   });
 
@@ -799,6 +800,7 @@ function bind(){
     state.locations.push({id:uid(),name,kind}); saveData(); render();
   };
   document.querySelectorAll('[data-delloc]').forEach(b=>b.onclick=()=>{
+    const l=state.locations.find(x=>x.id===b.dataset.delloc); if(!confirm(`確定刪除地點「${l?esc(l.name):''}」？`)) return;
     state.locations=state.locations.filter(l=>l.id!==b.dataset.delloc); saveData(); render();
   });
 
@@ -818,6 +820,7 @@ function bind(){
     saveData(); render();
   };
   document.querySelectorAll('[data-deladv]').forEach(b=>b.onclick=()=>{
+    if(!confirm('確定刪除這筆代墊款？')) return;
     state.advances=state.advances.filter(a=>a.id!==b.dataset.deladv); saveData(); render();
   });
   document.querySelectorAll('[data-postadv]').forEach(b=>b.onclick=()=>{ advPosting=b.dataset.postadv; render(); });
@@ -848,6 +851,7 @@ function bind(){
     saveData(); render();
   };
   document.querySelectorAll('[data-delacc]').forEach(b=>b.onclick=()=>{
+    const a=state.accounts.find(x=>x.id===b.dataset.delacc); if(!confirm(`確定刪除帳戶「${a?esc(a.name):''}」？`)) return;
     state.accounts=state.accounts.filter(a=>a.id!==b.dataset.delacc); saveData(); render();
   });
   document.querySelectorAll('[data-editopen]').forEach(b=>b.onclick=()=>{
@@ -870,6 +874,10 @@ function bind(){
     saveData(); render();
   };
   document.querySelectorAll('[data-delledger]').forEach(b=>b.onclick=()=>{
+    const t=state.ledger.find(x=>x.id===b.dataset.delledger);
+    if(t&&t.fromDeal){ alert('這筆是分潤結算入帳產生的，請到「分潤結算」按該案場的「撤銷」來移除，以免帳對不上。'); return; }
+    if(t&&t.fromAdvance){ alert('這筆是代墊款入帳產生的，請到「代墊款」按該股東的「撤銷入帳」來移除。'); return; }
+    if(!confirm('確定刪除這筆收支？')) return;
     state.ledger=state.ledger.filter(t=>t.id!==b.dataset.delledger); saveData(); render();
   });
   const ledFilter=document.getElementById('led-filter');
@@ -897,11 +905,30 @@ function bind(){
   };
   document.querySelectorAll('[data-deldeal]').forEach(b=>b.onclick=()=>{
     const d=state.deals.find(x=>x.id===b.dataset.deldeal);
-    if(d&&d.posted&&!confirm('此案場已結帳入帳，刪除會一併移除帳戶裡的公積金收入。確定刪除？')) return;
+    const msg=d&&d.posted?'此案場已入帳，刪除會一併移除帳戶裡的公積金收入。確定刪除？':`確定刪除案場損益「${d?esc(d.name):''}」？`;
+    if(!confirm(msg)) return;
     state.ledger=state.ledger.filter(t=>t.fromDeal!==b.dataset.deldeal);
     state.deals=state.deals.filter(x=>x.id!==b.dataset.deldeal); saveData(); render();
   });
   document.querySelectorAll('[data-postdeal]').forEach(b=>b.onclick=()=>{ dealPosting=b.dataset.postdeal; render(); });
+  document.querySelectorAll('[data-dealedit]').forEach(b=>b.onclick=()=>{ dealEditId=b.dataset.dealedit; render(); });
+  document.querySelectorAll('[data-dealeditcancel]').forEach(b=>b.onclick=()=>{ dealEditId=null; render(); });
+  document.querySelectorAll('[data-dealeditok]').forEach(b=>b.onclick=()=>{
+    const d=state.deals.find(x=>x.id===b.dataset.dealeditok); if(!d) return;
+    const name=document.getElementById('de-name').value.trim();
+    const amount=parseFloat(document.getElementById('de-amount').value);
+    if(!name||isNaN(amount)){ alert('請填案場名稱與請款金額'); return; }
+    d.name=name;
+    d.type=document.getElementById('de-type').value;
+    d.date=document.getElementById('de-date').value;
+    d.amount=amount;
+    const cost=parseFloat(document.getElementById('de-cost').value); d.cost=isNaN(cost)?0:cost;
+    const tp=parseFloat(document.getElementById('de-taxpct').value); d.taxPct=isNaN(tp)?0:tp;
+    d.scheme=document.getElementById('de-scheme').value;
+    d.ownerId=document.getElementById('de-owner').value;
+    d.owner=document.getElementById('de-client').value.trim();
+    dealEditId=null; saveData(); render();
+  });
   document.querySelectorAll('[data-dealcancel]').forEach(b=>b.onclick=()=>{ dealPosting=null; render(); });
   document.querySelectorAll('[data-dealpick]').forEach(b=>b.onclick=()=>{
     const [did,accId]=b.dataset.dealpick.split('::');
@@ -937,6 +964,7 @@ function bind(){
     const bill=state.billings.find(x=>x.id===b.dataset.togglesettle); if(bill){ bill.settled=!bill.settled; saveData(); render(); }
   });
   document.querySelectorAll('[data-delbill]').forEach(b=>b.onclick=()=>{
+    if(!confirm('確定刪除這筆請款？')) return;
     state.billings=state.billings.filter(x=>x.id!==b.dataset.delbill); saveData(); render();
   });
   document.querySelectorAll('[data-contract]').forEach(inp=>inp.onchange=()=>{
@@ -1521,7 +1549,7 @@ function dealCalc(d){
   const fund=profit-bonus;
   return {profit,bonus,fund,tax};
 }
-let dealPosting=null; // 正在選帳戶入帳的 deal id
+let dealPosting=null, dealEditId=null; // 入帳/編輯中的 deal
 
 function viewDeals(){
   const partners=state.employees.filter(e=>e.partner);
@@ -1549,6 +1577,27 @@ function viewDeals(){
     } else {
       action=`<button class="act" data-postdeal="${d.id}" style="border:1px solid var(--accent);border-radius:6px;padding:2px 10px;color:var(--accent)">入公積金帳戶 →</button>`;
     }
+    // 編輯模式：未入帳才可編輯
+    if(dealEditId===d.id && !d.posted){
+      return `<tr><td colspan="8" style="background:var(--bg)">
+        <div class="row" style="margin:6px 0">
+          <div class="field" style="flex:1;min-width:140px"><label>案場名稱</label><input id="de-name" value="${esc(d.name)}"></div>
+          <div class="field"><label>類型</label><select id="de-type"><option ${d.type==='代工'?'selected':''}>代工</option><option ${d.type==='分潤/代料'?'selected':''}>分潤/代料</option></select></div>
+          <div class="field"><label>日期</label><input type="date" id="de-date" value="${d.date||''}"></div>
+        </div>
+        <div class="row" style="margin-bottom:6px">
+          <div class="field"><label>請款金額</label><input type="number" id="de-amount" value="${d.amount||0}" step="1000" style="width:120px"></div>
+          <div class="field"><label>工資/成本</label><input type="number" id="de-cost" value="${d.cost||0}" step="1000" style="width:120px"></div>
+          <div class="field"><label>稅率(%)</label><input type="number" id="de-taxpct" value="${d.taxPct!==undefined?d.taxPct:0}" step="0.1" style="width:90px"></div>
+          <div class="field"><label>制度</label><select id="de-scheme">${Object.entries(SCHEMES).map(([k,v])=>`<option value="${k}" ${d.scheme===k?'selected':''}>${v.label}</option>`).join('')}</select></div>
+          <div class="field"><label>負責人</label><select id="de-owner"><option value="">（未指定）</option>${partners.map(p=>`<option value="${p.id}" ${d.ownerId===p.id?'selected':''}>${esc(p.name)}</option>`).join('')}</select></div>
+          <div class="field" style="flex:1;min-width:110px"><label>業主</label><input id="de-client" value="${esc(d.owner||'')}"></div>
+          <button class="btn" data-dealeditok="${d.id}">儲存</button>
+          <button class="act muted" data-dealeditcancel="1" style="cursor:pointer;height:36px">取消</button>
+        </div>
+      </td></tr>`;
+    }
+    const editBtn=(!d.posted)?`<button class="act" data-dealedit="${d.id}">編輯</button> `:'';
     return `<tr>
       <td>${esc(d.name)}<div style="font-size:11px;color:var(--muted)">${d.type||'代工'}·${sc.label.split('（')[0]}·${esc(d.ownerId?empName(d.ownerId):'—')}${d.owner?'｜業主'+esc(d.owner):''}</div></td>
       <td class="num">${money(d.amount)}</td>
@@ -1557,7 +1606,7 @@ function viewDeals(){
       <td class="num" style="font-weight:600;color:${c.profit<0?'var(--danger)':'var(--ink)'}">${money(c.profit)}</td>
       <td class="num" style="color:var(--accent)">${money(c.bonus)}</td>
       <td class="num">${money(c.fund)}</td>
-      <td>${action} <button class="act danger" data-deldeal="${d.id}">刪</button></td>
+      <td>${editBtn}${action} <button class="act danger" data-deldeal="${d.id}">刪</button></td>
     </tr>`;
   }).join('');
 
