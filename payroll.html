@@ -114,9 +114,29 @@ const CLOUD_URL = 'https://script.google.com/macros/s/AKfycbyMPs38UNzAwX3bcD2n9n
 let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], tools:[], locations:[], assets:[], advances:[], accounts:[], ledger:[], deals:[], billings:[], contracts:{}, tab:'entry' };
 let cloudStatus='連線中…';
 let entryDate='', entrySite=''; // 登記出工：記住上次選的日期與案場
+let entryOpenDates={}, entryEditId=null; // 出工紀錄分組收合狀態與正在編輯的紀錄
 
 const round = n => Math.round(n);
 const money = n => '$' + round(n).toLocaleString();
+// 工數顯示：工數 = 工時÷8，用分數符號。例：9h → 1⅛ 工
+const FRAC8={1:'⅛',2:'¼',3:'⅜',4:'½',5:'⅝',6:'¾',7:'⅞'};
+function gongStr(hours){
+  const h=Number(hours)||0;
+  if(h===0) return '0 工';
+  const whole=Math.floor(h/8);
+  const rem=h-whole*8;
+  let frac='';
+  if(rem>0){
+    if(Number.isInteger(rem)&&FRAC8[rem]) frac=FRAC8[rem];
+    else frac=(rem/8).toString().replace(/^0/,'');
+  }
+  let s;
+  if(whole>0&&frac) s=`${whole}${frac}`;
+  else if(whole>0) s=`${whole}`;
+  else s=frac||'0';
+  return `${s} 工`;
+}
+function gongH(hours){ const h=Number(hours)||0; return `${gongStr(h)}<span style="color:var(--muted);font-size:11px">(${Math.round(h*10)/10}h)</span>`; }
 const esc = s => String(s==null?'':s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2,7);
 const empName = id => { const e=state.employees.find(x=>x.id===id); return e?e.name:'（已移除）'; };
@@ -229,24 +249,50 @@ function viewEntry(){
   if(curSite){
     const done=state.attendance.filter(r=>r.date===curDate&&r.siteId===curSite);
     if(done.length>0){
-      const names=done.map(r=>`${esc(empName(r.empId))}${r.hours?`(${r.hours}h)`:''}`).join('、');
+      const names=done.map(r=>`${esc(empName(r.empId))}${r.hours?`(${gongStr(r.hours)})`:''}`).join('、');
       todayNote=`<div class="sub" style="margin:8px 0 0;padding:8px 10px;background:var(--bg);border-radius:8px">📋 ${esc(siteName(curSite))}・${esc(curDate)} 已登記 ${done.length} 位：${names}</div>`;
     } else {
       todayNote=`<div class="sub" style="margin:8px 0 0">📋 ${esc(siteName(curSite))}・${esc(curDate)} 尚無人登記。</div>`;
     }
   }
   const comp=computeRecords(state.attendance);
-  const sorted=[...state.attendance].sort((a,b)=>b.date.localeCompare(a.date)||a.empId.localeCompare(b.empId));
-  const rows=sorted.slice(0,100).map(r=>{
-    const c=comp[r.id]||{wage:0,allow:0,total:0};
-    return `<tr>
-      <td>${esc(r.date)}</td><td>${esc(empName(r.empId))}</td><td>${esc(siteName(r.siteId))}</td>
-      <td class="num">${r.hours}</td><td class="num">${r.night?'<span class="moon">●夜</span>':'—'}</td>
-      <td class="num">${money(c.wage)}</td>
-      <td class="num">${c.allow>0?money(c.allow):'—'}</td>
-      <td class="num" style="font-weight:600">${money(c.total)}</td>
-      <td><button class="act danger" data-del="${r.id}">刪</button></td>
-    </tr>`;
+  // 依日期分組（新到舊）
+  const byDate={};
+  state.attendance.forEach(r=>{ (byDate[r.date]=byDate[r.date]||[]).push(r); });
+  const dateKeys=Object.keys(byDate).sort((a,b)=>b.localeCompare(a));
+  const WD=['日','一','二','三','四','五','六'];
+  const groupsHtml=dateKeys.map((dk,idx)=>{
+    const list=byDate[dk].sort((a,b)=>(siteName(a.siteId)).localeCompare(siteName(b.siteId)));
+    const dayHours=list.reduce((s,r)=>s+(Number(r.hours)||0),0);
+    const dayTotal=list.reduce((s,r)=>s+((comp[r.id]||{}).total||0),0);
+    const wd=WD[new Date(dk+'T00:00:00').getDay()];
+    const open=(entryOpenDates[dk]!==undefined)?entryOpenDates[dk]:(idx<2); // 預設展開最近2天
+    const rows=list.map(r=>{
+      const c=comp[r.id]||{wage:0,allow:0,total:0};
+      const editing=(entryEditId===r.id);
+      const hoursCell=editing
+        ? `<span class="inline"><input type="number" id="edit-hours" value="${r.hours}" min="0" max="24" step="0.5" style="width:80px;height:30px"><span style="font-size:11px;color:var(--muted)">時</span><button class="act" id="edit-ok" data-editok="${r.id}">✓</button><button class="act muted" id="edit-cancel" style="cursor:pointer">✕</button></span>`
+        : `${gongH(r.hours)} <button class="act" data-edithours="${r.id}" style="font-size:12px">改</button>`;
+      return `<tr>
+        <td>${esc(siteName(r.siteId))}</td>
+        <td>${esc(empName(r.empId))}</td>
+        <td class="num">${hoursCell}</td>
+        <td class="num">${r.night?'<span class="moon">●夜</span>':'—'}</td>
+        <td class="num">${money(c.wage)}</td>
+        <td class="num">${c.allow>0?money(c.allow):'—'}</td>
+        <td class="num" style="font-weight:600">${money(c.total)}</td>
+        <td><button class="act danger" data-del="${r.id}">刪</button></td>
+      </tr>`;
+    }).join('');
+    return `<div style="margin-bottom:10px;border:1px solid var(--line);border-radius:8px;overflow:hidden">
+      <div data-togglegroup="${dk}" style="cursor:pointer;background:var(--bg);padding:10px 12px;display:flex;justify-content:space-between;align-items:center">
+        <div style="font-weight:600;font-size:14px">${open?'▼':'▶'} ${esc(dk)}（週${wd}）</div>
+        <div class="sub" style="margin:0">${list.length} 人 · ${gongStr(dayHours)} · ${money(dayTotal)}</div>
+      </div>
+      ${open?`<div class="scroll"><table>
+        <thead><tr><th>案場</th><th>員工</th><th class="num">工數</th><th class="num">過夜</th><th class="num">工資</th><th class="num">津貼</th><th class="num">小計</th><th></th></tr></thead>
+        <tbody>${rows}</tbody></table></div>`:''}
+    </div>`;
   }).join('');
   const empOptsSel=activeEmps.map(e=>`<option value="${e.id}">${esc(e.name)}（日薪 ${e.daily}）</option>`).join('');
   const siteOptsSel=state.sites.map(s=>`<option value="${s.id}" ${s.id===curSite?'selected':''}>${esc(s.name)}</option>`).join('');
@@ -265,11 +311,8 @@ function viewEntry(){
     ${todayNote}`}
   </div>
   <div class="card">
-    <div style="font-size:14px;font-weight:600;margin-bottom:8px">出工紀錄 ${state.attendance.length>100?'<span style="color:var(--muted);font-size:12px">（顯示最近 100 筆）</span>':''}</div>
-    ${state.attendance.length===0?'<div class="empty">尚無出工紀錄。</div>':`
-    <div class="scroll"><table>
-      <thead><tr><th>日期</th><th>員工</th><th>案場</th><th class="num">工時</th><th class="num">過夜</th><th class="num">工資</th><th class="num">津貼</th><th class="num">小計</th><th></th></tr></thead>
-      <tbody>${rows}</tbody></table></div>`}
+    <div style="font-size:14px;font-weight:600;margin-bottom:8px">出工紀錄（依日期分組，點日期可收合）</div>
+    ${state.attendance.length===0?'<div class="empty">尚無出工紀錄。</div>':groupsHtml}
   </div>`;
 }
 
@@ -338,14 +381,14 @@ function viewPayroll(){
   const rowFor=(id,partner)=>{ const e=byEmp[id]; const emp=state.employees.find(x=>x.id===id);
     if(partner){
       return `<tr style="color:var(--muted)"><td>${esc(empName(id))}<span class="tag" style="background:#e3efe9;color:var(--accent)">股東·走代墊款</span></td>
-        <td class="num">${e.days.size}</td><td class="num">${Math.round(e.hours*10)/10}</td>
+        <td class="num">${e.days.size}</td><td class="num">${gongStr(e.hours)}</td>
         <td class="num">${money(e.gross)}</td>
         <td class="num" colspan="2" style="text-align:center;font-style:italic">由代墊款發放</td>
         <td class="num">—</td>
         <td></td></tr>`;
     }
     return `<tr><td>${esc(empName(id))}${emp&&!emp.active?'<span class="tag">已停用</span>':''}</td>
-      <td class="num">${e.days.size}</td><td class="num">${Math.round(e.hours*10)/10}</td>
+      <td class="num">${e.days.size}</td><td class="num">${gongStr(e.hours)}</td>
       <td class="num">${money(e.gross)}</td>
       <td class="num" style="color:var(--accent)">${e.addTotal?'+'+money(e.addTotal):'—'}</td>
       <td class="num" style="color:var(--danger)">${e.dedTotal?'−'+money(e.dedTotal):'—'}</td>
@@ -408,7 +451,7 @@ function viewPayroll(){
     </div>
     ${rows===''?'<div class="empty">此區間內尚無可計算的薪資。</div>':`
     <div class="scroll"><table>
-      <thead><tr><th>員工</th><th class="num">出勤天</th><th class="num">總工時</th><th class="num">出工薪資</th><th class="num">加項</th><th class="num">扣項</th><th class="num">實發金額</th><th></th></tr></thead>
+      <thead><tr><th>員工</th><th class="num">出勤天</th><th class="num">總工數</th><th class="num">出工薪資</th><th class="num">加項</th><th class="num">扣項</th><th class="num">實發金額</th><th></th></tr></thead>
       <tbody>${rows}</tbody></table></div>
     <p class="sub" style="margin:10px 0 0">實發總額與員工數只計一般員工。股東工資計入案場成本，但從「代墊款」分頁發放，不在此重複發。出工薪資＝工資＋津貼。實發＝出工薪資＋加項−扣項。</p>`}
   </div>
@@ -460,7 +503,7 @@ function viewSites(){
         <div style="font-size:15px;font-weight:600">${esc(siteName(sid))}</div>
         <div style="font-size:18px;font-weight:600">${money(s.grandTotal)}</div>
       </div>
-      <p class="sub">總工時 ${Math.round(s.hours*10)/10} 小時 · 占總人事成本 ${pct}%　|　${s.opening>0?`期初 ${money(s.opening)}・`:''}系統工資 ${money(s.wage)}・津貼 ${money(s.allow)}</p>
+      <p class="sub">總工數 ${gongStr(s.hours)} · 占總人事成本 ${pct}%　|　${s.opening>0?`期初 ${money(s.opening)}・`:''}系統工資 ${money(s.wage)}・津貼 ${money(s.allow)}</p>
       <div class="row" style="margin-bottom:6px">
         <div class="field"><label>期初人事成本（從Excel抄入，選填）</label><input type="number" data-opening="${sid}" value="${s.opening||''}" placeholder="未設定" min="0" step="1000" style="width:170px"></div>
       </div>
@@ -585,6 +628,21 @@ function bind(){
     saveData(); render();
   };
   document.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>{ state.attendance=state.attendance.filter(r=>r.id!==b.dataset.del); saveData(); render(); });
+  document.querySelectorAll('[data-togglegroup]').forEach(b=>b.onclick=()=>{
+    const dk=b.dataset.togglegroup;
+    const cur=entryOpenDates[dk];
+    // 預設最近2天是展開的；第一次點要能正確切換，所以以目前顯示狀態為準
+    const isOpen=b.textContent.trim().startsWith('▼');
+    entryOpenDates[dk]=!isOpen; render();
+  });
+  document.querySelectorAll('[data-edithours]').forEach(b=>b.onclick=()=>{ entryEditId=b.dataset.edithours; render(); });
+  document.querySelectorAll('[data-editok]').forEach(b=>b.onclick=()=>{
+    const r=state.attendance.find(x=>x.id===b.dataset.editok); if(!r) return;
+    const v=parseFloat(document.getElementById('edit-hours').value);
+    if(!isNaN(v)&&v>=0){ r.hours=v; saveData(); }
+    entryEditId=null; render();
+  });
+  const ecancel=document.getElementById('edit-cancel'); if(ecancel) ecancel.onclick=()=>{ entryEditId=null; render(); };
 
   const ea=document.getElementById('e-add');
   if(ea) ea.onclick=()=>{
@@ -919,13 +977,13 @@ function exportSummaryPDF(){
   if(ids.length===0) return;
   let gG=0,gA=0,gD=0,gN=0;
   const rows=ids.map(id=>{ const e=byEmp[id]; gG+=e.gross;gA+=e.addTotal;gD+=e.dedTotal;gN+=e.net;
-    return `<tr><td>${esc(empName(id))}</td><td class="num">${e.days.size}</td><td class="num">${Math.round(e.hours*10)/10}</td>
+    return `<tr><td>${esc(empName(id))}</td><td class="num">${e.days.size}</td><td class="num">${gongStr(e.hours)}</td>
       <td class="num">${money(e.gross)}</td><td class="num">${e.addTotal?money(e.addTotal):'-'}</td>
       <td class="num">${e.dedTotal?money(e.dedTotal):'-'}</td><td class="num">${money(e.net)}</td></tr>`;
   }).join('');
   const inner=`<h1>薪資總表</h1>
     <div class="meta">計薪期間：${state.payFrom||'起始'} ～ ${state.payTo||'迄今'}　|　列印日期：${new Date().toISOString().slice(0,10)}　|　共 ${ids.length} 人</div>
-    <table><thead><tr><th>員工</th><th class="num">出勤天</th><th class="num">總工時</th><th class="num">出工薪資</th><th class="num">加項</th><th class="num">扣項</th><th class="num">實發金額</th></tr></thead>
+    <table><thead><tr><th>員工</th><th class="num">出勤天</th><th class="num">總工數</th><th class="num">出工薪資</th><th class="num">加項</th><th class="num">扣項</th><th class="num">實發金額</th></tr></thead>
     <tbody>${rows}
       <tr class="total-row"><td>合計</td><td class="num"></td><td class="num"></td><td class="num">${money(gG)}</td><td class="num">${money(gA)}</td><td class="num">${money(gD)}</td><td class="num">${money(gN)}</td></tr>
     </tbody></table>
@@ -943,13 +1001,13 @@ function exportPayslipPDF(empId){
   const comp=computeRecords(state.attendance);
   const myRecs=state.attendance.filter(r=>r.empId===empId&&inRange(r.date)).sort((a,b)=>a.date.localeCompare(b.date));
   const recRows=myRecs.map(r=>{ const c=comp[r.id]||{wage:0,allow:0,total:0};
-    return `<tr><td>${esc(r.date)}</td><td>${esc(siteName(r.siteId))}</td><td class="num">${r.hours}</td><td class="num">${r.night?'是':'-'}</td>
+    return `<tr><td>${esc(r.date)}</td><td>${esc(siteName(r.siteId))}</td><td class="num">${gongStr(r.hours)}</td><td class="num">${r.night?'是':'-'}</td>
       <td class="num">${money(c.wage)}</td><td class="num">${c.allow>0?money(c.allow):'-'}</td></tr>`;
   }).join('');
   const inner=`<h1>薪資明細單</h1>
-    <div class="meta">員工：${esc(empName(empId))}　|　計薪期間：${state.payFrom||'起始'} ～ ${state.payTo||'迄今'}　|　出勤 ${e.days.size} 天 / ${Math.round(e.hours*10)/10} 小時</div>
+    <div class="meta">員工：${esc(empName(empId))}　|　計薪期間：${state.payFrom||'起始'} ～ ${state.payTo||'迄今'}　|　出勤 ${e.days.size} 天 / ${gongStr(e.hours)}</div>
     <div class="sec">一、出工明細</div>
-    <table><thead><tr><th>日期</th><th>案場</th><th class="num">工時</th><th class="num">過夜</th><th class="num">工資</th><th class="num">津貼</th></tr></thead>
+    <table><thead><tr><th>日期</th><th>案場</th><th class="num">工數</th><th class="num">過夜</th><th class="num">工資</th><th class="num">津貼</th></tr></thead>
     <tbody>${recRows||'<tr><td colspan="6">本期無出工</td></tr>'}
       <tr class="total-row"><td colspan="4">出工薪資小計</td><td class="num">${money(e.wage)}</td><td class="num">${money(e.allow)}</td></tr>
     </tbody></table>
@@ -1056,11 +1114,11 @@ function exportSitesPDF(){
   const grand=ids.reduce((s,id)=>s+bySite[id].grand,0);
   ids.sort((a,b)=>bySite[b].grand-bySite[a].grand);
   const rows=ids.map(id=>{ const s=bySite[id];
-    return `<tr><td>${esc(s.name||siteName(id))}</td><td class="num">${Math.round(s.hours*10)/10}</td><td class="num">${money(s.opening)}</td><td class="num">${money(s.wage)}</td><td class="num">${money(s.allow)}</td><td class="num" style="font-weight:700">${money(s.grand)}</td></tr>`;
+    return `<tr><td>${esc(s.name||siteName(id))}</td><td class="num">${gongStr(s.hours)}</td><td class="num">${money(s.opening)}</td><td class="num">${money(s.wage)}</td><td class="num">${money(s.allow)}</td><td class="num" style="font-weight:700">${money(s.grand)}</td></tr>`;
   }).join('');
   const inner=`<h1>案場人事成本明細</h1>
     <div class="meta">列印日：${new Date().toISOString().slice(0,10)}　|　總人事成本 ${money(grand)}</div>
-    <table><thead><tr><th>案場</th><th class="num">系統工時</th><th class="num">期初成本</th><th class="num">系統工資</th><th class="num">津貼</th><th class="num">總成本</th></tr></thead>
+    <table><thead><tr><th>案場</th><th class="num">系統工數</th><th class="num">期初成本</th><th class="num">系統工資</th><th class="num">津貼</th><th class="num">總成本</th></tr></thead>
     <tbody>${rows}
       <tr class="total-row"><td>合計</td><td class="num"></td><td class="num"></td><td class="num"></td><td class="num"></td><td class="num">${money(grand)}</td></tr>
     </tbody></table>
