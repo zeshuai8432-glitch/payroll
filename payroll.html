@@ -113,6 +113,7 @@ const LS = 'pm_data_v2';
 const CLOUD_URL = 'https://script.google.com/macros/s/AKfycbyMPs38UNzAwX3bcD2n9nQBz0HofUW9qFweSOnmoySs8VW2bJYHn47RdyZLQ8bD8SNWTg/exec';
 let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], tools:[], locations:[], assets:[], advances:[], accounts:[], ledger:[], deals:[], billings:[], contracts:{}, tab:'entry' };
 let cloudStatus='連線中…';
+let entryDate='', entrySite=''; // 登記出工：記住上次選的日期與案場
 
 const round = n => Math.round(n);
 const money = n => '$' + round(n).toLocaleString();
@@ -221,6 +222,19 @@ function viewEntry(){
     </div>`;
   }
   const today=new Date().toISOString().slice(0,10);
+  const curDate=entryDate||today;
+  const curSite=entrySite|| (state.sites[0]?state.sites[0].id:'');
+  // 今天(所選日期)這個案場已登記哪幾位
+  let todayNote='';
+  if(curSite){
+    const done=state.attendance.filter(r=>r.date===curDate&&r.siteId===curSite);
+    if(done.length>0){
+      const names=done.map(r=>`${esc(empName(r.empId))}${r.hours?`(${r.hours}h)`:''}`).join('、');
+      todayNote=`<div class="sub" style="margin:8px 0 0;padding:8px 10px;background:var(--bg);border-radius:8px">📋 ${esc(siteName(curSite))}・${esc(curDate)} 已登記 ${done.length} 位：${names}</div>`;
+    } else {
+      todayNote=`<div class="sub" style="margin:8px 0 0">📋 ${esc(siteName(curSite))}・${esc(curDate)} 尚無人登記。</div>`;
+    }
+  }
   const comp=computeRecords(state.attendance);
   const sorted=[...state.attendance].sort((a,b)=>b.date.localeCompare(a.date)||a.empId.localeCompare(b.empId));
   const rows=sorted.slice(0,100).map(r=>{
@@ -234,18 +248,21 @@ function viewEntry(){
       <td><button class="act danger" data-del="${r.id}">刪</button></td>
     </tr>`;
   }).join('');
+  const empOptsSel=activeEmps.map(e=>`<option value="${e.id}">${esc(e.name)}（日薪 ${e.daily}）</option>`).join('');
+  const siteOptsSel=state.sites.map(s=>`<option value="${s.id}" ${s.id===curSite?'selected':''}>${esc(s.name)}</option>`).join('');
   return `
   <div class="card">
-    <p class="sub">登記一筆出工。系統會把員工「當下的日薪」鎖在這筆紀錄裡，之後調薪不會更動到舊紀錄。同一人同一天跑多案場就分開登記多筆。</p>
+    <p class="sub">登記一筆出工。日期與案場會保留，方便連續登記同案場多人。同一人同一天跑多案場就分開登記多筆。</p>
     ${noSetup?setupMsg:`
     <div class="row">
-      <div class="field"><label>日期</label><input type="date" id="f-date" value="${today}"></div>
-      <div class="field"><label>員工</label><select id="f-emp">${empOpts}</select></div>
-      <div class="field"><label>案場</label><select id="f-site">${siteOpts}</select></div>
+      <div class="field"><label>日期</label><input type="date" id="f-date" value="${curDate}"></div>
+      <div class="field"><label>員工</label><select id="f-emp">${empOptsSel}</select></div>
+      <div class="field"><label>案場</label><select id="f-site">${siteOptsSel}</select></div>
       <div class="field"><label>工時（小時）</label><input type="number" id="f-hours" min="0" max="24" step="0.5" value="8" style="width:110px"></div>
       <div class="field"><label>過夜外宿</label><div style="height:36px;display:flex;align-items:center"><input type="checkbox" id="f-night"></div></div>
       <button class="btn" id="f-add">＋ 新增</button>
-    </div>`}
+    </div>
+    ${todayNote}`}
   </div>
   <div class="card">
     <div style="font-size:14px;font-weight:600;margin-bottom:8px">出工紀錄 ${state.attendance.length>100?'<span style="color:var(--muted);font-size:12px">（顯示最近 100 筆）</span>':''}</div>
@@ -537,6 +554,9 @@ function bind(){
 
   const gotoM=document.getElementById('goto-manage'); if(gotoM) gotoM.onclick=()=>{ state.tab='manage'; render(); };
 
+  const fDate=document.getElementById('f-date'); if(fDate) fDate.onchange=()=>{ entryDate=fDate.value; render(); };
+  const fSite=document.getElementById('f-site'); if(fSite) fSite.onchange=()=>{ entrySite=fSite.value; render(); };
+
   const add=document.getElementById('f-add');
   if(add) add.onclick=()=>{
     const date=document.getElementById('f-date').value;
@@ -546,7 +566,22 @@ function bind(){
     const night=document.getElementById('f-night').checked;
     const emp=state.employees.find(e=>e.id===empId);
     if(!date||!empId||!siteId||isNaN(hours)||!emp) return;
+    // 防呆：同人同日是否已登記
+    const sameDay=state.attendance.filter(r=>r.empId===empId&&r.date===date);
+    if(sameDay.length>0){
+      const sameSite=sameDay.find(r=>r.siteId===siteId);
+      let msg;
+      if(sameSite){
+        msg=`${emp.name} 在 ${date} 的「${siteName(siteId)}」已經登記過 ${sameSite.hours} 小時了。\n\n這很可能是重複登記。確定還要再記一筆嗎？`;
+      } else {
+        const where=sameDay.map(r=>`${siteName(r.siteId)} ${r.hours}h`).join('、');
+        msg=`${emp.name} 在 ${date} 已經登記過：${where}。\n\n如果他今天還跑了「${siteName(siteId)}」這個案場，可以繼續；否則請取消。\n\n確定要再記一筆嗎？`;
+      }
+      if(!confirm(msg)) return;
+    }
     state.attendance.push({id:uid(),date,empId,siteId,hours,night,dailyRate:emp.daily});
+    // 保留日期與案場，方便連續登記
+    entryDate=date; entrySite=siteId;
     saveData(); render();
   };
   document.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>{ state.attendance=state.attendance.filter(r=>r.id!==b.dataset.del); saveData(); render(); });
