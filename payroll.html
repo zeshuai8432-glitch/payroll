@@ -1420,7 +1420,7 @@ function viewAdvances(){
   <div class="card">
     <div style="font-size:14px;font-weight:600;margin-bottom:4px">新增代墊款</div>
     <div class="row">
-      <div class="field"><label>日期</label><input type="date" id="adv-date" value="${advTo}"></div>
+      <div class="field"><label>日期</label><input type="date" id="adv-date" value="${new Date().toISOString().slice(0,10)}"></div>
       <div class="field"><label>股東</label><select id="adv-emp">${partnerOpts}</select></div>
       <div class="field"><label>金額</label><input type="number" id="adv-amount" min="0" step="100" style="width:120px"></div>
       <div class="field" style="flex:1;min-width:200px"><label>用途說明</label><input id="adv-purpose" placeholder="例：酷擊五金材料、Hilti租金、台北住宿"></div>
@@ -1719,7 +1719,7 @@ function viewBilling(){
 }
 
 // ---- 對帳匯出 ----
-let reconFrom='', reconTo='', reconPick={payroll:true,advances:true,ledger:true,deals:true,billing:true,sites:true};
+let reconFrom='', reconTo='', reconPick={payroll:true,advances:true,ledger:true,deals:true,billing:true,sites:true,yearend:true};
 const RECON_ITEMS=[
   ['payroll','員工薪資總表','可套期間'],
   ['advances','代墊款明細','可套期間'],
@@ -1727,6 +1727,7 @@ const RECON_ITEMS=[
   ['billing','請款追蹤明細','累計至今'],
   ['deals','分潤結算明細','累計至今'],
   ['sites','案場成本明細','累計至今'],
+  ['yearend','年度總結','可套期間'],
 ];
 function viewRecon(){
   const checks=RECON_ITEMS.map(([k,label,tag])=>`
@@ -1825,6 +1826,25 @@ function reconSection(key, from, to){
     return `<h2 class="sec">案場成本明細（累計至今）</h2>
       <table><thead><tr><th>案場</th><th class="num">期初</th><th class="num">系統工資</th><th class="num">津貼</th><th class="num">總成本</th></tr></thead>
       <tbody>${rows}<tr class="total-row"><td>合計</td><td class="num"></td><td class="num"></td><td class="num"></td><td class="num">${money(grand)}</td></tr></tbody></table>`;
+  }
+  if(key==='yearend'){
+    let bookFund=0, postedFund=0; const bonusByP={};
+    state.deals.filter(d=>inRange(d.date)).forEach(d=>{ const c=dealCalc(d); bookFund+=c.fund; if(d.posted) postedFund+=c.fund; if(d.ownerId) bonusByP[d.ownerId]=(bonusByP[d.ownerId]||0)+c.bonus; });
+    const notYetIn=bookFund-postedFund;
+    const accRows=state.accounts.map(a=>`<tr><td>${esc(a.name)}</td><td class="num">${money(accountBalance(a.id))}</td></tr>`).join('');
+    const totalAcc=state.accounts.reduce((s,a)=>s+accountBalance(a.id),0);
+    const partners=state.employees.filter(e=>e.partner);
+    const pRows=partners.map(p=>`<tr><td>${esc(p.name)}</td><td class="num">${money(bonusByP[p.id]||0)}</td></tr>`).join('');
+    return `<h2 class="sec">年度總結（${rangeTxt}）</h2>
+      <table><tbody>
+        <tr><td>帳面公積金（分潤累計）</td><td class="num">${money(bookFund)}</td></tr>
+        <tr><td>已入帳公積金</td><td class="num">${money(postedFund)}</td></tr>
+        <tr class="total-row"><td>尚未入帳（待結清）</td><td class="num">${money(notYetIn)}</td></tr>
+      </tbody></table>
+      <div class="sec" style="font-size:12px">各帳戶實際餘額</div>
+      <table><thead><tr><th>帳戶</th><th class="num">餘額</th></tr></thead><tbody>${accRows}<tr class="total-row"><td>合計</td><td class="num">${money(totalAcc)}</td></tr></tbody></table>
+      <div class="sec" style="font-size:12px">各股東年度總獎金</div>
+      <table><thead><tr><th>股東</th><th class="num">總獎金</th></tr></thead><tbody>${pRows}</tbody></table>`;
   }
   return '';
 }
