@@ -899,8 +899,9 @@ function bind(){
     const scheme=document.getElementById('d-scheme').value;
     const ownerId=document.getElementById('d-owner').value;
     const owner=document.getElementById('d-client').value.trim();
+    const moneyAcc=document.getElementById('d-acc').value;
     if(!name||isNaN(amount)){ alert('請填案場名稱與請款金額'); return; }
-    state.deals.push({id:uid(),name,type,date,amount,cost:isNaN(cost)?0:cost,taxPct:isNaN(taxPct)?0:taxPct,scheme,ownerId,owner,posted:false});
+    state.deals.push({id:uid(),name,type,date,amount,cost:isNaN(cost)?0:cost,taxPct:isNaN(taxPct)?0:taxPct,scheme,ownerId,owner,moneyAcc,posted:false});
     saveData(); render();
   };
   document.querySelectorAll('[data-deldeal]').forEach(b=>b.onclick=()=>{
@@ -927,6 +928,7 @@ function bind(){
     d.scheme=document.getElementById('de-scheme').value;
     d.ownerId=document.getElementById('de-owner').value;
     d.owner=document.getElementById('de-client').value.trim();
+    d.moneyAcc=document.getElementById('de-acc').value;
     dealEditId=null; saveData(); render();
   });
   document.querySelectorAll('[data-dealcancel]').forEach(b=>b.onclick=()=>{ dealPosting=null; render(); });
@@ -1592,6 +1594,7 @@ function viewDeals(){
           <div class="field"><label>制度</label><select id="de-scheme">${Object.entries(SCHEMES).map(([k,v])=>`<option value="${k}" ${d.scheme===k?'selected':''}>${v.label}</option>`).join('')}</select></div>
           <div class="field"><label>負責人</label><select id="de-owner"><option value="">（未指定）</option>${partners.map(p=>`<option value="${p.id}" ${d.ownerId===p.id?'selected':''}>${esc(p.name)}</option>`).join('')}</select></div>
           <div class="field" style="flex:1;min-width:110px"><label>業主</label><input id="de-client" value="${esc(d.owner||'')}"></div>
+          <div class="field"><label>錢進哪個帳戶</label><select id="de-acc"><option value="">（未指定）</option>${state.accounts.map(a=>`<option value="${a.id}" ${d.moneyAcc===a.id?'selected':''}>${esc(a.name)}</option>`).join('')}</select></div>
           <button class="btn" data-dealeditok="${d.id}">儲存</button>
           <button class="act muted" data-dealeditcancel="1" style="cursor:pointer;height:36px">取消</button>
         </div>
@@ -1630,6 +1633,7 @@ function viewDeals(){
       <div class="field"><label>制度</label><select id="d-scheme">${schemeOpts}</select></div>
       <div class="field"><label>負責人</label><select id="d-owner"><option value="">（未指定）</option>${partnerOpts}</select></div>
       <div class="field" style="flex:1;min-width:120px"><label>業主（選填）</label><input id="d-client" placeholder="品佑、廣昕…"></div>
+      <div class="field"><label>錢進哪個帳戶（選填）</label><select id="d-acc"><option value="">（未指定）</option>${state.accounts.map(a=>`<option value="${a.id}">${esc(a.name)}</option>`).join('')}</select></div>
       <button class="btn" id="d-add">＋ 新增</button>
     </div>
   </div>
@@ -1873,6 +1877,15 @@ function viewYearEnd(){
     if(d.ownerId) bonusByP[d.ownerId]=(bonusByP[d.ownerId]||0)+c.bonus;
   });
   const notYetIn=bookFund-postedFund;
+  const unposted=state.deals.filter(d=>inRange(d.date)&&!d.posted);
+  const byAcc={};
+  unposted.forEach(d=>{ const c=dealCalc(d); const k=d.moneyAcc||''; byAcc[k]=(byAcc[k]||0)+c.fund; });
+  const accPendRows=Object.keys(byAcc).map(k=>`<tr><td>${esc(k?accountName(k):'（未指定帳戶）')}</td><td class="num" style="font-weight:600;color:var(--warn-ink)">${money(byAcc[k])}</td></tr>`).join('');
+  const unpostedRows=[...unposted].sort((a,b)=>(b.date||'').localeCompare(a.date||'')).map(d=>{ const c=dealCalc(d);
+    return `<tr><td>${esc(d.name)}<div style="font-size:11px;color:var(--muted)">${esc(d.date||'')}${d.owner?'｜業主'+esc(d.owner):''}</div></td>
+      <td class="num">${money(c.fund)}</td>
+      <td>${d.moneyAcc?esc(accountName(d.moneyAcc)):'<span style="color:var(--muted)">未指定</span>'}</td></tr>`;
+  }).join('');
   const accRows=state.accounts.map(a=>`<tr><td>${esc(a.name)}</td><td class="num" style="font-weight:600">${money(accountBalance(a.id))}</td></tr>`).join('');
   const totalAcc=state.accounts.reduce((s,a)=>s+accountBalance(a.id),0);
   const partnerRows=partners.map(p=>{
@@ -1899,6 +1912,15 @@ function viewYearEnd(){
   <div class="card">
     <div style="font-size:14px;font-weight:600;margin-bottom:4px">公積金結清說明</div>
     <p class="sub">「帳面公積金」是所有案場分潤後該進公積金的總和。「已入帳」是你實際按過「入公積金帳戶」的部分。兩者的差 <b>${money(notYetIn)}</b> 就是<b>還沒撥進公積金的錢</b>——可能還躺在廣昕、品佑等帳戶裡。年底結清時，從那些帳戶把這筆撥進公積金帳戶、並在分潤頁按「入公積金帳戶」補登，帳面與實際就對平了。</p>
+  </div>
+  <div class="card">
+    <div style="font-size:14px;font-weight:600;margin-bottom:8px">各帳戶待撥公積金（尚未入帳的分潤，依錢進的帳戶彙總）</div>
+    ${accPendRows===''?'<div class="empty">目前沒有尚未入帳的分潤。</div>':`<table><thead><tr><th>錢在哪個帳戶</th><th class="num">待撥公積金</th></tr></thead><tbody>${accPendRows}<tr class="total-row" style="font-weight:600"><td>合計</td><td class="num" style="color:var(--warn-ink)">${money(notYetIn)}</td></tr></tbody></table>
+    <p class="sub" style="margin:8px 0 0">這代表各帳戶裡「帳面上屬於公積金、但還沒撥過去」的金額。例：品佑帳戶若顯示 47,303，表示品佑帳戶裡有這筆是該撥進公積金的。年底從該帳戶撥款後，到分潤頁按「入公積金帳戶」補登即可。</p>`}
+  </div>
+  <div class="card">
+    <div style="font-size:14px;font-weight:600;margin-bottom:8px">尚未入帳分潤明細</div>
+    ${unpostedRows===''?'<div class="empty">沒有尚未入帳的分潤。</div>':`<div class="scroll"><table><thead><tr><th>案場</th><th class="num">應進公積金</th><th>錢在哪個帳戶</th></tr></thead><tbody>${unpostedRows}</tbody></table></div>`}
   </div>
   <div class="card">
     <div style="font-size:14px;font-weight:600;margin-bottom:8px">各帳戶實際餘額</div>
