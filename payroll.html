@@ -1030,11 +1030,12 @@ function bind(){
     state.ledger=state.ledger.filter(t=>t.fromDeal!==b.dataset.deldeal);
     state.deals=state.deals.filter(x=>x.id!==b.dataset.deldeal); saveData(); render();
   });
-  document.querySelectorAll('[data-postdeal]').forEach(b=>b.onclick=()=>{
-    const d=state.deals.find(x=>x.id===b.dataset.postdeal); if(!d) return;
-    const c=dealCalc(d);
-    if(!confirm(`把這筆公積金 ${money(c.fund)} 標記為「已撥款」？\n（只做記號，不會動到任何帳戶餘額）`)) return;
-    d.posted=true; saveData(); render();
+  document.querySelectorAll('[data-dealaccpick]').forEach(b=>b.onclick=()=>{ dealAccPick=b.dataset.dealaccpick; render(); });
+  document.querySelectorAll('[data-dealacccancel]').forEach(b=>b.onclick=()=>{ dealAccPick=null; render(); });
+  document.querySelectorAll('[data-dealsetacc]').forEach(b=>b.onclick=()=>{
+    const [did,accId]=b.dataset.dealsetacc.split('::');
+    const d=state.deals.find(x=>x.id===did); if(!d) return;
+    d.moneyAcc=accId||''; dealAccPick=null; saveData(); render();
   });
   document.querySelectorAll('[data-carry]').forEach(b=>b.onclick=()=>{ dealCarry=b.dataset.carry; render(); });
   document.querySelectorAll('[data-carrycancel]').forEach(b=>b.onclick=()=>{ dealCarry=null; render(); });
@@ -1370,7 +1371,7 @@ function exportDealsPDF(selectedOnly){
   const rows=list.sort((a,b)=>(b.date||'').localeCompare(a.date||'')).map(d=>{
     const c=dealCalc(d); const sc=SCHEMES[d.scheme]||SCHEMES['new'];
     gA+=Number(d.amount)||0; gC+=Number(d.cost)||0; gT+=c.tax; gP+=c.profit; gB+=c.bonus; gF+=c.fund;
-    return `<tr><td>${esc(d.name)}<br><span style="font-size:10px;color:#777">${d.type||'代工'}·${sc.label.split('（')[0]}·${esc(d.ownerId?empName(d.ownerId):'—')}${d.posted?'·已撥款':''}</span></td>
+    return `<tr><td>${esc(d.name)}<br><span style="font-size:10px;color:#777">${d.type||'代工'}·${sc.label.split('（')[0]}·${esc(d.ownerId?empName(d.ownerId):'—')}</span></td>
       <td class="num">${money(d.amount)}</td><td class="num">${money(d.cost)}</td><td class="num">${money(c.tax)}</td>
       <td class="num">${money(c.profit)}</td><td class="num">${money(c.bonus)}</td><td class="num">${money(c.fund)}</td></tr>`;
   }).join('');
@@ -1842,7 +1843,7 @@ function dealCalc(d){
   const fund=profit-bonus;
   return {profit,bonus,fund,tax,isDeal:false};
 }
-let dealPosting=null, dealEditId=null, dealCarry=null, coopCarry=null, billEditId=null; // 入帳/編輯/帶去/請款編輯中
+let dealPosting=null, dealEditId=null, dealCarry=null, coopCarry=null, billEditId=null, dealAccPick=null; // 入帳/編輯/帶去/請款編輯/選帳戶中
 let dealSel={}; // 分潤清單勾選
 let costEditId=null; // 手動成本編輯中
 
@@ -1851,9 +1852,9 @@ function viewDeals(){
   const partnerOpts=partners.map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join('');
   const schemeOpts=Object.entries(SCHEMES).map(([k,v])=>`<option value="${k}">${v.label}</option>`).join('');
 
-  // 累計（只算已入帳的）
+  // 累計（全部分潤）
   let totFund=0; const bonusByPartner={};
-  state.deals.forEach(d=>{ if(!d.posted) return; const c=dealCalc(d);
+  state.deals.forEach(d=>{ const c=dealCalc(d);
     totFund+=c.fund;
     if(d.ownerId) bonusByPartner[d.ownerId]=(bonusByPartner[d.ownerId]||0)+c.bonus;
   });
@@ -1880,10 +1881,12 @@ function viewDeals(){
       } else {
         action=`<button class="act" data-carry="${d.id}" style="border:1px solid var(--info);border-radius:6px;padding:2px 10px;color:var(--info)">帶去公司分潤 →</button>`;
       }
-    } else if(d.posted){
-      action=`<span class="tag" style="background:#e3efe9;color:var(--accent)">✓ 已撥款</span><button class="act danger" data-unpostdeal="${d.id}">取消標記</button>`;
+    } else if(dealAccPick===d.id){
+      action=`<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center"><span class="sub" style="margin:0">錢進哪個帳戶？</span>${state.accounts.map(a=>`<button class="act" data-dealsetacc="${d.id}::${a.id}" style="border:1px solid var(--accent);border-radius:6px;padding:2px 10px;color:${d.moneyAcc===a.id?'#fff':'var(--accent)'};background:${d.moneyAcc===a.id?'var(--accent)':'transparent'}">${esc(a.name)}</button>`).join('')}<button class="act" data-dealsetacc="${d.id}::" style="border:1px solid var(--line2);border-radius:6px;padding:2px 10px">未指定</button><button class="act muted" data-dealacccancel="1" style="cursor:pointer">關閉</button></div>`;
+    } else if(d.moneyAcc){
+      action=`<span class="tag" style="background:#e3efe9;color:var(--accent)">錢在 ${esc(accountName(d.moneyAcc))}</span><button class="act" data-dealaccpick="${d.id}">改帳戶</button>`;
     } else {
-      action=`<button class="act" data-postdeal="${d.id}" style="border:1px solid var(--accent);border-radius:6px;padding:2px 10px;color:var(--accent)">標記已撥款</button>`;
+      action=`<button class="act" data-dealaccpick="${d.id}" style="border:1px solid var(--accent);border-radius:6px;padding:2px 10px;color:var(--accent)">錢進哪個帳戶</button>`;
     }
     // 編輯模式：未入帳才可編輯
     if(dealEditId===d.id && !d.posted){
@@ -1914,7 +1917,7 @@ function viewDeals(){
     const col7 = isCoop ? `<td class="num" style="color:var(--muted)">業主 ${money(c.partnerShare)}</td>` : `<td class="num">${money(c.fund)}</td>`;
     return `<tr>
       <td><input type="checkbox" data-dealpick-cb="${d.id}" ${dealSel[d.id]?'checked':''} style="width:16px;height:16px"></td>
-      <td>${esc(d.name)}<div style="font-size:11px;color:var(--muted)">${typeLabel}${isCoop?'':'·'+esc(d.ownerId?empName(d.ownerId):'—')}${d.owner?'｜業主'+esc(d.owner):''}${d.moneyAcc?'｜錢在'+esc(accountName(d.moneyAcc)):''}</div></td>
+      <td>${esc(d.name)}<div style="font-size:11px;color:var(--muted)">${typeLabel}${isCoop?'':'·'+esc(d.ownerId?empName(d.ownerId):'—')}${d.owner?'｜業主'+esc(d.owner):''}</div></td>
       <td class="num">${money(d.amount)}</td>
       <td class="num">${money(d.cost)}</td>
       <td class="num">${money(c.tax)}${d.taxPct!==undefined&&d.taxPct!==''?`<div style="font-size:10px;color:var(--muted)">${d.taxPct}%</div>`:''}</td>
@@ -1990,7 +1993,7 @@ function viewDeals(){
 
   return `
   <div class="metrics">
-    <div class="metric" style="background:var(--accent);color:#fff"><div class="l" style="color:#fff;opacity:.85">已標記撥款的公積金</div><div class="v">${money(totFund)}</div></div>
+    <div class="metric" style="background:var(--accent);color:#fff"><div class="l" style="color:#fff;opacity:.85">帳面公積金累計</div><div class="v">${money(totFund)}</div></div>
     ${bonusCards}
   </div>
   ${coopSites.length?`<div class="card" style="background:#fdf6ee"><div style="font-size:14px;font-weight:600;margin-bottom:2px">合作案場（自動匯總）</div><p class="sub" style="margin:0 0 8px">每個合作案場一筆，金額=該案場總請款、成本=該案場總成本，隨請款/成本變動。管理人那半可「帶去公司分潤」再算30/70。</p></div>${coopActiveHtml}${coopPausedHtml}${coopClosedHtml}`:''}
@@ -2363,18 +2366,16 @@ let yearFrom='', yearTo='';
 function viewYearEnd(){
   const inRange=d=> (!yearFrom||d>=yearFrom) && (!yearTo||d<=yearTo);
   const partners=state.employees.filter(e=>e.partner);
-  let bookFund=0, postedFund=0; const bonusByP={};
-  state.deals.filter(d=>inRange(d.date)).forEach(d=>{ const c=dealCalc(d);
+  let bookFund=0; const bonusByP={};
+  const allDeals=state.deals.filter(d=>inRange(d.date));
+  allDeals.forEach(d=>{ const c=dealCalc(d);
     bookFund+=c.fund;
-    if(d.posted) postedFund+=c.fund;
     if(d.ownerId) bonusByP[d.ownerId]=(bonusByP[d.ownerId]||0)+c.bonus;
   });
-  const notYetIn=bookFund-postedFund;
-  const unposted=state.deals.filter(d=>inRange(d.date)&&!d.posted);
   const byAcc={};
-  unposted.forEach(d=>{ const c=dealCalc(d); const k=d.moneyAcc||''; byAcc[k]=(byAcc[k]||0)+c.fund; });
-  const accPendRows=Object.keys(byAcc).map(k=>`<tr><td>${esc(k?accountName(k):'（未指定帳戶）')}</td><td class="num" style="font-weight:600;color:var(--warn-ink)">${money(byAcc[k])}</td></tr>`).join('');
-  const unpostedRows=[...unposted].sort((a,b)=>(b.date||'').localeCompare(a.date||'')).map(d=>{ const c=dealCalc(d);
+  allDeals.forEach(d=>{ const c=dealCalc(d); const k=d.moneyAcc||''; byAcc[k]=(byAcc[k]||0)+c.fund; });
+  const accPendRows=Object.keys(byAcc).map(k=>`<tr><td>${esc(k?accountName(k):'（未指定帳戶）')}</td><td class="num" style="font-weight:600">${money(byAcc[k])}</td></tr>`).join('');
+  const unpostedRows=[...allDeals].sort((a,b)=>(b.date||'').localeCompare(a.date||'')).map(d=>{ const c=dealCalc(d);
     return `<tr><td>${esc(d.name)}<div style="font-size:11px;color:var(--muted)">${esc(d.date||'')}${d.owner?'｜業主'+esc(d.owner):''}</div></td>
       <td class="num">${money(c.fund)}</td>
       <td>${d.moneyAcc?esc(accountName(d.moneyAcc)):'<span style="color:var(--muted)">未指定</span>'}</td></tr>`;
@@ -2394,26 +2395,24 @@ function viewYearEnd(){
   return `
   <div class="card">
     <div style="font-size:14px;font-weight:600;margin-bottom:4px">年度總結</div>
-    <p class="sub">把「帳面上公積金該累積多少（從分潤結算來，不論是否已入帳）」對照「實際各帳戶的錢」，看出年底要怎麼把錢結清。可選分潤日期區間（例如某一年度）。</p>
+    <p class="sub">不管錢進哪個帳戶，把所有分潤的公積金、各股東獎金加總，看完整帳面，一個股東都不漏。可選分潤日期區間（例如某一年度）。</p>
     ${dateInputs}
   </div>
   <div class="metrics">
-    <div class="metric"><div class="l">帳面公積金（分潤累計）</div><div class="v" style="font-size:19px">${money(bookFund)}</div></div>
-    <div class="metric"><div class="l">已撥款公積金</div><div class="v" style="font-size:19px;color:var(--accent)">${money(postedFund)}</div></div>
-    <div class="metric" style="background:${notYetIn>0?'var(--warn-bg)':'var(--bg)'}"><div class="l" style="${notYetIn>0?'color:var(--warn-ink)':''}">尚未撥款（待結清）</div><div class="v" style="font-size:19px;${notYetIn>0?'color:var(--warn-ink)':''}">${money(notYetIn)}</div></div>
+    <div class="metric"><div class="l">帳面公積金（全部分潤）</div><div class="v" style="font-size:19px">${money(bookFund)}</div></div>
+    <div class="metric"><div class="l">各帳戶實際餘額合計</div><div class="v" style="font-size:19px">${money(totalAcc)}</div></div>
   </div>
   <div class="card">
-    <div style="font-size:14px;font-weight:600;margin-bottom:4px">公積金結清說明</div>
-    <p class="sub">「帳面公積金」是所有案場分潤後該進公積金的總和。「已入帳」是你實際按過「入公積金帳戶」的部分。兩者的差 <b>${money(notYetIn)}</b> 就是<b>還沒撥進公積金的錢</b>——可能還躺在廣昕、品佑等帳戶裡。年底結清時，從那些帳戶把這筆撥進公積金帳戶、並在分潤頁按「入公積金帳戶」補登，帳面與實際就對平了。</p>
+    <div style="font-size:14px;font-weight:600;margin-bottom:4px">說明</div>
+    <p class="sub">「帳面公積金」是所有案場分潤後該進公積金的總和（不管錢實際在哪個帳戶）。下面「各帳戶帳面公積金」把它依「錢進哪個帳戶」分開，讓你看出每個帳戶裡有多少是公積金。年底你再看兩個公積金帳戶（東澤、廣昕）的實際餘額，決定怎麼把公積金補足、平衡兩邊。</p>
   </div>
   <div class="card">
-    <div style="font-size:14px;font-weight:600;margin-bottom:8px">各帳戶待撥公積金（尚未撥款的分潤，依錢進的帳戶彙總）</div>
-    ${accPendRows===''?'<div class="empty">目前沒有尚未撥款的分潤。</div>':`<table><thead><tr><th>錢在哪個帳戶</th><th class="num">待撥公積金</th></tr></thead><tbody>${accPendRows}<tr class="total-row" style="font-weight:600"><td>合計</td><td class="num" style="color:var(--warn-ink)">${money(notYetIn)}</td></tr></tbody></table>
-    <p class="sub" style="margin:8px 0 0">這代表各帳戶裡「帳面上屬於公積金、但還沒撥過去」的金額。例：品佑帳戶若顯示 47,303，表示品佑帳戶裡有這筆是該撥進公積金的。年底從該帳戶撥款後，到分潤頁按「入公積金帳戶」補登即可。</p>`}
+    <div style="font-size:14px;font-weight:600;margin-bottom:8px">各帳戶帳面公積金（依錢進的帳戶分組）</div>
+    ${accPendRows===''?'<div class="empty">尚無分潤。</div>':`<table><thead><tr><th>錢在哪個帳戶</th><th class="num">帳面公積金</th></tr></thead><tbody>${accPendRows}<tr class="total-row" style="font-weight:600"><td>合計</td><td class="num">${money(bookFund)}</td></tr></tbody></table>`}
   </div>
   <div class="card">
-    <div style="font-size:14px;font-weight:600;margin-bottom:8px">尚未撥款分潤明細</div>
-    ${unpostedRows===''?'<div class="empty">沒有尚未撥款的分潤。</div>':`<div class="scroll"><table><thead><tr><th>案場</th><th class="num">應進公積金</th><th>錢在哪個帳戶</th></tr></thead><tbody>${unpostedRows}</tbody></table></div>`}
+    <div style="font-size:14px;font-weight:600;margin-bottom:8px">公積金明細（每筆分潤＋錢在哪個帳戶）</div>
+    ${unpostedRows===''?'<div class="empty">沒有分潤。</div>':`<div class="scroll"><table><thead><tr><th>案場</th><th class="num">應進公積金</th><th>錢在哪個帳戶</th></tr></thead><tbody>${unpostedRows}</tbody></table></div>`}
   </div>
   <div class="card">
     <div style="font-size:14px;font-weight:600;margin-bottom:8px">各帳戶實際餘額</div>
