@@ -495,7 +495,7 @@ function viewSites(){
   const grand=Object.values(bySite).reduce((s,x)=>s+x.grandTotal,0);
   const ids=Object.keys(bySite).sort((a,b)=>bySite[b].grandTotal-bySite[a].grandTotal);
   const payerName=who=>({dz:'潘東澤',gx:'廣昕',py:'品佑'}[who]||who||'—');
-  const cards=ids.map(sid=>{ const s=bySite[sid]; const site=state.sites.find(x=>x.id===sid); const isCoop=site&&site.coop;
+  const cardFor=(sid)=>{ const s=bySite[sid]; const site=state.sites.find(x=>x.id===sid); const isCoop=site&&site.coop;
     const empBreak=Object.entries(s.emp).sort((a,b)=>b[1]-a[1]).map(([eid,v])=>`<tr><td>${esc(empName(eid))}</td><td class="num">${money(v)}</td></tr>`).join('');
     const pct=grand>0?Math.round(s.grandTotal/grand*100):0;
     const myCosts=state.costs.filter(c=>c.siteId===sid).sort((a,b)=>(b.date||'').localeCompare(a.date||''));
@@ -526,14 +526,19 @@ function viewSites(){
         <table style="margin-top:8px"><thead><tr><th>員工</th><th class="num">金額</th></tr></thead><tbody>${empBreak}</tbody></table>
       </details>`:''}
     </div>`;
-  }).join('');
+  };
+  const isPaused=sid=>{ const st=state.sites.find(x=>x.id===sid); return st&&st.active===false; };
+  const activeIds=ids.filter(sid=>!isPaused(sid));
+  const pausedIds=ids.filter(sid=>isPaused(sid));
+  const cards=activeIds.map(cardFor).join('');
+  const pausedCards=pausedIds.length?`<details style="margin-top:10px"><summary style="cursor:pointer;font-weight:600;padding:8px 0">已暫停案場（${pausedIds.length}）</summary>${pausedIds.map(cardFor).join('')}</details>`:'';
   return `
   <div class="metrics">
-    <div class="metric"><div class="l">案場數</div><div class="v">${ids.length}</div></div>
+    <div class="metric"><div class="l">案場數</div><div class="v">${activeIds.length}${pausedIds.length?`<span style="font-size:12px;color:var(--muted)"> +${pausedIds.length}暫停</span>`:''}</div></div>
     <div class="metric"><div class="l">總成本</div><div class="v">${money(grand)}</div></div>
   </div>
   <p class="sub" style="margin:-6px 0 12px">一般案場成本＝期初＋出勤工資津貼＋手動成本；合作案場（橙色）成本＝手動成本明細加總（日期/項目/金額/誰付）。<button class="btn" id="export-sites" style="margin-left:10px" ${ids.length===0?'disabled style="opacity:.5"':''}>匯出 PDF</button></p>
-  ${cards===''?'<div class="card"><div class="empty">尚無案場成本資料。</div></div>':cards}`;
+  ${cards===''&&pausedCards===''?'<div class="card"><div class="empty">尚無案場成本資料。</div></div>':cards}${pausedCards}`;
 }
 
 function viewManage(){
@@ -1823,7 +1828,8 @@ function viewDeals(){
 
   // 合作案場：自動匯總（一案一筆，可結案收合）
   const coopSites=state.sites.filter(s=>s.coop);
-  const activeCoop=coopSites.filter(s=>!s.coopClosed);
+  const activeCoop=coopSites.filter(s=>!s.coopClosed && s.active!==false);
+  const pausedCoop=coopSites.filter(s=>!s.coopClosed && s.active===false);
   const closedCoop=coopSites.filter(s=>s.coopClosed);
   const coopCard=(s)=>{
     const c=coopSiteCalc(s);
@@ -1868,14 +1874,15 @@ function viewDeals(){
     </div>`;
   };
   const coopActiveHtml=activeCoop.map(coopCard).join('');
-  const coopClosedHtml=closedCoop.length?`<details><summary>已結案的合作案場（${closedCoop.length}）</summary>${closedCoop.map(coopCard).join('')}</details>`:'';
+  const coopPausedHtml=pausedCoop.length?`<details><summary style="cursor:pointer;font-weight:600;padding:8px 0">已暫停的合作案場（${pausedCoop.length}）</summary>${pausedCoop.map(coopCard).join('')}</details>`:'';
+  const coopClosedHtml=closedCoop.length?`<details><summary style="cursor:pointer;font-weight:600;padding:8px 0">已結案的合作案場（${closedCoop.length}）</summary>${closedCoop.map(coopCard).join('')}</details>`:'';
 
   return `
   <div class="metrics">
     <div class="metric" style="background:var(--accent);color:#fff"><div class="l" style="color:#fff;opacity:.85">累計進公積金（已結帳）</div><div class="v">${money(totFund)}</div></div>
     ${bonusCards}
   </div>
-  ${coopSites.length?`<div class="card" style="background:#fdf6ee"><div style="font-size:14px;font-weight:600;margin-bottom:2px">合作案場（自動匯總）</div><p class="sub" style="margin:0 0 8px">每個合作案場一筆，金額=該案場總請款、成本=該案場總成本，隨請款/成本變動。管理人那半可「帶去公司分潤」再算30/70。</p></div>${coopActiveHtml}${coopClosedHtml}`:''}
+  ${coopSites.length?`<div class="card" style="background:#fdf6ee"><div style="font-size:14px;font-weight:600;margin-bottom:2px">合作案場（自動匯總）</div><p class="sub" style="margin:0 0 8px">每個合作案場一筆，金額=該案場總請款、成本=該案場總成本，隨請款/成本變動。管理人那半可「帶去公司分潤」再算30/70。</p></div>${coopActiveHtml}${coopPausedHtml}${coopClosedHtml}`:''}
   <div class="card">
     <div style="font-size:14px;font-weight:600;margin-bottom:4px">新增案場損益</div>
     <p class="sub">這裡手動建「代工」或「公司分潤(30/70)」。<b>合作案場</b >不在這裡建——到「員工/案場」把案場勾為合作案場，它會自動匯總顯示在上方（總請款−總成本對拆）。稅金＝金額×稅率%。公司分潤按「入公積金帳戶」才把公積金記進帳戶。</p>
@@ -1918,7 +1925,7 @@ function viewBilling(){
   const totalSettled=state.billings.filter(b=>b.settled).reduce((s,b)=>s+(Number(b.amount)||0),0);
   const totalUnsettled=totalBilled-totalSettled;
 
-  const cards=siteNames.map(name=>{
+  const cardForName=(name)=>{
     const list=groups[name].sort((a,b)=>(a.date||'').localeCompare(b.date||''));
     const billed=list.reduce((s,b)=>s+(Number(b.amount)||0),0);
     const settled=list.filter(b=>b.settled).reduce((s,b)=>s+(Number(b.amount)||0),0);
@@ -1965,7 +1972,12 @@ function viewBilling(){
         <thead><tr><th>請款日</th><th class="num">金額</th><th>方式</th><th>業主</th><th>結算</th><th>備註</th><th></th></tr></thead>
         <tbody>${rows}</tbody></table></div>
     </div>`;
-  }).join('');
+  };
+  const namePaused=name=>{ const st=state.sites.find(x=>x.name===name); return st&&st.active===false; };
+  const activeNames=siteNames.filter(n=>!namePaused(n));
+  const pausedNames=siteNames.filter(n=>namePaused(n));
+  const cards=activeNames.map(cardForName).join('');
+  const pausedCards=pausedNames.length?`<details style="margin-top:10px"><summary style="cursor:pointer;font-weight:600;padding:8px 0">已暫停案場（${pausedNames.length}）</summary>${pausedNames.map(cardForName).join('')}</details>`:'';
 
   const siteDatalist=state.sites.map(s=>`<option value="${esc(s.name)}">`).join('');
 
@@ -1992,7 +2004,7 @@ function viewBilling(){
     </div>
     <div class="row" style="margin-top:8px"><button class="btn" id="b-add">＋ 新增請款</button></div>
   </div>
-  ${cards===''?'<div class="card"><div class="empty">尚無請款紀錄。</div></div>':cards}`;
+  ${cards===''&&pausedCards===''?'<div class="card"><div class="empty">尚無請款紀錄。</div></div>':cards}${pausedCards}`;
 }
 
 // ---- 對帳匯出 ----
