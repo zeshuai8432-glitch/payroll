@@ -645,6 +645,10 @@ function bind(){
   const es=document.getElementById('export-summary'); if(es) es.onclick=()=>exportSummaryPDF();
   const ed=document.getElementById('export-deals'); if(ed) ed.onclick=()=>exportDealsPDF();
   const eds=document.getElementById('export-deals-sel'); if(eds) eds.onclick=()=>exportDealsPDF(true);
+  const rbi=document.getElementById('rebuild-income'); if(rbi) rbi.onclick=()=>{
+    if(!confirm('重建所有分潤的「帳戶自動進帳」？\n會先清掉舊的自動進帳，再依每筆分潤的「錢進哪個帳戶」重新產生（代工/公司分潤＝金額−稅）。\n你手動記的收支不受影響。')) return;
+    rebuildAllDealIncome(); saveData(); render();
+  };
   document.querySelectorAll('[data-dealpick-cb]').forEach(cb=>cb.onchange=()=>{ dealSel[cb.dataset.dealpickCb]=cb.checked; });
   const dsa=document.getElementById('deals-selall'); if(dsa) dsa.onclick=()=>{ state.deals.forEach(d=>{ if(d.type==='代工'||d.type==='公司分潤'||d.type==='分潤/代料'||(d.type!=='合作案')) dealSel[d.id]=true; }); render(); };
   const dsn=document.getElementById('deals-selnone'); if(dsn) dsn.onclick=()=>{ dealSel={}; render(); };
@@ -983,6 +987,7 @@ function bind(){
   };
   document.querySelectorAll('[data-delledger]').forEach(b=>b.onclick=()=>{
     const t=state.ledger.find(x=>x.id===b.dataset.delledger);
+    if(t&&t.autoDealId){ alert('這筆是分潤「錢進哪個帳戶」自動產生的進帳。請到「分潤結算」改該筆的帳戶或刪除分潤來移除，別在這裡刪，以免帳對不上。'); return; }
     if(t&&t.fromDeal){ alert('這筆是分潤結算入帳產生的，請到「分潤結算」按該案場的「撤銷」來移除，以免帳對不上。'); return; }
     if(t&&t.fromAdvance){ alert('這筆是代墊款入帳產生的，請到「代墊款」按該股東的「撤銷入帳」來移除。'); return; }
     if(!confirm('確定刪除這筆收支？')) return;
@@ -1021,13 +1026,13 @@ function bind(){
     const rec={id:uid(),name,type,date,amount,cost:isNaN(cost)?0:cost,taxPct:isNaN(taxPct)?0:taxPct,scheme,ownerId,owner,moneyAcc,posted:false};
     if(type==='合作案') rec.mgrPct=isNaN(mgrPct)?50:mgrPct;
     state.deals.push(rec);
+    syncDealIncome(rec);
     saveData(); render();
   };
   document.querySelectorAll('[data-deldeal]').forEach(b=>b.onclick=()=>{
     const d=state.deals.find(x=>x.id===b.dataset.deldeal);
-    const msg=d&&d.posted?'此案場已入帳，刪除會一併移除帳戶裡的公積金收入。確定刪除？':`確定刪除案場損益「${d?esc(d.name):''}」？`;
-    if(!confirm(msg)) return;
-    state.ledger=state.ledger.filter(t=>t.fromDeal!==b.dataset.deldeal);
+    if(!confirm(`確定刪除案場損益「${d?esc(d.name):''}」？${d&&d.moneyAcc?'\n（會一併移除它在帳戶的自動進帳收入）':''}`)) return;
+    state.ledger=state.ledger.filter(t=>t.fromDeal!==b.dataset.deldeal && t.autoDealId!==b.dataset.deldeal);
     state.deals=state.deals.filter(x=>x.id!==b.dataset.deldeal); saveData(); render();
   });
   document.querySelectorAll('[data-dealaccpick]').forEach(b=>b.onclick=()=>{ dealAccPick=b.dataset.dealaccpick; render(); });
@@ -1035,7 +1040,7 @@ function bind(){
   document.querySelectorAll('[data-dealsetacc]').forEach(b=>b.onclick=()=>{
     const [did,accId]=b.dataset.dealsetacc.split('::');
     const d=state.deals.find(x=>x.id===did); if(!d) return;
-    d.moneyAcc=accId||''; dealAccPick=null; saveData(); render();
+    d.moneyAcc=accId||''; syncDealIncome(d); dealAccPick=null; saveData(); render();
   });
   document.querySelectorAll('[data-carry]').forEach(b=>b.onclick=()=>{ dealCarry=b.dataset.carry; render(); });
   document.querySelectorAll('[data-carrycancel]').forEach(b=>b.onclick=()=>{ dealCarry=null; render(); });
@@ -1155,6 +1160,7 @@ function bind(){
     d.ownerId=document.getElementById('de-owner').value;
     d.owner=document.getElementById('de-client').value.trim();
     d.moneyAcc=document.getElementById('de-acc').value;
+    syncDealIncome(d);
     dealEditId=null; saveData(); render();
   });
   document.querySelectorAll('[data-dealcancel]').forEach(b=>b.onclick=()=>{ dealPosting=null; render(); });
@@ -1844,6 +1850,28 @@ function dealCalc(d){
   return {profit,bonus,fund,tax,isDeal:false};
 }
 let dealPosting=null, dealEditId=null, dealCarry=null, coopCarry=null, billEditId=null, dealAccPick=null; // 入帳/編輯/帶去/請款編輯/選帳戶中
+
+// 一筆分潤進帳戶的金額：代工/公司分潤＝金額−稅；（合作案在卡片另算，這裡不處理）
+function dealIncomeAmount(d){
+  const c=dealCalc(d);
+  return Math.round((Number(d.amount)||0) - (c.tax||0)); // 金額 − 稅
+}
+// 同步：依分潤的 moneyAcc，自動在該帳戶維護一筆收入（標記 autoDealId）
+function syncDealIncome(d){
+  // 先移除這筆分潤舊的自動收入
+  state.ledger=state.ledger.filter(t=>t.autoDealId!==d.id);
+  if(d.moneyAcc && d.type!=='合作案'){
+    const amt=dealIncomeAmount(d);
+    if(amt!==0){
+      state.ledger.push({id:uid(), date:d.date||new Date().toISOString().slice(0,10), accId:d.moneyAcc, kind: amt>=0?'in':'out', amount:Math.abs(amt), note:`分潤進帳·${d.name}`, autoDealId:d.id});
+    }
+  }
+}
+// 重建所有分潤的自動收入（A方案：一次補齊）
+function rebuildAllDealIncome(){
+  state.ledger=state.ledger.filter(t=>!t.autoDealId);
+  state.deals.forEach(d=>{ if(d.moneyAcc && d.type!=='合作案'){ const amt=dealIncomeAmount(d); if(amt!==0) state.ledger.push({id:uid(), date:d.date||new Date().toISOString().slice(0,10), accId:d.moneyAcc, kind:amt>=0?'in':'out', amount:Math.abs(amt), note:`分潤進帳·${d.name}`, autoDealId:d.id}); } });
+}
 let dealSel={}; // 分潤清單勾選
 let costEditId=null; // 手動成本編輯中
 
@@ -2025,6 +2053,7 @@ function viewDeals(){
         <button class="act" id="deals-selnone" style="border:1px solid var(--line2);border-radius:8px;padding:0 12px;height:34px">取消全選</button>
         <button class="btn" id="export-deals-sel" ${anyDeals===0?'disabled style="opacity:.5"':''}>匯出選取</button>
         <button class="btn" id="export-deals" ${anyDeals===0?'disabled style="opacity:.5"':''}>全部匯出</button>
+        <button class="act" id="rebuild-income" style="border:1px solid var(--info);border-radius:8px;padding:0 12px;height:34px;color:var(--info)">重建帳戶進帳</button>
       </div>
     </div>
     ${anyDeals===0?'<div class="empty">尚無代工／公司分潤紀錄。（合作案場在上方橘色卡片）</div>':dealsSections}
