@@ -560,7 +560,17 @@ function viewManage(){
     const toggle=`<button class="act" data-togglesite="${s.id}">${paused?'恢復啟用':'暫停'}</button>`;
     const nameCell=`${esc(s.name)}${s.coop?'<span class="tag" style="background:#fde9d4;color:#9a5b1a">合作案場</span>':''}${paused?'<span class="tag" style="background:var(--warn-bg);color:var(--warn-ink)">已暫停</span>':''}`;
     const coopBtn=`<button class="act" data-togglecoop="${s.id}">${s.coop?'取消合作案':'設為合作案'}</button>`;
-    return `<tr${paused?' style="color:var(--muted)"':''}><td>${nameCell}</td><td><button class="act" data-rensite="${s.id}">改名</button></td><td>${coopBtn}</td><td>${toggle}</td><td>${delBtn}</td></tr>`;
+    const contractVal=(s.contract!==undefined&&s.contract!=='')?s.contract:(state.contracts[s.name]||'');
+    const settings=`<tr${paused?' style="color:var(--muted)"':''}><td colspan="5" style="padding-top:0">
+      <details style="margin:2px 0 8px"><summary style="cursor:pointer;font-size:12px;color:var(--info)">合約／稅率設定</summary>
+        <div class="row" style="margin:8px 0 4px">
+          <div class="field"><label>合約總額（選填）</label><input type="number" data-sitecontract="${s.id}" value="${contractVal}" placeholder="未設定" min="0" step="10000" style="width:150px"></div>
+          ${s.coop?`<div class="field"><label>稅率 %（合作案用）</label><input type="number" data-sitetax="${s.id}" value="${s.coopTaxPct!==undefined?s.coopTaxPct:0}" min="0" max="100" step="0.5" style="width:110px"></div>`:''}
+        </div>
+        <p class="sub" style="margin:0">合約總額用在請款追蹤顯示「已請款／未請款」進度。${s.coop?'稅率用在分潤結算的合作案利潤計算（請款×稅率%）。':''}</p>
+      </details>
+    </td></tr>`;
+    return `<tr${paused?' style="color:var(--muted)"':''}><td>${nameCell}</td><td><button class="act" data-rensite="${s.id}">改名</button></td><td>${coopBtn}</td><td>${toggle}</td><td>${delBtn}</td></tr>${settings}`;
   }).join('');
   return `
   <div class="card">
@@ -702,6 +712,17 @@ function bind(){
     cell.querySelector('#ren-cancel').onclick=()=>render();
   });
 
+  document.querySelectorAll('[data-sitecontract]').forEach(inp=>inp.onchange=()=>{
+    const s=state.sites.find(x=>x.id===inp.dataset.sitecontract); if(!s) return;
+    const v=parseFloat(inp.value);
+    if(isNaN(v)||v<=0){ s.contract=''; delete state.contracts[s.name]; }
+    else { s.contract=v; state.contracts[s.name]=v; }
+    saveData(); render();
+  });
+  document.querySelectorAll('[data-sitetax]').forEach(inp=>inp.onchange=()=>{
+    const s=state.sites.find(x=>x.id===inp.dataset.sitetax); if(!s) return;
+    const v=parseFloat(inp.value); s.coopTaxPct=isNaN(v)?0:Math.max(0,v); saveData(); render();
+  });
   const sa=document.getElementById('s-add');
   if(sa) sa.onclick=()=>{ const name=document.getElementById('s-name').value.trim(); if(!name)return; const coop=document.getElementById('s-coop')?document.getElementById('s-coop').checked:false; state.sites.push({id:uid(),name,coop}); saveData(); render(); };
   document.querySelectorAll('[data-delsite]').forEach(b=>b.onclick=()=>{ const s=state.sites.find(x=>x.id===b.dataset.delsite); if(!confirm(`確定刪除案場「${s?esc(s.name):''}」？`)) return; state.sites=state.sites.filter(s=>s.id!==b.dataset.delsite); saveData(); render(); });
@@ -1893,7 +1914,7 @@ function viewDeals(){
       </div>
       <div class="row" style="margin:6px 0">
         <div class="field"><label>管理人(你們)佔 %</label><input type="number" data-coopmgr="${s.id}" value="${s.coopMgrPct!==undefined?s.coopMgrPct:50}" min="0" max="100" step="5" style="width:120px"></div>
-        <div class="field"><label>稅率 %</label><input type="number" data-cooptax="${s.id}" value="${s.coopTaxPct!==undefined?s.coopTaxPct:0}" min="0" max="100" step="0.5" style="width:90px"></div>
+        <div class="field"><label>稅率 %</label><div style="height:36px;display:flex;align-items:center;font-size:14px">${s.coopTaxPct||0}%　<span class="sub" style="margin:0;font-size:11px">（在員工/案場設定）</span></div></div>
         <div class="field"><label>負責人</label>${ownerSel}</div>
       </div>
       <p class="sub" style="margin:2px 0">請款在「請款追蹤」記、成本在「案場成本」逐筆記，這裡自動匯總、隨時更新。利潤未到帳前可為負，沒關係。</p>
@@ -1965,7 +1986,8 @@ function viewBilling(){
     const billed=list.reduce((s,b)=>s+(Number(b.amount)||0),0);
     const settled=list.filter(b=>b.settled).reduce((s,b)=>s+(Number(b.amount)||0),0);
     const unsettled=billed-settled;
-    const contract=Number(state.contracts[name])||0;
+    const siteObj=state.sites.find(x=>x.name===name);
+    const contract=Number(siteObj&&siteObj.contract!==undefined&&siteObj.contract!==''?siteObj.contract:state.contracts[name])||0;
     let progress='';
     if(contract>0){
       const pct=Math.min(100,Math.round(billed/contract*100));
@@ -2000,9 +2022,6 @@ function viewBilling(){
         <div style="font-size:14px">已請款 <b>${money(billed)}</b>　|　已結算 <span style="color:var(--accent)">${money(settled)}</span>　|　未結算 <span style="color:var(--danger)">${money(unsettled)}</span></div>
       </div>
       ${progress}
-      <div class="row" style="margin:6px 0 10px">
-        <div class="field"><label>合約總額（選填）</label><input type="number" data-contract="${esc(name)}" value="${contract||''}" placeholder="未設定" min="0" step="10000" style="width:150px"></div>
-      </div>
       <div class="scroll"><table>
         <thead><tr><th>請款日</th><th class="num">金額</th><th>方式</th><th>業主</th><th>結算</th><th>備註</th><th></th></tr></thead>
         <tbody>${rows}</tbody></table></div>
@@ -2014,7 +2033,7 @@ function viewBilling(){
   const cards=activeNames.map(cardForName).join('');
   const pausedCards=pausedNames.length?`<details style="margin-top:10px"><summary style="cursor:pointer;font-weight:600;padding:8px 0">已暫停案場（${pausedNames.length}）</summary>${pausedNames.map(cardForName).join('')}</details>`:'';
 
-  const siteDatalist=state.sites.map(s=>`<option value="${esc(s.name)}">`).join('');
+  const siteDatalist=state.sites.filter(s=>s.active!==false).map(s=>`<option value="${esc(s.name)}">`).join('');
 
   return `
   <div class="metrics">
@@ -2027,7 +2046,7 @@ function viewBilling(){
       <div style="font-size:14px;font-weight:600">新增請款</div>
       <button class="btn" id="export-billing" ${state.billings.length===0?'disabled style="opacity:.5"':''}>匯出 PDF</button>
     </div>
-    <p class="sub">記一筆請款。同一案場可多次請款，下方會自動按案場彙總。合約總額在各案場卡片填（選填）。合作案場的分潤不在這裡算——它會在「分潤結算」自動用該案場的總請款−總成本來顯示。</p>
+    <p class="sub">記一筆請款：何時、哪個案場、請了多少。同一案場可多次請款，下方自動按案場彙總。合約總額、稅率請到「員工/案場」設定。合作案場的分潤在「分潤結算」自動算（總請款−總成本）。</p>
     <datalist id="site-list">${siteDatalist}</datalist>
     <div class="row">
       <div class="field"><label>請款日</label><input type="date" id="b-date" value="${new Date().toISOString().slice(0,10)}"></div>
