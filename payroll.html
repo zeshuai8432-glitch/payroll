@@ -659,6 +659,22 @@ function bind(){
     if(!confirm('重建所有分潤的「帳戶自動進帳」？\n會先清掉舊的自動進帳，再依每筆分潤的「錢進哪個帳戶」重新產生（代工/公司分潤＝金額−稅）。\n你手動記的收支不受影響。')) return;
     rebuildAllDealIncome(); saveData(); render();
   };
+  const rsd=document.getElementById('resync-deals'); if(rsd) rsd.onclick=()=>{
+    if(!confirm('重算所有案場分潤？\n\n會依各案場目前的「請款＋成本（期初/出工工資/手動）」重新計算每個案場的分潤與帳戶進帳，並清掉「對不上案場或已無請款」的殘留分潤。\n\n你在「進階」手動補的分潤不受影響。')) return;
+    state.deals.filter(d=>d.autoSiteId).forEach(d=>{
+      const s=state.sites.find(x=>x.id===d.autoSiteId);
+      const tot=s?state.billings.filter(b=>b.site===s.name).reduce((a,b)=>a+(Number(b.amount)||0),0):0;
+      if(!s || tot<=0){ state.ledger=state.ledger.filter(t=>t.autoDealId!==d.id); state.deals=state.deals.filter(x=>x.id!==d.id); }
+    });
+    state.deals.filter(d=>!d.autoSiteId).forEach(d=>{
+      const s=state.sites.find(x=>x.name===d.name && !(x.coop||x.type==='合作案'));
+      const tot=s?state.billings.filter(b=>b.site===s.name).reduce((a,b)=>a+(Number(b.amount)||0),0):0;
+      if(s && tot>0){ state.ledger=state.ledger.filter(t=>t.autoDealId!==d.id && t.fromDeal!==d.id); state.deals=state.deals.filter(x=>x.id!==d.id); }
+    });
+    resyncAllSiteDeals();
+    saveData(); render();
+    alert('已重算所有案場分潤。請檢查分潤頁與各帳戶餘額。');
+  };
   const wdb=document.getElementById('wipe-deals-bills'); if(wdb) wdb.onclick=()=>{
     const nDeals=state.deals.length, nBills=state.billings.length;
     if(!confirm(`即將清空：\n・分潤結算 ${nDeals} 筆\n・請款追蹤 ${nBills} 筆\n・以及分潤產生的「帳戶自動進帳」收入\n\n員工、案場、出工、公積金帳戶收支（含品佑垫付）、借支等都會保留。\n\n確定要清空嗎？`)) return;
@@ -2168,6 +2184,7 @@ function viewDeals(){
         <button class="btn" id="export-deals-sel" ${anyDeals===0?'disabled style="opacity:.5"':''}>匯出選取</button>
         <button class="btn" id="export-deals" ${anyDeals===0?'disabled style="opacity:.5"':''}>全部匯出</button>
         <button class="act" id="rebuild-income" style="border:1px solid var(--info);border-radius:8px;padding:0 12px;height:34px;color:var(--info)">重建帳戶進帳</button>
+        <button class="act" id="resync-deals" style="border:1px solid var(--accent);border-radius:8px;padding:0 12px;height:34px;color:var(--accent)">重算所有案場分潤</button>
       </div>
     </div>
     ${anyDeals===0?'<div class="empty">尚無代工／公司分潤紀錄。（合作案場在上方橘色卡片）</div>':dealsSections}
