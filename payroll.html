@@ -1018,6 +1018,9 @@ function bind(){
   });
 
   // 請款追蹤
+  const bCoop=document.getElementById('b-iscoop');
+  const bCoopToggle=()=>{ const dt=document.getElementById('b-coop-detail'); if(dt) dt.style.display=(bCoop&&bCoop.checked)?'':'none'; };
+  if(bCoop){ bCoop.onchange=bCoopToggle; bCoopToggle(); }
   const bAdd=document.getElementById('b-add');
   if(bAdd) bAdd.onclick=()=>{
     const date=document.getElementById('b-date').value;
@@ -1026,15 +1029,36 @@ function bind(){
     const method=document.getElementById('b-method').value.trim();
     const client=document.getElementById('b-client').value.trim();
     const settled=document.getElementById('b-settled').value==='1';
+    const isCoop=document.getElementById('b-iscoop').checked;
     if(!date||!site||isNaN(amount)||amount<=0){ alert('請填請款日、案場、金額'); return; }
-    state.billings.push({id:uid(),date,site,amount,method,client,settled});
+    const billId=uid();
+    const bill={id:billId,date,site,amount,method,client,settled};
+    if(isCoop){
+      const cost=parseFloat(document.getElementById('b-cost').value)||0;
+      const mgrPct=parseFloat(document.getElementById('b-mgrpct').value); 
+      const ownerId=document.getElementById('b-owner').value;
+      const moneyAcc=document.getElementById('b-acc').value;
+      // 自動產生一筆合作案分潤
+      const dealId=uid();
+      state.deals.push({id:dealId,name:`${site}（${date}請款）`,type:'合作案',date,amount,cost,taxPct:0,mgrPct:isNaN(mgrPct)?50:mgrPct,scheme:'new',ownerId,owner:client,moneyAcc,posted:false,fromBilling:billId});
+      bill.dealId=dealId; bill.isCoop=true;
+    }
+    state.billings.push(bill);
     saveData(); render();
   };
   document.querySelectorAll('[data-togglesettle]').forEach(b=>b.onclick=()=>{
     const bill=state.billings.find(x=>x.id===b.dataset.togglesettle); if(bill){ bill.settled=!bill.settled; saveData(); render(); }
   });
   document.querySelectorAll('[data-delbill]').forEach(b=>b.onclick=()=>{
-    if(!confirm('確定刪除這筆請款？')) return;
+    const bill=state.billings.find(x=>x.id===b.dataset.delbill);
+    if(bill&&bill.dealId){
+      const dl=state.deals.find(d=>d.id===bill.dealId);
+      if(dl&&dl.carriedTo){ alert('這筆請款的合作案分潤已「帶去公司分潤」，請先到分潤結算撤銷，再刪除請款。'); return; }
+      if(!confirm('這筆請款有連動的合作案分潤，刪除會一併移除那筆分潤。確定刪除？')) return;
+      state.deals=state.deals.filter(d=>d.id!==bill.dealId);
+    } else {
+      if(!confirm('確定刪除這筆請款？')) return;
+    }
     state.billings=state.billings.filter(x=>x.id!==b.dataset.delbill); saveData(); render();
   });
   document.querySelectorAll('[data-contract]').forEach(inp=>inp.onchange=()=>{
@@ -1771,7 +1795,7 @@ function viewBilling(){
         <div style="height:6px;background:var(--line);border-radius:3px;margin-top:6px;overflow:hidden"><div style="height:100%;width:${pct}%;background:var(--accent)"></div></div></div>`;
     }
     const rows=list.map(b=>`<tr>
-      <td>${esc(b.date||'')}</td><td class="num">${money(b.amount)}</td>
+      <td>${esc(b.date||'')}${b.isCoop?'<span class="tag" style="background:#e3efe9;color:var(--accent)">合作案結算</span>':''}</td><td class="num">${money(b.amount)}</td>
       <td>${esc(b.method||'')}</td><td>${esc(b.client||'')}</td>
       <td><button class="act ${b.settled?'':'muted'}" data-togglesettle="${b.id}" style="${b.settled?'color:var(--accent)':''}">${b.settled?'✓ 已結算':'未結算'}</button></td>
       <td>${esc(b.note||'')}</td>
@@ -1805,17 +1829,26 @@ function viewBilling(){
       <div style="font-size:14px;font-weight:600">新增請款</div>
       <button class="btn" id="export-billing" ${state.billings.length===0?'disabled style="opacity:.5"':''}>匯出 PDF</button>
     </div>
-    <p class="sub">記一筆請款。同一案場可多次請款，下方會自動按案場彙總。合約總額在各案場卡片填（選填）；填了才會顯示「還剩多少沒請」的進度。</p>
+    <p class="sub">記一筆請款。同一案場可多次請款，下方會自動按案場彙總。合約總額在各案場卡片填（選填）。若這筆是<b>合作案結算</b>，勾選後填這期成本與拆分比例，存檔時會自動在「分潤結算」產生一筆合作案。</p>
     <datalist id="site-list">${siteDatalist}</datalist>
     <div class="row">
       <div class="field"><label>請款日</label><input type="date" id="b-date" value="${new Date().toISOString().slice(0,10)}"></div>
       <div class="field" style="flex:1;min-width:140px"><label>案場名稱</label><input id="b-site" list="site-list" placeholder="輸入或選案場"></div>
-      <div class="field"><label>金額</label><input type="number" id="b-amount" min="0" step="1000" style="width:130px"></div>
+      <div class="field"><label>金額（本期請款）</label><input type="number" id="b-amount" min="0" step="1000" style="width:140px"></div>
       <div class="field"><label>請款方式</label><input id="b-method" placeholder="匯款" style="width:100px"></div>
       <div class="field"><label>業主</label><input id="b-client" placeholder="品佑、廣昕" style="width:110px"></div>
       <div class="field"><label>結算</label><select id="b-settled"><option value="">未結算</option><option value="1">已結算</option></select></div>
-      <button class="btn" id="b-add">＋ 新增</button>
     </div>
+    <div class="row" style="margin-top:8px;align-items:center">
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:14px"><input type="checkbox" id="b-iscoop" style="width:18px;height:18px">這筆是合作案結算（自動產生分潤）</label>
+    </div>
+    <div class="row" id="b-coop-detail" style="margin-top:8px;display:none;background:var(--bg);padding:10px;border-radius:8px">
+      <div class="field"><label>這期對應成本</label><input type="number" id="b-cost" min="0" step="1000" value="0" style="width:130px"></div>
+      <div class="field"><label>管理人(你們)佔 %</label><input type="number" id="b-mgrpct" min="0" max="100" step="5" value="50" style="width:130px"></div>
+      <div class="field"><label>負責人</label><select id="b-owner"><option value="">（未指定）</option>${state.employees.filter(e=>e.partner).map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join('')}</select></div>
+      <div class="field"><label>錢進哪個帳戶</label><select id="b-acc"><option value="">（未指定）</option>${state.accounts.map(a=>`<option value="${a.id}">${esc(a.name)}</option>`).join('')}</select></div>
+    </div>
+    <div class="row" style="margin-top:8px"><button class="btn" id="b-add">＋ 新增請款</button></div>
   </div>
   ${cards===''?'<div class="card"><div class="empty">尚無請款紀錄。</div></div>':cards}`;
 }
