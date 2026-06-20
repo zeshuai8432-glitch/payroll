@@ -669,8 +669,7 @@ function bind(){
     state.sites.forEach(s=>{ delete s.coopCarriedTo; });
     saveData(); render();
     alert('已清空分潤與請款。其他資料保留。');
-  };
-  document.querySelectorAll('[data-dealpick-cb]').forEach(cb=>cb.onchange=()=>{ dealSel[cb.dataset.dealpickCb]=cb.checked; });
+  };  document.querySelectorAll('[data-dealpick-cb]').forEach(cb=>cb.onchange=()=>{ dealSel[cb.dataset.dealpickCb]=cb.checked; });
   const dsa=document.getElementById('deals-selall'); if(dsa) dsa.onclick=()=>{ state.deals.forEach(d=>{ if(d.type==='代工'||d.type==='公司分潤'||d.type==='分潤/代料'||(d.type!=='合作案')) dealSel[d.id]=true; }); render(); };
   const dsn=document.getElementById('deals-selnone'); if(dsn) dsn.onclick=()=>{ dealSel={}; render(); };
   const eb=document.getElementById('export-billing'); if(eb) eb.onclick=()=>exportBillingPDF();
@@ -2114,7 +2113,7 @@ function viewDeals(){
     <div class="metric" style="background:var(--accent);color:#fff"><div class="l" style="color:#fff;opacity:.85">帳面公積金累計</div><div class="v">${money(totFund)}</div></div>
     ${bonusCards}
   </div>
-  ${coopSites.length?`<div class="card" style="background:#fdf6ee"><div style="font-size:14px;font-weight:600;margin-bottom:2px">合作案場（自動匯總）</div><p class="sub" style="margin:0 0 8px">每個合作案場一筆，金額=該案場總請款、成本=該案場總成本，隨請款/成本變動。管理人那半可「帶去公司分潤」再算30/70。</p></div>${coopActiveHtml}${coopPausedHtml}${coopClosedHtml}`:''}
+  ${coopSites.length?`<details open class="card" style="background:#fdf6ee"><summary style="cursor:pointer;font-size:14px;font-weight:600">合作案場（自動匯總）・${activeCoop.length} 進行中</summary><p class="sub" style="margin:6px 0 8px">每個合作案場一筆，金額=該案場總請款、成本=該案場總成本，隨請款/成本變動。管理人那半可「帶去公司分潤」再算30/70。</p>${coopActiveHtml}${coopPausedHtml}${coopClosedHtml}</details>`:''}
   <div class="card">
     <details><summary style="cursor:pointer;font-size:14px;font-weight:600">進階：手動補一筆分潤（一般不用）</summary>
     <p class="sub" style="margin-top:8px">正常流程是<b>到「員工/案場」建案場（設好類型/稅率/負責人/帳戶）→ 在「請款追蹤」記請款</b>，分潤就自動生出來、自動進帳戶，不用在這裡建。這裡只給「不屬於任何案場的一次性損益」臨時補用。手動建的不會自動跟請款連動。</p>
@@ -2145,7 +2144,6 @@ function viewDeals(){
         <button class="btn" id="export-deals-sel" ${anyDeals===0?'disabled style="opacity:.5"':''}>匯出選取</button>
         <button class="btn" id="export-deals" ${anyDeals===0?'disabled style="opacity:.5"':''}>全部匯出</button>
         <button class="act" id="rebuild-income" style="border:1px solid var(--info);border-radius:8px;padding:0 12px;height:34px;color:var(--info)">重建帳戶進帳</button>
-        <button class="act" id="wipe-deals-bills" style="border:1px solid var(--danger);border-radius:8px;padding:0 12px;height:34px;color:var(--danger)">清空分潤與請款</button>
       </div>
     </div>
     ${anyDeals===0?'<div class="empty">尚無代工／公司分潤紀錄。（合作案場在上方橘色卡片）</div>':dealsSections}
