@@ -111,7 +111,7 @@
 <script>
 const LS = 'pm_data_v2';
 const CLOUD_URL = 'https://script.google.com/macros/s/AKfycbyMPs38UNzAwX3bcD2n9nQBz0HofUW9qFweSOnmoySs8VW2bJYHn47RdyZLQ8bD8SNWTg/exec';
-let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], tools:[], locations:[], assets:[], advances:[], accounts:[], ledger:[], deals:[], billings:[], contracts:{}, costs:[], tab:'entry' };
+let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], tools:[], locations:[], assets:[], advances:[], accounts:[], ledger:[], deals:[], billings:[], contracts:{}, costs:[], parkAccId:'', tab:'entry' };
 let cloudStatus='連線中…';
 let entryDate='', entrySite='', entryEmp=''; // 登記出工：記住上次選的日期、案場、員工
 let entryOpenDates={}, entryEditId=null; // 出工紀錄分組收合狀態與正在編輯的紀錄
@@ -144,11 +144,11 @@ const siteName = id => { const s=state.sites.find(x=>x.id===id); return s?s.name
 
 function applyData(d){
   if(!d) return;
-  state.employees=d.employees||[]; state.sites=d.sites||[]; state.attendance=d.attendance||[]; state.adjustments=d.adjustments||[]; state.loans=d.loans||[]; state.tools=d.tools||[]; state.locations=d.locations||[]; state.assets=d.assets||[]; state.advances=d.advances||[]; state.accounts=d.accounts||[]; state.ledger=d.ledger||[]; state.deals=d.deals||[]; state.billings=d.billings||[]; state.contracts=d.contracts||{}; state.costs=d.costs||[];
+  state.employees=d.employees||[]; state.sites=d.sites||[]; state.attendance=d.attendance||[]; state.adjustments=d.adjustments||[]; state.loans=d.loans||[]; state.tools=d.tools||[]; state.locations=d.locations||[]; state.assets=d.assets||[]; state.advances=d.advances||[]; state.accounts=d.accounts||[]; state.ledger=d.ledger||[]; state.deals=d.deals||[]; state.billings=d.billings||[]; state.contracts=d.contracts||{}; state.costs=d.costs||[]; state.parkAccId=d.parkAccId||'';
   state.employees.forEach(e=>{ if(e.active===undefined) e.active=true; });
 }
 function packData(){
-  return {employees:state.employees,sites:state.sites,attendance:state.attendance,adjustments:state.adjustments,loans:state.loans,tools:state.tools,locations:state.locations,assets:state.assets,advances:state.advances,accounts:state.accounts,ledger:state.ledger,deals:state.deals,billings:state.billings,contracts:state.contracts,costs:state.costs};
+  return {employees:state.employees,sites:state.sites,attendance:state.attendance,adjustments:state.adjustments,loans:state.loans,tools:state.tools,locations:state.locations,assets:state.assets,advances:state.advances,accounts:state.accounts,ledger:state.ledger,deals:state.deals,billings:state.billings,contracts:state.contracts,costs:state.costs,parkAccId:state.parkAccId};
 }
 
 // 先讀本機快取（讓畫面秒開），再從雲端拉最新
@@ -210,7 +210,7 @@ function computeRecords(records){
 function tabsBar(){
   const groups=[
     ['薪資作業',[['entry','登記出工'],['payroll','員工薪資']]],
-    ['財務管理',[['loans','借支管理'],['tools','工具管理'],['advances','代墊款'],['accounts','公積金帳戶'],['deals','分潤結算'],['billing','請款追蹤'],['yearend','年度總結'],['recon','對帳匯出']]],
+    ['財務管理',[['loans','借支管理'],['tools','工具管理'],['advances','代墊款'],['accounts','公積金帳戶'],['deals','分潤結算'],['billing','請款追蹤'],['yearend','年度總結'],['parkacc','品佑帳戶結算'],['recon','對帳匯出']]],
     ['設定',[['sites','案場成本'],['manage','員工/案場']]],
   ];
   return groups.map(([label,items])=>`
@@ -222,7 +222,7 @@ function tabsBar(){
 function render(){
   document.getElementById('sidebar').innerHTML=tabsBar();
   const body=document.getElementById('body');
-  body.innerHTML = state.tab==='entry'?viewEntry():state.tab==='payroll'?viewPayroll():state.tab==='sites'?viewSites():state.tab==='loans'?viewLoans():state.tab==='tools'?viewTools():state.tab==='advances'?viewAdvances():state.tab==='accounts'?viewAccounts():state.tab==='deals'?viewDeals():state.tab==='billing'?viewBilling():state.tab==='yearend'?viewYearEnd():state.tab==='recon'?viewRecon():viewManage();
+  body.innerHTML = state.tab==='entry'?viewEntry():state.tab==='payroll'?viewPayroll():state.tab==='sites'?viewSites():state.tab==='loans'?viewLoans():state.tab==='tools'?viewTools():state.tab==='advances'?viewAdvances():state.tab==='accounts'?viewAccounts():state.tab==='deals'?viewDeals():state.tab==='billing'?viewBilling():state.tab==='yearend'?viewYearEnd():state.tab==='parkacc'?viewParkAcc():state.tab==='recon'?viewRecon():viewManage();
   bind();
 }
 
@@ -1170,6 +1170,12 @@ function bind(){
   const yf=document.getElementById('ye-from'); if(yf) yf.onchange=()=>{ yearFrom=yf.value; render(); };
   const yt=document.getElementById('ye-to'); if(yt) yt.onchange=()=>{ yearTo=yt.value; render(); };
   const yc=document.getElementById('ye-clear'); if(yc) yc.onclick=()=>{ yearFrom=''; yearTo=''; render(); };
+
+  // 品佑帳戶結算
+  const pacc=document.getElementById('park-acc'); if(pacc) pacc.onchange=()=>{ state.parkAccId=pacc.value; saveData(); render(); };
+  const pkf=document.getElementById('park-from'); if(pkf) pkf.onchange=()=>{ parkFrom=pkf.value; render(); };
+  const pkt=document.getElementById('park-to'); if(pkt) pkt.onchange=()=>{ parkTo=pkt.value; render(); };
+  const pkc=document.getElementById('park-clear'); if(pkc) pkc.onclick=()=>{ parkFrom=''; parkTo=''; render(); };
 }
 
 // ---- PDF 匯出（以列印視窗產生，可存成 PDF 或直接列印）----
@@ -2178,6 +2184,63 @@ function exportRecon(){
 }
 
 document.getElementById('cloud-refresh').onclick=()=>loadCloud();
+
+// ---- 品佑帳戶結算 ----
+let parkFrom='', parkTo='';
+function viewParkAcc(){
+  const inRange=d=> (!parkFrom||(d>=parkFrom)) && (!parkTo||(d<=parkTo));
+  const partners=state.employees.filter(e=>e.partner);
+  const accOpts=`<option value="">（請選擇）</option>`+state.accounts.map(a=>`<option value="${a.id}" ${state.parkAccId===a.id?'selected':''}>${esc(a.name)}</option>`).join('');
+
+  const picker=`<div class="card">
+    <div style="font-size:14px;font-weight:600;margin-bottom:4px">品佑帳戶結算</div>
+    <p class="sub">把「錢進哪個帳戶 ＝ 品佑代支出」的分潤挑出來，拆成三類：東澤管理獎金、建龍管理獎金、公積金。公積金那筆你自己決定要分到東澤或廣昕帳戶（讓兩個公積金帳戶平衡）。前提：建分潤時要把「錢進哪個帳戶」選成品佑帳戶，系統才認得出。</p>
+    <div class="row" style="margin-bottom:8px">
+      <div class="field" style="min-width:200px"><label>哪個帳戶是「品佑代支出」</label><select id="park-acc">${accOpts}</select></div>
+      <div class="field"><label>起（依分潤日期）</label><input type="date" id="park-from" value="${parkFrom}"></div>
+      <div class="field"><label>訖</label><input type="date" id="park-to" value="${parkTo}"></div>
+      <button class="act" id="park-clear" style="height:36px;border:1px solid var(--line2);border-radius:8px;padding:0 12px;align-self:flex-end">全部期間</button>
+    </div>
+  </div>`;
+
+  if(!state.parkAccId){
+    return picker+`<div class="card"><div class="empty">請先在上方選擇「哪個帳戶是品佑代支出」。</div></div>`;
+  }
+
+  // 抓出 moneyAcc = 品佑 的分潤（未帶去公司分潤的合作案不在 state.deals，這裡只看實際 deals）
+  const parkDeals=state.deals.filter(d=>d.moneyAcc===state.parkAccId && d.type!=='合作案' && inRange(d.date));
+  let bonusByP={}, totalFund=0, totalBonus=0;
+  const detailRows=[...parkDeals].sort((a,b)=>(b.date||'').localeCompare(a.date||'')).map(d=>{
+    const c=dealCalc(d);
+    if(d.ownerId) bonusByP[d.ownerId]=(bonusByP[d.ownerId]||0)+c.bonus;
+    totalFund+=c.fund; totalBonus+=c.bonus;
+    return `<tr><td>${esc(d.name)}<div style="font-size:11px;color:var(--muted)">${esc(d.date||'')}${d.ownerId?'｜'+esc(empName(d.ownerId)):''}</div></td>
+      <td class="num">${money(d.amount)}</td><td class="num" style="color:var(--accent)">${money(c.bonus)}</td><td class="num">${money(c.fund)}</td></tr>`;
+  }).join('');
+
+  const bonusRows=partners.map(p=>`<tr><td>${esc(p.name)} 管理獎金</td><td class="num" style="font-weight:600;color:var(--accent)">${money(bonusByP[p.id]||0)}</td></tr>`).join('');
+  const grand=totalBonus+totalFund;
+
+  return picker+`
+  <div class="metrics">
+    <div class="metric"><div class="l">品佑帳戶該拆出總額</div><div class="v" style="font-size:18px">${money(grand)}</div></div>
+    <div class="metric"><div class="l">獎金合計</div><div class="v" style="font-size:18px;color:var(--accent)">${money(totalBonus)}</div></div>
+    <div class="metric"><div class="l">公積金合計</div><div class="v" style="font-size:18px">${money(totalFund)}</div></div>
+  </div>
+  <div class="card">
+    <div style="font-size:14px;font-weight:600;margin-bottom:8px">三類拆解</div>
+    <table><tbody>
+      ${bonusRows}
+      <tr><td>公積金（你自己分配到東澤／廣昕帳戶）</td><td class="num" style="font-weight:600">${money(totalFund)}</td></tr>
+      <tr class="total-row" style="font-weight:600"><td>合計</td><td class="num">${money(grand)}</td></tr>
+    </tbody></table>
+    <p class="sub" style="margin-top:8px">獎金按各案負責人歸給東澤或建龍；公積金 ${money(totalFund)} 請你依兩個公積金帳戶當下餘額自行分配，讓東澤帳戶與廣昕帳戶盡量平衡。實際撥款後，記得到「公積金帳戶」頁把對應收支記上，並到「分潤結算」把已撥的公積金按「入公積金帳戶」。</p>
+  </div>
+  <div class="card">
+    <div style="font-size:14px;font-weight:600;margin-bottom:8px">明細（錢在品佑帳戶的分潤）</div>
+    ${detailRows===''?'<div class="empty">目前沒有「錢進哪個帳戶＝品佑」的分潤。建分潤時記得選這個帳戶。</div>':`<div class="scroll"><table><thead><tr><th>案場</th><th class="num">金額</th><th class="num">獎金</th><th class="num">公積金</th></tr></thead><tbody>${detailRows}</tbody></table></div>`}
+  </div>`;
+}
 
 // ---- 年度總結 ----
 let yearFrom='', yearTo='';
