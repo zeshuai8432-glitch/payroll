@@ -616,6 +616,10 @@ function bind(){
   document.querySelectorAll('[data-deladj]').forEach(b=>b.onclick=()=>{ if(!confirm('確定刪除這筆加扣項？')) return; state.adjustments=state.adjustments.filter(a=>a.id!==b.dataset.deladj); saveData(); render(); });
   const es=document.getElementById('export-summary'); if(es) es.onclick=()=>exportSummaryPDF();
   const ed=document.getElementById('export-deals'); if(ed) ed.onclick=()=>exportDealsPDF();
+  const eds=document.getElementById('export-deals-sel'); if(eds) eds.onclick=()=>exportDealsPDF(true);
+  document.querySelectorAll('[data-dealpick-cb]').forEach(cb=>cb.onchange=()=>{ dealSel[cb.dataset.dealpickCb]=cb.checked; });
+  const dsa=document.getElementById('deals-selall'); if(dsa) dsa.onclick=()=>{ state.deals.forEach(d=>{ if(d.type==='代工'||d.type==='公司分潤'||d.type==='分潤/代料'||(d.type!=='合作案')) dealSel[d.id]=true; }); render(); };
+  const dsn=document.getElementById('deals-selnone'); if(dsn) dsn.onclick=()=>{ dealSel={}; render(); };
   const eb=document.getElementById('export-billing'); if(eb) eb.onclick=()=>exportBillingPDF();
   const esi=document.getElementById('export-sites'); if(esi) esi.onclick=()=>exportSitesPDF();
   document.querySelectorAll('[data-payslip]').forEach(b=>b.onclick=()=>exportPayslipPDF(b.dataset.payslip));
@@ -1270,10 +1274,12 @@ function exportLedgerPDF(){
 }
 
 // 分潤結算明細 PDF
-function exportDealsPDF(){
-  if(state.deals.length===0) return;
+function exportDealsPDF(selectedOnly){
+  let list=[...state.deals].filter(d=>d.type!=='合作案');
+  if(selectedOnly) list=list.filter(d=>dealSel[d.id]);
+  if(list.length===0){ alert(selectedOnly?'尚未勾選任何項目':'尚無可匯出的分潤'); return; }
   let gA=0,gC=0,gT=0,gP=0,gB=0,gF=0;
-  const rows=[...state.deals].sort((a,b)=>(b.date||'').localeCompare(a.date||'')).map(d=>{
+  const rows=list.sort((a,b)=>(b.date||'').localeCompare(a.date||'')).map(d=>{
     const c=dealCalc(d); const sc=SCHEMES[d.scheme]||SCHEMES['new'];
     gA+=Number(d.amount)||0; gC+=Number(d.cost)||0; gT+=c.tax; gP+=c.profit; gB+=c.bonus; gF+=c.fund;
     return `<tr><td>${esc(d.name)}<br><span style="font-size:10px;color:#777">${d.type||'代工'}·${sc.label.split('（')[0]}·${esc(d.ownerId?empName(d.ownerId):'—')}${d.posted?'·已結帳':''}</span></td>
@@ -1281,12 +1287,12 @@ function exportDealsPDF(){
       <td class="num">${money(c.profit)}</td><td class="num">${money(c.bonus)}</td><td class="num">${money(c.fund)}</td></tr>`;
   }).join('');
   const inner=`<h1>案場損益及分潤結算明細</h1>
-    <div class="meta">列印日：${new Date().toISOString().slice(0,10)}　|　共 ${state.deals.length} 案</div>
+    <div class="meta">列印日：${new Date().toISOString().slice(0,10)}　|　共 ${list.length} 案${selectedOnly?'（已選取）':''}</div>
     <table><thead><tr><th>案場</th><th class="num">金額</th><th class="num">成本</th><th class="num">稅金</th><th class="num">淨利</th><th class="num">負責人獎金</th><th class="num">進公積金</th></tr></thead>
     <tbody>${rows}
       <tr class="total-row"><td>合計</td><td class="num">${money(gA)}</td><td class="num">${money(gC)}</td><td class="num">${money(gT)}</td><td class="num">${money(gP)}</td><td class="num">${money(gB)}</td><td class="num">${money(gF)}</td></tr>
     </tbody></table>
-    <p class="sub">淨利＝金額−成本−稅金。獎金與公積金依各案制度拆分；虧損時獎金為0、虧損全由公積金吸收。金額四捨五入至整數。</p>`;
+    <p class="sub">淨利＝金額−成本−稅金。獎金與公積金依各案制度拆分；虧損時獎金為0、虧損全由公積金吸收。金額四捨五入至整數。合作案場請見另頁。</p>`;
   printHTML('分潤結算明細', inner);
 }
 
@@ -1749,6 +1755,7 @@ function dealCalc(d){
   return {profit,bonus,fund,tax,isDeal:false};
 }
 let dealPosting=null, dealEditId=null, dealCarry=null, coopCarry=null, billEditId=null; // 入帳/編輯/帶去/請款編輯中
+let dealSel={}; // 分潤清單勾選
 
 function viewDeals(){
   const partners=state.employees.filter(e=>e.partner);
@@ -1763,7 +1770,7 @@ function viewDeals(){
   });
   const bonusCards=partners.map(p=>`<div class="metric"><div class="l">${esc(p.name)} 累計獎金</div><div class="v" style="font-size:18px">${money(bonusByPartner[p.id]||0)}</div></div>`).join('');
 
-  const rows=[...state.deals].sort((a,b)=>(b.date||'').localeCompare(a.date||'')).map(d=>{
+  const dealRow=(d)=>{
     const c=dealCalc(d);
     const sc=SCHEMES[d.scheme]||SCHEMES['new'];
     let action;
@@ -1795,7 +1802,7 @@ function viewDeals(){
     }
     // 編輯模式：未入帳才可編輯
     if(dealEditId===d.id && !d.posted){
-      return `<tr><td colspan="8" style="background:var(--bg)">
+      return `<tr><td colspan="9" style="background:var(--bg)">
         <div class="row" style="margin:6px 0">
           <div class="field" style="flex:1;min-width:140px"><label>案場名稱</label><input id="de-name" value="${esc(d.name)}"></div>
           <div class="field"><label>類型</label><select id="de-type"><option value="代工" ${d.type==='代工'?'selected':''}>代工</option><option value="公司分潤" ${d.type==='公司分潤'||d.type==='分潤/代料'?'selected':''}>公司分潤（30/70）</option><option value="合作案" ${d.type==='合作案'?'selected':''}>合作案（對半）</option></select></div>
@@ -1821,6 +1828,7 @@ function viewDeals(){
     const col6 = isCoop ? `<td class="num" style="color:var(--info)">管理人 ${money(c.companyShare)}</td>` : `<td class="num" style="color:var(--accent)">${money(c.bonus)}</td>`;
     const col7 = isCoop ? `<td class="num" style="color:var(--muted)">業主 ${money(c.partnerShare)}</td>` : `<td class="num">${money(c.fund)}</td>`;
     return `<tr>
+      <td><input type="checkbox" data-dealpick-cb="${d.id}" ${dealSel[d.id]?'checked':''} style="width:16px;height:16px"></td>
       <td>${esc(d.name)}<div style="font-size:11px;color:var(--muted)">${typeLabel}${isCoop?'':'·'+esc(d.ownerId?empName(d.ownerId):'—')}${d.owner?'｜業主'+esc(d.owner):''}${d.moneyAcc?'｜錢在'+esc(accountName(d.moneyAcc)):''}</div></td>
       <td class="num">${money(d.amount)}</td>
       <td class="num">${money(d.cost)}</td>
@@ -1830,7 +1838,18 @@ function viewDeals(){
       ${col7}
       <td>${editBtn}${action} <button class="act danger" data-deldeal="${d.id}">刪</button></td>
     </tr>`;
-  }).join('');
+  };
+  // 依類型分組（合作案另在上方橘卡，這裡只列代工與公司分潤）
+  const sortByDate=(a,b)=>(b.date||'').localeCompare(a.date||'');
+  const daigongDeals=state.deals.filter(d=>d.type==='代工').sort(sortByDate);
+  const companyDeals=state.deals.filter(d=>d.type==='公司分潤'||d.type==='分潤/代料').sort(sortByDate);
+  const otherDeals=state.deals.filter(d=>d.type!=='代工'&&d.type!=='公司分潤'&&d.type!=='分潤/代料'&&d.type!=='合作案').sort(sortByDate);
+  const tableHead=`<thead><tr><th style="width:28px"></th><th>案場</th><th class="num">金額</th><th class="num">成本</th><th class="num">稅金</th><th class="num">淨利</th><th class="num">獎金/管理人</th><th class="num">公積金/業主</th><th></th></tr></thead>`;
+  const sectionFor=(title,list)=> list.length===0?'':`
+    <div style="font-size:13px;font-weight:600;margin:14px 0 6px;color:var(--accent)">${title}（${list.length}）</div>
+    <div class="scroll"><table>${tableHead}<tbody>${list.map(dealRow).join('')}</tbody></table></div>`;
+  const dealsSections=sectionFor('代工',daigongDeals)+sectionFor('公司分潤',companyDeals)+sectionFor('其他',otherDeals);
+  const anyDeals=daigongDeals.length+companyDeals.length+otherDeals.length;
 
   // 合作案場：自動匯總（一案一筆，可結案收合）
   const coopSites=state.sites.filter(s=>s.coop);
@@ -1912,12 +1931,15 @@ function viewDeals(){
   </div>
   <div class="card">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:8px">
-      <div style="font-size:14px;font-weight:600">案場損益清單</div>
-      <button class="btn" id="export-deals" ${state.deals.length===0?'disabled style="opacity:.5"':''}>匯出 PDF</button>
+      <div style="font-size:14px;font-weight:600">案場損益清單（代工／公司分潤）</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="act" id="deals-selall" style="border:1px solid var(--line2);border-radius:8px;padding:0 12px;height:34px">全選</button>
+        <button class="act" id="deals-selnone" style="border:1px solid var(--line2);border-radius:8px;padding:0 12px;height:34px">取消全選</button>
+        <button class="btn" id="export-deals-sel" ${anyDeals===0?'disabled style="opacity:.5"':''}>匯出選取</button>
+        <button class="btn" id="export-deals" ${anyDeals===0?'disabled style="opacity:.5"':''}>全部匯出</button>
+      </div>
     </div>
-    ${rows===''?'<div class="empty">尚無案場損益紀錄。</div>':`<div class="scroll"><table>
-      <thead><tr><th>案場</th><th class="num">金額</th><th class="num">成本</th><th class="num">稅金</th><th class="num">淨利</th><th class="num">獎金/管理人</th><th class="num">公積金/業主</th><th></th></tr></thead>
-      <tbody>${rows}</tbody></table></div>`}
+    ${anyDeals===0?'<div class="empty">尚無代工／公司分潤紀錄。（合作案場在上方橘色卡片）</div>':dealsSections}
   </div>`;
 }
 
