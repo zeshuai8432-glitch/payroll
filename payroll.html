@@ -578,7 +578,7 @@ function viewManage(){
     const settings=`<tr${paused?' style="color:var(--muted)"':''}><td colspan="4" style="padding-top:0">
       <details style="margin:2px 0 8px"><summary style="cursor:pointer;font-size:12px;color:var(--info)">案場設定（類型／稅率／負責人／帳戶）</summary>
         <div class="row" style="margin:8px 0 4px">
-          <div class="field"><label>類型</label><select data-sitetype="${s.id}"><option value="代工" ${curType==='代工'?'selected':''}>代工</option><option value="公司分潤" ${curType==='公司分潤'?'selected':''}>公司分潤</option><option value="合作案" ${curType==='合作案'?'selected':''}>合作案</option></select></div>
+          <div class="field"><label>類型</label><select data-sitetype="${s.id}"><option value="代工" ${curType==='代工'?'selected':''}>代工</option><option value="公司分潤" ${curType==='公司分潤'?'selected':''}>公司分潤</option><option value="舊制" ${curType==='舊制'?'selected':''}>舊制（全進公積金）</option><option value="合作案" ${curType==='合作案'?'selected':''}>合作案</option></select></div>
           <div class="field"><label>稅率 %</label><input type="number" data-sitetax="${s.id}" value="${s.siteTaxPct!==undefined?s.siteTaxPct:(s.coopTaxPct||0)}" min="0" max="100" step="0.5" style="width:90px"></div>
           <div class="field"><label>負責人</label><select data-siteowner="${s.id}"><option value="">（未指定）</option>${state.employees.filter(e=>e.partner).map(p=>`<option value="${p.id}" ${s.siteOwnerId===p.id?'selected':''}>${esc(p.name)}</option>`).join('')}</select></div>
           <div class="field"><label>錢進哪個帳戶</label><select data-siteacc="${s.id}"><option value="">（未指定）</option>${state.accounts.map(a=>`<option value="${a.id}" ${s.siteAcc===a.id?'selected':''}>${esc(a.name)}</option>`).join('')}</select></div>
@@ -610,7 +610,7 @@ function viewManage(){
     <p class="sub">建案場時設好<b>類型、稅率、負責人、錢進哪個帳戶</b>，之後請款追蹤一輸入，系統就自動算分潤、自動進帳戶，不用再去分潤頁手動建。<b>代工／公司分潤</b>＝（總請款−稅）做30/70；<b>合作案</b>＝（總請款−案場成本）對拆、不出現在出工登記、成本記「案場成本」頁。改名會套用到所有相關紀錄。</p>
     <div class="row" style="margin-bottom:8px">
       <div class="field" style="flex:1;min-width:180px"><label>案場名稱</label><input id="s-name" placeholder="例：台北富邦"></div>
-      <div class="field"><label>類型</label><select id="s-type"><option value="代工">代工</option><option value="公司分潤">公司分潤</option><option value="合作案">合作案</option></select></div>
+      <div class="field"><label>類型</label><select id="s-type"><option value="代工">代工</option><option value="公司分潤">公司分潤</option><option value="舊制">舊制（全進公積金）</option><option value="合作案">合作案</option></select></div>
       <div class="field"><label>稅率 %</label><input type="number" id="s-tax" min="0" max="100" step="0.5" value="0" style="width:90px"></div>
     </div>
     <div class="row" style="margin-bottom:10px">
@@ -708,9 +708,10 @@ function bind(){
     state.attendance.push({id:uid(),date,empId,siteId,hours,night,dailyRate:emp.daily});
     // 保留日期與案場（員工不保留，登記後清空方便接著選下一個人）
     entryDate=date; entrySite=siteId; entryEmp='';
+    resyncAllSiteDeals();
     saveData(); render();
   };
-  document.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>{ const r=state.attendance.find(x=>x.id===b.dataset.del); if(!confirm(`確定刪除這筆出工？\n${r?esc(r.date)+'・'+empName(r.empId)+'・'+siteName(r.siteId):''}`)) return; state.attendance=state.attendance.filter(r=>r.id!==b.dataset.del); saveData(); render(); });
+  document.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>{ const r=state.attendance.find(x=>x.id===b.dataset.del); if(!confirm(`確定刪除這筆出工？\n${r?esc(r.date)+'・'+empName(r.empId)+'・'+siteName(r.siteId):''}`)) return; state.attendance=state.attendance.filter(r=>r.id!==b.dataset.del); resyncAllSiteDeals(); saveData(); render(); });
   document.querySelectorAll('[data-togglegroup]').forEach(b=>b.onclick=()=>{
     const dk=b.dataset.togglegroup;
     const cur=entryOpenDates[dk];
@@ -797,6 +798,10 @@ function bind(){
     const mgrPct=parseFloat(document.getElementById('s-mgrpct').value);
     const site={id:uid(),name,type,coop:type==='合作案',siteTaxPct:isNaN(tax)?0:tax,siteOwnerId:ownerId,siteAcc:acc};
     if(type==='合作案'){ site.coopMgrPct=isNaN(mgrPct)?50:mgrPct; site.coopTaxPct=isNaN(tax)?0:tax; }
+    const miss=[];
+    if(type!=='合作案' && !ownerId) miss.push('負責人');
+    if(!acc) miss.push('錢進哪個帳戶');
+    if(miss.length){ if(!confirm(`這個案場還沒設定：${miss.join('、')}。\n仍可先建立，但分潤的獎金歸屬／自動進帳可能不完整，記得之後到案場設定補上。\n\n要直接建立嗎？`)) return; }
     state.sites.push(site); saveData(); render();
   };
   document.querySelectorAll('[data-delsite]').forEach(b=>b.onclick=()=>{ const s=state.sites.find(x=>x.id===b.dataset.delsite); if(!confirm(`確定刪除案場「${s?esc(s.name):''}」？`)) return; state.sites=state.sites.filter(s=>s.id!==b.dataset.delsite); saveData(); render(); });
@@ -817,7 +822,7 @@ function bind(){
   document.querySelectorAll('[data-opening]').forEach(inp=>inp.onchange=()=>{
     const s=state.sites.find(x=>x.id===inp.dataset.opening); if(!s) return;
     const v=parseFloat(inp.value);
-    if(isNaN(v)||v<=0) delete s.opening; else s.opening=v;
+    if(isNaN(v)||v<=0) delete s.opening; else s.opening=v; resyncAllSiteDeals();
     saveData(); render();
   });
   document.querySelectorAll('[data-costadd]').forEach(b=>b.onclick=()=>{
@@ -827,12 +832,12 @@ function bind(){
     const amount=parseFloat(document.querySelector(`[data-costamount="${sid}"]`).value);
     const payer=document.querySelector(`[data-costpayer="${sid}"]`).value;
     if(!date||isNaN(amount)||amount<=0){ alert('請填日期與金額'); return; }
-    state.costs.push({id:uid(),siteId:sid,date,item,amount,payer});
+    state.costs.push({id:uid(),siteId:sid,date,item,amount,payer}); resyncAllSiteDeals();
     saveData(); render();
   });
   document.querySelectorAll('[data-delcost]').forEach(b=>b.onclick=()=>{
     if(!confirm('確定刪除這筆成本？')) return;
-    state.costs=state.costs.filter(c=>c.id!==b.dataset.delcost); saveData(); render();
+    state.costs=state.costs.filter(c=>c.id!==b.dataset.delcost); resyncAllSiteDeals(); saveData(); render();
   });
   document.querySelectorAll('[data-costedit]').forEach(b=>b.onclick=()=>{ costEditId=b.dataset.costedit; render(); });
   document.querySelectorAll('[data-costeditcancel]').forEach(b=>b.onclick=()=>{ costEditId=null; render(); });
@@ -843,7 +848,7 @@ function bind(){
     c.date=document.getElementById('ce-date').value;
     c.item=document.getElementById('ce-item').value.trim();
     c.amount=amount;
-    c.payer=document.getElementById('ce-payer').value;
+    c.payer=document.getElementById('ce-payer').value; resyncAllSiteDeals();
     costEditId=null; saveData(); render();
   });
   document.querySelectorAll('[data-rensite]').forEach(b=>b.onclick=()=>{
@@ -1268,7 +1273,14 @@ function bind(){
     if(!confirm('確定刪除這筆請款？')) return;
     const siteName=bill?bill.site:null;
     state.billings=state.billings.filter(x=>x.id!==b.dataset.delbill);
+    // 重算該案場分潤（找得到案場就 resync）
     const so=state.sites.find(x=>x.name===siteName); if(so) resyncSiteDeal(so);
+    // 防呆：清掉任何「對應案場已無請款」的自動分潤
+    state.deals.filter(d=>d.autoSiteId).forEach(d=>{
+      const s=state.sites.find(x=>x.id===d.autoSiteId);
+      const tot=s?state.billings.filter(x=>x.site===s.name).reduce((a,x)=>a+(Number(x.amount)||0),0):0;
+      if(!s || tot<=0){ state.ledger=state.ledger.filter(t=>t.autoDealId!==d.id); state.deals=state.deals.filter(x=>x.id!==d.id); }
+    });
     saveData(); render();
   });
   document.querySelectorAll('[data-contract]').forEach(inp=>inp.onchange=()=>{
@@ -1929,6 +1941,17 @@ function rebuildAllDealIncome(){
   state.ledger=state.ledger.filter(t=>!t.autoDealId);
   state.deals.forEach(d=>{ if(d.moneyAcc && d.type!=='合作案'){ const amt=dealIncomeAmount(d); if(amt!==0) state.ledger.push({id:uid(), date:d.date||new Date().toISOString().slice(0,10), accId:d.moneyAcc, kind:amt>=0?'in':'out', amount:Math.abs(amt), note:`分潤進帳·${d.name}`, autoDealId:d.id}); } });
 }
+// 案場成本（給分潤算淨利用）＝出工工資+津貼 + 手動成本 +（期初，但舊制不算期初）
+function siteCostForDeal(site){
+  const comp=computeRecords(state.attendance);
+  let wage=0;
+  state.attendance.forEach(r=>{ if(r.siteId!==site.id) return; const c=comp[r.id]; if(!c) return; wage+=c.total; });
+  let manual=0;
+  state.costs.forEach(co=>{ if(co.siteId===site.id) manual+=Number(co.amount)||0; });
+  const opening=(site.type==='舊制')?0:(Number(site.opening)||0);
+  return Math.round(wage+manual+opening);
+}
+function resyncAllSiteDeals(){ state.sites.forEach(s=>{ if(!(s.coop||s.type==='合作案')) resyncSiteDeal(s); }); }
 // 案場驅動：代工/公司分潤案場 → 自動維護「一個案場一筆分潤」，金額＝該案場總請款
 function resyncSiteDeal(site){
   // 合作案不走這裡（合作案在分潤頁用 coopSiteCalc 自動匯總）
@@ -1951,8 +1974,9 @@ function resyncSiteDeal(site){
   d.name=site.name;
   d.type=site.type||'代工';
   d.amount=totalBill;
+  d.cost=siteCostForDeal(site);              // 期初(舊制不算)+出工工資+手動成本
   d.taxPct=(site.siteTaxPct!==undefined?site.siteTaxPct:0);
-  d.scheme='new';
+  d.scheme=(site.type==='舊制')?'old':'new';  // 舊制全進公積金，其餘30/70
   d.ownerId=site.siteOwnerId||'';
   d.moneyAcc=site.siteAcc||'';
   syncDealIncome(d);
@@ -2118,7 +2142,7 @@ function viewDeals(){
     <details><summary style="cursor:pointer;font-size:14px;font-weight:600">進階：手動補一筆分潤（一般不用）</summary>
     <p class="sub" style="margin-top:8px">正常流程是<b>到「員工/案場」建案場（設好類型/稅率/負責人/帳戶）→ 在「請款追蹤」記請款</b>，分潤就自動生出來、自動進帳戶，不用在這裡建。這裡只給「不屬於任何案場的一次性損益」臨時補用。手動建的不會自動跟請款連動。</p>
     <div class="row">
-      <div class="field" style="flex:1;min-width:160px"><label>案場名稱</label><input id="d-name" placeholder="例：義享影城"></div>
+      <div class="field" style="flex:1;min-width:160px"><label>案場名稱</label><input id="d-name" list="d-site-list" placeholder="可選或輸入"><datalist id="d-site-list">${state.sites.map(s=>`<option value="${esc(s.name)}">`).join('')}</datalist></div>
       <div class="field"><label>類型</label><select id="d-type"><option value="代工">代工</option><option value="公司分潤">公司分潤（30/70）</option></select></div>
       <div class="field"><label>日期</label><input type="date" id="d-date" value="${new Date().toISOString().slice(0,10)}"></div>
     </div>
@@ -2198,7 +2222,7 @@ function viewBilling(){
     </tr>`;}).join('');
     return `<div class="card">
       <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px;flex-wrap:wrap;gap:8px">
-        <div style="font-size:15px;font-weight:600">${esc(name)}</div>
+        <div style="font-size:15px;font-weight:600">${esc(name)}${(()=>{const so=state.sites.find(x=>x.name===name);if(!so)return '';if(so.coop||so.type==='合作案')return '<span class="tag" style="background:#fde9d4;color:#9a5b1a">合作案</span>';if(so.type)return `<span class="tag" style="background:#e3efe9;color:var(--accent)">${esc(so.type)}</span>`;return '';})()}</div>
         <div style="font-size:14px">已請款 <b>${money(billed)}</b>　|　已結算 <span style="color:var(--accent)">${money(settled)}</span>　|　未結算 <span style="color:var(--danger)">${money(unsettled)}</span></div>
       </div>
       ${progress}
@@ -2213,7 +2237,10 @@ function viewBilling(){
   const cards=activeNames.map(cardForName).join('');
   const pausedCards=pausedNames.length?`<details style="margin-top:10px"><summary style="cursor:pointer;font-weight:600;padding:8px 0">已暫停案場（${pausedNames.length}）</summary>${pausedNames.map(cardForName).join('')}</details>`:'';
 
-  const siteDatalist=state.sites.filter(s=>s.active!==false).map(s=>`<option value="${esc(s.name)}">`).join('');
+  const siteSelOpts=`<option value="">（選案場）</option>`+state.sites.filter(s=>s.active!==false).map(s=>{
+    const tag=(s.coop||s.type==='合作案')?'（合作案）':(s.type?`（${s.type}）`:'');
+    return `<option value="${esc(s.name)}">${esc(s.name)}${tag}</option>`;
+  }).join('');
 
   return `
   <div class="metrics">
@@ -2227,10 +2254,9 @@ function viewBilling(){
       <button class="btn" id="export-billing" ${state.billings.length===0?'disabled style="opacity:.5"':''}>匯出 PDF</button>
     </div>
     <p class="sub">記一筆請款：何時、哪個案場、請了多少。同一案場可多次請款，下方自動按案場彙總。合約總額、稅率請到「員工/案場」設定。合作案場的分潤在「分潤結算」自動算（總請款−總成本）。</p>
-    <datalist id="site-list">${siteDatalist}</datalist>
     <div class="row">
       <div class="field"><label>請款日</label><input type="date" id="b-date" value="${new Date().toISOString().slice(0,10)}"></div>
-      <div class="field" style="flex:1;min-width:140px"><label>案場名稱</label><input id="b-site" list="site-list" placeholder="輸入或選案場"></div>
+      <div class="field" style="flex:1;min-width:140px"><label>案場名稱</label><select id="b-site">${siteSelOpts}</select></div>
       <div class="field"><label>金額（本期請款）</label><input type="number" id="b-amount" min="0" step="1000" style="width:140px"></div>
       <div class="field"><label>請款方式</label><input id="b-method" placeholder="匯款" style="width:100px"></div>
       <div class="field"><label>業主</label><input id="b-client" placeholder="品佑、廣昕" style="width:110px"></div>
