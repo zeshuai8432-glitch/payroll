@@ -1030,7 +1030,12 @@ function bind(){
     state.ledger=state.ledger.filter(t=>t.fromDeal!==b.dataset.deldeal);
     state.deals=state.deals.filter(x=>x.id!==b.dataset.deldeal); saveData(); render();
   });
-  document.querySelectorAll('[data-postdeal]').forEach(b=>b.onclick=()=>{ dealPosting=b.dataset.postdeal; render(); });
+  document.querySelectorAll('[data-postdeal]').forEach(b=>b.onclick=()=>{
+    const d=state.deals.find(x=>x.id===b.dataset.postdeal); if(!d) return;
+    const c=dealCalc(d);
+    if(!confirm(`把這筆公積金 ${money(c.fund)} 標記為「已撥款」？\n（只做記號，不會動到任何帳戶餘額）`)) return;
+    d.posted=true; saveData(); render();
+  });
   document.querySelectorAll('[data-carry]').forEach(b=>b.onclick=()=>{ dealCarry=b.dataset.carry; render(); });
   document.querySelectorAll('[data-carrycancel]').forEach(b=>b.onclick=()=>{ dealCarry=null; render(); });
   document.querySelectorAll('[data-carrynew]').forEach(b=>b.onclick=()=>{
@@ -1162,9 +1167,8 @@ function bind(){
     d.posted=true; d.postAcc=accId; dealPosting=null; saveData(); render();
   });
   document.querySelectorAll('[data-unpostdeal]').forEach(b=>b.onclick=()=>{
-    if(!confirm('撤銷結帳？帳戶裡對應的公積金收支會一併刪除，累計獎金也會扣回。')) return;
+    if(!confirm('取消「已撥款」標記？（只是取消記號，不動帳戶）')) return;
     const did=b.dataset.unpostdeal;
-    state.ledger=state.ledger.filter(t=>t.fromDeal!==did);
     const d=state.deals.find(x=>x.id===did); if(d){ d.posted=false; delete d.postAcc; }
     saveData(); render();
   });
@@ -1339,7 +1343,7 @@ function exportDealsPDF(selectedOnly){
   const rows=list.sort((a,b)=>(b.date||'').localeCompare(a.date||'')).map(d=>{
     const c=dealCalc(d); const sc=SCHEMES[d.scheme]||SCHEMES['new'];
     gA+=Number(d.amount)||0; gC+=Number(d.cost)||0; gT+=c.tax; gP+=c.profit; gB+=c.bonus; gF+=c.fund;
-    return `<tr><td>${esc(d.name)}<br><span style="font-size:10px;color:#777">${d.type||'代工'}·${sc.label.split('（')[0]}·${esc(d.ownerId?empName(d.ownerId):'—')}${d.posted?'·已結帳':''}</span></td>
+    return `<tr><td>${esc(d.name)}<br><span style="font-size:10px;color:#777">${d.type||'代工'}·${sc.label.split('（')[0]}·${esc(d.ownerId?empName(d.ownerId):'—')}${d.posted?'·已撥款':''}</span></td>
       <td class="num">${money(d.amount)}</td><td class="num">${money(d.cost)}</td><td class="num">${money(c.tax)}</td>
       <td class="num">${money(c.profit)}</td><td class="num">${money(c.bonus)}</td><td class="num">${money(c.fund)}</td></tr>`;
   }).join('');
@@ -1850,13 +1854,9 @@ function viewDeals(){
         action=`<button class="act" data-carry="${d.id}" style="border:1px solid var(--info);border-radius:6px;padding:2px 10px;color:var(--info)">帶去公司分潤 →</button>`;
       }
     } else if(d.posted){
-      action=`<span class="tag" style="background:#e3efe9;color:var(--accent)">已結帳</span><button class="act danger" data-unpostdeal="${d.id}">撤銷</button>`;
-    } else if(state.accounts.length===0){
-      action='<span class="sub">需先建帳戶</span>';
-    } else if(dealPosting===d.id){
-      action=`<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center"><span class="sub" style="margin:0">公積金 ${money(c.fund)} 入哪個帳戶？</span>${state.accounts.map(a=>`<button class="act" data-dealpick="${d.id}::${a.id}" style="border:1px solid var(--accent);border-radius:6px;padding:2px 10px;color:var(--accent)">${esc(a.name)}</button>`).join('')}<button class="act muted" data-dealcancel="1" style="cursor:pointer">取消</button></div>`;
+      action=`<span class="tag" style="background:#e3efe9;color:var(--accent)">✓ 已撥款</span><button class="act danger" data-unpostdeal="${d.id}">取消標記</button>`;
     } else {
-      action=`<button class="act" data-postdeal="${d.id}" style="border:1px solid var(--accent);border-radius:6px;padding:2px 10px;color:var(--accent)">入公積金帳戶 →</button>`;
+      action=`<button class="act" data-postdeal="${d.id}" style="border:1px solid var(--accent);border-radius:6px;padding:2px 10px;color:var(--accent)">標記已撥款</button>`;
     }
     // 編輯模式：未入帳才可編輯
     if(dealEditId===d.id && !d.posted){
@@ -1963,7 +1963,7 @@ function viewDeals(){
 
   return `
   <div class="metrics">
-    <div class="metric" style="background:var(--accent);color:#fff"><div class="l" style="color:#fff;opacity:.85">累計進公積金（已結帳）</div><div class="v">${money(totFund)}</div></div>
+    <div class="metric" style="background:var(--accent);color:#fff"><div class="l" style="color:#fff;opacity:.85">已標記撥款的公積金</div><div class="v">${money(totFund)}</div></div>
     ${bonusCards}
   </div>
   ${coopSites.length?`<div class="card" style="background:#fdf6ee"><div style="font-size:14px;font-weight:600;margin-bottom:2px">合作案場（自動匯總）</div><p class="sub" style="margin:0 0 8px">每個合作案場一筆，金額=該案場總請款、成本=該案場總成本，隨請款/成本變動。管理人那半可「帶去公司分潤」再算30/70。</p></div>${coopActiveHtml}${coopPausedHtml}${coopClosedHtml}`:''}
@@ -2212,8 +2212,8 @@ function reconSection(key, from, to){
     return `<h2 class="sec">年度總結（${rangeTxt}）</h2>
       <table><tbody>
         <tr><td>帳面公積金（分潤累計）</td><td class="num">${money(bookFund)}</td></tr>
-        <tr><td>已入帳公積金</td><td class="num">${money(postedFund)}</td></tr>
-        <tr class="total-row"><td>尚未入帳（待結清）</td><td class="num">${money(notYetIn)}</td></tr>
+        <tr><td>已撥款公積金</td><td class="num">${money(postedFund)}</td></tr>
+        <tr class="total-row"><td>尚未撥款（待結清）</td><td class="num">${money(notYetIn)}</td></tr>
       </tbody></table>
       <div class="sec" style="font-size:12px">各帳戶實際餘額</div>
       <table><thead><tr><th>帳戶</th><th class="num">餘額</th></tr></thead><tbody>${accRows}<tr class="total-row"><td>合計</td><td class="num">${money(totalAcc)}</td></tr></tbody></table>
@@ -2341,21 +2341,21 @@ function viewYearEnd(){
   </div>
   <div class="metrics">
     <div class="metric"><div class="l">帳面公積金（分潤累計）</div><div class="v" style="font-size:19px">${money(bookFund)}</div></div>
-    <div class="metric"><div class="l">已入帳公積金</div><div class="v" style="font-size:19px;color:var(--accent)">${money(postedFund)}</div></div>
-    <div class="metric" style="background:${notYetIn>0?'var(--warn-bg)':'var(--bg)'}"><div class="l" style="${notYetIn>0?'color:var(--warn-ink)':''}">尚未入帳（待結清）</div><div class="v" style="font-size:19px;${notYetIn>0?'color:var(--warn-ink)':''}">${money(notYetIn)}</div></div>
+    <div class="metric"><div class="l">已撥款公積金</div><div class="v" style="font-size:19px;color:var(--accent)">${money(postedFund)}</div></div>
+    <div class="metric" style="background:${notYetIn>0?'var(--warn-bg)':'var(--bg)'}"><div class="l" style="${notYetIn>0?'color:var(--warn-ink)':''}">尚未撥款（待結清）</div><div class="v" style="font-size:19px;${notYetIn>0?'color:var(--warn-ink)':''}">${money(notYetIn)}</div></div>
   </div>
   <div class="card">
     <div style="font-size:14px;font-weight:600;margin-bottom:4px">公積金結清說明</div>
     <p class="sub">「帳面公積金」是所有案場分潤後該進公積金的總和。「已入帳」是你實際按過「入公積金帳戶」的部分。兩者的差 <b>${money(notYetIn)}</b> 就是<b>還沒撥進公積金的錢</b>——可能還躺在廣昕、品佑等帳戶裡。年底結清時，從那些帳戶把這筆撥進公積金帳戶、並在分潤頁按「入公積金帳戶」補登，帳面與實際就對平了。</p>
   </div>
   <div class="card">
-    <div style="font-size:14px;font-weight:600;margin-bottom:8px">各帳戶待撥公積金（尚未入帳的分潤，依錢進的帳戶彙總）</div>
-    ${accPendRows===''?'<div class="empty">目前沒有尚未入帳的分潤。</div>':`<table><thead><tr><th>錢在哪個帳戶</th><th class="num">待撥公積金</th></tr></thead><tbody>${accPendRows}<tr class="total-row" style="font-weight:600"><td>合計</td><td class="num" style="color:var(--warn-ink)">${money(notYetIn)}</td></tr></tbody></table>
+    <div style="font-size:14px;font-weight:600;margin-bottom:8px">各帳戶待撥公積金（尚未撥款的分潤，依錢進的帳戶彙總）</div>
+    ${accPendRows===''?'<div class="empty">目前沒有尚未撥款的分潤。</div>':`<table><thead><tr><th>錢在哪個帳戶</th><th class="num">待撥公積金</th></tr></thead><tbody>${accPendRows}<tr class="total-row" style="font-weight:600"><td>合計</td><td class="num" style="color:var(--warn-ink)">${money(notYetIn)}</td></tr></tbody></table>
     <p class="sub" style="margin:8px 0 0">這代表各帳戶裡「帳面上屬於公積金、但還沒撥過去」的金額。例：品佑帳戶若顯示 47,303，表示品佑帳戶裡有這筆是該撥進公積金的。年底從該帳戶撥款後，到分潤頁按「入公積金帳戶」補登即可。</p>`}
   </div>
   <div class="card">
-    <div style="font-size:14px;font-weight:600;margin-bottom:8px">尚未入帳分潤明細</div>
-    ${unpostedRows===''?'<div class="empty">沒有尚未入帳的分潤。</div>':`<div class="scroll"><table><thead><tr><th>案場</th><th class="num">應進公積金</th><th>錢在哪個帳戶</th></tr></thead><tbody>${unpostedRows}</tbody></table></div>`}
+    <div style="font-size:14px;font-weight:600;margin-bottom:8px">尚未撥款分潤明細</div>
+    ${unpostedRows===''?'<div class="empty">沒有尚未撥款的分潤。</div>':`<div class="scroll"><table><thead><tr><th>案場</th><th class="num">應進公積金</th><th>錢在哪個帳戶</th></tr></thead><tbody>${unpostedRows}</tbody></table></div>`}
   </div>
   <div class="card">
     <div style="font-size:14px;font-weight:600;margin-bottom:8px">各帳戶實際餘額</div>
