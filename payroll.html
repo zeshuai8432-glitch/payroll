@@ -499,7 +499,21 @@ function viewSites(){
     const empBreak=Object.entries(s.emp).sort((a,b)=>b[1]-a[1]).map(([eid,v])=>`<tr><td>${esc(empName(eid))}</td><td class="num">${money(v)}</td></tr>`).join('');
     const pct=grand>0?Math.round(s.grandTotal/grand*100):0;
     const myCosts=state.costs.filter(c=>c.siteId===sid).sort((a,b)=>(b.date||'').localeCompare(a.date||''));
-    const costRows=myCosts.map(c=>`<tr><td>${esc(c.date||'')}</td><td>${esc(c.item||'')}</td><td class="num">${money(c.amount)}</td><td>${esc(payerName(c.payer))}</td><td><button class="act danger" data-delcost="${c.id}">刪</button></td></tr>`).join('');
+    const costRows=myCosts.map(c=>{
+      if(costEditId===c.id){
+        return `<tr><td colspan="5" style="background:var(--bg)">
+          <div class="row" style="margin:6px 0">
+            <div class="field"><label>日期</label><input type="date" id="ce-date" value="${c.date||''}"></div>
+            <div class="field" style="flex:1;min-width:120px"><label>項目</label><input id="ce-item" value="${esc(c.item||'')}"></div>
+            <div class="field"><label>金額</label><input type="number" id="ce-amount" value="${c.amount||0}" min="0" step="1000" style="width:120px"></div>
+            <div class="field"><label>誰支付</label><select id="ce-payer"><option value="dz" ${c.payer==='dz'?'selected':''}>潘東澤</option><option value="gx" ${c.payer==='gx'?'selected':''}>廣昕</option><option value="py" ${c.payer==='py'?'selected':''}>品佑</option></select></div>
+            <button class="btn" data-costeditok="${c.id}">儲存</button>
+            <button class="act muted" data-costeditcancel="1" style="cursor:pointer;height:36px">取消</button>
+          </div>
+        </td></tr>`;
+      }
+      return `<tr><td>${esc(c.date||'')}</td><td>${esc(c.item||'')}</td><td class="num">${money(c.amount)}</td><td>${esc(payerName(c.payer))}</td><td><button class="act" data-costedit="${c.id}">改</button> <button class="act danger" data-delcost="${c.id}">刪</button></td></tr>`;
+    }).join('');
     const byPayer={}; myCosts.forEach(c=>{ byPayer[c.payer||'—']=(byPayer[c.payer||'—']||0)+(Number(c.amount)||0); });
     const payerSummary=Object.keys(byPayer).length?`<div class="sub" style="margin:4px 0">各人墊付：${Object.entries(byPayer).map(([k,v])=>`${esc(payerName(k))} ${money(v)}`).join('、')}</div>`:'';
     return `<div class="card" ${isCoop?'style="border-left:3px solid #d98430"':''}>
@@ -763,6 +777,18 @@ function bind(){
   document.querySelectorAll('[data-delcost]').forEach(b=>b.onclick=()=>{
     if(!confirm('確定刪除這筆成本？')) return;
     state.costs=state.costs.filter(c=>c.id!==b.dataset.delcost); saveData(); render();
+  });
+  document.querySelectorAll('[data-costedit]').forEach(b=>b.onclick=()=>{ costEditId=b.dataset.costedit; render(); });
+  document.querySelectorAll('[data-costeditcancel]').forEach(b=>b.onclick=()=>{ costEditId=null; render(); });
+  document.querySelectorAll('[data-costeditok]').forEach(b=>b.onclick=()=>{
+    const c=state.costs.find(x=>x.id===b.dataset.costeditok); if(!c) return;
+    const amount=parseFloat(document.getElementById('ce-amount').value);
+    if(isNaN(amount)||amount<=0){ alert('金額請填正數'); return; }
+    c.date=document.getElementById('ce-date').value;
+    c.item=document.getElementById('ce-item').value.trim();
+    c.amount=amount;
+    c.payer=document.getElementById('ce-payer').value;
+    costEditId=null; saveData(); render();
   });
   document.querySelectorAll('[data-rensite]').forEach(b=>b.onclick=()=>{
     const s=state.sites.find(x=>x.id===b.dataset.rensite); if(!s)return;
@@ -1787,6 +1813,7 @@ function dealCalc(d){
 }
 let dealPosting=null, dealEditId=null, dealCarry=null, coopCarry=null, billEditId=null; // 入帳/編輯/帶去/請款編輯中
 let dealSel={}; // 分潤清單勾選
+let costEditId=null; // 手動成本編輯中
 
 function viewDeals(){
   const partners=state.employees.filter(e=>e.partner);
