@@ -1602,7 +1602,7 @@ function viewDeals(){
     }
     const editBtn=(!d.posted)?`<button class="act" data-dealedit="${d.id}">編輯</button> `:'';
     return `<tr>
-      <td>${esc(d.name)}<div style="font-size:11px;color:var(--muted)">${d.type||'代工'}·${sc.label.split('（')[0]}·${esc(d.ownerId?empName(d.ownerId):'—')}${d.owner?'｜業主'+esc(d.owner):''}</div></td>
+      <td>${esc(d.name)}<div style="font-size:11px;color:var(--muted)">${d.type||'代工'}·${sc.label.split('（')[0]}·${esc(d.ownerId?empName(d.ownerId):'—')}${d.owner?'｜業主'+esc(d.owner):''}${d.moneyAcc?'｜錢在'+esc(accountName(d.moneyAcc)):''}</div></td>
       <td class="num">${money(d.amount)}</td>
       <td class="num">${money(d.cost)}</td>
       <td class="num">${money(c.tax)}${d.taxPct!==undefined&&d.taxPct!==''?`<div style="font-size:10px;color:var(--muted)">${d.taxPct}%</div>`:''}</td>
