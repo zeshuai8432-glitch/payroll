@@ -553,7 +553,7 @@ function viewManage(){
       <td><button class="act" data-partner="${e.id}">${e.partner?'取消股東':'設為股東'}</button></td>
       <td>${toggle}</td><td>${delBtn}</td></tr>`;
   }).join('');
-  const siteRows=state.sites.map(s=>{
+  const siteRowFor=(s)=>{
     const hasRecords=state.attendance.some(r=>r.siteId===s.id);
     const delBtn=hasRecords?'<span class="act muted" title="已有出工紀錄，無法刪除">🔒</span>':`<button class="act danger" data-delsite="${s.id}">刪</button>`;
     const paused=s.active===false;
@@ -571,7 +571,11 @@ function viewManage(){
       </details>
     </td></tr>`;
     return `<tr${paused?' style="color:var(--muted)"':''}><td>${nameCell}</td><td><button class="act" data-rensite="${s.id}">改名</button></td><td>${coopBtn}</td><td>${toggle}</td><td>${delBtn}</td></tr>${settings}`;
-  }).join('');
+  };
+  const activeSitesList=state.sites.filter(s=>s.active!==false);
+  const pausedSitesList=state.sites.filter(s=>s.active===false);
+  const siteRows=activeSitesList.map(siteRowFor).join('');
+  const pausedSiteTable=pausedSitesList.length?`<details style="margin-top:10px"><summary style="cursor:pointer;font-weight:600;padding:8px 0">已暫停案場（${pausedSitesList.length}）</summary><table><tbody>${pausedSitesList.map(siteRowFor).join('')}</tbody></table></details>`:'';
   return `
   <div class="card">
     <div style="font-size:14px;font-weight:600;margin-bottom:4px">員工</div>
@@ -591,7 +595,7 @@ function viewManage(){
       <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:14px;align-self:flex-end;height:38px"><input type="checkbox" id="s-coop" style="width:18px;height:18px">這是合作案場</label>
       <button class="btn" id="s-add">＋ 新增案場</button>
     </div>
-    ${state.sites.length===0?'<div class="empty">尚無案場。</div>':`<table><thead><tr><th>名稱</th><th></th><th></th><th></th><th></th></tr></thead><tbody>${siteRows}</tbody></table>`}
+    ${state.sites.length===0?'<div class="empty">尚無案場。</div>':`${activeSitesList.length?`<table><thead><tr><th>名稱</th><th></th><th></th><th></th><th></th></tr></thead><tbody>${siteRows}</tbody></table>`:'<div class="empty">沒有啟用中的案場。</div>'}${pausedSiteTable}`}
   </div>`;
 }
 
