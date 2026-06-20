@@ -1846,8 +1846,8 @@ function viewDeals(){
   const otherDeals=state.deals.filter(d=>d.type!=='代工'&&d.type!=='公司分潤'&&d.type!=='分潤/代料'&&d.type!=='合作案').sort(sortByDate);
   const tableHead=`<thead><tr><th style="width:28px"></th><th>案場</th><th class="num">金額</th><th class="num">成本</th><th class="num">稅金</th><th class="num">淨利</th><th class="num">獎金/管理人</th><th class="num">公積金/業主</th><th></th></tr></thead>`;
   const sectionFor=(title,list)=> list.length===0?'':`
-    <div style="font-size:13px;font-weight:600;margin:14px 0 6px;color:var(--accent)">${title}（${list.length}）</div>
-    <div class="scroll"><table>${tableHead}<tbody>${list.map(dealRow).join('')}</tbody></table></div>`;
+    <details open style="margin-top:10px"><summary style="cursor:pointer;font-size:13px;font-weight:600;color:var(--accent);padding:6px 0">${title}（${list.length}）</summary>
+    <div class="scroll"><table>${tableHead}<tbody>${list.map(dealRow).join('')}</tbody></table></div></details>`;
   const dealsSections=sectionFor('代工',daigongDeals)+sectionFor('公司分潤',companyDeals)+sectionFor('其他',otherDeals);
   const anyDeals=daigongDeals.length+companyDeals.length+otherDeals.length;
 
