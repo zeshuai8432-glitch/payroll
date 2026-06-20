@@ -1020,6 +1020,10 @@ function bind(){
     const s=state.sites.find(x=>x.id===inp.dataset.coopmgr); if(!s) return;
     const v=parseFloat(inp.value); s.coopMgrPct=isNaN(v)?50:Math.max(0,Math.min(100,v)); saveData(); render();
   });
+  document.querySelectorAll('[data-cooptax]').forEach(inp=>inp.onchange=()=>{
+    const s=state.sites.find(x=>x.id===inp.dataset.cooptax); if(!s) return;
+    const v=parseFloat(inp.value); s.coopTaxPct=isNaN(v)?0:Math.max(0,v); saveData(); render();
+  });
   document.querySelectorAll('[data-coopowner]').forEach(sel=>sel.onchange=()=>{
     const s=state.sites.find(x=>x.id===sel.dataset.coopowner); if(!s) return;
     s.coopOwnerId=sel.value; saveData(); render();
@@ -1718,10 +1722,12 @@ const SCHEMES={
 function coopSiteCalc(site){
   const totalBill=state.billings.filter(b=>b.site===site.name).reduce((s,b)=>s+(Number(b.amount)||0),0);
   const totalCost=(state.costs||[]).filter(c=>c.siteId===site.id).reduce((s,c)=>s+(Number(c.amount)||0),0);
-  const profit=totalBill-totalCost;
+  const taxPct=(site.coopTaxPct!==undefined&&site.coopTaxPct!=='')?Number(site.coopTaxPct):0;
+  const tax=totalBill*taxPct/100;
+  const profit=totalBill-totalCost-tax;
   const mgrPct=(site.coopMgrPct!==undefined&&site.coopMgrPct!=='')?Number(site.coopMgrPct):50;
   const ownerPct=100-mgrPct;
-  return {totalBill,totalCost,profit,mgrPct,ownerPct,companyShare:profit*mgrPct/100,partnerShare:profit*ownerPct/100};
+  return {totalBill,totalCost,tax,taxPct,profit,mgrPct,ownerPct,companyShare:profit*mgrPct/100,partnerShare:profit*ownerPct/100};
 }
 function dealCalc(d){
   const amount=Number(d.amount)||0, cost=Number(d.cost)||0;
@@ -1854,7 +1860,7 @@ function viewDeals(){
     return `<div class="card" style="border-left:3px solid #d98430">
       <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px;flex-wrap:wrap;gap:6px">
         <div style="font-size:15px;font-weight:600">${esc(s.name)}<span class="tag" style="background:#fde9d4;color:#9a5b1a">合作案場</span>${s.coopClosed?'<span class="tag">已結案</span>':''}</div>
-        <div style="font-size:13px">總請款 ${money(c.totalBill)}　−　總成本 ${money(c.totalCost)}　=　<b style="color:${c.profit<0?'var(--danger)':'var(--ink)'}">利潤 ${money(c.profit)}</b></div>
+        <div style="font-size:13px">總請款 ${money(c.totalBill)}　−　成本 ${money(c.totalCost)}${c.tax>0?`　−　稅 ${money(c.tax)}`:''}　=　<b style="color:${c.profit<0?'var(--danger)':'var(--ink)'}">利潤 ${money(c.profit)}</b></div>
       </div>
       <div style="display:flex;gap:18px;flex-wrap:wrap;align-items:center;font-size:14px;margin:4px 0">
         <span style="color:var(--info)">管理人(你們) ${c.mgrPct}%：<b>${money(c.companyShare)}</b></span>
@@ -1862,6 +1868,7 @@ function viewDeals(){
       </div>
       <div class="row" style="margin:6px 0">
         <div class="field"><label>管理人(你們)佔 %</label><input type="number" data-coopmgr="${s.id}" value="${s.coopMgrPct!==undefined?s.coopMgrPct:50}" min="0" max="100" step="5" style="width:120px"></div>
+        <div class="field"><label>稅率 %</label><input type="number" data-cooptax="${s.id}" value="${s.coopTaxPct!==undefined?s.coopTaxPct:0}" min="0" max="100" step="0.5" style="width:90px"></div>
         <div class="field"><label>負責人</label>${ownerSel}</div>
       </div>
       <p class="sub" style="margin:2px 0">請款在「請款追蹤」記、成本在「案場成本」逐筆記，這裡自動匯總、隨時更新。利潤未到帳前可為負，沒關係。</p>
