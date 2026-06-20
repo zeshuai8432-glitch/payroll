@@ -2207,38 +2207,46 @@ function viewParkAcc(){
     return picker+`<div class="card"><div class="empty">請先在上方選擇「哪個帳戶是品佑代支出」。</div></div>`;
   }
 
-  // 抓出 moneyAcc = 品佑 的分潤（未帶去公司分潤的合作案不在 state.deals，這裡只看實際 deals）
+  // 抓出 moneyAcc = 品佑 的分潤
   const parkDeals=state.deals.filter(d=>d.moneyAcc===state.parkAccId && d.type!=='合作案' && inRange(d.date));
-  let bonusByP={}, totalFund=0, totalBonus=0;
+  let bonusByP={}, bookFund=0, totalBonus=0;
   const detailRows=[...parkDeals].sort((a,b)=>(b.date||'').localeCompare(a.date||'')).map(d=>{
     const c=dealCalc(d);
     if(d.ownerId) bonusByP[d.ownerId]=(bonusByP[d.ownerId]||0)+c.bonus;
-    totalFund+=c.fund; totalBonus+=c.bonus;
+    bookFund+=c.fund; totalBonus+=c.bonus;
     return `<tr><td>${esc(d.name)}<div style="font-size:11px;color:var(--muted)">${esc(d.date||'')}${d.ownerId?'｜'+esc(empName(d.ownerId)):''}</div></td>
       <td class="num">${money(d.amount)}</td><td class="num" style="color:var(--accent)">${money(c.bonus)}</td><td class="num">${money(c.fund)}</td></tr>`;
   }).join('');
 
+  // 總額 = 品佑帳戶實際餘額；公積金 = 餘額 − 獎金
+  const balance=accountBalance(state.parkAccId);
+  const realFund=balance-totalBonus;        // 用餘額減獎金算出的公積金
+  const diff=balance-(totalBonus+bookFund); // 核對：餘額 vs（獎金+帳面公積金）
   const bonusRows=partners.map(p=>`<tr><td>${esc(p.name)} 管理獎金</td><td class="num" style="font-weight:600;color:var(--accent)">${money(bonusByP[p.id]||0)}</td></tr>`).join('');
-  const grand=totalBonus+totalFund;
+
+  const checkBox = Math.abs(diff)<1
+    ? `<div class="card" style="background:#eef7f0"><div style="font-size:14px;font-weight:600;color:var(--accent)">✓ 帳面相符</div><p class="sub" style="margin:4px 0 0">品佑帳戶餘額 ${money(balance)} ＝ 獎金 ${money(totalBonus)} ＋ 分潤帳面公積金 ${money(bookFund)}。帳對得起來。</p></div>`
+    : `<div class="card" style="background:var(--warn-bg)"><div style="font-size:14px;font-weight:600;color:var(--warn-ink)">⚠ 帳面有差額 ${money(diff)}</div><p class="sub" style="margin:4px 0 0">品佑帳戶餘額 ${money(balance)}，但「獎金 ${money(totalBonus)} ＋ 分潤帳面公積金 ${money(bookFund)} ＝ ${money(totalBonus+bookFund)}」。差 ${money(diff)}。<br>差額>0：帳戶錢比分潤帳面多（可能有些進帳還沒登記分潤、或有別的收入）。差額<0：帳戶錢比帳面少（可能品佑垫付/支出記多了、或分潤多記）。本頁「公積金」以餘額−獎金為準（${money(realFund)}）。</p></div>`;
 
   return picker+`
   <div class="metrics">
-    <div class="metric"><div class="l">品佑帳戶該拆出總額</div><div class="v" style="font-size:18px">${money(grand)}</div></div>
-    <div class="metric"><div class="l">獎金合計</div><div class="v" style="font-size:18px;color:var(--accent)">${money(totalBonus)}</div></div>
-    <div class="metric"><div class="l">公積金合計</div><div class="v" style="font-size:18px">${money(totalFund)}</div></div>
+    <div class="metric"><div class="l">品佑帳戶該拆出總額（餘額）</div><div class="v" style="font-size:18px">${money(balance)}</div></div>
+    <div class="metric"><div class="l">獎金合計（從分潤）</div><div class="v" style="font-size:18px;color:var(--accent)">${money(totalBonus)}</div></div>
+    <div class="metric"><div class="l">公積金（餘額−獎金）</div><div class="v" style="font-size:18px">${money(realFund)}</div></div>
   </div>
+  ${checkBox}
   <div class="card">
     <div style="font-size:14px;font-weight:600;margin-bottom:8px">三類拆解</div>
     <table><tbody>
       ${bonusRows}
-      <tr><td>公積金（你自己分配到東澤／廣昕帳戶）</td><td class="num" style="font-weight:600">${money(totalFund)}</td></tr>
-      <tr class="total-row" style="font-weight:600"><td>合計</td><td class="num">${money(grand)}</td></tr>
+      <tr><td>公積金（餘額−獎金，你自己分配到東澤／廣昕帳戶）</td><td class="num" style="font-weight:600">${money(realFund)}</td></tr>
+      <tr class="total-row" style="font-weight:600"><td>合計（＝品佑帳戶餘額）</td><td class="num">${money(balance)}</td></tr>
     </tbody></table>
-    <p class="sub" style="margin-top:8px">獎金按各案負責人歸給東澤或建龍；公積金 ${money(totalFund)} 請你依兩個公積金帳戶當下餘額自行分配，讓東澤帳戶與廣昕帳戶盡量平衡。實際撥款後，記得到「公積金帳戶」頁把對應收支記上，並到「分潤結算」把已撥的公積金按「入公積金帳戶」。</p>
+    <p class="sub" style="margin-top:8px">總額用品佑帳戶實際餘額；獎金按各案負責人從分潤加總；公積金＝餘額−獎金。公積金 ${money(realFund)} 請依兩個公積金帳戶當下餘額自行分配，讓東澤與廣昕帳戶盡量平衡。撥款後記得到「公積金帳戶」記收支、到「分潤結算」按「入公積金帳戶」。</p>
   </div>
   <div class="card">
     <div style="font-size:14px;font-weight:600;margin-bottom:8px">明細（錢在品佑帳戶的分潤）</div>
-    ${detailRows===''?'<div class="empty">目前沒有「錢進哪個帳戶＝品佑」的分潤。建分潤時記得選這個帳戶。</div>':`<div class="scroll"><table><thead><tr><th>案場</th><th class="num">金額</th><th class="num">獎金</th><th class="num">公積金</th></tr></thead><tbody>${detailRows}</tbody></table></div>`}
+    ${detailRows===''?'<div class="empty">目前沒有「錢進哪個帳戶＝品佑」的分潤。建分潤時記得選這個帳戶。</div>':`<div class="scroll"><table><thead><tr><th>案場</th><th class="num">金額</th><th class="num">獎金</th><th class="num">分潤帳面公積金</th></tr></thead><tbody>${detailRows}</tbody></table></div>`}
   </div>`;
 }
 
