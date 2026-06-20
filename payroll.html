@@ -229,21 +229,22 @@ function render(){
 function viewEntry(){
   const activeEmps=state.employees.filter(e=>e.active);
   const empOpts=activeEmps.map(e=>`<option value="${e.id}">${esc(e.name)}（日薪 ${e.daily}）</option>`).join('');
-  const siteOpts=state.sites.map(s=>`<option value="${s.id}">${esc(s.name)}</option>`).join('');
-  const needEmp=activeEmps.length===0, needSite=state.sites.length===0;
+  const activeSites=state.sites.filter(s=>s.active!==false);
+  const siteOpts=activeSites.map(s=>`<option value="${s.id}">${esc(s.name)}</option>`).join('');
+  const needEmp=activeEmps.length===0, needSite=activeSites.length===0;
   const noSetup=needEmp||needSite;
   let setupMsg='';
   if(noSetup){
-    const missing=[needEmp?'在職員工':null, needSite?'案場（工地）':null].filter(Boolean).join(' 和 ');
+    const missing=[needEmp?'在職員工':null, needSite?'啟用中的案場（工地）':null].filter(Boolean).join(' 和 ');
     setupMsg=`<div style="text-align:center;padding:24px 12px">
       <div style="font-size:15px;font-weight:600;margin-bottom:6px">還不能登記出工</div>
-      <div class="sub" style="margin-bottom:14px">登記出工前，需要先建立 <b>${missing}</b>。${needSite?'（剛建好的員工要能登記，得先有案場可選。）':''}</div>
+      <div class="sub" style="margin-bottom:14px">登記出工前，需要先建立 <b>${missing}</b>。${needSite?'（若案場都被暫停了，到「員工/案場」把要用的案場切回啟用。）':''}</div>
       <button class="btn" id="goto-manage">前往「員工/案場」設定 →</button>
     </div>`;
   }
   const today=new Date().toISOString().slice(0,10);
   const curDate=entryDate||today;
-  const curSite=entrySite|| (state.sites[0]?state.sites[0].id:'');
+  const curSite=entrySite|| (activeSites[0]?activeSites[0].id:'');
   // 今天(所選日期)這個案場已登記哪幾位
   let todayNote='';
   if(curSite){
@@ -295,7 +296,7 @@ function viewEntry(){
     </div>`;
   }).join('');
   const empOptsSel=activeEmps.map(e=>`<option value="${e.id}" ${e.id===entryEmp?'selected':''}>${esc(e.name)}（日薪 ${e.daily}）</option>`).join('');
-  const siteOptsSel=state.sites.map(s=>`<option value="${s.id}" ${s.id===curSite?'selected':''}>${esc(s.name)}</option>`).join('');
+  const siteOptsSel=activeSites.map(s=>`<option value="${s.id}" ${s.id===curSite?'selected':''}>${esc(s.name)}</option>`).join('');
   return `
   <div class="card">
     <p class="sub">登記一筆出工。日期與案場會保留，方便連續登記同案場多人。同一人同一天跑多案場就分開登記多筆。</p>
@@ -536,7 +537,10 @@ function viewManage(){
   const siteRows=state.sites.map(s=>{
     const hasRecords=state.attendance.some(r=>r.siteId===s.id);
     const delBtn=hasRecords?'<span class="act muted" title="已有出工紀錄，無法刪除">🔒</span>':`<button class="act danger" data-delsite="${s.id}">刪</button>`;
-    return `<tr><td>${esc(s.name)}</td><td><button class="act" data-rensite="${s.id}">改名</button></td><td>${delBtn}</td></tr>`;
+    const paused=s.active===false;
+    const toggle=`<button class="act" data-togglesite="${s.id}">${paused?'恢復啟用':'暫停'}</button>`;
+    const nameCell=`${esc(s.name)}${paused?'<span class="tag" style="background:var(--warn-bg);color:var(--warn-ink)">已暫停</span>':''}`;
+    return `<tr${paused?' style="color:var(--muted)"':''}><td>${nameCell}</td><td><button class="act" data-rensite="${s.id}">改名</button></td><td>${toggle}</td><td>${delBtn}</td></tr>`;
   }).join('');
   return `
   <div class="card">
@@ -551,12 +555,12 @@ function viewManage(){
   </div>
   <div class="card">
     <div style="font-size:14px;font-weight:600;margin-bottom:4px">案場</div>
-    <p class="sub">改名會套用到所有相關紀錄（同一個案場、新名字）。只有從沒登記過出工的案場才能刪除，以保護歷史成本。</p>
+    <p class="sub">改名會套用到所有相關紀錄（同一個案場、新名字）。案場暫停一陣子時可按「暫停」，登記出工的下拉就不會再出現它；其他頁面（案場成本、分潤等）照常顯示，數字不受影響，隨時可「恢復啟用」。只有從沒登記過出工的案場才能刪除，以保護歷史成本。</p>
     <div class="row" style="margin-bottom:10px">
       <div class="field" style="flex:1;min-width:200px"><label>案場名稱</label><input id="s-name" placeholder="例：台北元利四季 12F"></div>
       <button class="btn" id="s-add">＋ 新增案場</button>
     </div>
-    ${state.sites.length===0?'<div class="empty">尚無案場。</div>':`<table><thead><tr><th>名稱</th><th></th><th></th></tr></thead><tbody>${siteRows}</tbody></table>`}
+    ${state.sites.length===0?'<div class="empty">尚無案場。</div>':`<table><thead><tr><th>名稱</th><th></th><th></th><th></th></tr></thead><tbody>${siteRows}</tbody></table>`}
   </div>`;
 }
 
@@ -676,6 +680,12 @@ function bind(){
   const sa=document.getElementById('s-add');
   if(sa) sa.onclick=()=>{ const name=document.getElementById('s-name').value.trim(); if(!name)return; state.sites.push({id:uid(),name}); saveData(); render(); };
   document.querySelectorAll('[data-delsite]').forEach(b=>b.onclick=()=>{ const s=state.sites.find(x=>x.id===b.dataset.delsite); if(!confirm(`確定刪除案場「${s?esc(s.name):''}」？`)) return; state.sites=state.sites.filter(s=>s.id!==b.dataset.delsite); saveData(); render(); });
+  document.querySelectorAll('[data-togglesite]').forEach(b=>b.onclick=()=>{
+    const s=state.sites.find(x=>x.id===b.dataset.togglesite); if(!s) return;
+    // active 預設視為 true；按一下在 啟用 ↔ 暫停 間切換
+    s.active = (s.active===false) ? true : false;
+    saveData(); render();
+  });
   document.querySelectorAll('[data-opening]').forEach(inp=>inp.onchange=()=>{
     const s=state.sites.find(x=>x.id===inp.dataset.opening); if(!s) return;
     const v=parseFloat(inp.value);
