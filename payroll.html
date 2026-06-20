@@ -898,6 +898,14 @@ function bind(){
   const expLed=document.getElementById('export-ledger'); if(expLed) expLed.onclick=()=>exportLedgerPDF();
 
   // 分潤結算
+  const dTypeSel=document.getElementById('d-type');
+  const dToggleType=()=>{
+    const t=dTypeSel?dTypeSel.value:'';
+    const sw=document.getElementById('d-scheme-wrap'), mw=document.getElementById('d-mgr-wrap');
+    if(sw) sw.style.display=(t==='合作案')?'none':'';
+    if(mw) mw.style.display=(t==='合作案')?'':'none';
+  };
+  if(dTypeSel){ dTypeSel.onchange=dToggleType; dToggleType(); }
   const dAdd=document.getElementById('d-add');
   if(dAdd) dAdd.onclick=()=>{
     const name=document.getElementById('d-name').value.trim();
@@ -907,11 +915,14 @@ function bind(){
     const cost=parseFloat(document.getElementById('d-cost').value);
     const taxPct=parseFloat(document.getElementById('d-taxpct').value);
     const scheme=document.getElementById('d-scheme').value;
+    const mgrPct=parseFloat(document.getElementById('d-mgrpct').value);
     const ownerId=document.getElementById('d-owner').value;
     const owner=document.getElementById('d-client').value.trim();
     const moneyAcc=document.getElementById('d-acc').value;
     if(!name||isNaN(amount)){ alert('請填案場名稱與請款金額'); return; }
-    state.deals.push({id:uid(),name,type,date,amount,cost:isNaN(cost)?0:cost,taxPct:isNaN(taxPct)?0:taxPct,scheme,ownerId,owner,moneyAcc,posted:false});
+    const rec={id:uid(),name,type,date,amount,cost:isNaN(cost)?0:cost,taxPct:isNaN(taxPct)?0:taxPct,scheme,ownerId,owner,moneyAcc,posted:false};
+    if(type==='合作案') rec.mgrPct=isNaN(mgrPct)?50:mgrPct;
+    state.deals.push(rec);
     saveData(); render();
   };
   document.querySelectorAll('[data-deldeal]').forEach(b=>b.onclick=()=>{
@@ -927,7 +938,7 @@ function bind(){
   document.querySelectorAll('[data-carrynew]').forEach(b=>b.onclick=()=>{
     const d=state.deals.find(x=>x.id===b.dataset.carrynew); if(!d) return;
     const c=dealCalc(d);
-    const nd={id:uid(),name:d.name+'（公司分潤）',type:'公司分潤',date:new Date().toISOString().slice(0,10),amount:Math.round(c.companyShare),cost:0,taxPct:0,scheme:'new',ownerId:'',owner:d.owner||'',moneyAcc:d.moneyAcc||'',posted:false,fromCoop:d.id};
+    const nd={id:uid(),name:d.name+'（公司分潤）',type:'公司分潤',date:new Date().toISOString().slice(0,10),amount:Math.round(c.companyShare),cost:0,taxPct:0,scheme:'new',ownerId:d.ownerId||'',owner:d.owner||'',moneyAcc:d.moneyAcc||'',posted:false,fromCoop:d.id};
     state.deals.push(nd);
     d.carriedTo=nd.id; dealCarry=null; saveData(); render();
   });
@@ -936,6 +947,12 @@ function bind(){
     const d=state.deals.find(x=>x.id===cid), t=state.deals.find(x=>x.id===tid);
     if(!d||!t) return;
     if(t.posted){ alert('該公司分潤案已入帳，請先撤銷再併入。'); return; }
+    // 負責人核對
+    if(d.ownerId && t.ownerId && d.ownerId!==t.ownerId){
+      if(!confirm(`負責人不同：合作案是「${empName(d.ownerId)}」，但「${esc(t.name)}」的負責人是「${empName(t.ownerId)}」。\n確定還要併入嗎？`)) return;
+    } else if(d.ownerId && !t.ownerId){
+      if(!confirm(`「${esc(t.name)}」沒有指定負責人，合作案負責人是「${empName(d.ownerId)}」。確定併入嗎？`)) return;
+    }
     const c=dealCalc(d);
     t.amount=(Number(t.amount)||0)+Math.round(c.companyShare);
     d.carriedTo=tid; dealCarry=null; saveData(); render();
@@ -962,12 +979,21 @@ function bind(){
     const amount=parseFloat(document.getElementById('de-amount').value);
     if(!name||isNaN(amount)){ alert('請填案場名稱與請款金額'); return; }
     d.name=name;
-    d.type=document.getElementById('de-type').value;
+    const newType=document.getElementById('de-type').value;
+    d.type=newType;
     d.date=document.getElementById('de-date').value;
     d.amount=amount;
     const cost=parseFloat(document.getElementById('de-cost').value); d.cost=isNaN(cost)?0:cost;
     const tp=parseFloat(document.getElementById('de-taxpct').value); d.taxPct=isNaN(tp)?0:tp;
-    d.scheme=document.getElementById('de-scheme').value;
+    const schemeEl=document.getElementById('de-scheme');
+    const mgrEl=document.getElementById('de-mgrpct');
+    if(newType==='合作案'){
+      // 編輯前後都可能切換型態；管理人%欄存在才讀，否則沿用或預設
+      if(mgrEl){ const mp=parseFloat(mgrEl.value); d.mgrPct=isNaN(mp)?50:mp; }
+      else if(d.mgrPct===undefined) d.mgrPct=50;
+    } else {
+      if(schemeEl) d.scheme=schemeEl.value;
+    }
     d.ownerId=document.getElementById('de-owner').value;
     d.owner=document.getElementById('de-client').value.trim();
     d.moneyAcc=document.getElementById('de-acc').value;
@@ -1587,11 +1613,13 @@ function dealCalc(d){
   if(d.taxPct!==undefined && d.taxPct!=='' && d.taxPct!==null) tax=amount*(Number(d.taxPct)||0)/100;
   else tax=Number(d.tax)||0;
   const profit=amount-cost-tax;
-  // 合作案：算到÷2為止，得出公司應得的一半；不做30/70
+  // 合作案：業主出資源、管理人(你們)管現場，利潤依業主%/管理人%拆；算到這就停，不做30/70
   if(d.type==='合作案'){
-    const companyShare=profit/2;
-    const partnerShare=profit/2;
-    return {profit, tax, isDeal:true, companyShare, partnerShare, bonus:0, fund:0};
+    const mgrPct=(d.mgrPct!==undefined&&d.mgrPct!=='')?Number(d.mgrPct):50;
+    const ownerPct=100-mgrPct;
+    const companyShare=profit*mgrPct/100;   // 管理人(你們公司)那份
+    const partnerShare=profit*ownerPct/100; // 業主那份
+    return {profit, tax, isDeal:true, companyShare, partnerShare, mgrPct, ownerPct, bonus:0, fund:0};
   }
   const sc=SCHEMES[d.scheme]||SCHEMES['new'];
   const bonus=profit>0?profit*sc.bonus:0;
@@ -1623,7 +1651,7 @@ function viewDeals(){
       if(dealCarry===d.id){
         const opts=state.deals.filter(x=>x.type!=='合作案').map(x=>`<button class="act" data-carryinto="${d.id}::${x.id}" style="border:1px solid var(--accent);border-radius:6px;padding:2px 8px;color:var(--accent);margin:2px">${esc(x.name)}</button>`).join('');
         action=`<div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center">
-          <span class="sub" style="margin:0">公司應得 ${money(c.companyShare)} 帶去：</span>
+          <span class="sub" style="margin:0">管理人應得 ${money(c.companyShare)} 帶去：</span>
           <button class="act" data-carrynew="${d.id}" style="border:1px solid var(--accent);border-radius:6px;padding:2px 8px;color:var(--accent)">＋新建公司分潤</button>
           ${opts?`<span class="sub" style="margin:0">或併入：</span>${opts}`:''}
           <button class="act muted" data-carrycancel="1" style="cursor:pointer">取消</button>
@@ -1655,7 +1683,9 @@ function viewDeals(){
           <div class="field"><label>請款金額</label><input type="number" id="de-amount" value="${d.amount||0}" step="1000" style="width:120px"></div>
           <div class="field"><label>工資/成本</label><input type="number" id="de-cost" value="${d.cost||0}" step="1000" style="width:120px"></div>
           <div class="field"><label>稅率(%)</label><input type="number" id="de-taxpct" value="${d.taxPct!==undefined?d.taxPct:0}" step="0.1" style="width:90px"></div>
-          <div class="field"><label>制度</label><select id="de-scheme">${Object.entries(SCHEMES).map(([k,v])=>`<option value="${k}" ${d.scheme===k?'selected':''}>${v.label}</option>`).join('')}</select></div>
+          ${d.type==='合作案'
+            ? `<div class="field"><label>管理人(你們)佔 %</label><input type="number" id="de-mgrpct" min="0" max="100" step="5" value="${d.mgrPct!==undefined?d.mgrPct:50}" style="width:130px"></div>`
+            : `<div class="field"><label>制度</label><select id="de-scheme">${Object.entries(SCHEMES).map(([k,v])=>`<option value="${k}" ${d.scheme===k?'selected':''}>${v.label}</option>`).join('')}</select></div>`}
           <div class="field"><label>負責人</label><select id="de-owner"><option value="">（未指定）</option>${partners.map(p=>`<option value="${p.id}" ${d.ownerId===p.id?'selected':''}>${esc(p.name)}</option>`).join('')}</select></div>
           <div class="field" style="flex:1;min-width:110px"><label>業主</label><input id="de-client" value="${esc(d.owner||'')}"></div>
           <div class="field"><label>錢進哪個帳戶</label><select id="de-acc"><option value="">（未指定）</option>${state.accounts.map(a=>`<option value="${a.id}" ${d.moneyAcc===a.id?'selected':''}>${esc(a.name)}</option>`).join('')}</select></div>
@@ -1665,9 +1695,9 @@ function viewDeals(){
       </td></tr>`;
     }
     const editBtn=(!d.posted&&!d.carriedTo)?`<button class="act" data-dealedit="${d.id}">編輯</button> `:'';
-    const typeLabel=isCoop?'合作案(對半)':(d.type==='公司分潤'||d.type==='分潤/代料'?'公司分潤'+sc.label.split('（')[0].replace('新制','30/70').replace('舊制','0/100'):'代工');
-    const col6 = isCoop ? `<td class="num" style="color:var(--info)">公司 ${money(c.companyShare)}</td>` : `<td class="num" style="color:var(--accent)">${money(c.bonus)}</td>`;
-    const col7 = isCoop ? `<td class="num" style="color:var(--muted)">品佑 ${money(c.partnerShare)}</td>` : `<td class="num">${money(c.fund)}</td>`;
+    const typeLabel=isCoop?`合作案(業主${c.ownerPct}/管理人${c.mgrPct})`:(d.type==='公司分潤'||d.type==='分潤/代料'?'公司分潤'+sc.label.split('（')[0].replace('新制','30/70').replace('舊制','0/100'):'代工');
+    const col6 = isCoop ? `<td class="num" style="color:var(--info)">管理人 ${money(c.companyShare)}</td>` : `<td class="num" style="color:var(--accent)">${money(c.bonus)}</td>`;
+    const col7 = isCoop ? `<td class="num" style="color:var(--muted)">業主 ${money(c.partnerShare)}</td>` : `<td class="num">${money(c.fund)}</td>`;
     return `<tr>
       <td>${esc(d.name)}<div style="font-size:11px;color:var(--muted)">${typeLabel}${isCoop?'':'·'+esc(d.ownerId?empName(d.ownerId):'—')}${d.owner?'｜業主'+esc(d.owner):''}${d.moneyAcc?'｜錢在'+esc(accountName(d.moneyAcc)):''}</div></td>
       <td class="num">${money(d.amount)}</td>
@@ -1697,7 +1727,8 @@ function viewDeals(){
       <div class="field"><label>請款金額</label><input type="number" id="d-amount" min="0" step="1000" style="width:130px"></div>
       <div class="field"><label>工資/成本</label><input type="number" id="d-cost" min="0" step="1000" style="width:130px"></div>
       <div class="field"><label>發票稅率(%)</label><input type="number" id="d-taxpct" min="0" step="0.1" value="0" style="width:110px"></div>
-      <div class="field"><label>制度</label><select id="d-scheme">${schemeOpts}</select></div>
+      <div class="field" id="d-scheme-wrap"><label>制度</label><select id="d-scheme">${schemeOpts}</select></div>
+      <div class="field" id="d-mgr-wrap" style="display:none"><label>管理人(你們)佔 %</label><input type="number" id="d-mgrpct" min="0" max="100" step="5" value="50" style="width:130px"></div>
       <div class="field"><label>負責人</label><select id="d-owner"><option value="">（未指定）</option>${partnerOpts}</select></div>
       <div class="field" style="flex:1;min-width:120px"><label>業主（選填）</label><input id="d-client" placeholder="品佑、廣昕…"></div>
       <div class="field"><label>錢進哪個帳戶（選填）</label><select id="d-acc"><option value="">（未指定）</option>${state.accounts.map(a=>`<option value="${a.id}">${esc(a.name)}</option>`).join('')}</select></div>
@@ -1710,7 +1741,7 @@ function viewDeals(){
       <button class="btn" id="export-deals" ${state.deals.length===0?'disabled style="opacity:.5"':''}>匯出 PDF</button>
     </div>
     ${rows===''?'<div class="empty">尚無案場損益紀錄。</div>':`<div class="scroll"><table>
-      <thead><tr><th>案場</th><th class="num">金額</th><th class="num">成本</th><th class="num">稅金</th><th class="num">淨利</th><th class="num">獎金/公司半</th><th class="num">公積金/品佑半</th><th></th></tr></thead>
+      <thead><tr><th>案場</th><th class="num">金額</th><th class="num">成本</th><th class="num">稅金</th><th class="num">淨利</th><th class="num">獎金/管理人</th><th class="num">公積金/業主</th><th></th></tr></thead>
       <tbody>${rows}</tbody></table></div>`}
   </div>`;
 }
