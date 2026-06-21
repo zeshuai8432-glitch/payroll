@@ -2233,50 +2233,56 @@ function viewAccounts(){
     <div class="metric" style="background:var(--accent);color:#fff"><div class="l" style="color:#fff;opacity:.85">總餘額</div><div class="v">${money(totalBal)}</div></div>
   </div>
 
-  <div class="card">
-    <div style="font-size:14px;font-weight:600;margin-bottom:4px">帳戶管理</div>
-    <p class="sub">建立帳戶並設定「期初餘額」（承接上期的金額）。餘額＝期初＋所有收入−所有支出，系統自動計算。</p>
-    <div class="row" style="margin-bottom:10px">
-      <div class="field"><label>帳戶名稱</label><input id="acc-name" placeholder="例：東澤工程帳戶" style="width:180px"></div>
-      <div class="field"><label>期初餘額</label><input type="number" id="acc-opening" min="0" step="1000" value="0" style="width:130px"></div>
-      <button class="btn" id="acc-add">＋ 新增帳戶</button>
+  <details class="card">
+    <summary>帳戶管理</summary>
+    <div class="card-body">
+      <p class="sub">建立帳戶並設定「期初餘額」（承接上期的金額）。餘額＝期初＋所有收入−所有支出，系統自動計算。</p>
+      <div class="row" style="margin-bottom:10px">
+        <div class="field"><label>帳戶名稱</label><input id="acc-name" placeholder="例：東澤工程帳戶" style="width:180px"></div>
+        <div class="field"><label>期初餘額</label><input type="number" id="acc-opening" min="0" step="1000" value="0" style="width:130px"></div>
+        <button class="btn" id="acc-add">＋ 新增帳戶</button>
+      </div>
+      ${accs.length===0?'<div class="empty">尚無帳戶，請先新增。</div>':`<table><thead><tr><th>帳戶</th><th class="num">期初</th><th class="num">目前餘額</th><th></th></tr></thead>
+        <tbody>${accs.map(a=>{
+          const inUse=state.ledger.some(t=>t.accId===a.id);
+          const del=inUse?'<span class="act muted" title="已有交易，無法刪除">🔒</span>':`<button class="act danger" data-delacc="${a.id}">刪</button>`;
+          return `<tr><td>${esc(a.name)}</td><td class="num">${money(a.opening||0)}</td><td class="num" style="font-weight:600">${money(accountBalance(a.id))}</td><td><button class="act" data-editopen="${a.id}">改期初</button> ${del}</td></tr>`;
+        }).join('')}</tbody></table>`}
     </div>
-    ${accs.length===0?'<div class="empty">尚無帳戶，請先新增。</div>':`<table><thead><tr><th>帳戶</th><th class="num">期初</th><th class="num">目前餘額</th><th></th></tr></thead>
-      <tbody>${accs.map(a=>{
-        const inUse=state.ledger.some(t=>t.accId===a.id);
-        const del=inUse?'<span class="act muted" title="已有交易，無法刪除">🔒</span>':`<button class="act danger" data-delacc="${a.id}">刪</button>`;
-        return `<tr><td>${esc(a.name)}</td><td class="num">${money(a.opening||0)}</td><td class="num" style="font-weight:600">${money(accountBalance(a.id))}</td><td><button class="act" data-editopen="${a.id}">改期初</button> ${del}</td></tr>`;
-      }).join('')}</tbody></table>`}
-  </div>
+  </details>
 
   ${accs.length===0?'':`
-  <div class="card">
-    <div style="font-size:14px;font-weight:600;margin-bottom:4px">記一筆收支</div>
-    <div class="row">
-      <div class="field"><label>日期</label><input type="date" id="led-date" value="${new Date().toISOString().slice(0,10)}"></div>
-      <div class="field"><label>帳戶</label><select id="led-acc">${accOpts}</select></div>
-      <div class="field"><label>性質</label><select id="led-kind"><option value="out">支出（−）</option><option value="in">收入（+）</option></select></div>
-      <div class="field"><label>金額</label><input type="number" id="led-amount" min="0" step="100" style="width:120px"></div>
-      <div class="field" style="flex:1;min-width:200px"><label>項目/來源說明</label><input id="led-note" placeholder="例：酷擊五金材料、Hilti租金、台北住宿"></div>
-      <button class="btn" id="led-add">＋ 記帳</button>
+  <details class="card">
+    <summary>記一筆收支</summary>
+    <div class="card-body">
+      <div class="row">
+        <div class="field"><label>日期</label><input type="date" id="led-date" value="${new Date().toISOString().slice(0,10)}"></div>
+        <div class="field"><label>帳戶</label><select id="led-acc">${accOpts}</select></div>
+        <div class="field"><label>性質</label><select id="led-kind"><option value="out">支出（−）</option><option value="in">收入（+）</option></select></div>
+        <div class="field"><label>金額</label><input type="number" id="led-amount" min="0" step="100" style="width:120px"></div>
+        <div class="field" style="flex:1;min-width:200px"><label>項目/來源說明</label><input id="led-note" placeholder="例：酷擊五金材料、Hilti租金、台北住宿"></div>
+        <button class="btn" id="led-add">＋ 記帳</button>
+      </div>
     </div>
-  </div>
-  <div class="card">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:8px">
-      <div style="font-size:14px;font-weight:600">收支明細 ${txs.length>300?'<span style="color:var(--muted);font-size:12px">（顯示最近300筆）</span>':''}</div>
-      <button class="btn" id="export-ledger" ${txRows===''?'disabled style="opacity:.5"':''}>匯出 PDF</button>
+  </details>
+  <details class="card">
+    <summary>收支明細${txs.length>300?' <span style="color:var(--muted);font-size:12px">（顯示最近300筆）</span>':''}</summary>
+    <div class="card-body">
+      <div style="display:flex;justify-content:flex-end;margin-bottom:10px">
+        <button class="btn" id="export-ledger" ${txRows===''?'disabled style="opacity:.5"':''}>匯出 PDF</button>
+      </div>
+      <div class="row" style="margin-bottom:10px">
+        <div class="field"><label>帳戶</label><select id="led-filter" style="height:36px">${filterOpts}</select></div>
+        <div class="field"><label>起</label><input type="date" id="led-from" value="${ledgerFrom}"></div>
+        <div class="field"><label>訖</label><input type="date" id="led-to" value="${ledgerTo}"></div>
+        <button class="act" id="led-clearrange" style="height:36px;border:1px solid var(--line2);border-radius:8px;padding:0 12px">清除日期</button>
+        ${(ledgerFrom||ledgerTo)?`<div class="sub" style="margin:0;align-self:center">區間內　收入 ${money(rangeIn)}・支出 ${money(rangeOut)}</div>`:''}
+      </div>
+      ${txRows===''?'<div class="empty">此條件下尚無收支紀錄。</div>':`<div class="scroll"><table>
+        <thead><tr><th>日期</th><th>帳戶</th><th>項目/來源</th><th class="num">收入</th><th class="num">支出</th><th></th></tr></thead>
+        <tbody>${txRows}</tbody></table></div>`}
     </div>
-    <div class="row" style="margin-bottom:10px">
-      <div class="field"><label>帳戶</label><select id="led-filter" style="height:36px">${filterOpts}</select></div>
-      <div class="field"><label>起</label><input type="date" id="led-from" value="${ledgerFrom}"></div>
-      <div class="field"><label>訖</label><input type="date" id="led-to" value="${ledgerTo}"></div>
-      <button class="act" id="led-clearrange" style="height:36px;border:1px solid var(--line2);border-radius:8px;padding:0 12px">清除日期</button>
-      ${(ledgerFrom||ledgerTo)?`<div class="sub" style="margin:0;align-self:center">區間內　收入 ${money(rangeIn)}・支出 ${money(rangeOut)}</div>`:''}
-    </div>
-    ${txRows===''?'<div class="empty">此條件下尚無收支紀錄。</div>':`<div class="scroll"><table>
-      <thead><tr><th>日期</th><th>帳戶</th><th>項目/來源</th><th class="num">收入</th><th class="num">支出</th><th></th></tr></thead>
-      <tbody>${txRows}</tbody></table></div>`}
-  </div>`}`;
+  </details>`}`;
 }
 
 // ---- 案場損益及分潤結算 ----
@@ -2618,16 +2624,16 @@ function viewBilling(){
       <td>${esc(b.note||'')}</td>
       <td><button class="act" data-billedit="${b.id}">改</button> <button class="act danger" data-delbill="${b.id}">刪</button></td>
     </tr>`;}).join('');
-    return `<div class="card">
-      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px;flex-wrap:wrap;gap:8px">
-        <div style="font-size:15px;font-weight:600">${esc(name)}${(()=>{const so=state.sites.find(x=>x.name===name);if(!so)return '';if(so.coop||so.type==='合作案')return '<span class="tag" style="background:#fde9d4;color:#9a5b1a">合作案</span>';if(so.type)return `<span class="tag" style="background:#e3efe9;color:var(--accent)">${esc(so.type)}</span>`;return '';})()}</div>
-        <div style="font-size:14px">已請款 <b>${money(billed)}</b>　|　已結算 <span style="color:var(--accent)">${money(settled)}</span>　|　未結算 <span style="color:var(--danger)">${money(unsettled)}</span></div>
+    const siteTag=(()=>{const so=state.sites.find(x=>x.name===name);if(!so)return '';if(so.coop||so.type==='合作案')return '<span class="tag" style="background:#fde9d4;color:#9a5b1a">合作案</span>';if(so.type)return `<span class="tag" style="background:#e3efe9;color:var(--accent)">${esc(so.type)}</span>`;return '';})();
+    return `<details class="card">
+      <summary>${esc(name)}${siteTag}<span style="margin-left:auto;font-size:13px;font-weight:400;color:var(--muted)">已請款 <b style="color:var(--ink)">${money(billed)}</b>　未結算 <span style="color:var(--danger)">${money(unsettled)}</span></span></summary>
+      <div class="card-body">
+        ${progress}
+        <div class="scroll"><table>
+          <thead><tr><th>請款日</th><th class="num">金額</th><th>方式</th><th>業主</th><th>結算</th><th>備註</th><th></th></tr></thead>
+          <tbody>${rows}</tbody></table></div>
       </div>
-      ${progress}
-      <div class="scroll"><table>
-        <thead><tr><th>請款日</th><th class="num">金額</th><th>方式</th><th>業主</th><th>結算</th><th>備註</th><th></th></tr></thead>
-        <tbody>${rows}</tbody></table></div>
-    </div>`;
+    </details>`;
   };
   const namePaused=name=>{ const st=state.sites.find(x=>x.name===name); return st&&st.active===false; };
   const activeNames=siteNames.filter(n=>!namePaused(n));
@@ -2891,36 +2897,35 @@ function viewParkAcc(){
   const parkInTx=state.ledger.filter(t=>t.accId===state.parkAccId&&t.kind==='in').sort((a,b)=>(b.date||'').localeCompare(a.date||''));
   const parkOutTx=state.ledger.filter(t=>t.accId===state.parkAccId&&t.kind==='out').sort((a,b)=>(b.date||'').localeCompare(a.date||''));
   const txDetail=(arr,color)=>`<details style="margin:2px 0 4px 0"><summary style="cursor:pointer;font-size:12px;color:var(--info)">明細（${arr.length} 筆）</summary><div style="padding-left:8px">${arr.map(t=>vline(`${esc(t.date||'')}　${esc(t.note||'—')}`,money(t.amount),{sub:true,color})).join('')||'<div class="sub" style="padding:4px 0">無</div>'}</div></details>`;
-  const verify=`<div class="card">
-    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
-      <details style="flex:1;min-width:200px"><summary style="cursor:pointer;font-size:14px;font-weight:600">驗算明細（核對用，點開）</summary>
-      <div style="margin-top:4px">
-        ${vhead('① 品佑帳戶餘額','a')}
-        ${vline('期初',money(parkOpening))}
-        ${vline('＋ 收入合計',money(parkIn),{color:'var(--accent)'})}
-        ${txDetail(parkInTx,'var(--accent)')}
-        ${vline('− 支出合計',money(parkOut),{color:'var(--danger)'})}
-        ${txDetail(parkOutTx,'var(--danger)')}
-        ${vline('＝ 餘額',money(balance),{strong:true})}
-        ${vhead('② 公積金該留多少','b')}
-        ${vline('帳面該進公積金',money(Math.round(bookFund)))}
-        ${vline('你設定至少留',money(minFund))}
-        ${vline('＝ 取大的（該留）',money(targetFund),{strong:true})}
-        ${vline('實際填入（不超過餘額）',money(fundPaid),{strong:true})}
-        ${fundShort>0?vline('連該留都還差',money(fundShort),{color:'var(--danger)'}):''}
-        ${vhead('③ 獎金可發','c')}
-        ${vline('餘額',money(balance))}
-        ${vline('− 公積金',money(fundPaid))}
-        ${vline('＝ 可發獎金',money(availForBonus),{strong:true})}
-        ${vhead('④ 帳面該發獎金（各案相加）','d')}
-        ${bonusByDeal||'<div class="sub" style="padding:5px 0">無</div>'}
-        ${vline('合計應發',money(Math.round(totalTargetBonus)),{strong:true})}
+  const verify=`<details class="card">
+    <summary>驗算明細（核對用）</summary>
+    <div class="card-body">
+      <div style="display:flex;justify-content:flex-end;margin-bottom:10px">
+        <button class="btn" id="park-verify-pdf">匯出勾選 PDF</button>
       </div>
-      </details>
-      <button class="btn" id="park-verify-pdf" style="align-self:flex-start">匯出勾選 PDF</button>
+      ${vhead('① 品佑帳戶餘額','a')}
+      ${vline('期初',money(parkOpening))}
+      ${vline('＋ 收入合計',money(parkIn),{color:'var(--accent)'})}
+      ${txDetail(parkInTx,'var(--accent)')}
+      ${vline('− 支出合計',money(parkOut),{color:'var(--danger)'})}
+      ${txDetail(parkOutTx,'var(--danger)')}
+      ${vline('＝ 餘額',money(balance),{strong:true})}
+      ${vhead('② 公積金該留多少','b')}
+      ${vline('帳面該進公積金',money(Math.round(bookFund)))}
+      ${vline('你設定至少留',money(minFund))}
+      ${vline('＝ 取大的（該留）',money(targetFund),{strong:true})}
+      ${vline('實際填入（不超過餘額）',money(fundPaid),{strong:true})}
+      ${fundShort>0?vline('連該留都還差',money(fundShort),{color:'var(--danger)'}):''}
+      ${vhead('③ 獎金可發','c')}
+      ${vline('餘額',money(balance))}
+      ${vline('− 公積金',money(fundPaid))}
+      ${vline('＝ 可發獎金',money(availForBonus),{strong:true})}
+      ${vhead('④ 帳面該發獎金（各案相加）','d')}
+      ${bonusByDeal||'<div class="sub" style="padding:5px 0">無</div>'}
+      ${vline('合計應發',money(Math.round(totalTargetBonus)),{strong:true})}
+      <p class="sub" style="margin:12px 0 0">勾選①②③④要匯出的段落，按「匯出勾選 PDF」。</p>
     </div>
-    <p class="sub" style="margin:6px 0 0">勾選①②③④要匯出的段落，按「匯出勾選 PDF」。</p>
-  </div>`;
+  </details>`;
 
   return picker+`
   <div class="card">
@@ -2936,27 +2941,33 @@ function viewParkAcc(){
     <div class="metric"><div class="l">獎金可發</div><div class="v" style="font-size:18px;color:var(--accent)">${money(availForBonus>=totalTargetBonus?Math.round(totalTargetBonus):availForBonus)}</div></div>
   </div>
   ${verify}
-  <div class="card">
-    <div style="font-size:14px;font-weight:600;margin-bottom:6px">本期分配（公積金先填該留，獎金不夠照比例分）</div>
-    <p class="sub" style="margin:0 0 8px">餘額 ${money(balance)} 先填公積金 ${money(fundPaid)}，剩 ${money(availForBonus)} 分獎金。獎金不夠時按各人應拿比例分，少拿的列在「本期少拿」，可累加到下方「累計欠獎金」。</p>
-    <table><thead><tr><th>項目</th><th class="num">應拿</th><th class="num">本期實發</th><th class="num">本期少拿</th></tr></thead><tbody>
-      ${bonusRows}
-      <tr><td>公積金</td><td class="num">${money(targetFund)}</td><td class="num" style="font-weight:600">${money(fundPaid)}</td><td class="num">${fundShort>0?money(fundShort):'—'}</td></tr>
-      <tr class="total-row" style="font-weight:600"><td>合計</td><td class="num">${money(Math.round(totalTargetBonus)+targetFund)}</td><td class="num">${money(fundPaid+partners.reduce((s,p)=>s+(bonusPaid[p.id]||0),0))}</td><td class="num"></td></tr>
-    </tbody></table>
-    ${partners.some(p=>oweThis[p.id]>0)?`<button class="btn" id="park-addowe" style="margin-top:10px">把本期少拿累加到「欠獎金」</button>`:''}
-    <p class="sub" style="margin-top:8px">公積金 ${money(fundPaid)} 請你自行分配到東澤／廣昕帳戶（讓兩邊平衡）。實際撥款後到「公積金帳戶」記收支。</p>
-  </div>
-  <div class="card">
-    <div style="font-size:14px;font-weight:600;margin-bottom:6px">累計欠獎金（跨年）</div>
-    <p class="sub" style="margin:0 0 8px">系統幫你記著每人被欠多少，一直累加。下一年你看公司帳況決定補多少——帳健康就補、不夠就繼續欠。按「補發」輸入補的金額，會從欠額扣掉。</p>
-    ${oweRows?`<table><thead><tr><th>股東</th><th class="num">目前被欠</th><th></th></tr></thead><tbody>${oweRows}</tbody></table>`:'<div class="empty">尚未標記股東。</div>'}
-    ${anyOwe?'':'<div class="sub" style="margin-top:6px">目前沒有欠任何人獎金。</div>'}
-  </div>
-  <div class="card">
-    <div style="font-size:14px;font-weight:600;margin-bottom:8px">明細（錢在品佑帳戶的分潤）</div>
-    ${detailRows===''?'<div class="empty">目前沒有「錢進哪個帳戶＝品佑」的分潤。建分潤時記得把「錢進哪個帳戶」選品佑。</div>':`<div class="scroll"><table><thead><tr><th>案場</th><th class="num">金額</th><th class="num">獎金</th><th class="num">公積金</th></tr></thead><tbody>${detailRows}</tbody></table></div>`}
-  </div>`;
+  <details class="card">
+    <summary>本期分配（公積金先填該留，獎金不夠照比例分）</summary>
+    <div class="card-body">
+      <p class="sub" style="margin:0 0 8px">餘額 ${money(balance)} 先填公積金 ${money(fundPaid)}，剩 ${money(availForBonus)} 分獎金。獎金不夠時按各人應拿比例分，少拿的列在「本期少拿」，可累加到下方「累計欠獎金」。</p>
+      <table><thead><tr><th>項目</th><th class="num">應拿</th><th class="num">本期實發</th><th class="num">本期少拿</th></tr></thead><tbody>
+        ${bonusRows}
+        <tr><td>公積金</td><td class="num">${money(targetFund)}</td><td class="num" style="font-weight:600">${money(fundPaid)}</td><td class="num">${fundShort>0?money(fundShort):'—'}</td></tr>
+        <tr class="total-row" style="font-weight:600"><td>合計</td><td class="num">${money(Math.round(totalTargetBonus)+targetFund)}</td><td class="num">${money(fundPaid+partners.reduce((s,p)=>s+(bonusPaid[p.id]||0),0))}</td><td class="num"></td></tr>
+      </tbody></table>
+      ${partners.some(p=>oweThis[p.id]>0)?`<button class="btn" id="park-addowe" style="margin-top:10px">把本期少拿累加到「欠獎金」</button>`:''}
+      <p class="sub" style="margin-top:8px">公積金 ${money(fundPaid)} 請你自行分配到東澤／廣昕帳戶（讓兩邊平衡）。實際撥款後到「公積金帳戶」記收支。</p>
+    </div>
+  </details>
+  <details class="card">
+    <summary>累計欠獎金（跨年）</summary>
+    <div class="card-body">
+      <p class="sub" style="margin:0 0 8px">系統幫你記著每人被欠多少，一直累加。下一年你看公司帳況決定補多少——帳健康就補、不夠就繼續欠。按「補發」輸入補的金額，會從欠額扣掉。</p>
+      ${oweRows?`<table><thead><tr><th>股東</th><th class="num">目前被欠</th><th></th></tr></thead><tbody>${oweRows}</tbody></table>`:'<div class="empty">尚未標記股東。</div>'}
+      ${anyOwe?'':'<div class="sub" style="margin-top:6px">目前沒有欠任何人獎金。</div>'}
+    </div>
+  </details>
+  <details class="card">
+    <summary>明細（錢在品佑帳戶的分潤）</summary>
+    <div class="card-body">
+      ${detailRows===''?'<div class="empty">目前沒有「錢進哪個帳戶＝品佑」的分潤。建分潤時記得把「錢進哪個帳戶」選品佑。</div>':`<div class="scroll"><table><thead><tr><th>案場</th><th class="num">金額</th><th class="num">獎金</th><th class="num">公積金</th></tr></thead><tbody>${detailRows}</tbody></table></div>`}
+    </div>
+  </details>`;
 }
 
 // 品佑驗算匯出 PDF（依勾選的段落）
