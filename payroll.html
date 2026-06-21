@@ -2526,23 +2526,34 @@ function viewParkAcc(){
   }).join('');
   const anyOwe=partners.some(p=>(state.oweBonus[p.id]||0)>0);
 
-  // 驗算區（餘額怎麼來、公積金/獎金怎麼算）
+  // 驗算區（一行一項、金額靠右）
   const parkIn=state.ledger.filter(t=>t.accId===state.parkAccId&&t.kind==='in').reduce((s,t)=>s+(Number(t.amount)||0),0);
   const parkOut=state.ledger.filter(t=>t.accId===state.parkAccId&&t.kind==='out').reduce((s,t)=>s+(Number(t.amount)||0),0);
   const parkAcc=state.accounts.find(a=>a.id===state.parkAccId);
   const parkOpening=parkAcc?Number(parkAcc.opening)||0:0;
+  const vline=(label,val,opt={})=>`<div style="display:flex;justify-content:space-between;align-items:baseline;gap:12px;padding:5px 0;border-bottom:1px solid var(--line)${opt.strong?';font-weight:700':''}${opt.sub?';color:var(--muted);font-size:12px':''}"><span>${label}</span><span class="num" style="white-space:nowrap${opt.color?';color:'+opt.color:''}">${val}</span></div>`;
+  const vhead=(t)=>`<div style="font-weight:700;font-size:13px;margin:14px 0 4px;color:var(--accent)">${t}</div>`;
+  const bonusByDeal=[...parkDeals].filter(d=>d.ownerId).map(d=>{const c=dealCalc(d);return vline(`${esc(d.name)}（${esc(empName(d.ownerId))}）`,money(c.bonus),{sub:true});}).join('');
   const verify=`<details class="card"><summary style="cursor:pointer;font-size:14px;font-weight:600">驗算明細（核對用，點開）</summary>
-    <div style="font-size:13px;line-height:1.9;margin-top:8px">
-      <div style="font-weight:600;margin-bottom:2px">① 品佑帳戶餘額怎麼來</div>
-      期初 ${money(parkOpening)} ＋ 收入合計 ${money(parkIn)} − 支出合計 ${money(parkOut)} ＝ <b>${money(balance)}</b>
-      <div style="font-weight:600;margin:8px 0 2px">② 公積金該留多少</div>
-      帳面該進公積金 ${money(Math.round(bookFund))}　你設定至少留 ${money(minFund)}　→ 取大的 ＝ <b>${money(targetFund)}</b><br>
-      實際填 min(餘額 ${money(balance)}, 該留 ${money(targetFund)}) ＝ <b>${money(fundPaid)}</b>${fundShort>0?`（連該留都差 ${money(fundShort)}）`:''}
-      <div style="font-weight:600;margin:8px 0 2px">③ 獎金可發</div>
-      餘額 ${money(balance)} − 公積金 ${money(fundPaid)} ＝ <b>${money(availForBonus)}</b>
-      <div style="font-weight:600;margin:8px 0 2px">④ 帳面該發獎金（各案相加）</div>
-      ${[...parkDeals].filter(d=>d.ownerId).map(d=>{const c=dealCalc(d);return `${esc(d.name)}（${esc(empName(d.ownerId))}）${money(c.bonus)}`;}).join('　+　')||'—'}<br>
-      合計應發 ＝ <b>${money(Math.round(totalTargetBonus))}</b>
+    <div style="margin-top:4px">
+      ${vhead('① 品佑帳戶餘額')}
+      ${vline('期初',money(parkOpening))}
+      ${vline('＋ 收入合計',money(parkIn),{color:'var(--accent)'})}
+      ${vline('− 支出合計',money(parkOut),{color:'var(--danger)'})}
+      ${vline('＝ 餘額',money(balance),{strong:true})}
+      ${vhead('② 公積金該留多少')}
+      ${vline('帳面該進公積金',money(Math.round(bookFund)))}
+      ${vline('你設定至少留',money(minFund))}
+      ${vline('＝ 取大的（該留）',money(targetFund),{strong:true})}
+      ${vline('實際填入（不超過餘額）',money(fundPaid),{strong:true})}
+      ${fundShort>0?vline('連該留都還差',money(fundShort),{color:'var(--danger)'}):''}
+      ${vhead('③ 獎金可發')}
+      ${vline('餘額',money(balance))}
+      ${vline('− 公積金',money(fundPaid))}
+      ${vline('＝ 可發獎金',money(availForBonus),{strong:true})}
+      ${vhead('④ 帳面該發獎金（各案相加）')}
+      ${bonusByDeal||'<div class="sub" style="padding:5px 0">無</div>'}
+      ${vline('合計應發',money(Math.round(totalTargetBonus)),{strong:true})}
     </div>
   </details>`;
 
@@ -2614,28 +2625,31 @@ function viewYearEnd(){
     <div class="field"><label>訖</label><input type="date" id="ye-to" value="${yearTo}"></div>
     <button class="act" id="ye-clear" style="height:36px;border:1px solid var(--line2);border-radius:8px;padding:0 12px">全部</button>
   </div>`;
-  // 驗算明細
-  const fundCalcRows=[...allDeals].sort((a,b)=>(b.date||'').localeCompare(a.date||'')).map(d=>{const c=dealCalc(d);return `<tr><td>${esc(d.name)}</td><td class="num">${money(d.amount)}</td><td class="num">${money(d.cost)}</td><td class="num">${money(c.tax)}</td><td class="num">${money(c.profit)}</td><td class="num" style="font-weight:600">${money(c.fund)}</td></tr>`;}).join('');
-  const bonusCalcByP=partners.map(p=>{
+  // 驗算明細（一行一項、金額靠右）
+  const vline2=(label,val,opt={})=>`<div style="display:flex;justify-content:space-between;align-items:baseline;gap:12px;padding:5px 0;border-bottom:1px solid var(--line)${opt.strong?';font-weight:700':''}${opt.sub?';color:var(--muted);font-size:12px':''}"><span>${label}</span><span class="num" style="white-space:nowrap${opt.color?';color:'+opt.color:''}">${val}</span></div>`;
+  const vhead2=(t)=>`<div style="font-weight:700;font-size:13px;margin:14px 0 4px;color:var(--accent)">${t}</div>`;
+  const fundLines=[...allDeals].sort((a,b)=>(b.date||'').localeCompare(a.date||'')).map(d=>{const c=dealCalc(d);return vline2(`${esc(d.name)}<span style="color:var(--muted);font-size:11px">　金額${money(d.amount)}・成本${money(d.cost)}・稅${money(c.tax)}</span>`,money(c.fund),{sub:false});}).join('');
+  const bonusLines=partners.map(p=>{
     const items=allDeals.filter(d=>d.ownerId===p.id);
     if(items.length===0) return '';
-    const detail=items.map(d=>{const c=dealCalc(d);return `${esc(d.name)} ${money(c.bonus)}`;}).join('　+　');
-    return `<div style="margin:4px 0"><b>${esc(p.name)}</b>：${detail||'—'}　=　<b style="color:var(--accent)">${money(bonusByP[p.id]||0)}</b></div>`;
+    const sub=items.map(d=>{const c=dealCalc(d);return vline2(`　${esc(d.name)}`,money(c.bonus),{sub:true});}).join('');
+    return vhead2(`${esc(p.name)} 獎金`)+sub+vline2('小計',money(bonusByP[p.id]||0),{strong:true,color:'var(--accent)'});
   }).join('');
-  const accCalcRows=state.accounts.map(a=>{
+  const accLines=state.accounts.map(a=>{
     const inn=state.ledger.filter(t=>t.accId===a.id&&t.kind==='in').reduce((s,t)=>s+(Number(t.amount)||0),0);
     const out=state.ledger.filter(t=>t.accId===a.id&&t.kind==='out').reduce((s,t)=>s+(Number(t.amount)||0),0);
     const op=Number(a.opening)||0;
-    return `<tr><td>${esc(a.name)}</td><td class="num">${money(op)}</td><td class="num" style="color:var(--accent)">${money(inn)}</td><td class="num" style="color:var(--danger)">${money(out)}</td><td class="num" style="font-weight:600">${money(op+inn-out)}</td></tr>`;
+    return vhead2(esc(a.name))+vline2('期初',money(op))+vline2('＋ 收入',money(inn),{color:'var(--accent)'})+vline2('− 支出',money(out),{color:'var(--danger)'})+vline2('＝ 餘額',money(op+inn-out),{strong:true});
   }).join('');
   const verifyYE=`<details class="card"><summary style="cursor:pointer;font-size:14px;font-weight:600">驗算明細（核對用，點開）</summary>
-    <div style="font-size:13px;margin-top:8px">
-      <div style="font-weight:600;margin:6px 0 4px">① 帳面公積金 = 各案場逐筆相加（核對有沒有漏案場）</div>
-      <div class="scroll"><table><thead><tr><th>案場</th><th class="num">金額</th><th class="num">成本</th><th class="num">稅</th><th class="num">淨利</th><th class="num">公積金</th></tr></thead><tbody>${fundCalcRows||'<tr><td colspan="6">無</td></tr>'}<tr class="total-row" style="font-weight:600"><td colspan="5">公積金合計</td><td class="num">${money(bookFund)}</td></tr></tbody></table></div>
-      <div style="font-weight:600;margin:12px 0 4px">② 各股東獎金 = 該股東各案相加</div>
-      ${bonusCalcByP||'<div class="sub">無</div>'}
-      <div style="font-weight:600;margin:12px 0 4px">③ 各帳戶餘額 = 期初 + 收入 − 支出</div>
-      <div class="scroll"><table><thead><tr><th>帳戶</th><th class="num">期初</th><th class="num">收入</th><th class="num">支出</th><th class="num">餘額</th></tr></thead><tbody>${accCalcRows||'<tr><td colspan="5">無</td></tr>'}</tbody></table></div>
+    <div style="margin-top:4px">
+      ${vhead2('① 帳面公積金 = 各案場逐筆相加')}
+      ${fundLines||'<div class="sub" style="padding:5px 0">無</div>'}
+      ${vline2('公積金合計',money(bookFund),{strong:true})}
+      ${vhead2('② 各股東獎金 = 該股東各案相加')}
+      ${bonusLines||'<div class="sub" style="padding:5px 0">無</div>'}
+      ${vhead2('③ 各帳戶餘額 = 期初 + 收入 − 支出')}
+      ${accLines||'<div class="sub" style="padding:5px 0">無</div>'}
     </div>
   </details>`;
   return `
