@@ -771,8 +771,9 @@ function viewSites(){
     }).join('');
     const byPayer={}; myCosts.forEach(c=>{ byPayer[c.payer||'—']=(byPayer[c.payer||'—']||0)+(Number(c.amount)||0); });
     const payerSummary=Object.keys(byPayer).length?`<div class="sub" style="margin:4px 0">各人墊付：${Object.entries(byPayer).map(([k,v])=>`${esc(payerName(k))} ${money(v)}`).join('、')}</div>`:'';
+    const sSel=sitesSel[sid]||false;
     return `<details class="card" ${isCoop?'style="border-left:3px solid #d98430"':''}>
-      <summary>${esc(siteName(sid))}${isCoop?'<span class="tag" style="background:#fde9d4;color:#9a5b1a">合作案場</span>':''}<span style="margin-left:auto;font-size:16px;font-weight:700;color:var(--ink)">${money(s.grandTotal)}</span></summary>
+      <summary><input type="checkbox" data-sitesel="${esc(sid)}" ${sSel?'checked':''} onclick="event.stopPropagation()" style="width:16px;height:16px;flex-shrink:0;cursor:pointer">${esc(siteName(sid))}${isCoop?'<span class="tag" style="background:#fde9d4;color:#9a5b1a">合作案場</span>':''}<span style="margin-left:auto;font-size:16px;font-weight:700;color:var(--ink)">${money(s.grandTotal)}</span></summary>
       <div class="card-body">
         <p class="sub">${isCoop?'手動成本明細加總':`總工數 ${gongStr(s.hours)}・系統工資 ${money(s.wage)}・津貼 ${money(s.allow)}`}${s.opening>0?`・期初 ${money(s.opening)}`:''}${s.manual>0?`・手動成本 ${money(s.manual)}`:''}・占總成本 ${pct}%</p>
         ${isCoop?'':`<div class="row" style="margin-bottom:6px">
@@ -837,7 +838,15 @@ function viewSites(){
     <div class="metric"><div class="l">總成本</div><div class="v">${money(grand)}</div></div>
   </div>
   ${reimbCard}
-  <p class="sub" style="margin:-6px 0 12px">一般案場成本＝期初＋出勤工資津貼＋手動成本；合作案場（橙色）成本＝手動成本明細加總（日期/項目/金額/誰付）。<button class="btn" id="export-sites" style="margin-left:10px" ${ids.length===0?'disabled style="opacity:.5"':''}>匯出 PDF</button></p>
+  <div style="margin:-6px 0 12px;display:flex;align-items:center;flex-wrap:wrap;gap:8px">
+    <p class="sub" style="margin:0;flex:1;min-width:200px">一般案場成本＝期初＋出勤工資津貼＋手動成本；合作案場（橙色）成本＝手動成本明細加總（日期/項目/金額/誰付）。</p>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+      <button class="act" id="sites-selall" style="height:32px;border:1px solid var(--line2);border-radius:8px;padding:0 10px;font-size:12px">全選</button>
+      <button class="act" id="sites-selnone" style="height:32px;border:1px solid var(--line2);border-radius:8px;padding:0 10px;font-size:12px">取消選</button>
+      <button class="btn" id="sites-export-sel" ${ids.length===0?'disabled style="opacity:.5"':''} style="height:32px;font-size:12px">匯出選取</button>
+      <button class="btn" id="sites-export-all" ${ids.length===0?'disabled style="opacity:.5"':''} style="height:32px;font-size:12px;background:var(--muted)">全部匯出</button>
+    </div>
+  </div>
   ${cards===''&&pausedCards===''?'<div class="card"><div class="empty">尚無案場成本資料。</div></div>':cards}${pausedCards}`;
 }
 
@@ -990,8 +999,24 @@ function bind(){
   };  document.querySelectorAll('[data-dealpick-cb]').forEach(cb=>cb.onchange=()=>{ dealSel[cb.dataset.dealpickCb]=cb.checked; });
   const dsa=document.getElementById('deals-selall'); if(dsa) dsa.onclick=()=>{ state.deals.forEach(d=>{ if(d.type==='代工'||d.type==='公司分潤'||d.type==='分潤/代料'||(d.type!=='合作案')) dealSel[d.id]=true; }); render(); };
   const dsn=document.getElementById('deals-selnone'); if(dsn) dsn.onclick=()=>{ dealSel={}; render(); };
-  const eb=document.getElementById('export-billing'); if(eb) eb.onclick=()=>exportBillingPDF();
-  const esi=document.getElementById('export-sites'); if(esi) esi.onclick=()=>exportSitesPDF();
+  // 請款追蹤 export
+  document.querySelectorAll('[data-billingsel]').forEach(cb=>cb.onchange=()=>{ billingSel[cb.dataset.billingsel]=cb.checked; });
+  const bSelAll=document.getElementById('billing-selall'); if(bSelAll) bSelAll.onclick=()=>{ const groups={}; state.billings.forEach(b=>{ const k=b.site||'（未填案場）'; groups[k]=true; }); Object.keys(groups).forEach(k=>{ billingSel[k]=true; }); render(); };
+  const bSelNone=document.getElementById('billing-selnone'); if(bSelNone) bSelNone.onclick=()=>{ billingSel={}; render(); };
+  const bExpSel=document.getElementById('billing-export-sel'); if(bExpSel) bExpSel.onclick=()=>{ const names=Object.keys(billingSel).filter(k=>billingSel[k]); exportBillingPDF(names); };
+  const bExpAll=document.getElementById('billing-export-all'); if(bExpAll) bExpAll.onclick=()=>exportBillingPDF();
+  // 案場成本 export
+  document.querySelectorAll('[data-sitesel]').forEach(cb=>cb.onchange=()=>{ sitesSel[cb.dataset.sitesel]=cb.checked; });
+  const sSelAll=document.getElementById('sites-selall'); if(sSelAll) sSelAll.onclick=()=>{ state.sites.forEach(s=>{ sitesSel[s.id]=true; }); render(); };
+  const sSelNone=document.getElementById('sites-selnone'); if(sSelNone) sSelNone.onclick=()=>{ sitesSel={}; render(); };
+  const sExpSel=document.getElementById('sites-export-sel'); if(sExpSel) sExpSel.onclick=()=>{ const ids=Object.keys(sitesSel).filter(k=>sitesSel[k]); exportSitesPDF(ids); };
+  const sExpAll=document.getElementById('sites-export-all'); if(sExpAll) sExpAll.onclick=()=>exportSitesPDF();
+  // 代墊款 export
+  document.querySelectorAll('[data-advsel]').forEach(cb=>cb.onchange=()=>{ advSel[cb.dataset.advsel]=cb.checked; });
+  const aSelAll=document.getElementById('adv-selall'); if(aSelAll) aSelAll.onclick=()=>{ state.employees.filter(e=>e.partner).forEach(p=>{ advSel[p.id]=true; }); render(); };
+  const aSelNone=document.getElementById('adv-selnone'); if(aSelNone) aSelNone.onclick=()=>{ advSel={}; render(); };
+  const aExpSel=document.getElementById('adv-export-sel'); if(aExpSel) aExpSel.onclick=()=>{ const ids=Object.keys(advSel).filter(k=>advSel[k]); exportAdvPDF(ids); };
+  const aExpAll=document.getElementById('adv-export-all'); if(aExpAll) aExpAll.onclick=()=>exportAdvPDF();
   document.querySelectorAll('[data-payslip]').forEach(b=>b.onclick=()=>exportPayslipPDF(b.dataset.payslip));
 
   const gotoM=document.getElementById('goto-manage'); if(gotoM) gotoM.onclick=()=>{ state.tab='manage'; render(); };
@@ -1865,11 +1890,13 @@ function exportDealsPDF(selectedOnly){
 }
 
 // 請款追蹤明細 PDF
-function exportBillingPDF(){
+function exportBillingPDF(filterNames){
   if(state.billings.length===0) return;
   const groups={};
   state.billings.forEach(b=>{ const k=b.site||'（未填案場）'; (groups[k]=groups[k]||[]).push(b); });
-  const names=Object.keys(groups).sort((a,b)=>a.localeCompare(b));
+  let names=Object.keys(groups).sort((a,b)=>a.localeCompare(b));
+  if(filterNames&&filterNames.length) names=names.filter(n=>filterNames.includes(n));
+  if(names.length===0) return;
   let secs='';
   let GB=0,GS=0;
   names.forEach(name=>{
@@ -1891,7 +1918,7 @@ function exportBillingPDF(){
 }
 
 // 案場成本明細 PDF
-function exportSitesPDF(){
+function exportSitesPDF(filterIds){
   const comp=computeRecords(state.attendance);
   const bySite={};
   state.sites.forEach(s=>{ bySite[s.id]={hours:0,wage:0,allow:0,total:0,emp:{},opening:Number(s.opening)||0,name:s.name}; });
@@ -1899,7 +1926,9 @@ function exportSitesPDF(){
     const s=bySite[r.siteId]=bySite[r.siteId]||{hours:0,wage:0,allow:0,total:0,emp:{},opening:0,name:siteName(r.siteId)};
     s.hours+=Number(r.hours)||0; s.wage+=c.wage; s.allow+=c.allow; s.total+=c.total; s.emp[r.empId]=(s.emp[r.empId]||0)+c.total;
   });
-  const ids=Object.keys(bySite); if(ids.length===0) return;
+  let ids=Object.keys(bySite); if(ids.length===0) return;
+  if(filterIds&&filterIds.length) ids=ids.filter(id=>filterIds.includes(id));
+  if(ids.length===0) return;
   ids.forEach(id=>{ bySite[id].grand=bySite[id].total+bySite[id].opening; });
   const grand=ids.reduce((s,id)=>s+bySite[id].grand,0);
   ids.sort((a,b)=>bySite[b].grand-bySite[a].grand);
@@ -1914,6 +1943,34 @@ function exportSitesPDF(){
     </tbody></table>
     <p class="sub">總成本＝期初人事成本（歷史抄入）＋系統內登記出勤的工資與津貼。金額四捨五入至整數。</p>`;
   printHTML('案場成本明細', inner);
+}
+
+// 代墊款 PDF
+function exportAdvPDF(filterIds){
+  const partners=state.employees.filter(e=>e.partner);
+  let list=partners;
+  if(filterIds&&filterIds.length) list=partners.filter(p=>filterIds.includes(p.id));
+  if(list.length===0) return;
+  if(!advFrom||!advTo){ const d=defaultPayRange(); advFrom=d.from; advTo=d.to; }
+  const byEmp=buildPayroll(advFrom,advTo);
+  const inRange=dt=>(!advFrom||dt>=advFrom)&&(!advTo||dt<=advTo);
+  const advs=state.advances.filter(a=>inRange(a.date));
+  let secs='';
+  let grandDue=0;
+  list.forEach(p=>{
+    const wage=byEmp[p.id]?byEmp[p.id].gross:0;
+    const mine=advs.filter(a=>a.empId===p.id).sort((a,b)=>a.date.localeCompare(b.date));
+    const advTotal=mine.reduce((s,a)=>s+(Number(a.amount)||0),0);
+    const due=wage+advTotal;
+    grandDue+=due;
+    const rows=mine.map(a=>`<tr><td>${esc(a.date)}</td><td>${esc(a.purpose||'')}</td><td class="num">${money(a.amount)}</td></tr>`).join('');
+    secs+=`<div class="sec">${esc(p.name)}　工資 ${money(wage)}　代墊款 ${money(advTotal)}　應領 ${money(due)}</div>
+      ${rows?`<table><thead><tr><th>日期</th><th>用途</th><th class="num">金額</th></tr></thead><tbody>${rows}</tbody></table>`:'<p class="sub">本期無代墊款。</p>'}`;
+  });
+  const inner=`<h1>代墊款明細</h1>
+    <div class="meta">期間：${advFrom} ～ ${advTo}　|　列印日：${new Date().toISOString().slice(0,10)}　|　合計應領 ${money(grandDue)}</div>
+    ${secs}`;
+  printHTML('代墊款明細', inner);
 }
 
 // ---- 借支 ----
@@ -2156,16 +2213,16 @@ function viewAdvances(){
               <button class="act muted" data-postcancel="1" style="cursor:pointer">取消</button>
             </div>`
           : `<button class="act" data-postadv="${p.id}" style="border:1px solid var(--accent);border-radius:6px;padding:3px 12px;color:var(--accent)">入帳為支出 →</button>`)));
-    return `<div class="card">
-      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px">
-        <div style="font-size:15px;font-weight:600">${esc(p.name)}</div>
-        <div style="font-size:18px;font-weight:600">應領 ${money(due)}</div>
+    const aSel=advSel[p.id]||false;
+    return `<details class="card">
+      <summary><input type="checkbox" data-advsel="${p.id}" ${aSel?'checked':''} onclick="event.stopPropagation()" style="width:16px;height:16px;flex-shrink:0;cursor:pointer"><span style="font-size:15px;font-weight:600">${esc(p.name)}</span><span style="margin-left:auto;font-size:16px;font-weight:700">應領 ${money(due)}</span></summary>
+      <div class="card-body">
+        <div class="sub" style="margin-bottom:8px">工資 ${money(wage)}（本期出工薪資自動帶入）＋ 代墊款 ${money(advTotal)} ＝ 應領 ${money(due)}</div>
+        ${advRows===''?'<div class="empty" style="padding:10px 0">本期尚無代墊款。</div>':`<div class="scroll"><table>
+          <thead><tr><th>日期</th><th>用途</th><th class="num">金額</th><th></th></tr></thead><tbody>${advRows}</tbody></table></div>`}
+        <div style="margin-top:8px">${postBtn}</div>
       </div>
-      <div class="sub">工資 ${money(wage)}（本期出工薪資自動帶入）＋ 代墊款 ${money(advTotal)} ＝ 應領 ${money(due)}</div>
-      ${advRows===''?'<div class="empty" style="padding:10px 0">本期尚無代墊款。</div>':`<div class="scroll"><table>
-        <thead><tr><th>日期</th><th>用途</th><th class="num">金額</th><th></th></tr></thead><tbody>${advRows}</tbody></table></div>`}
-      <div style="margin-top:8px">${postBtn}</div>
-    </div>`;
+    </details>`;
   }).join('');
 
   const grandDue=partners.reduce((s,p)=>{ const w=byEmp[p.id]?byEmp[p.id].gross:0; const at=advs.filter(a=>a.empId===p.id).reduce((x,a)=>x+(Number(a.amount)||0),0); return s+w+at; },0);
@@ -2174,24 +2231,32 @@ function viewAdvances(){
   <div class="card">
     <div style="font-size:14px;font-weight:600;margin-bottom:4px">代墊款報銷</div>
     <p class="sub">每期（11號週期）列出各股東：工資（本期出工薪資自動帶入）＋ 代墊款 ＝ 應領。代墊款請填用途說明，方便日後對帳。</p>
-    <div class="row">
+    <div class="row" style="align-items:flex-end;flex-wrap:wrap;gap:8px">
       <div class="field"><label>起</label><input type="date" id="adv-from" value="${advFrom}"></div>
       <div class="field"><label>訖</label><input type="date" id="adv-to" value="${advTo}"></div>
       <button class="act" id="adv-thisperiod" style="height:36px;border:1px solid var(--line2);border-radius:8px;padding:0 12px">本期</button>
       <button class="act" id="adv-lastperiod" style="height:36px;border:1px solid var(--line2);border-radius:8px;padding:0 12px">上期</button>
+      <div style="margin-left:auto;display:flex;gap:6px;flex-wrap:wrap">
+        <button class="act" id="adv-selall" style="height:32px;border:1px solid var(--line2);border-radius:8px;padding:0 10px;font-size:12px">全選</button>
+        <button class="act" id="adv-selnone" style="height:32px;border:1px solid var(--line2);border-radius:8px;padding:0 10px;font-size:12px">取消選</button>
+        <button class="btn" id="adv-export-sel" ${partners.length===0?'disabled style="opacity:.5"':''} style="height:32px;font-size:12px">匯出選取</button>
+        <button class="btn" id="adv-export-all" ${partners.length===0?'disabled style="opacity:.5"':''} style="height:32px;font-size:12px;background:var(--muted)">全部匯出</button>
+      </div>
     </div>
   </div>
   ${partners.length===0?'<div class="card"><div class="empty">尚未標記股東。請到「員工/案場」分頁把股東（潘東澤、潘建龍）設為股東。</div></div>':`
-  <div class="card">
-    <div style="font-size:14px;font-weight:600;margin-bottom:4px">新增代墊款</div>
-    <div class="row">
-      <div class="field"><label>日期</label><input type="date" id="adv-date" value="${new Date().toISOString().slice(0,10)}"></div>
-      <div class="field"><label>股東</label><select id="adv-emp">${partnerOpts}</select></div>
-      <div class="field"><label>金額</label><input type="number" id="adv-amount" min="0" step="100" style="width:120px"></div>
-      <div class="field" style="flex:1;min-width:200px"><label>用途說明</label><input id="adv-purpose" placeholder="例：酷擊五金材料、Hilti租金、台北住宿"></div>
-      <button class="btn" id="adv-add">＋ 新增</button>
+  <details class="card">
+    <summary>新增代墊款</summary>
+    <div class="card-body">
+      <div class="row">
+        <div class="field"><label>日期</label><input type="date" id="adv-date" value="${new Date().toISOString().slice(0,10)}"></div>
+        <div class="field"><label>股東</label><select id="adv-emp">${partnerOpts}</select></div>
+        <div class="field"><label>金額</label><input type="number" id="adv-amount" min="0" step="100" style="width:120px"></div>
+        <div class="field" style="flex:1;min-width:200px"><label>用途說明</label><input id="adv-purpose" placeholder="例：酷擊五金材料、Hilti租金、台北住宿"></div>
+        <button class="btn" id="adv-add">＋ 新增</button>
+      </div>
     </div>
-  </div>
+  </details>
   <div class="metric" style="margin-bottom:16px"><div class="l">本期應領總額（全體股東）</div><div class="v">${money(grandDue)}</div></div>
   ${cards}`}`;
 }
@@ -2339,6 +2404,7 @@ function dealCalc(d){
   return {profit,bonus,fund,tax,isDeal:false};
 }
 let dealPosting=null, dealEditId=null, dealCarry=null, coopCarry=null, billEditId=null, dealAccPick=null; // 入帳/編輯/帶去/請款編輯/選帳戶中
+let billingSel={}, sitesSel={}, advSel={};
 
 // 一筆分潤進帳戶的金額：代工/公司分潤＝金額−稅；（合作案在卡片另算，這裡不處理）
 function dealIncomeAmount(d){
@@ -2643,8 +2709,9 @@ function viewBilling(){
       <td><button class="act" data-billedit="${b.id}">改</button> <button class="act danger" data-delbill="${b.id}">刪</button></td>
     </tr>`;}).join('');
     const siteTag=(()=>{const so=state.sites.find(x=>x.name===name);if(!so)return '';if(so.coop||so.type==='合作案')return '<span class="tag" style="background:#fde9d4;color:#9a5b1a">合作案</span>';if(so.type)return `<span class="tag" style="background:#e3efe9;color:var(--accent)">${esc(so.type)}</span>`;return '';})();
+    const bSel=billingSel[name]||false;
     return `<details class="card">
-      <summary>${esc(name)}${siteTag}<span style="margin-left:auto;font-size:13px;font-weight:400;color:var(--muted)">已請款 <b style="color:var(--ink)">${money(billed)}</b>　未結算 <span style="color:var(--danger)">${money(unsettled)}</span></span></summary>
+      <summary><input type="checkbox" data-billingsel="${esc(name)}" ${bSel?'checked':''} onclick="event.stopPropagation()" style="width:16px;height:16px;flex-shrink:0;cursor:pointer">${esc(name)}${siteTag}<span style="margin-left:auto;font-size:13px;font-weight:400;color:var(--muted)">已請款 <b style="color:var(--ink)">${money(billed)}</b>　未結算 <span style="color:var(--danger)">${money(unsettled)}</span></span></summary>
       <div class="card-body">
         ${progress}
         <div class="scroll"><table>
@@ -2673,7 +2740,12 @@ function viewBilling(){
   <div class="card">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;flex-wrap:wrap;gap:8px">
       <div style="font-size:14px;font-weight:600">新增請款</div>
-      <button class="btn" id="export-billing" ${state.billings.length===0?'disabled style="opacity:.5"':''}>匯出 PDF</button>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+        <button class="act" id="billing-selall" style="height:32px;border:1px solid var(--line2);border-radius:8px;padding:0 10px;font-size:12px">全選</button>
+        <button class="act" id="billing-selnone" style="height:32px;border:1px solid var(--line2);border-radius:8px;padding:0 10px;font-size:12px">取消選</button>
+        <button class="btn" id="billing-export-sel" ${state.billings.length===0?'disabled style="opacity:.5"':''} style="height:32px;font-size:12px">匯出選取</button>
+        <button class="btn" id="billing-export-all" ${state.billings.length===0?'disabled style="opacity:.5"':''} style="height:32px;font-size:12px;background:var(--muted)">全部匯出</button>
+      </div>
     </div>
     <p class="sub">記一筆請款：何時、哪個案場、請了多少。同一案場可多次請款，下方自動按案場彙總。合約總額、稅率請到「員工/案場」設定。合作案場的分潤在「分潤結算」自動算（總請款−總成本）。</p>
     <div class="row">
