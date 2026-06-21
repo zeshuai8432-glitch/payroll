@@ -512,7 +512,13 @@ function viewSites(){
           </div>
         </td></tr>`;
       }
-      return `<tr><td>${esc(c.date||'')}</td><td>${esc(c.item||'')}</td><td class="num">${money(c.amount)}</td><td>${esc(payerName(c.payer))}</td><td><button class="act" data-costedit="${c.id}">改</button> <button class="act danger" data-delcost="${c.id}">刪</button></td></tr>`;
+      const canReimb=(c.payer==='dz'||c.payer==='gx');
+      const reimbCell=canReimb
+        ? (c.reimbursed
+            ? `<span class="tag" style="background:#e3efe9;color:var(--accent)">已報銷</span><button class="act" data-unreimb="${c.id}">取消</button>`
+            : `<button class="act" data-reimb="${c.id}" style="border:1px solid var(--info);border-radius:6px;padding:0 8px;color:var(--info)">報銷</button>`)
+        : '';
+      return `<tr><td>${esc(c.date||'')}</td><td>${esc(c.item||'')}</td><td class="num">${money(c.amount)}</td><td>${esc(payerName(c.payer))}${c.reimbursed?'<span class="tag" style="background:#e3efe9;color:var(--accent)">已報銷</span>':''}</td><td>${reimbCell} <button class="act" data-costedit="${c.id}">改</button> <button class="act danger" data-delcost="${c.id}">刪</button></td></tr>`;
     }).join('');
     const byPayer={}; myCosts.forEach(c=>{ byPayer[c.payer||'—']=(byPayer[c.payer||'—']||0)+(Number(c.amount)||0); });
     const payerSummary=Object.keys(byPayer).length?`<div class="sub" style="margin:4px 0">各人墊付：${Object.entries(byPayer).map(([k,v])=>`${esc(payerName(k))} ${money(v)}`).join('、')}</div>`:'';
@@ -546,11 +552,23 @@ function viewSites(){
   const pausedIds=ids.filter(sid=>isPaused(sid));
   const cards=activeIds.map(cardFor).join('');
   const pausedCards=pausedIds.length?`<details style="margin-top:10px"><summary style="cursor:pointer;font-weight:600;padding:8px 0">已暫停案場（${pausedIds.length}）</summary>${pausedIds.map(cardFor).join('')}</details>`:'';
+  // 東澤/廣昕 墊付報銷彙總（跨所有案場的手動成本）
+  const reimb={dz:{total:0,done:0},gx:{total:0,done:0}};
+  state.costs.forEach(c=>{ if(c.payer==='dz'||c.payer==='gx'){ const amt=Number(c.amount)||0; reimb[c.payer].total+=amt; if(c.reimbursed) reimb[c.payer].done+=amt; } });
+  const reimbCard=(reimb.dz.total>0||reimb.gx.total>0)?`
+  <div class="card">
+    <div style="font-size:14px;font-weight:600;margin-bottom:8px">墊付報銷彙總（東澤／廣昕）</div>
+    <table><thead><tr><th>墊付人</th><th class="num">墊付總額</th><th class="num">已報銷</th><th class="num">待報銷</th></tr></thead><tbody>
+      ${['dz','gx'].filter(k=>reimb[k].total>0).map(k=>`<tr><td>${payerName(k)}</td><td class="num">${money(reimb[k].total)}</td><td class="num" style="color:var(--accent)">${money(reimb[k].done)}</td><td class="num" style="font-weight:600;color:${reimb[k].total-reimb[k].done>0?'var(--danger)':'var(--muted)'}">${money(reimb[k].total-reimb[k].done)}</td></tr>`).join('')}
+    </tbody></table>
+    <p class="sub" style="margin-top:6px">這是東澤、廣昕在各案場（含合作案）手動墊付的成本。在下方各案場明細按「報銷」可標記某筆已報銷。此處只記錄報銷狀態，不會動到帳戶餘額。</p>
+  </div>`:'';
   return `
   <div class="metrics">
     <div class="metric"><div class="l">案場數</div><div class="v">${activeIds.length}${pausedIds.length?`<span style="font-size:12px;color:var(--muted)"> +${pausedIds.length}暫停</span>`:''}</div></div>
     <div class="metric"><div class="l">總成本</div><div class="v">${money(grand)}</div></div>
   </div>
+  ${reimbCard}
   <p class="sub" style="margin:-6px 0 12px">一般案場成本＝期初＋出勤工資津貼＋手動成本；合作案場（橙色）成本＝手動成本明細加總（日期/項目/金額/誰付）。<button class="btn" id="export-sites" style="margin-left:10px" ${ids.length===0?'disabled style="opacity:.5"':''}>匯出 PDF</button></p>
   ${cards===''&&pausedCards===''?'<div class="card"><div class="empty">尚無案場成本資料。</div></div>':cards}${pausedCards}`;
 }
@@ -854,6 +872,14 @@ function bind(){
   document.querySelectorAll('[data-delcost]').forEach(b=>b.onclick=()=>{
     if(!confirm('確定刪除這筆成本？')) return;
     state.costs=state.costs.filter(c=>c.id!==b.dataset.delcost); resyncAllSiteDeals(); saveData(); render();
+  });
+  document.querySelectorAll('[data-reimb]').forEach(b=>b.onclick=()=>{
+    const c=state.costs.find(x=>x.id===b.dataset.reimb); if(!c) return;
+    c.reimbursed=true; saveData(); render();
+  });
+  document.querySelectorAll('[data-unreimb]').forEach(b=>b.onclick=()=>{
+    const c=state.costs.find(x=>x.id===b.dataset.unreimb); if(!c) return;
+    c.reimbursed=false; saveData(); render();
   });
   document.querySelectorAll('[data-costedit]').forEach(b=>b.onclick=()=>{ costEditId=b.dataset.costedit; render(); });
   document.querySelectorAll('[data-costeditcancel]').forEach(b=>b.onclick=()=>{ costEditId=null; render(); });
