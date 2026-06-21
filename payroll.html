@@ -949,15 +949,17 @@ function bind(){
   });
   document.querySelectorAll('[data-reimb]').forEach(b=>b.onclick=()=>{
     const c=state.costs.find(x=>x.id===b.dataset.reimb); if(!c) return;
-    if(!state.parkAccId){ alert('請先到「品佑帳戶結算」頁設定哪個帳戶是品佑代支出帳戶，才能在報銷時自動記品佑支出。'); return; }
     const who=payerName(c.payer);
-    if(!confirm(`報銷這筆？\n\n・${siteName(c.siteId)||''}　${esc(c.item||'')}　${money(c.amount)}\n・原墊付人：${who} → 改為品佑\n・品佑帳戶會記一筆支出 ${money(c.amount)}（摘要：${esc(c.item||'報銷')}）\n\n確定報銷？`)) return;
-    c.origPayer=c.payer;            // 記住原墊付人，取消時還原
+    const hasPark=!!state.parkAccId;
+    const extra=hasPark?`・品佑帳戶會記一筆支出 ${money(c.amount)}（摘要：${esc(c.item||'報銷')}）`:'・（尚未設定品佑帳戶，這次只標記報銷、不記品佑支出。可到「品佑帳戶結算」設定後再用）';
+    if(!confirm(`報銷這筆？\n\n・${siteName(c.siteId)||''}　${esc(c.item||'')}　${money(c.amount)}\n・原墊付人：${who} → 改為品佑\n${extra}\n\n確定報銷？`)) return;
+    c.origPayer=c.payer;
     c.payer='py';
     c.reimbursed=true;
     c.reimbDate=new Date().toISOString().slice(0,10);
-    // 品佑帳戶記一筆專案支出（用原本的項目當摘要），標記 reimbCostId 以便取消時移除
-    state.ledger.push({id:uid(), date:c.reimbDate, accId:state.parkAccId, kind:'out', amount:Number(c.amount)||0, note:(c.item||'報銷'), reimbCostId:c.id});
+    if(hasPark){
+      state.ledger.push({id:uid(), date:c.reimbDate, accId:state.parkAccId, kind:'out', amount:Number(c.amount)||0, note:(c.item||'報銷'), reimbCostId:c.id});
+    }
     saveData(); render();
   });
   document.querySelectorAll('[data-unreimb]').forEach(b=>b.onclick=()=>{
