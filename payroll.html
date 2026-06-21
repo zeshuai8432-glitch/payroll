@@ -781,7 +781,7 @@ function bind(){
       const dup=state.attendance.find(r=>r.empId===empId&&r.date===date&&r.kind===kind);
       if(dup){ alert(`${emp.name} 在 ${date} 已經登記過${label}了。`); return; }
       state.attendance.push({id:uid(),date,empId,kind,half:half||false});
-      entryDate=date; entryEmp='';
+      entryDate=date; entryEmp=empId;
       saveData(); render();
       return;
     }
@@ -804,8 +804,7 @@ function bind(){
       if(!confirm(msg)) return;
     }
     state.attendance.push({id:uid(),date,empId,siteId,hours,night,dailyRate:emp.daily,kind:'work'});
-    entryDate=date; entrySite=siteId; entryEmp='';
-    resyncAllSiteDeals();
+    entryDate=date; entrySite=siteId; entryEmp=empId;
     resyncAllSiteDeals();
     saveData(); render();
   };
