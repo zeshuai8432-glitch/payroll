@@ -445,9 +445,20 @@ function tabsBar(){
     </div>`).join('');
 }
 function render(){
+  // 記住目前開著的 details.card（用 tab+summary文字 當 key）
+  const openKeys=new Set();
+  document.querySelectorAll('details.card[open]').forEach(d=>{
+    const s=d.querySelector(':scope>summary');
+    if(s) openKeys.add(state.tab+'|'+s.textContent.trim().slice(0,40));
+  });
   document.getElementById('sidebar').innerHTML=tabsBar();
   const body=document.getElementById('body');
   body.innerHTML = state.tab==='entry'?viewEntry():state.tab==='payroll'?viewPayroll():state.tab==='sites'?viewSites():state.tab==='loans'?viewLoans():state.tab==='tools'?viewTools():state.tab==='advances'?viewAdvances():state.tab==='accounts'?viewAccounts():state.tab==='deals'?viewDeals():state.tab==='billing'?viewBilling():state.tab==='yearend'?viewYearEnd():state.tab==='parkacc'?viewParkAcc():state.tab==='recon'?viewRecon():viewManage();
+  // 恢復開著的 details.card
+  if(openKeys.size) document.querySelectorAll('details.card').forEach(d=>{
+    const s=d.querySelector(':scope>summary');
+    if(s && openKeys.has(state.tab+'|'+s.textContent.trim().slice(0,40))) d.open=true;
+  });
   bind();
 }
 

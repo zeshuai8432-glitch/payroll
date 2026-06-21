@@ -447,9 +447,18 @@ function tabsBar(){
     </div>`).join('');
 }
 function render(){
+  const openKeys=new Set();
+  document.querySelectorAll('details.card[open]').forEach(d=>{
+    const s=d.querySelector(':scope>summary');
+    if(s) openKeys.add(state.tab+'|'+s.textContent.trim().slice(0,40));
+  });
   document.getElementById('sidebar').innerHTML=tabsBar();
   const body=document.getElementById('body');
   body.innerHTML = state.tab==='entry'?viewEntry():state.tab==='payroll'?viewPayroll():state.tab==='sites'?viewSites():state.tab==='loans'?viewLoans():state.tab==='park'?viewPark():viewManage();
+  if(openKeys.size) document.querySelectorAll('details.card').forEach(d=>{
+    const s=d.querySelector(':scope>summary');
+    if(s && openKeys.has(state.tab+'|'+s.textContent.trim().slice(0,40))) d.open=true;
+  });
   bind();
 }
 
