@@ -115,6 +115,8 @@ let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], p
 let cloudStatus = CLOUD_URL ? '連線中…' : '本機模式';
 let entryDate='', entrySite='', entryEmp=''; // 登記出工：記住上次選的日期、案場、員工
 let entryOpenDates={}, entryEditId=null; // 出工紀錄分組收合狀態與正在編輯的紀錄
+let entryType='work'; // 'work' | '請假' | '休假'
+let entryNight=false;
 
 const round = n => Math.round(n);
 const money = n => '$' + round(n).toLocaleString();
@@ -141,6 +143,7 @@ const esc = s => String(s==null?'':s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2,7);
 const empName = id => { const e=state.employees.find(x=>x.id===id); return e?e.name:'（已移除）'; };
 const siteName = id => { const s=state.sites.find(x=>x.id===id); return s?s.name:'（已移除）'; };
+const recordLabel = r => r.type==='請假'?'請假':r.type==='休假'?'休假':siteName(r.siteId);
 
 function applyData(d){
   if(!d) return;
@@ -229,7 +232,8 @@ function render(){
 function viewEntry(){
   const activeEmps=state.employees.filter(e=>e.active);
   const activeSites=state.sites.filter(s=>s.active!==false);
-  const needEmp=activeEmps.length===0, needSite=activeSites.length===0;
+  const needEmp=activeEmps.length===0;
+  const needSite=activeSites.length===0 && entryType==='work';
   const noSetup=needEmp||needSite;
   let setupMsg='';
   if(noSetup){
@@ -268,18 +272,19 @@ function viewEntry(){
     const open=(entryOpenDates[dk]!==undefined)?entryOpenDates[dk]:(idx<2); // 預設展開最近2天
     const rows=list.map(r=>{
       const c=comp[r.id]||{wage:0,allow:0,total:0};
-      const editing=(entryEditId===r.id);
-      const hoursCell=editing
+      const isLeave=r.type==='請假'||r.type==='休假';
+      const editing=(!isLeave)&&(entryEditId===r.id);
+      const hoursCell=isLeave?'—':editing
         ? `<span class="inline"><input type="number" id="edit-hours" value="${r.hours}" min="0" max="24" step="1" style="width:80px;height:30px"><span style="font-size:11px;color:var(--muted)">時</span><button class="act" id="edit-ok" data-editok="${r.id}">✓</button><button class="act muted" id="edit-cancel" style="cursor:pointer">✕</button></span>`
         : `${gongH(r.hours)} <button class="act" data-edithours="${r.id}" style="font-size:12px">改</button>`;
       return `<tr>
-        <td>${esc(siteName(r.siteId))}</td>
+        <td>${isLeave?`<span style="color:var(--info);font-weight:500">${r.type}</span>`:esc(siteName(r.siteId))}</td>
         <td>${esc(empName(r.empId))}</td>
         <td class="num">${hoursCell}</td>
-        <td class="num">${r.night?'<span class="moon">●夜</span>':'—'}</td>
-        <td class="num">${money(c.wage)}</td>
-        <td class="num">${c.allow>0?money(c.allow):'—'}</td>
-        <td class="num" style="font-weight:600">${money(c.total)}</td>
+        <td class="num">${isLeave?'—':(r.night?'<span class="moon">●夜</span>':'—')}</td>
+        <td class="num">${isLeave?'—':money(c.wage)}</td>
+        <td class="num">${isLeave?'—':(c.allow>0?money(c.allow):'—')}</td>
+        <td class="num" style="font-weight:600">${isLeave?'—':money(c.total)}</td>
         <td><button class="act danger" data-del="${r.id}">刪</button></td>
       </tr>`;
     }).join('');
@@ -293,20 +298,32 @@ function viewEntry(){
         <tbody>${rows}</tbody></table></div>`:''}
     </div>`;
   }).join('');
-  const empOptsSel=activeEmps.map(e=>`<option value="${e.id}" ${e.id===entryEmp?'selected':''}>${esc(e.name)}（日薪 ${e.daily}）</option>`).join('');
+  const curEmp=entryEmp||(activeEmps[0]?activeEmps[0].id:'');
+  const curEmpObj=activeEmps.find(e=>e.id===curEmp);
+  const empOptsSel=activeEmps.map(e=>`<option value="${e.id}" ${e.id===curEmp?'selected':''}>${esc(e.name)}（日薪 ${e.daily}）</option>`).join('');
   const siteOptsSel=activeSites.map(s=>`<option value="${s.id}" ${s.id===curSite?'selected':''}>${esc(s.name)}</option>`).join('');
+  const leaveWarning=(entryType==='請假'&&curEmpObj&&!curEmpObj.partner)?`<div style="margin-top:8px;padding:8px 10px;background:var(--warn-bg);color:var(--warn-ink);border-radius:8px;font-size:13px">⚠️ 此員工請假將影響全勤獎金，若有全勤獎金請在薪資頁面手動扣除。</div>`:'' ;
   return `
   <div class="card">
-    <p class="sub">登記一筆出工。日期與案場會保留，方便連續登記同案場多人。同一人同一天跑多案場就分開登記多筆。</p>
+    <p class="sub">登記出工、請假或休假。出工時日期與案場會保留方便連續登記。</p>
     ${noSetup?setupMsg:`
     <div class="row">
+      <div class="field"><label>類型</label><select id="f-type">
+        <option value="work" ${entryType==='work'?'selected':''}>出工</option>
+        <option value="請假" ${entryType==='請假'?'selected':''}>請假</option>
+        <option value="休假" ${entryType==='休假'?'selected':''}>休假</option>
+      </select></div>
       <div class="field"><label>日期</label><input type="date" id="f-date" value="${curDate}"></div>
       <div class="field"><label>員工</label><select id="f-emp">${empOptsSel}</select></div>
-      <div class="field"><label>案場</label><select id="f-site">${siteOptsSel}</select></div>
-      <div class="field"><label>工時（小時，整數）</label><input type="number" id="f-hours" min="0" max="24" step="1" value="8" style="width:110px"></div>
-      <div class="field"><label>過夜外宿</label><div style="height:36px;display:flex;align-items:center"><input type="checkbox" id="f-night"></div></div>
+      ${entryType==='work'?`
+        <div class="field"><label>案場</label><select id="f-site">${siteOptsSel}</select></div>
+        <div class="field"><label>工時（小時，整數）</label><input type="number" id="f-hours" min="0" max="24" step="1" value="8" style="width:110px"></div>
+        <div class="field"><label>過夜外宿</label><div style="height:36px;display:flex;align-items:center"><input type="checkbox" id="f-night" ${entryNight?'checked':''}></div></div>
+      `:''}
       <button class="btn" id="f-add">＋ 新增</button>
+      <button class="btn" id="f-allvac" style="background:var(--muted)">全員休假</button>
     </div>
+    ${leaveWarning}
     ${todayNote}`}
   </div>
   <div class="card">
@@ -351,7 +368,8 @@ function buildPayroll(from,to){
   const byEmp={};
   state.attendance.filter(r=>inRange(r.date)).forEach(r=>{ const c=comp[r.id]; if(!c)return;
     const e=byEmp[r.empId]=byEmp[r.empId]||{empId:r.empId,hours:0,wage:0,allow:0,gross:0,days:new Set(),adds:[],deds:[]};
-    e.hours+=Number(r.hours)||0; e.wage+=c.wage; e.allow+=c.allow; e.gross+=c.total; e.days.add(r.date);
+    e.hours+=Number(r.hours)||0; e.wage+=c.wage; e.allow+=c.allow; e.gross+=c.total;
+    if((Number(r.hours)||0)>0) e.days.add(r.date);
   });
   // 套用區間內的調整項
   state.adjustments.filter(a=>inRange(a.date)).forEach(a=>{
@@ -587,22 +605,40 @@ function bind(){
 
   const gotoM=document.getElementById('goto-manage'); if(gotoM) gotoM.onclick=()=>{ state.tab='manage'; render(); };
 
-  const fDate=document.getElementById('f-date'); if(fDate) fDate.onchange=()=>{ entryDate=fDate.value; const fe=document.getElementById('f-emp'); if(fe) entryEmp=fe.value; render(); };
+  const fDate=document.getElementById('f-date');
+  if(fDate){
+    fDate.oninput=()=>{ entryDate=fDate.value; };
+    fDate.onchange=()=>{ entryDate=fDate.value; };
+    fDate.onblur=()=>{ entryDate=fDate.value; const fe=document.getElementById('f-emp'); if(fe) entryEmp=fe.value; render(); };
+  }
+  const fType=document.getElementById('f-type');
+  if(fType) fType.onchange=()=>{ entryType=fType.value; const fe=document.getElementById('f-emp'); if(fe) entryEmp=fe.value; render(); };
   const fSite=document.getElementById('f-site'); if(fSite) fSite.onchange=()=>{ entrySite=fSite.value; const fe=document.getElementById('f-emp'); if(fe) entryEmp=fe.value; render(); };
-  const fEmp=document.getElementById('f-emp'); if(fEmp) fEmp.onchange=()=>{ entryEmp=fEmp.value; };
+  const fEmp=document.getElementById('f-emp'); if(fEmp) fEmp.onchange=()=>{ entryEmp=fEmp.value; if(entryType==='請假') render(); };
+  const fNight=document.getElementById('f-night'); if(fNight) fNight.onchange=()=>{ entryNight=fNight.checked; };
 
   const add=document.getElementById('f-add');
   if(add) add.onclick=()=>{
     const date=document.getElementById('f-date').value;
     const empId=document.getElementById('f-emp').value;
+    const emp=state.employees.find(e=>e.id===empId);
+    if(!date||!empId||!emp) return;
+    if(entryType==='請假'||entryType==='休假'){
+      const existing=state.attendance.find(r=>r.empId===empId&&r.date===date&&(r.type==='請假'||r.type==='休假'));
+      if(existing){ if(!confirm(`${emp.name} 在 ${date} 已有${existing.type}紀錄，確定再記一筆？`)) return; }
+      state.attendance.push({id:uid(),date,empId,type:entryType,hours:0,siteId:null,night:false,dailyRate:0});
+      entryDate=date;
+      if(entryType==='請假') entryType='work'; // 請假後恢復出工預設
+      saveData(); render();
+      return;
+    }
     const siteId=document.getElementById('f-site').value;
     const hours=parseFloat(document.getElementById('f-hours').value);
     const night=document.getElementById('f-night').checked;
-    const emp=state.employees.find(e=>e.id===empId);
-    if(!date||!empId||!siteId||isNaN(hours)||!emp) return;
+    if(!siteId||isNaN(hours)) return;
     if(!Number.isInteger(hours)){ alert('工時請輸入整數小時（例如 8、9），不接受小數。'); return; }
-    // 防呆：同人同日是否已登記
-    const sameDay=state.attendance.filter(r=>r.empId===empId&&r.date===date);
+    // 防呆：同人同日是否已登記（只比對出工紀錄）
+    const sameDay=state.attendance.filter(r=>r.empId===empId&&r.date===date&&r.type!=='請假'&&r.type!=='休假');
     if(sameDay.length>0){
       const sameSite=sameDay.find(r=>r.siteId===siteId);
       let msg;
@@ -615,11 +651,27 @@ function bind(){
       if(!confirm(msg)) return;
     }
     state.attendance.push({id:uid(),date,empId,siteId,hours,night,dailyRate:emp.daily});
-    // 保留日期與案場（員工不保留，登記後清空方便接著選下一個人）
     entryDate=date; entrySite=siteId; entryEmp='';
+    entryNight=night; // 保留過夜外宿狀態
     saveData(); render();
   };
-  document.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>{ const r=state.attendance.find(x=>x.id===b.dataset.del); if(!confirm(`確定刪除這筆出工？\n${r?esc(r.date)+'・'+empName(r.empId)+'・'+siteName(r.siteId):''}`)) return; state.attendance=state.attendance.filter(r=>r.id!==b.dataset.del); saveData(); render(); });
+  const allVac=document.getElementById('f-allvac');
+  if(allVac) allVac.onclick=()=>{
+    const date=document.getElementById('f-date').value;
+    if(!date){ alert('請先選擇日期'); return; }
+    const emps=state.employees.filter(e=>e.active);
+    if(emps.length===0){ alert('沒有在職員工'); return; }
+    const toAdd=emps.filter(e=>!state.attendance.some(r=>r.empId===e.id&&r.date===date));
+    const skipped=emps.filter(e=>state.attendance.some(r=>r.empId===e.id&&r.date===date));
+    let msg=`確定將 ${date} 設為全員休假？\n新增 ${toAdd.length} 人`;
+    if(skipped.length>0) msg+=`（跳過已有紀錄的 ${skipped.length} 人：${skipped.map(e=>e.name).join('、')}）`;
+    msg+='。';
+    if(!confirm(msg)) return;
+    toAdd.forEach(emp=>state.attendance.push({id:uid(),date,empId:emp.id,type:'休假',hours:0,siteId:null,night:false,dailyRate:0}));
+    entryDate=date;
+    saveData(); render();
+  };
+  document.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>{ const r=state.attendance.find(x=>x.id===b.dataset.del); if(!confirm(`確定刪除這筆紀錄？\n${r?esc(r.date)+'・'+empName(r.empId)+'・'+recordLabel(r):''}`)) return; state.attendance=state.attendance.filter(r=>r.id!==b.dataset.del); saveData(); render(); });
   document.querySelectorAll('[data-togglegroup]').forEach(b=>b.onclick=()=>{
     const dk=b.dataset.togglegroup;
     const isOpen=b.textContent.trim().startsWith('▼');
@@ -791,8 +843,9 @@ function exportPayslipPDF(empId){
   const comp=computeRecords(state.attendance);
   const myRecs=state.attendance.filter(r=>r.empId===empId&&inRange(r.date)).sort((a,b)=>a.date.localeCompare(b.date));
   const recRows=myRecs.map(r=>{ const c=comp[r.id]||{wage:0,allow:0,total:0};
-    return `<tr><td>${esc(r.date)}</td><td>${esc(siteName(r.siteId))}</td><td class="num">${gongStr(r.hours)}</td><td class="num">${r.night?'是':'-'}</td>
-      <td class="num">${money(c.wage)}</td><td class="num">${c.allow>0?money(c.allow):'-'}</td></tr>`;
+    const isLeaveR=r.type==='請假'||r.type==='休假';
+    return `<tr><td>${esc(r.date)}</td><td>${isLeaveR?r.type:esc(siteName(r.siteId))}</td><td class="num">${isLeaveR?'—':gongStr(r.hours)}</td><td class="num">${isLeaveR?'—':(r.night?'是':'-')}</td>
+      <td class="num">${isLeaveR?'—':money(c.wage)}</td><td class="num">${isLeaveR?'—':(c.allow>0?money(c.allow):'-')}</td></tr>`;
   }).join('');
   const inner=`<h1>薪資明細單</h1>
     <div class="meta">員工：${esc(empName(empId))}　|　計薪期間：${state.payFrom||'起始'} ～ ${state.payTo||'迄今'}　|　出勤 ${e.days.size} 天 / ${gongStr(e.hours)}</div>
