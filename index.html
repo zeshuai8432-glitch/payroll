@@ -2,12 +2,17 @@
 <html lang="zh-TW">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="建材倉庫管理系統：庫存追蹤、入庫出貨、需求單管理、材料分配，支援雲端同步與 PDF 匯出。">
+<meta name="keywords" content="倉庫管理,建材管理,庫存系統,材料管理,出貨紀錄,需求單,材料追蹤">
+<meta property="og:title" content="倉庫管理系統">
+<meta property="og:description" content="建材倉庫管理系統：庫存追蹤、入庫出貨、需求單管理、材料分配。">
+<meta property="og:type" content="website">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
-<meta name="apple-mobile-web-app-title" content="材料管理">
+<meta name="apple-mobile-web-app-title" content="倉庫管理">
 <meta name="theme-color" content="#185FA5">
-<title>材料管理系統</title>
+<title>倉庫管理系統・材料庫存追蹤</title>
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icon-192.png">
 
@@ -50,9 +55,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .btn-primary:active{background:#0C447C}
 .btn-outline{padding:7px 14px;background:#fff;color:#185FA5;border:1.5px solid #185FA5;border-radius:8px;font-size:13px;font-weight:500;cursor:pointer}
 .btn-outline:active{background:#E6F1FB}
-.btn-sm{padding:5px 12px;background:#f3f4f6;color:#374151;border:none;border-radius:8px;font-size:12px;cursor:pointer}
+.btn-sm{padding:8px 12px;background:#f3f4f6;color:#374151;border:none;border-radius:8px;font-size:12px;cursor:pointer}
 .btn-sm:active{background:#e5e7eb}
-.btn-danger-sm{padding:5px 12px;background:#fee2e2;color:#991b1b;border:none;border-radius:8px;font-size:12px;cursor:pointer}
+.btn-danger-sm{padding:8px 12px;background:#fee2e2;color:#991b1b;border:none;border-radius:8px;font-size:12px;cursor:pointer}
 /* Radio */
 .radio-group{display:flex;gap:0;border:1.5px solid #e5e7eb;border-radius:10px;overflow:hidden;margin-top:4px}
 .radio-opt{flex:1;text-align:center;padding:9px 4px;font-size:13px;cursor:pointer;color:#6b7280;transition:all 0.15s;border:none;background:#fff}
@@ -101,10 +106,11 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .cat-header{font-size:13px;font-weight:700;color:#185FA5;padding:10px 4px 6px;border-bottom:2px solid #e6f1fb;margin-bottom:4px}
 /* Site group */
 .site-group{background:#fff;border-radius:14px;margin-bottom:10px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.06)}
-.site-group-header{padding:12px 16px;background:#185FA5;color:#fff;display:flex;justify-content:space-between;align-items:center}
+.site-group-header{padding:12px 16px;background:#185FA5;color:#fff;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px}
 .site-group-title{font-size:14px;font-weight:600}
 .site-group-total{font-size:13px;opacity:0.9}
 .site-group-body{padding:0 16px}
+@media(max-width:360px){.form-row{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
@@ -377,6 +383,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 <script>
 const GAS_URL = 'https://script.google.com/macros/s/AKfycbyKkpL0XC-NfjhblC8eKhu0f8k6E0aecbBkAxqOd54j1uO-NgcBPzEsSON5o_2dlj_U/exec';
 
+function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
 let inventory = [];
 let demands = [];
 let activeProject = null;
@@ -391,7 +399,8 @@ let currentOrder = [];
 let shipType = 'stock';
 let orderNo = 1;
 
-const today = new Date().toISOString().slice(0,10);
+let today = new Date().toISOString().slice(0,10);
+setInterval(()=>{ today = new Date().toISOString().slice(0,10); }, 60000);
 document.getElementById('prod-date').value = today;
 document.getElementById('ship-date').value = today;
 document.getElementById('dem-date').value = today;
@@ -446,7 +455,7 @@ function loadLocal() {
     const arch = localStorage.getItem('mat_archived');
     if (arch) archivedProjects = JSON.parse(arch);
     orderNo = shipments.length + 1;
-  } catch(e) {}
+  } catch(e) { console.error('loadLocal 失敗', e); }
 }
 
 // 確保同一類資料每筆都有相同欄位（補空字串），避免雲端表頭只抓第一筆而漏存欄位
@@ -592,10 +601,10 @@ function updateDemandGap() {
     box.style.display='block';
     box.style.background='#f1efe8';
     box.style.color='#5f5e5a';
-    box.innerHTML='ℹ️ 此案場沒有「'+mat.name+'」的需求紀錄';
+    box.innerHTML='ℹ️ 此案場沒有「'+esc(mat.name)+'」的需求紀錄';
     return;
   }
-  const unit = matched[0].unit || '';
+  const unit = esc(matched[0].unit || '');
   const totalDemand = matched.reduce((a,b)=>a+Number(b.qty),0);
   const shipped = getShippedQty(site, mat.name, mat.spec, mat.thick);
   const inputQty = parseInt(document.getElementById('ship-qty').value) || 0;
@@ -688,7 +697,7 @@ function removeOrderItem(idx) {
 
 // ── Render ──
 function renderAll() {
-  renderInventory(); renderProductions(); renderShipments(); renderArrival(); renderOrder(); renderDemands(); renderAllocation();
+  renderInventory(); renderProductions(); renderShipments(); renderOrder(); renderDemands(); renderAllocation();
   renderInvStats(); refreshProjectSelects(); refreshCategorySelect(); refreshFloorList();
 }
 
@@ -712,8 +721,8 @@ function renderInventory() {
     const realIdx = inventory.indexOf(i);
     return `<div class="list-item">
       <div style="flex:1">
-        <div class="list-main">${i.name}</div>
-        <div class="list-sub">${i.spec}・${i.thick}・更新：${i.lastUpdate}</div>
+        <div class="list-main">${esc(i.name)}</div>
+        <div class="list-sub">${esc(i.spec)}・${esc(i.thick)}・更新：${esc(i.lastUpdate)}</div>
       </div>
       <div class="list-right" style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">
         <div class="list-qty">${i.qty}</div>
@@ -734,12 +743,12 @@ function renderProductions() {
   el.innerHTML = reversed.map(p=>`
     <div class="list-item">
       <div style="flex:1">
-        <div class="list-main">${p.name}</div>
-        <div class="list-sub">${p.spec}・${p.thick}</div>
+        <div class="list-main">${esc(p.name)}</div>
+        <div class="list-sub">${esc(p.spec)}・${esc(p.thick)}</div>
       </div>
       <div class="list-right" style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">
         <div class="list-qty">+${p.qty}</div>
-        <div class="list-date">${p.date}</div>
+        <div class="list-date">${esc(p.date)}</div>
         <div style="display:flex;gap:4px;margin-top:2px">
           <button class="btn-sm" onclick="editProduction(${p._idx})">編輯</button>
           <button class="btn-danger-sm" onclick="deleteProduction(${p._idx})">刪除</button>
@@ -763,8 +772,8 @@ function renderShipments() {
     const rows = items.map(s=>`
       <div class="list-item">
         <div style="flex:1">
-          <div class="list-main">${s.name}</div>
-          <div class="list-sub">${s.site}・${s.spec}・${s.thick}</div>
+          <div class="list-main">${esc(s.name)}</div>
+          <div class="list-sub">${esc(s.site)}・${esc(s.spec)}・${esc(s.thick)}</div>
           <span class="badge ${s.type==='stock'?'badge-blue':'badge-amber'}" style="margin-top:4px">${s.type==='stock'?'庫存出':'制式材料'}</span>
         </div>
         <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">
@@ -777,7 +786,7 @@ function renderShipments() {
       </div>`).join('');
     return `<div class="site-group" style="margin-bottom:12px">
       <div class="site-group-header">
-        <div class="site-group-title">📅 ${date}</div>
+        <div class="site-group-title">📅 ${esc(date)}</div>
         <div style="display:flex;align-items:center;gap:6px">
           <span class="site-group-total">合計 ${dayTotal}</span>
           <button onclick="exportShipDatePDF('${date}')" style="background:rgba(255,255,255,0.25);border:none;color:#fff;padding:4px 10px;border-radius:6px;font-size:11px;cursor:pointer">匯出PDF</button>
@@ -853,14 +862,14 @@ function renderOrder() {
     const rows = items.map((o,idx)=>`
       <div class="order-item">
         <div class="order-info">
-          <div class="order-name">${o.name}</div>
-          <div class="order-spec">${o.spec}・${o.thick}・${o.qty}${o.unit||''}</div>
+          <div class="order-name">${esc(o.name)}</div>
+          <div class="order-spec">${esc(o.spec)}・${esc(o.thick)}・${o.qty}${esc(o.unit||'')}</div>
         </div>
         <button class="btn-danger-sm" onclick="removeOrderItem(${o._idx})">移除</button>
       </div>`).join('');
     return `<div class="site-group" style="margin-bottom:12px">
       <div class="site-group-header">
-        <div class="site-group-title">🏢 ${site}</div>
+        <div class="site-group-title">🏢 ${esc(site)}</div>
         <div class="site-group-total">小計 ${siteTotal}</div>
       </div>
       <div class="site-group-body">${rows}</div>
@@ -1068,7 +1077,7 @@ function showPicker(title, options, confirmFn, confirmLabel) {
   body += options.map((o,i)=>`
     <label style="display:flex;align-items:center;gap:8px;padding:8px;border-bottom:1px solid #f3f4f6;cursor:pointer">
       <input type="checkbox" class="pick-item" value="${String(o.value).replace(/"/g,'&quot;')}">
-      <span style="font-size:14px">${o.label}</span>
+      <span style="font-size:14px">${esc(o.label)}</span>
     </label>`).join('');
   document.getElementById('edit-modal-title').textContent = title;
   document.getElementById('edit-modal-body').innerHTML = body;
@@ -1336,7 +1345,7 @@ function getTotalDemandForMaterial(project, floor, category, name, spec, thick) 
 }
 
 function buildDemandRow(d) {
-  const unit = d.unit||'';
+  const unit = esc(d.unit||'');
   // 同材料（同案場+樓層+分類+材料規格厚度）合併計算缺口，避免追加需求重複算
   const totalDemand = getTotalDemandForMaterial(d.project, d.floor, d.category, d.name, d.spec, d.thick);
   const totalAlloc = getAllocatedQty(d.project, d.floor, d.name, d.spec, d.thick);
@@ -1354,17 +1363,17 @@ function buildDemandRow(d) {
   const multiNote = (totalDemand !== Number(d.qty)) ? '<span style="font-size:11px;color:#9ca3af">（此材料總需求 '+totalDemand+unit+'，缺口合併計算）</span>' : '';
   return `<div class="list-item">
     <div style="flex:1">
-      <div class="list-main">${d.name}</div>
-      <div class="list-sub">${d.spec}${d.thick?'・'+d.thick:''}${d.note?'・'+d.note:''}</div>
+      <div class="list-main">${esc(d.name)}</div>
+      <div class="list-sub">${esc(d.spec)}${d.thick?'・'+esc(d.thick):''}${d.note?'・'+esc(d.note):''}</div>
       <div style="margin-top:4px;font-size:12px;color:#374151">
-        本筆需求：<strong>${d.qty}${unit}</strong>　此材料已分配：<strong style="color:#185FA5">${totalAlloc}${unit}</strong>　
+        本筆需求：<strong>${d.qty}${unit}</strong>　此材料已分配：<strong style="color:#185FA5">${totalAlloc}${unit}</strong>
         ${diffHTML}
       </div>
       <div>${multiNote}</div>
       <span class="badge ${statusColor}" style="margin-top:4px">${statusText}</span>
     </div>
     <div style="display:flex;flex-direction:column;gap:4px;margin-left:8px">
-      <div class="list-date">${d.date}</div>
+      <div class="list-date">${esc(d.date)}</div>
       <button class="btn-sm" onclick="copyDemand(${d._idx})">複製</button>
       <button class="btn-sm" onclick="editDemand(${d._idx})">編輯</button>
       <button class="btn-danger-sm" onclick="deleteDemand(${d._idx})">刪除</button>
@@ -1413,7 +1422,7 @@ function renderDemands() {
   // 第一層：案場頁籤
   if (tabsEl) {
     tabsEl.innerHTML = projects.map(p=>
-      `<button class="dtab ${p===activeProject?'active':''}" onclick="selectProjectTab('${p.replace(/'/g,"\\'")}')">🏢 ${p}</button>`
+      `<button class="dtab ${p===activeProject?'active':''}" onclick="selectProjectTab('${p.replace(/'/g,"\\'")}')">🏢 ${esc(p)}</button>`
     ).join('');
   }
   // 第二層：樓層頁籤
@@ -1421,7 +1430,7 @@ function renderDemands() {
   if (!activeFloor || !floors.includes(activeFloor)) activeFloor = floors[0];
   if (floorTabsEl) {
     floorTabsEl.innerHTML = floors.map(f=>
-      `<button class="dtab ${f===activeFloor?'active':''}" style="${f===activeFloor?'':'background:#fff;border-color:#cbd5e1'}" onclick="selectFloorTab('${f.replace(/'/g,"\\'")}')">${f}</button>`
+      `<button class="dtab ${f===activeFloor?'active':''}" style="${f===activeFloor?'':'background:#fff;border-color:#cbd5e1'}" onclick="selectFloorTab('${f.replace(/'/g,"\\'")}')">${esc(f)}</button>`
     ).join('');
   }
   // 顯示目前案場+樓層的需求，依分類分組
@@ -1432,7 +1441,7 @@ function renderDemands() {
   const totalAlloc = items.reduce((a,b)=>a+getAllocatedQty(b.project,b.floor,b.name,b.spec,b.thick),0);
   let html = `<div class="site-group" style="margin-bottom:12px">
     <div class="site-group-header">
-      <div class="site-group-title">🏢 ${activeProject}　${activeFloor}</div>
+      <div class="site-group-title">🏢 ${esc(activeProject)}　${esc(activeFloor)}</div>
       <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:flex-end">
         <span class="site-group-total">需${totalNeeded} 配${totalAlloc}</span>
         <button onclick="copyFloor('${activeProject.replace(/'/g,"\\'")}','${activeFloor.replace(/'/g,"\\'")}')" style="background:rgba(255,255,255,0.25);border:none;color:#fff;padding:4px 10px;border-radius:6px;font-size:11px;cursor:pointer">複製此樓層</button>
@@ -1444,7 +1453,7 @@ function renderDemands() {
   Object.keys(catMap).forEach(cat=>{
     const catItems = catMap[cat];
     const catNeeded = catItems.reduce((a,b)=>a+b.qty,0);
-    html += `<div class="cat-header">${cat}　<span style="font-weight:400;color:#6b7280;font-size:12px">需求 ${catNeeded}</span></div>`;
+    html += `<div class="cat-header">${esc(cat)}　<span style="font-weight:400;color:#6b7280;font-size:12px">需求 ${catNeeded}</span></div>`;
     html += catItems.map(d=>buildDemandRow(d)).join('');
   });
   html += `</div></div>`;
@@ -1615,7 +1624,7 @@ function showArchiveManager() {
     body = '<div style="font-size:13px;color:#6b7280;margin-bottom:10px">已封存的案場（已從主畫面隱藏）：</div>';
     body += archivedProjects.map(p=>`
       <div class="list-item">
-        <div style="flex:1"><div class="list-main">🏢 ${p}</div></div>
+        <div style="flex:1"><div class="list-main">🏢 ${esc(p)}</div></div>
         <div style="display:flex;gap:6px">
           <button class="btn-sm" onclick="unarchiveProject('${p.replace(/'/g,"\\'")}')">還原</button>
           <button class="btn-danger-sm" onclick="deleteProjectPermanently('${p.replace(/'/g,"\\'")}')">永久刪除</button>
@@ -1734,7 +1743,7 @@ function renderAllocation() {
   // 第一層：案場頁籤
   if (tabsEl) {
     tabsEl.innerHTML = projects.map(p=>
-      `<button class="dtab ${p===allocActiveProject?'active':''}" onclick="selectAllocTab('${p.replace(/'/g,"\\'")}')">🏢 ${p}</button>`
+      `<button class="dtab ${p===allocActiveProject?'active':''}" onclick="selectAllocTab('${p.replace(/'/g,"\\'")}')">🏢 ${esc(p)}</button>`
     ).join('');
   }
   // 第二層：樓層頁籤
@@ -1742,7 +1751,7 @@ function renderAllocation() {
   if (!allocActiveFloor || !floors.includes(allocActiveFloor)) allocActiveFloor = floors[0] || null;
   if (floorTabsEl) {
     floorTabsEl.innerHTML = floors.map(f=>
-      `<button class="dtab ${f===allocActiveFloor?'active':''}" style="${f===allocActiveFloor?'':'background:#fff;border-color:#cbd5e1'}" onclick="selectAllocFloorTab('${f.replace(/'/g,"\\'")}')">${f}</button>`
+      `<button class="dtab ${f===allocActiveFloor?'active':''}" style="${f===allocActiveFloor?'':'background:#fff;border-color:#cbd5e1'}" onclick="selectAllocFloorTab('${f.replace(/'/g,"\\'")}')">${esc(f)}</button>`
     ).join('');
   }
   const fl = document.getElementById('alloc-current-floor');
@@ -1757,11 +1766,11 @@ function renderAllocation() {
       const color = m.remain>0?'#166534':(m.remain<0?'#dc2626':'#6b7280');
       return `<div class="list-item">
         <div style="flex:1">
-          <div class="list-main">${m.name}</div>
-          <div class="list-sub">${m.spec}${m.thick?'・'+m.thick:''}</div>
+          <div class="list-main">${esc(m.name)}</div>
+          <div class="list-sub">${esc(m.spec)}${m.thick?'・'+esc(m.thick):''}</div>
         </div>
         <div style="text-align:right">
-          <div style="font-size:18px;font-weight:700;color:${color}">${m.remain}${m.unit}</div>
+          <div style="font-size:18px;font-weight:700;color:${color}">${m.remain}${esc(m.unit)}</div>
           <div style="font-size:11px;color:#9ca3af">置料區剩餘</div>
         </div>
       </div>`;
@@ -1805,16 +1814,17 @@ function updateAllocGap() {
   if (!matched.length) {
     box.style.display='block';
     box.style.background='#f1efe8'; box.style.color='#5f5e5a';
-    box.innerHTML='ℹ️ '+floor+' '+category+' 沒有「'+mat.name+'」的需求紀錄';
+    box.innerHTML='ℹ️ '+esc(floor)+' '+esc(category)+' 沒有「'+esc(mat.name)+'」的需求紀錄';
     return;
   }
+  const unit = esc(mat.unit||'');
   const totalDemand = matched.reduce((a,b)=>a+Number(b.qty),0);
   const alreadyAlloc = allocations.filter(a=>allocNorm(a.project)===allocNorm(allocActiveProject) && allocNorm(a.floor)===allocNorm(floor) && allocNorm(a.category)===allocNorm(category) && allocNorm(a.name)===allocNorm(mat.name) && allocNorm(a.spec)===allocNorm(mat.spec) && allocNorm(a.thick)===allocNorm(mat.thick)).reduce((a,b)=>a+Number(b.qty),0);
   const inputQty = parseInt(document.getElementById('alloc-qty').value)||0;
   const after = alreadyAlloc + inputQty;
   const remaining = totalDemand - after;
   box.style.display='block';
-  let line = floor+' '+category+'　需求 <strong>'+totalDemand+unit+'</strong>　已配 <strong>'+alreadyAlloc+unit+'</strong>';
+  let line = esc(floor)+' '+esc(category)+'　需求 <strong>'+totalDemand+unit+'</strong>　已配 <strong>'+alreadyAlloc+unit+'</strong>';
   if (inputQty>0) line += '　本次 <strong>'+inputQty+unit+'</strong>';
   if (remaining>0) { box.style.background='#fef3c7'; box.style.color='#92400e'; box.innerHTML=line+'<br>📦 還缺 <strong>'+remaining+unit+'</strong>'; }
   else if (remaining===0) { box.style.background='#dcfce7'; box.style.color='#166534'; box.innerHTML=line+'<br>✅ 剛好滿足'; }
@@ -1855,11 +1865,11 @@ function renderAllocList() {
     const rows = dateMap[date].map(a=>`
       <div class="list-item">
         <div style="flex:1">
-          <div class="list-main"><span style="display:inline-block;background:#e6f1fb;color:#185FA5;font-size:11px;padding:1px 6px;border-radius:4px;margin-right:5px">${a.category}</span>${a.name}</div>
-          <div class="list-sub">${a.spec}${a.thick?'・'+a.thick:''}</div>
+          <div class="list-main"><span style="display:inline-block;background:#e6f1fb;color:#185FA5;font-size:11px;padding:1px 6px;border-radius:4px;margin-right:5px">${esc(a.category)}</span>${esc(a.name)}</div>
+          <div class="list-sub">${esc(a.spec)}${a.thick?'・'+esc(a.thick):''}</div>
         </div>
         <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;margin-left:8px">
-          <div class="list-qty">${a.qty}${a.unit||''}</div>
+          <div class="list-qty">${a.qty}${esc(a.unit||'')}</div>
           <div style="display:flex;gap:4px">
             <button class="btn-sm" onclick="editAllocation(${a._idx})">編輯</button>
             <button class="btn-danger-sm" onclick="deleteAllocation(${a._idx})">刪除</button>
@@ -1869,7 +1879,7 @@ function renderAllocList() {
     const dtotal = dateMap[date].reduce((x,y)=>x+Number(y.qty),0);
     return `<div class="site-group" style="margin-bottom:12px">
       <div class="site-group-header">
-        <div class="site-group-title">📅 ${date}</div>
+        <div class="site-group-title">📅 ${esc(date)}</div>
         <div style="display:flex;align-items:center;gap:6px">
           <span class="site-group-total">合計 ${dtotal}</span>
           <button onclick="exportAllocDatePDF('${date}')" style="background:rgba(255,255,255,0.25);border:none;color:#fff;padding:4px 10px;border-radius:6px;font-size:11px;cursor:pointer">匯出PDF</button>
@@ -1926,14 +1936,14 @@ function showSettlement() {
   if (!data.length) { showToast('⚠️ 此案場尚無分配紀錄'); return; }
   let body = '<div style="font-size:13px;color:#6b7280;margin-bottom:10px">案場：'+allocActiveProject+'（依實際分配統計，各骨架分開計算）</div>';
   body += data.map(m=>{
-    const catLine = Object.keys(m.byCat).map(c=>c+' '+m.byCat[c]+m.unit).join('、');
+    const catLine = Object.keys(m.byCat).map(c=>esc(c)+' '+m.byCat[c]+esc(m.unit)).join('、');
     return `<div class="list-item">
       <div style="flex:1">
-        <div class="list-main">${m.name}　${m.spec}${m.thick?'・'+m.thick:''}</div>
+        <div class="list-main">${esc(m.name)}　${esc(m.spec)}${m.thick?'・'+esc(m.thick):''}</div>
         <div style="font-size:11px;color:#9ca3af;margin-top:2px">${catLine}</div>
       </div>
       <div style="text-align:right">
-        <div style="font-size:17px;font-weight:700;color:#185FA5">${m.total}${m.unit}</div>
+        <div style="font-size:17px;font-weight:700;color:#185FA5">${m.total}${esc(m.unit)}</div>
       </div>
     </div>`;
   }).join('');
