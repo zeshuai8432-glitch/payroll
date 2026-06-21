@@ -2473,7 +2473,7 @@ function viewDeals(){
   const legacyCompany=state.deals.filter(d=>d.type==='公司分潤'||d.type==='分潤/代料').sort(sortByDate);
   const tableHead=`<thead><tr><th style="width:28px"></th><th>案場</th><th class="num">金額</th><th class="num">成本</th><th class="num">稅金</th><th class="num">淨利</th><th class="num">獎金/管理人</th><th class="num">公積金/業主</th><th></th></tr></thead>`;
   const sectionFor=(title,list)=> list.length===0?'':`
-    <details open style="margin-top:10px"><summary style="cursor:pointer;font-size:13px;font-weight:600;color:var(--accent);padding:6px 0">${title}（${list.length}）</summary>
+    <details style="margin-top:10px"><summary style="cursor:pointer;font-size:13px;font-weight:600;color:var(--accent);padding:6px 0">${title}（${list.length}）</summary>
     <div class="scroll"><table>${tableHead}<tbody>${list.map(dealRow).join('')}</tbody></table></div></details>`;
   const dealsSections=groupedByType.map(([t,list])=>sectionFor(t,list)).join('')+sectionFor('公司分潤（舊資料）',legacyCompany)+sectionFor('其他',otherDeals);
   const anyDeals=groupedByType.reduce((s,[,l])=>s+l.length,0)+otherDeals.length+legacyCompany.length;
@@ -2535,7 +2535,7 @@ function viewDeals(){
     <div class="metric" style="background:var(--accent);color:#fff"><div class="l" style="color:#fff;opacity:.85">帳面公積金累計</div><div class="v">${money(totFund)}</div></div>
     ${bonusCards}
   </div>
-  ${coopSites.length?`<details open class="card" style="background:#fdf6ee"><summary style="cursor:pointer;font-size:14px;font-weight:600">合作案場（自動匯總）・${activeCoop.length} 進行中</summary><p class="sub" style="margin:6px 0 8px">每個合作案場一筆，金額=該案場總請款、成本=該案場總成本，隨請款/成本變動。管理人那半可「帶去公司分潤」再算30/70。</p>${coopActiveHtml}${coopPausedHtml}${coopClosedHtml}</details>`:''}
+  ${coopSites.length?`<details class="card" style="background:#fdf6ee"><summary style="cursor:pointer;font-size:14px;font-weight:600">合作案場（自動匯總）・${activeCoop.length} 進行中</summary><div class="card-body"><p class="sub" style="margin:0 0 8px">每個合作案場一筆，金額=該案場總請款、成本=該案場總成本，隨請款/成本變動。管理人那半可「帶去公司分潤」再算30/70。</p>${coopActiveHtml}${coopPausedHtml}${coopClosedHtml}</div></details>`:''}
   <div class="card">
     <details><summary style="cursor:pointer;font-size:14px;font-weight:600">進階：手動補一筆分潤（一般不用）</summary>
     <p class="sub" style="margin-top:8px">正常流程是<b>到「員工/案場」建案場（設好類型/稅率/負責人/帳戶）→ 在「請款追蹤」記請款</b>，分潤就自動生出來、自動進帳戶，不用在這裡建。這裡只給「不屬於任何案場的一次性損益」臨時補用。手動建的不會自動跟請款連動。</p>
