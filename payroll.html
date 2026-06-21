@@ -115,6 +115,8 @@ let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], t
 let cloudStatus='連線中…';
 let entryDate='', entrySite='', entryEmp=''; // 登記出工：記住上次選的日期、案場、員工
 let entryOpenDates={}, entryEditId=null; // 出工紀錄分組收合狀態與正在編輯的紀錄
+let entryKind='work'; // 'work' | 'leave' | 'off'
+let entryNight=false;
 
 const round = n => Math.round(n);
 const money = n => '$' + round(n).toLocaleString();
@@ -271,9 +273,11 @@ function viewEntry(){
     const rows=list.map(r=>{
       if(r.kind&&r.kind!=='work'){
         const lab=r.kind==='leave'?`<span class="tag" style="background:var(--warn-bg);color:var(--warn-ink)">請假${r.half?'·半天':''}</span>`:'<span class="tag" style="background:#eef2f7;color:var(--info)">休假</span>';
+        const empObj=state.employees.find(e=>e.id===r.empId);
+        const leaveNote=r.kind==='leave'?(empObj&&empObj.partner?'':'扣全勤'):'不扣全勤';
         return `<tr style="color:var(--muted)">
           <td colspan="2">${esc(empName(r.empId))} ${lab}</td>
-          <td class="num" colspan="5" style="text-align:left;color:var(--muted)">${r.kind==='leave'?'扣全勤':'不扣全勤'}</td>
+          <td class="num" colspan="5" style="text-align:left;color:var(--muted)">${leaveNote}</td>
           <td><button class="act danger" data-del="${r.id}">刪</button></td>
         </tr>`;
       }
@@ -312,12 +316,17 @@ function viewEntry(){
     <div class="row">
       <div class="field"><label>日期</label><input type="date" id="f-date" value="${curDate}"></div>
       <div class="field"><label>員工</label><select id="f-emp">${empOptsSel}</select></div>
-      <div class="field"><label>類型</label><select id="f-kind"><option value="work">出工</option><option value="leave">請假（扣全勤）</option><option value="off">休假（不扣全勤）</option></select></div>
-      <div class="field f-leave-only" style="display:none"><label>請假長度</label><select id="f-half"><option value="full">整天</option><option value="half">半天</option></select></div>
-      <div class="field f-work-only"><label>案場</label><select id="f-site">${siteOptsSel}</select></div>
-      <div class="field f-work-only"><label>工時（小時，整數）</label><input type="number" id="f-hours" min="0" max="24" step="1" value="8" style="width:110px"></div>
-      <div class="field f-work-only"><label>過夜外宿</label><div style="height:36px;display:flex;align-items:center"><input type="checkbox" id="f-night"></div></div>
+      <div class="field"><label>類型</label><select id="f-kind">
+        <option value="work" ${entryKind==='work'?'selected':''}>出工</option>
+        <option value="leave" ${entryKind==='leave'?'selected':''}>請假（扣全勤）</option>
+        <option value="off" ${entryKind==='off'?'selected':''}>休假（不扣全勤）</option>
+      </select></div>
+      <div class="field f-leave-only" style="display:${entryKind==='leave'?'':'none'}"><label>請假長度</label><select id="f-half"><option value="full">整天</option><option value="half">半天</option></select></div>
+      <div class="field f-work-only" style="display:${entryKind==='work'?'':'none'}"><label>案場</label><select id="f-site">${siteOptsSel}</select></div>
+      <div class="field f-work-only" style="display:${entryKind==='work'?'':'none'}"><label>工時（小時，整數）</label><input type="number" id="f-hours" min="0" max="24" step="1" value="8" style="width:110px"></div>
+      <div class="field f-work-only" style="display:${entryKind==='work'?'':'none'}"><label>過夜外宿</label><div style="height:36px;display:flex;align-items:center"><input type="checkbox" id="f-night" ${entryNight?'checked':''}></div></div>
       <button class="btn" id="f-add">＋ 新增</button>
+      <button class="btn" id="f-allvac" style="background:var(--muted)">全員休假</button>
     </div>
     ${todayNote}`}
   </div>
@@ -756,14 +765,21 @@ function bind(){
 
   const gotoM=document.getElementById('goto-manage'); if(gotoM) gotoM.onclick=()=>{ state.tab='manage'; render(); };
 
-  const fDate=document.getElementById('f-date'); if(fDate) fDate.onchange=()=>{ entryDate=fDate.value; const fe=document.getElementById('f-emp'); if(fe) entryEmp=fe.value; render(); };
+  const fDate=document.getElementById('f-date');
+  if(fDate){
+    fDate.oninput=()=>{ entryDate=fDate.value; };
+    fDate.onchange=()=>{ entryDate=fDate.value; };
+    fDate.onblur=()=>{ entryDate=fDate.value; const fe=document.getElementById('f-emp'); if(fe) entryEmp=fe.value; render(); };
+  }
   const fSite=document.getElementById('f-site'); if(fSite) fSite.onchange=()=>{ entrySite=fSite.value; const fe=document.getElementById('f-emp'); if(fe) entryEmp=fe.value; render(); };
   const fEmp=document.getElementById('f-emp'); if(fEmp) fEmp.onchange=()=>{ entryEmp=fEmp.value; };
   const fKind=document.getElementById('f-kind'); if(fKind) fKind.onchange=()=>{
+    entryKind=fKind.value;
     const show=fKind.value==='work';
     document.querySelectorAll('.f-work-only').forEach(el=>{ el.style.display=show?'':'none'; });
     document.querySelectorAll('.f-leave-only').forEach(el=>{ el.style.display=fKind.value==='leave'?'':'none'; });
   };
+  const fNight=document.getElementById('f-night'); if(fNight) fNight.onchange=()=>{ entryNight=fNight.checked; };
 
   const add=document.getElementById('f-add');
   if(add) add.onclick=()=>{
@@ -782,6 +798,7 @@ function bind(){
       if(dup){ alert(`${emp.name} 在 ${date} 已經登記過${label}了。`); return; }
       state.attendance.push({id:uid(),date,empId,kind,half:half||false});
       entryDate=date; entryEmp=empId;
+      entryKind=(kind==='off'?'off':'work');
       saveData(); render();
       return;
     }
@@ -804,8 +821,24 @@ function bind(){
       if(!confirm(msg)) return;
     }
     state.attendance.push({id:uid(),date,empId,siteId,hours,night,dailyRate:emp.daily,kind:'work'});
-    entryDate=date; entrySite=siteId; entryEmp=empId;
+    entryDate=date; entrySite=siteId; entryEmp=empId; entryNight=night;
     resyncAllSiteDeals();
+    saveData(); render();
+  };
+  const allVac=document.getElementById('f-allvac');
+  if(allVac) allVac.onclick=()=>{
+    const date=document.getElementById('f-date').value;
+    if(!date){ alert('請先選擇日期'); return; }
+    const emps=state.employees.filter(e=>e.active);
+    if(emps.length===0){ alert('沒有在職員工'); return; }
+    const toAdd=emps.filter(e=>!state.attendance.some(r=>r.empId===e.id&&r.date===date&&r.kind==='off'));
+    const skipped=emps.filter(e=>state.attendance.some(r=>r.empId===e.id&&r.date===date&&r.kind==='off'));
+    let msg=`確定將 ${date} 設為全員休假？\n新增 ${toAdd.length} 人`;
+    if(skipped.length>0) msg+=`（跳過已有休假紀錄的 ${skipped.length} 人：${skipped.map(e=>e.name).join('、')}）`;
+    msg+='。';
+    if(!confirm(msg)) return;
+    toAdd.forEach(emp=>state.attendance.push({id:uid(),date,empId:emp.id,kind:'off',half:false}));
+    entryDate=date;
     saveData(); render();
   };
   document.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>{ const r=state.attendance.find(x=>x.id===b.dataset.del); if(!confirm(`確定刪除這筆出工？\n${r?esc(r.date)+'・'+empName(r.empId)+'・'+siteName(r.siteId):''}`)) return; state.attendance=state.attendance.filter(r=>r.id!==b.dataset.del); resyncAllSiteDeals(); saveData(); render(); });
@@ -1523,8 +1556,10 @@ function exportPayslipPDF(empId){
   const comp=computeRecords(state.attendance);
   const myRecs=state.attendance.filter(r=>r.empId===empId&&inRange(r.date)).sort((a,b)=>a.date.localeCompare(b.date));
   const recRows=myRecs.map(r=>{ const c=comp[r.id]||{wage:0,allow:0,total:0};
-    return `<tr><td>${esc(r.date)}</td><td>${esc(siteName(r.siteId))}</td><td class="num">${gongStr(r.hours)}</td><td class="num">${r.night?'是':'-'}</td>
-      <td class="num">${money(c.wage)}</td><td class="num">${c.allow>0?money(c.allow):'-'}</td></tr>`;
+    const isLeaveR=r.kind==='leave'||r.kind==='off';
+    const siteLabel=isLeaveR?(r.kind==='leave'?`請假${r.half?'（半天）':''}`:' 休假'):esc(siteName(r.siteId));
+    return `<tr><td>${esc(r.date)}</td><td>${siteLabel}</td><td class="num">${isLeaveR?'—':gongStr(r.hours)}</td><td class="num">${isLeaveR?'—':(r.night?'是':'-')}</td>
+      <td class="num">${isLeaveR?'—':money(c.wage)}</td><td class="num">${isLeaveR?'—':(c.allow>0?money(c.allow):'-')}</td></tr>`;
   }).join('');
   const inner=`<h1>薪資明細單</h1>
     <div class="meta">員工：${esc(empName(empId))}　|　計薪期間：${state.payFrom||'起始'} ～ ${state.payTo||'迄今'}　|　出勤 ${e.days.size} 天 / ${gongStr(e.hours)}</div>
