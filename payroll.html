@@ -505,7 +505,7 @@ function viewSites(){
   Object.values(bySite).forEach(s=>{ s.grandTotal=s.total+(s.opening||0)+(s.manual||0); });
   const grand=Object.values(bySite).reduce((s,x)=>s+x.grandTotal,0);
   const ids=Object.keys(bySite).sort((a,b)=>bySite[b].grandTotal-bySite[a].grandTotal);
-  const payerName=who=>({dz:'潘東澤',gx:'廣昕',py:'品佑'}[who]||who||'—');
+  const payerName=who=>({dz:'東澤',gx:'廣昕',py:'品佑'}[who]||who||'—');
   const cardFor=(sid)=>{ const s=bySite[sid]; const site=state.sites.find(x=>x.id===sid); const isCoop=site&&site.coop;
     const empBreak=Object.entries(s.emp).sort((a,b)=>b[1]-a[1]).map(([eid,v])=>`<tr><td>${esc(empName(eid))}</td><td class="num">${money(v)}</td></tr>`).join('');
     const pct=grand>0?Math.round(s.grandTotal/grand*100):0;
@@ -517,7 +517,7 @@ function viewSites(){
             <div class="field"><label>日期</label><input type="date" id="ce-date" value="${c.date||''}"></div>
             <div class="field" style="flex:1;min-width:120px"><label>項目</label><input id="ce-item" value="${esc(c.item||'')}"></div>
             <div class="field"><label>金額</label><input type="number" id="ce-amount" value="${c.amount||0}" min="0" step="1000" style="width:120px"></div>
-            <div class="field"><label>誰支付</label><select id="ce-payer"><option value="dz" ${c.payer==='dz'?'selected':''}>潘東澤</option><option value="gx" ${c.payer==='gx'?'selected':''}>廣昕</option><option value="py" ${c.payer==='py'?'selected':''}>品佑</option></select></div>
+            <div class="field"><label>誰支付</label><select id="ce-payer"><option value="dz" ${c.payer==='dz'?'selected':''}>東澤</option><option value="gx" ${c.payer==='gx'?'selected':''}>廣昕</option><option value="py" ${c.payer==='py'?'selected':''}>品佑</option></select></div>
             <button class="btn" data-costeditok="${c.id}">儲存</button>
             <button class="act muted" data-costeditcancel="1" style="cursor:pointer;height:36px">取消</button>
           </div>
@@ -551,7 +551,7 @@ function viewSites(){
           <div class="field"><label>日期</label><input type="date" data-costdate="${sid}" value="${new Date().toISOString().slice(0,10)}"></div>
           <div class="field" style="flex:1;min-width:120px"><label>項目</label><input data-costitem="${sid}" placeholder="材料、工資、機具…"></div>
           <div class="field"><label>金額</label><input type="number" data-costamount="${sid}" min="0" step="1000" style="width:120px"></div>
-          <div class="field"><label>誰支付</label><select data-costpayer="${sid}"><option value="dz">潘東澤</option><option value="gx">廣昕</option><option value="py">品佑</option></select></div>
+          <div class="field"><label>誰支付</label><select data-costpayer="${sid}"><option value="dz">東澤</option><option value="gx">廣昕</option><option value="py">品佑</option></select></div>
           <button class="act" data-costadd="${sid}" style="border:1px solid var(--accent);border-radius:6px;padding:0 12px;color:var(--accent);height:36px">＋ 加成本</button>
         </div>
         ${costRows?`<table><thead><tr><th>日期</th><th>項目</th><th class="num">金額</th><th>誰付</th><th></th></tr></thead><tbody>${costRows}</tbody></table>`:'<div class="sub">尚無手動成本。</div>'}
@@ -949,11 +949,24 @@ function bind(){
   });
   document.querySelectorAll('[data-reimb]').forEach(b=>b.onclick=()=>{
     const c=state.costs.find(x=>x.id===b.dataset.reimb); if(!c) return;
-    c.reimbursed=true; c.reimbDate=new Date().toISOString().slice(0,10); saveData(); render();
+    if(!state.parkAccId){ alert('請先到「品佑帳戶結算」頁設定哪個帳戶是品佑代支出帳戶，才能在報銷時自動記品佑支出。'); return; }
+    const who=payerName(c.payer);
+    if(!confirm(`報銷這筆？\n\n・${siteName(c.siteId)||''}　${esc(c.item||'')}　${money(c.amount)}\n・原墊付人：${who} → 改為品佑\n・品佑帳戶會記一筆支出 ${money(c.amount)}（摘要：${esc(c.item||'報銷')}）\n\n確定報銷？`)) return;
+    c.origPayer=c.payer;            // 記住原墊付人，取消時還原
+    c.payer='py';
+    c.reimbursed=true;
+    c.reimbDate=new Date().toISOString().slice(0,10);
+    // 品佑帳戶記一筆專案支出（用原本的項目當摘要），標記 reimbCostId 以便取消時移除
+    state.ledger.push({id:uid(), date:c.reimbDate, accId:state.parkAccId, kind:'out', amount:Number(c.amount)||0, note:(c.item||'報銷'), reimbCostId:c.id});
+    saveData(); render();
   });
   document.querySelectorAll('[data-unreimb]').forEach(b=>b.onclick=()=>{
     const c=state.costs.find(x=>x.id===b.dataset.unreimb); if(!c) return;
-    c.reimbursed=false; delete c.reimbDate; saveData(); render();
+    if(!confirm('取消報銷？會把「誰付」改回原墊付人，並移除品佑帳戶那筆報銷支出。')) return;
+    if(c.origPayer){ c.payer=c.origPayer; delete c.origPayer; }
+    c.reimbursed=false; delete c.reimbDate;
+    state.ledger=state.ledger.filter(t=>t.reimbCostId!==c.id);
+    saveData(); render();
   });
   document.querySelectorAll('[data-costedit]').forEach(b=>b.onclick=()=>{ costEditId=b.dataset.costedit; render(); });
   document.querySelectorAll('[data-costeditcancel]').forEach(b=>b.onclick=()=>{ costEditId=null; render(); });
@@ -1160,6 +1173,7 @@ function bind(){
   };
   document.querySelectorAll('[data-delledger]').forEach(b=>b.onclick=()=>{
     const t=state.ledger.find(x=>x.id===b.dataset.delledger);
+    if(t&&t.reimbCostId){ alert('這筆是「報銷」在品佑帳戶自動產生的支出。請到「案場成本」對該筆按「取消報銷」來移除，以免帳對不上。'); return; }
     if(t&&t.autoDealId){ alert('這筆是分潤「錢進哪個帳戶」自動產生的進帳。請到「分潤結算」改該筆的帳戶或刪除分潤來移除，別在這裡刪，以免帳對不上。'); return; }
     if(t&&t.fromDeal){ alert('這筆是分潤結算入帳產生的，請到「分潤結算」按該案場的「撤銷」來移除，以免帳對不上。'); return; }
     if(t&&t.fromAdvance){ alert('這筆是代墊款入帳產生的，請到「代墊款」按該股東的「撤銷入帳」來移除。'); return; }
