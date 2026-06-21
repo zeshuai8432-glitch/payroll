@@ -685,43 +685,46 @@ function viewPayroll(){
     <div class="metric"><div class="l">出工薪資</div><div class="v" style="font-size:20px">${money(grossSum)}</div></div>
     <div class="metric"><div class="l">實發總額</div><div class="v">${money(netSum)}</div></div>
   </div>
-  <div class="card">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;gap:8px;flex-wrap:wrap">
-      <div style="font-size:14px;font-weight:600">本期薪資</div>
-      <div style="display:flex;gap:8px">
-        ${partnerIds.length?`<button class="act" id="toggle-partners" style="border:1px solid var(--line2);border-radius:8px;padding:0 12px;height:36px">${state.showPartners?'隱藏股東':'顯示股東'}</button>`:''}
-        <button class="btn" id="export-summary" ${rows===''?'disabled style="opacity:.5"':''}>匯出總表 PDF</button>
+  <details class="card">
+    <summary>本期薪資<span style="margin-left:auto;display:flex;gap:8px;align-items:center">
+      ${partnerIds.length?`<button class="act" id="toggle-partners" style="border:1px solid var(--line2);border-radius:8px;padding:0 12px;height:34px" onclick="event.preventDefault()">${state.showPartners?'隱藏股東':'顯示股東'}</button>`:''}
+      <button class="btn" id="export-summary" ${rows===''?'disabled style="opacity:.5"':''} onclick="event.preventDefault()">匯出總表 PDF</button>
+    </span></summary>
+    <div class="card-body">
+      ${rows===''?'<div class="empty">此區間內尚無可計算的薪資。</div>':`
+      <div class="scroll"><table>
+        <thead><tr><th>員工</th><th class="num">出勤天</th><th class="num">總工數</th><th class="num">出工薪資</th><th class="num">加項</th><th class="num">扣項</th><th class="num">實發金額</th><th></th></tr></thead>
+        <tbody>${rows}</tbody></table></div>
+      <p class="sub" style="margin:10px 0 0">實發總額與員工數只計一般員工。股東工資計入案場成本，但從「代墊款」分頁發放，不在此重複發。出工薪資＝工資＋津貼。實發＝出工薪資＋加項−扣項。</p>`}
+    </div>
+  </details>
+  ${loanReminders===''?'':`<details class="card" style="border-color:var(--accent)">
+    <summary>💡 本期借支扣款提示</summary>
+    <div class="card-body">
+      <p class="sub">以下員工有未還清借支、且本期尚未扣款。點「扣這期」即把該筆金額加入本期扣項（可在下方加扣項清單微調或刪除）。</p>
+      <div class="scroll"><table>
+        <thead><tr><th>員工</th><th class="num">尚欠</th><th class="num">本期建議扣</th><th></th></tr></thead>
+        <tbody>${loanReminders}</tbody></table></div>
+    </div>
+  </details>`}
+  <details class="card">
+    <summary>本期加項／扣項</summary>
+    <div class="card-body">
+      <p class="sub">獎金、全勤為加項；借支扣還、勞健保自負額、工具遺失賠償等為扣項。日期請填在本計薪區間內，才會算進本期。</p>
+      <div class="row" style="margin-bottom:10px">
+        <div class="field"><label>日期</label><input type="date" id="adj-date" value="${state.payTo||''}"></div>
+        <div class="field"><label>員工</label><select id="adj-emp">${empOpts}</select></div>
+        <div class="field"><label>性質</label><select id="adj-kind"><option value="add">加項（+）</option><option value="ded">扣項（−）</option></select></div>
+        <div class="field"><label>項目</label><select id="adj-label">${addOpts}</select></div>
+        <div class="field"><label>金額</label><input type="number" id="adj-amount" min="0" step="100" style="width:120px"></div>
+        <div class="field" style="flex:1;min-width:140px"><label>備註（選填）</label><input id="adj-note" placeholder="例：6月借支"></div>
+        <button class="btn" id="adj-add">＋ 新增</button>
       </div>
+      ${adjRows===''?'<div class="empty">本期尚無加扣項。</div>':`<div class="scroll"><table>
+        <thead><tr><th>日期</th><th>員工</th><th>項目</th><th class="num">金額</th><th>備註</th><th></th></tr></thead>
+        <tbody>${adjRows}</tbody></table></div>`}
     </div>
-    ${rows===''?'<div class="empty">此區間內尚無可計算的薪資。</div>':`
-    <div class="scroll"><table>
-      <thead><tr><th>員工</th><th class="num">出勤天</th><th class="num">總工數</th><th class="num">出工薪資</th><th class="num">加項</th><th class="num">扣項</th><th class="num">實發金額</th><th></th></tr></thead>
-      <tbody>${rows}</tbody></table></div>
-    <p class="sub" style="margin:10px 0 0">實發總額與員工數只計一般員工。股東工資計入案場成本，但從「代墊款」分頁發放，不在此重複發。出工薪資＝工資＋津貼。實發＝出工薪資＋加項−扣項。</p>`}
-  </div>
-  ${loanReminders===''?'':`<div class="card" style="border-color:var(--accent)">
-    <div style="font-size:14px;font-weight:600;margin-bottom:4px">💡 本期借支扣款提示</div>
-    <p class="sub">以下員工有未還清借支、且本期尚未扣款。點「扣這期」即把該筆金額加入本期扣項（可在下方加扣項清單微調或刪除）。</p>
-    <div class="scroll"><table>
-      <thead><tr><th>員工</th><th class="num">尚欠</th><th class="num">本期建議扣</th><th></th></tr></thead>
-      <tbody>${loanReminders}</tbody></table></div>
-  </div>`}
-  <div class="card">
-    <div style="font-size:14px;font-weight:600;margin-bottom:4px">本期加項／扣項</div>
-    <p class="sub">獎金、全勤為加項；借支扣還、勞健保自負額、工具遺失賠償等為扣項。日期請填在本計薪區間內，才會算進本期。</p>
-    <div class="row" style="margin-bottom:10px">
-      <div class="field"><label>日期</label><input type="date" id="adj-date" value="${state.payTo||''}"></div>
-      <div class="field"><label>員工</label><select id="adj-emp">${empOpts}</select></div>
-      <div class="field"><label>性質</label><select id="adj-kind"><option value="add">加項（+）</option><option value="ded">扣項（−）</option></select></div>
-      <div class="field"><label>項目</label><select id="adj-label">${addOpts}</select></div>
-      <div class="field"><label>金額</label><input type="number" id="adj-amount" min="0" step="100" style="width:120px"></div>
-      <div class="field" style="flex:1;min-width:140px"><label>備註（選填）</label><input id="adj-note" placeholder="例：6月借支"></div>
-      <button class="btn" id="adj-add">＋ 新增</button>
-    </div>
-    ${adjRows===''?'<div class="empty">本期尚無加扣項。</div>':`<div class="scroll"><table>
-      <thead><tr><th>日期</th><th>員工</th><th>項目</th><th class="num">金額</th><th>備註</th><th></th></tr></thead>
-      <tbody>${adjRows}</tbody></table></div>`}
-  </div>`;
+  </details>`;
 }
 
 function viewSites(){
@@ -768,30 +771,29 @@ function viewSites(){
     }).join('');
     const byPayer={}; myCosts.forEach(c=>{ byPayer[c.payer||'—']=(byPayer[c.payer||'—']||0)+(Number(c.amount)||0); });
     const payerSummary=Object.keys(byPayer).length?`<div class="sub" style="margin:4px 0">各人墊付：${Object.entries(byPayer).map(([k,v])=>`${esc(payerName(k))} ${money(v)}`).join('、')}</div>`:'';
-    return `<div class="card" ${isCoop?'style="border-left:3px solid #d98430"':''}>
-      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px">
-        <div style="font-size:15px;font-weight:600">${esc(siteName(sid))}${isCoop?'<span class="tag" style="background:#fde9d4;color:#9a5b1a">合作案場</span>':''}</div>
-        <div style="font-size:18px;font-weight:600">${money(s.grandTotal)}</div>
+    return `<details class="card" ${isCoop?'style="border-left:3px solid #d98430"':''}>
+      <summary>${esc(siteName(sid))}${isCoop?'<span class="tag" style="background:#fde9d4;color:#9a5b1a">合作案場</span>':''}<span style="margin-left:auto;font-size:16px;font-weight:700;color:var(--ink)">${money(s.grandTotal)}</span></summary>
+      <div class="card-body">
+        <p class="sub">${isCoop?'手動成本明細加總':`總工數 ${gongStr(s.hours)}・系統工資 ${money(s.wage)}・津貼 ${money(s.allow)}`}${s.opening>0?`・期初 ${money(s.opening)}`:''}${s.manual>0?`・手動成本 ${money(s.manual)}`:''}・占總成本 ${pct}%</p>
+        ${isCoop?'':`<div class="row" style="margin-bottom:6px">
+          <div class="field"><label>期初人事成本（從Excel抄入，選填）</label><input type="number" data-opening="${sid}" value="${s.opening||''}" placeholder="未設定" min="0" step="1000" style="width:170px"></div>
+        </div>`}
+        ${payerSummary}
+        <details ${isCoop?'open':''}><summary>手動成本明細（${myCosts.length} 筆）</summary>
+          <div class="row" style="margin:8px 0">
+            <div class="field"><label>日期</label><input type="date" data-costdate="${sid}" value="${new Date().toISOString().slice(0,10)}"></div>
+            <div class="field" style="flex:1;min-width:120px"><label>項目</label><input data-costitem="${sid}" placeholder="材料、工資、機具…"></div>
+            <div class="field"><label>金額</label><input type="number" data-costamount="${sid}" min="0" step="1000" style="width:120px"></div>
+            <div class="field"><label>誰支付</label><select data-costpayer="${sid}"><option value="dz">東澤</option><option value="gx">廣昕</option><option value="py">品佑</option></select></div>
+            <button class="act" data-costadd="${sid}" style="border:1px solid var(--accent);border-radius:6px;padding:0 12px;color:var(--accent);height:36px">＋ 加成本</button>
+          </div>
+          ${costRows?`<table><thead><tr><th>日期</th><th>項目</th><th class="num">金額</th><th>誰付</th><th></th></tr></thead><tbody>${costRows}</tbody></table>`:'<div class="sub">尚無手動成本。</div>'}
+        </details>
+        ${empBreak&&!isCoop?`<details><summary>系統內各員工金額明細</summary>
+          <table style="margin-top:8px"><thead><tr><th>員工</th><th class="num">金額</th></tr></thead><tbody>${empBreak}</tbody></table>
+        </details>`:''}
       </div>
-      <p class="sub">${isCoop?'手動成本明細加總':`總工數 ${gongStr(s.hours)}・系統工資 ${money(s.wage)}・津貼 ${money(s.allow)}`}${s.opening>0?`・期初 ${money(s.opening)}`:''}${s.manual>0?`・手動成本 ${money(s.manual)}`:''}・占總成本 ${pct}%</p>
-      ${isCoop?'':`<div class="row" style="margin-bottom:6px">
-        <div class="field"><label>期初人事成本（從Excel抄入，選填）</label><input type="number" data-opening="${sid}" value="${s.opening||''}" placeholder="未設定" min="0" step="1000" style="width:170px"></div>
-      </div>`}
-      ${payerSummary}
-      <details ${isCoop?'open':''}><summary>手動成本明細（${myCosts.length} 筆）</summary>
-        <div class="row" style="margin:8px 0">
-          <div class="field"><label>日期</label><input type="date" data-costdate="${sid}" value="${new Date().toISOString().slice(0,10)}"></div>
-          <div class="field" style="flex:1;min-width:120px"><label>項目</label><input data-costitem="${sid}" placeholder="材料、工資、機具…"></div>
-          <div class="field"><label>金額</label><input type="number" data-costamount="${sid}" min="0" step="1000" style="width:120px"></div>
-          <div class="field"><label>誰支付</label><select data-costpayer="${sid}"><option value="dz">東澤</option><option value="gx">廣昕</option><option value="py">品佑</option></select></div>
-          <button class="act" data-costadd="${sid}" style="border:1px solid var(--accent);border-radius:6px;padding:0 12px;color:var(--accent);height:36px">＋ 加成本</button>
-        </div>
-        ${costRows?`<table><thead><tr><th>日期</th><th>項目</th><th class="num">金額</th><th>誰付</th><th></th></tr></thead><tbody>${costRows}</tbody></table>`:'<div class="sub">尚無手動成本。</div>'}
-      </details>
-      ${empBreak&&!isCoop?`<details><summary>系統內各員工金額明細</summary>
-        <table style="margin-top:8px"><thead><tr><th>員工</th><th class="num">金額</th></tr></thead><tbody>${empBreak}</tbody></table>
-      </details>`:''}
-    </div>`;
+    </details>`;
   };
   const isPaused=sid=>{ const st=state.sites.find(x=>x.id===sid); return st&&st.active===false; };
   const activeIds=ids.filter(sid=>!isPaused(sid));
@@ -822,11 +824,13 @@ function viewSites(){
     </div>`;
   };
   const reimbCard=(reimb.dz.total>0||reimb.gx.total>0)?`
-  <div class="card">
-    <div style="font-size:14px;font-weight:600;margin-bottom:8px">墊付報銷彙總（東澤／廣昕）</div>
-    ${personBlock('dz')}${personBlock('gx')}
-    <p class="sub" style="margin-top:6px">展開「待報銷明細」可看到是哪個案場、哪一筆，直接按「報銷」標記。此處只記錄報銷狀態，不會動到帳戶餘額。</p>
-  </div>`:'';
+  <details class="card">
+    <summary>墊付報銷彙總（東澤／廣昕）</summary>
+    <div class="card-body">
+      ${personBlock('dz')}${personBlock('gx')}
+      <p class="sub" style="margin-top:6px">展開「待報銷明細」可看到是哪個案場、哪一筆，直接按「報銷」標記。此處只記錄報銷狀態，不會動到帳戶餘額。</p>
+    </div>
+  </details>`:'';
   return `
   <div class="metrics">
     <div class="metric"><div class="l">案場數</div><div class="v">${activeIds.length}${pausedIds.length?`<span style="font-size:12px;color:var(--muted)"> +${pausedIds.length}暫停</span>`:''}</div></div>
@@ -879,32 +883,36 @@ function viewManage(){
   const siteRows=activeSitesList.map(siteRowFor).join('');
   const pausedSiteTable=pausedSitesList.length?`<details style="margin-top:10px"><summary style="cursor:pointer;font-weight:600;padding:8px 0">已暫停案場（${pausedSitesList.length}）</summary><table><tbody>${pausedSitesList.map(siteRowFor).join('')}</tbody></table></details>`:'';
   return `
-  <div class="card">
-    <div style="font-size:14px;font-weight:600;margin-bottom:4px">員工</div>
-    <p class="sub">調薪只影響之後登記的出工，舊紀錄維持當時日薪。離職請用「停用」保留歷史；只有從沒登記過出工的員工才能真正刪除。標記為「股東」的人會出現在代墊款分頁。</p>
-    <div class="row" style="margin-bottom:10px">
-      <div class="field"><label>姓名</label><input id="e-name" placeholder="例：潘東澤"></div>
-      <div class="field"><label>日薪</label><input id="e-daily" type="number" min="0" step="100" value="3000" style="width:120px"></div>
-      <button class="btn" id="e-add">＋ 新增員工</button>
+  <details class="card">
+    <summary>員工</summary>
+    <div class="card-body">
+      <p class="sub">調薪只影響之後登記的出工，舊紀錄維持當時日薪。離職請用「停用」保留歷史；只有從沒登記過出工的員工才能真正刪除。標記為「股東」的人會出現在代墊款分頁。</p>
+      <div class="row" style="margin-bottom:10px">
+        <div class="field"><label>姓名</label><input id="e-name" placeholder="例：潘東澤"></div>
+        <div class="field"><label>日薪</label><input id="e-daily" type="number" min="0" step="100" value="3000" style="width:120px"></div>
+        <button class="btn" id="e-add">＋ 新增員工</button>
+      </div>
+      ${state.employees.length===0?'<div class="empty">尚無員工。</div>':`<table><thead><tr><th>姓名</th><th class="num">目前日薪</th><th></th><th></th><th></th><th></th><th></th></tr></thead><tbody>${empRows}</tbody></table>`}
     </div>
-    ${state.employees.length===0?'<div class="empty">尚無員工。</div>':`<table><thead><tr><th>姓名</th><th class="num">目前日薪</th><th></th><th></th><th></th><th></th><th></th></tr></thead><tbody>${empRows}</tbody></table>`}
-  </div>
-  <div class="card">
-    <div style="font-size:14px;font-weight:600;margin-bottom:4px">案場</div>
-    <p class="sub">建案場時設好<b>類型、稅率、負責人、錢進哪個帳戶</b>，之後請款追蹤一輸入，系統就自動算分潤、自動進帳戶，不用再去分潤頁手動建。<b>代工／公司分潤</b>＝（總請款−稅）做30/70；<b>合作案</b>＝（總請款−案場成本）對拆、不出現在出工登記、成本記「案場成本」頁。改名會套用到所有相關紀錄。</p>
-    <div class="row" style="margin-bottom:8px">
-      <div class="field" style="flex:1;min-width:180px"><label>案場名稱</label><input id="s-name" placeholder="例：台北富邦"></div>
-      <div class="field"><label>類型</label><select id="s-type">${['代工','連工代料','業主分潤','合作案','舊制'].map(t=>`<option value="${t}">${t}${t==='合作案'?'（50/50）':t==='舊制'?'（全進公積金）':'（30/70）'}</option>`).join('')}</select></div>
-      <div class="field"><label>稅率 %</label><input type="number" id="s-tax" min="0" max="100" step="0.5" value="0" style="width:90px"></div>
+  </details>
+  <details class="card">
+    <summary>案場</summary>
+    <div class="card-body">
+      <p class="sub">建案場時設好<b>類型、稅率、負責人、錢進哪個帳戶</b>，之後請款追蹤一輸入，系統就自動算分潤、自動進帳戶，不用再去分潤頁手動建。<b>代工／公司分潤</b>＝（總請款−稅）做30/70；<b>合作案</b>＝（總請款−案場成本）對拆、不出現在出工登記、成本記「案場成本」頁。改名會套用到所有相關紀錄。</p>
+      <div class="row" style="margin-bottom:8px">
+        <div class="field" style="flex:1;min-width:180px"><label>案場名稱</label><input id="s-name" placeholder="例：台北富邦"></div>
+        <div class="field"><label>類型</label><select id="s-type">${['代工','連工代料','業主分潤','合作案','舊制'].map(t=>`<option value="${t}">${t}${t==='合作案'?'（50/50）':t==='舊制'?'（全進公積金）':'（30/70）'}</option>`).join('')}</select></div>
+        <div class="field"><label>稅率 %</label><input type="number" id="s-tax" min="0" max="100" step="0.5" value="0" style="width:90px"></div>
+      </div>
+      <div class="row" style="margin-bottom:10px">
+        <div class="field"><label>負責人</label><select id="s-owner"><option value="">（未指定）</option>${state.employees.filter(e=>e.partner).map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join('')}</select></div>
+        <div class="field"><label>錢進哪個帳戶</label><select id="s-acc"><option value="">（未指定）</option>${state.accounts.map(a=>`<option value="${a.id}">${esc(a.name)}</option>`).join('')}</select></div>
+        <div class="field" id="s-mgr-wrap" style="display:none"><label>管理人(你們)佔 %</label><input type="number" id="s-mgrpct" min="0" max="100" step="5" value="50" style="width:120px"></div>
+        <button class="btn" id="s-add">＋ 新增案場</button>
+      </div>
+      ${state.sites.length===0?'<div class="empty">尚無案場。</div>':`${activeSitesList.length?`<table><thead><tr><th>名稱</th><th></th><th></th><th></th></tr></thead><tbody>${siteRows}</tbody></table>`:'<div class="empty">沒有啟用中的案場。</div>'}${pausedSiteTable}`}
     </div>
-    <div class="row" style="margin-bottom:10px">
-      <div class="field"><label>負責人</label><select id="s-owner"><option value="">（未指定）</option>${state.employees.filter(e=>e.partner).map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join('')}</select></div>
-      <div class="field"><label>錢進哪個帳戶</label><select id="s-acc"><option value="">（未指定）</option>${state.accounts.map(a=>`<option value="${a.id}">${esc(a.name)}</option>`).join('')}</select></div>
-      <div class="field" id="s-mgr-wrap" style="display:none"><label>管理人(你們)佔 %</label><input type="number" id="s-mgrpct" min="0" max="100" step="5" value="50" style="width:120px"></div>
-      <button class="btn" id="s-add">＋ 新增案場</button>
-    </div>
-    ${state.sites.length===0?'<div class="empty">尚無案場。</div>':`${activeSitesList.length?`<table><thead><tr><th>名稱</th><th></th><th></th><th></th></tr></thead><tbody>${siteRows}</tbody></table>`:'<div class="empty">沒有啟用中的案場。</div>'}${pausedSiteTable}`}
-  </div>`;
+  </details>`;
 }
 
 function bind(){
