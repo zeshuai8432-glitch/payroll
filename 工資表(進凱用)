@@ -1,0 +1,1003 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>點工薪資管理系統</title>
+<style>
+  :root {
+    --bg: #f4f5f3; --surface: #ffffff; --ink: #1f2421; --muted: #6b6f6c;
+    --line: #e4e6e2; --line2: #cfd2cd; --accent: #2f5d50; --accent2: #c25a2b;
+    --warn-bg: #faeeda; --warn-ink: #854f0b; --danger: #a32d2d; --info: #185fa5;
+    --radius: 12px;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", sans-serif;
+    line-height: 1.6; }
+  .top { background: var(--accent); color: #fff; padding: 14px 20px; display: flex; align-items: center; gap: 12px; position: sticky; top: 0; z-index: 50; }
+  .top h1 { margin: 0; font-size: 16px; font-weight: 600; letter-spacing: .5px; }
+  .top .burger { display: none; background: none; border: none; color: #fff; font-size: 22px; cursor: pointer; padding: 0 4px; line-height: 1; }
+  .layout { display: flex; min-height: calc(100vh - 50px); }
+  .sidebar { width: 210px; flex-shrink: 0; background: var(--surface); border-right: 1px solid var(--line); padding: 14px 0; overflow-y: auto; }
+  .nav-group { margin-bottom: 6px; }
+  .nav-group-label { font-size: 11px; color: var(--muted); padding: 10px 20px 4px; letter-spacing: .5px; }
+  .nav-item { display: block; width: 100%; text-align: left; padding: 9px 20px; font-size: 14px; cursor: pointer; border: none; background: none; color: var(--ink); border-left: 3px solid transparent; }
+  .nav-item:hover { background: var(--bg); }
+  .nav-item.active { border-left-color: var(--accent); background: var(--bg); color: var(--accent); font-weight: 600; }
+  .main { flex: 1; min-width: 0; padding: 20px 24px 60px; max-width: 1080px; }
+  .scrim { display: none; }
+  @media (max-width: 760px) {
+    .top .burger { display: block; }
+    .sidebar { position: fixed; top: 50px; left: 0; bottom: 0; z-index: 60; transform: translateX(-100%); transition: transform .2s; box-shadow: 2px 0 12px rgba(0,0,0,.15); }
+    .sidebar.open { transform: translateX(0); }
+    .scrim.show { display: block; position: fixed; inset: 50px 0 0 0; background: rgba(0,0,0,.3); z-index: 55; }
+    .main { padding: 16px; }
+  }
+  .container { max-width: 1080px; margin: 0 auto; padding: 20px 24px 60px; }
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+    padding: 16px 20px; margin-bottom: 16px; }
+  .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end; }
+  .field { display: flex; flex-direction: column; gap: 4px; }
+  .field label { font-size: 12px; color: var(--muted); }
+  input, select { height: 36px; padding: 0 10px; border: 1px solid var(--line2);
+    border-radius: 8px; font-size: 14px; background: #fff; font-family: inherit; }
+  input[type=checkbox] { width: 18px; height: 18px; }
+  .metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 16px; }
+  .metric { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; }
+  .metric .l { font-size: 12px; color: var(--muted); }
+  .metric .v { font-size: 24px; font-weight: 600; margin-top: 2px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; color: var(--muted); font-weight: 500; padding: 9px 8px;
+    border-bottom: 1px solid var(--line2); white-space: nowrap; }
+  td { padding: 9px 8px; border-bottom: 1px solid var(--line); }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .btn { height: 36px; background: var(--accent); color: #fff; border: none; border-radius: 8px;
+    padding: 0 16px; cursor: pointer; font-size: 14px; font-family: inherit; }
+  .btn:hover { opacity: .92; }
+  .act { cursor: pointer; background: none; border: none; font-size: 13px; padding: 2px 6px;
+    color: var(--info); font-family: inherit; }
+  .act.danger { color: var(--danger); }
+  .act.muted { color: var(--muted); cursor: default; }
+  .tag { display: inline-block; font-size: 11px; padding: 1px 8px; border-radius: 999px;
+    background: var(--warn-bg); color: var(--warn-ink); margin-left: 6px; }
+  .empty { color: var(--muted); font-size: 14px; padding: 24px 0; text-align: center; }
+  .sub { font-size: 12px; color: var(--muted); margin: 0 0 12px; }
+  details summary { cursor: pointer; font-size: 13px; color: var(--info); }
+  .moon { color: var(--info); }
+  .scroll { overflow-x: auto; }
+  .inline { display: flex; gap: 6px; align-items: center; }
+  .inline input { height: 30px; width: 100px; }
+
+  /* 列印用浮層 */
+  #print-overlay { position: fixed; inset: 0; background: #fff; z-index: 9999; overflow: auto; padding: 24px; }
+  #print-overlay .pbar { position: sticky; top: 0; background: #fff; padding-bottom: 12px; margin-bottom: 12px; border-bottom: 1px solid var(--line2); display: flex; gap: 10px; justify-content: flex-end; }
+  #print-overlay .pdoc { max-width: 800px; margin: 0 auto; color: #1f2421; }
+  #print-overlay h1 { font-size: 18px; margin: 0 0 2px; }
+  #print-overlay .meta { font-size: 12px; color: #555; margin-bottom: 16px; }
+  #print-overlay table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  #print-overlay th, #print-overlay td { border: 1px solid #cfd2cd; padding: 6px 8px; }
+  #print-overlay th { background: #eef1ee; text-align: left; }
+  #print-overlay td.num, #print-overlay th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  #print-overlay .total-row td { font-weight: 700; background: #f6f7f5; }
+  #print-overlay .sign { margin-top: 32px; font-size: 13px; display: flex; gap: 48px; }
+  #print-overlay .sign div { border-top: 1px solid #1f2421; padding-top: 6px; min-width: 160px; }
+  #print-overlay .sub { font-size: 11px; color: #777; margin-top: 8px; }
+  #print-overlay .sec { font-size: 13px; font-weight: 700; margin: 16px 0 6px; }
+  @media print {
+    body > .top, body > .layout { display: none !important; }
+    #print-overlay { position: static; padding: 0; }
+    #print-overlay .pbar { display: none !important; }
+    @page { size: A4; margin: 16mm; }
+  }
+</style>
+</head>
+<body>
+<div class="top">
+  <button class="burger" id="burger" aria-label="選單">☰</button>
+  <h1>點工薪資管理系統</h1>
+  <div style="margin-left:auto;display:flex;align-items:center;gap:10px">
+    <span id="cloud-status" style="font-size:12px;opacity:.9">本機模式</span>
+    <button id="cloud-refresh" style="background:rgba(255,255,255,.18);color:#fff;border:none;border-radius:6px;padding:5px 10px;cursor:pointer;font-size:13px">↻ 重新整理</button>
+  </div>
+</div>
+<div class="layout">
+  <nav class="sidebar" id="sidebar"></nav>
+  <div class="scrim" id="scrim"></div>
+  <main class="main" id="body"></main>
+</div>
+
+<script>
+const LS = 'pm_payroll_v1';
+// ↓↓↓ 把這裡換成你自己的 Google Apps Script 網址（/exec 結尾）。留空則只用本機儲存。
+const CLOUD_URL = 'https://script.google.com/macros/s/AKfycbynPpe_rq76SrW5_sTNaXms4U65bRrb4oscpH0GMyIXsM4Gk2DUXpOlEimP0C-pCahOVw/exec';
+let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], parkLedger:[], parkOpening:0, tab:'entry' };
+let cloudStatus = CLOUD_URL ? '連線中…' : '本機模式';
+let entryDate='', entrySite='', entryEmp=''; // 登記出工：記住上次選的日期、案場、員工
+let entryOpenDates={}, entryEditId=null; // 出工紀錄分組收合狀態與正在編輯的紀錄
+
+const round = n => Math.round(n);
+const money = n => '$' + round(n).toLocaleString();
+// 工數顯示：工數 = 工時÷8，用分數符號。例：9h → 1⅛ 工
+const FRAC8={1:'⅛',2:'¼',3:'⅜',4:'½',5:'⅝',6:'¾',7:'⅞'};
+function gongStr(hours){
+  const h=Number(hours)||0;
+  if(h===0) return '0 工';
+  const whole=Math.floor(h/8);
+  const rem=h-whole*8;
+  let frac='';
+  if(rem>0){
+    if(Number.isInteger(rem)&&FRAC8[rem]) frac=FRAC8[rem];
+    else frac=(rem/8).toString().replace(/^0/,'');
+  }
+  let s;
+  if(whole>0&&frac) s=`${whole}${frac}`;
+  else if(whole>0) s=`${whole}`;
+  else s=frac||'0';
+  return `${s} 工`;
+}
+function gongH(hours){ const h=Number(hours)||0; return `${gongStr(h)}<span style="color:var(--muted);font-size:11px">(${Math.round(h*10)/10}h)</span>`; }
+const esc = s => String(s==null?'':s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2,7);
+const empName = id => { const e=state.employees.find(x=>x.id===id); return e?e.name:'（已移除）'; };
+const siteName = id => { const s=state.sites.find(x=>x.id===id); return s?s.name:'（已移除）'; };
+
+function applyData(d){
+  if(!d) return;
+  state.employees=d.employees||[]; state.sites=d.sites||[]; state.attendance=d.attendance||[]; state.adjustments=d.adjustments||[]; state.loans=d.loans||[]; state.parkLedger=d.parkLedger||[]; state.parkOpening=Number(d.parkOpening)||0;
+  state.employees.forEach(e=>{ if(e.active===undefined) e.active=true; });
+}
+function packData(){
+  return {employees:state.employees,sites:state.sites,attendance:state.attendance,adjustments:state.adjustments,loans:state.loans,parkLedger:state.parkLedger,parkOpening:state.parkOpening};
+}
+
+// 先讀本機快取（讓畫面秒開），再從雲端拉最新
+function loadLocal(){
+  try { const raw=localStorage.getItem(LS); if(raw) applyData(JSON.parse(raw)); } catch(e){}
+}
+async function loadCloud(){
+  if(!CLOUD_URL){ setCloud('本機模式'); render(); return; }
+  setCloud('讀取雲端中…');
+  try {
+    const res=await fetch(CLOUD_URL, {method:'GET'});
+    const j=await res.json();
+    if(j&&j.ok&&j.data){ applyData(JSON.parse(j.data)); try{localStorage.setItem(LS,j.data);}catch(e){} setCloud('已同步'); }
+    else { setCloud('雲端尚無資料'); }
+  } catch(e){ setCloud('雲端讀取失敗（顯示本機資料）'); }
+  render();
+}
+
+let saveTimer=null, saving=false, pendingSave=false;
+function saveData(){
+  // 本機立即存（不怕當掉）
+  try{ localStorage.setItem(LS, JSON.stringify(packData())); }catch(e){}
+  if(!CLOUD_URL){ setCloud('已存本機'); return; }
+  // 雲端防抖動：1秒內多次變更只送一次
+  if(saveTimer) clearTimeout(saveTimer);
+  setCloud('儲存中…');
+  saveTimer=setTimeout(pushCloud, 800);
+}
+async function pushCloud(){
+  if(!CLOUD_URL) return;
+  if(saving){ pendingSave=true; return; }
+  saving=true;
+  try {
+    await fetch(CLOUD_URL, {method:'POST', body: JSON.stringify(packData())});
+    setCloud('已同步');
+  } catch(e){ setCloud('雲端儲存失敗（已存本機）'); }
+  saving=false;
+  if(pendingSave){ pendingSave=false; pushCloud(); }
+}
+function setCloud(s){ cloudStatus=s; const el=document.getElementById('cloud-status'); if(el) el.textContent=s; }
+
+function computeRecords(records){
+  const byKey={};
+  records.forEach(r=>{ const k=r.empId+'|'+r.date; (byKey[k]=byKey[k]||[]).push(r); });
+  const out={};
+  Object.values(byKey).forEach(group=>{
+    const attended=group.filter(r=>(Number(r.hours)||0)>0);
+    const totalAllowance=group.filter(r=>r.night).length*400;
+    group.forEach(r=>{
+      const daily=Number(r.dailyRate)||0, hourly=daily/8, h=Number(r.hours)||0;
+      const wage=hourly*h;  // 每小時同時薪，各案場各自算
+      const allow=(attended.length>0&&h>0)?totalAllowance/attended.length:0;
+      out[r.id]={wage,allow,total:wage+allow};
+    });
+  });
+  return out;
+}
+
+function tabsBar(){
+  const groups=[
+    ['薪資作業',[['entry','登記出工'],['payroll','員工薪資']]],
+    ['財務管理',[['loans','借支管理'],['park','品佑收支明細']]],
+    ['設定',[['sites','案場成本'],['manage','員工/案場']]],
+  ];
+  return groups.map(([label,items])=>`
+    <div class="nav-group">
+      <div class="nav-group-label">${label}</div>
+      ${items.map(([id,t])=>`<button class="nav-item ${state.tab===id?'active':''}" data-tab="${id}">${t}</button>`).join('')}
+    </div>`).join('');
+}
+function render(){
+  document.getElementById('sidebar').innerHTML=tabsBar();
+  const body=document.getElementById('body');
+  body.innerHTML = state.tab==='entry'?viewEntry():state.tab==='payroll'?viewPayroll():state.tab==='sites'?viewSites():state.tab==='loans'?viewLoans():state.tab==='park'?viewPark():viewManage();
+  bind();
+}
+
+function viewEntry(){
+  const activeEmps=state.employees.filter(e=>e.active);
+  const activeSites=state.sites.filter(s=>s.active!==false);
+  const needEmp=activeEmps.length===0, needSite=activeSites.length===0;
+  const noSetup=needEmp||needSite;
+  let setupMsg='';
+  if(noSetup){
+    const missing=[needEmp?'在職員工':null, needSite?'啟用中的案場（工地）':null].filter(Boolean).join(' 和 ');
+    setupMsg=`<div style="text-align:center;padding:24px 12px">
+      <div style="font-size:15px;font-weight:600;margin-bottom:6px">還不能登記出工</div>
+      <div class="sub" style="margin-bottom:14px">登記出工前，需要先建立 <b>${missing}</b>。${needSite?'（若案場都被暫停了，到「員工/案場」把要用的案場切回啟用。）':''}</div>
+      <button class="btn" id="goto-manage">前往「員工/案場」設定 →</button>
+    </div>`;
+  }
+  const today=new Date().toISOString().slice(0,10);
+  const curDate=entryDate||today;
+  const curSite=entrySite|| (activeSites[0]?activeSites[0].id:'');
+  // 今天(所選日期)這個案場已登記哪幾位
+  let todayNote='';
+  if(curSite){
+    const done=state.attendance.filter(r=>r.date===curDate&&r.siteId===curSite);
+    if(done.length>0){
+      const names=done.map(r=>`${esc(empName(r.empId))}${r.hours?`(${gongStr(r.hours)})`:''}`).join('、');
+      todayNote=`<div class="sub" style="margin:8px 0 0;padding:8px 10px;background:var(--bg);border-radius:8px">📋 ${esc(siteName(curSite))}・${esc(curDate)} 已登記 ${done.length} 位：${names}</div>`;
+    } else {
+      todayNote=`<div class="sub" style="margin:8px 0 0">📋 ${esc(siteName(curSite))}・${esc(curDate)} 尚無人登記。</div>`;
+    }
+  }
+  const comp=computeRecords(state.attendance);
+  // 依日期分組（新到舊）
+  const byDate={};
+  state.attendance.forEach(r=>{ (byDate[r.date]=byDate[r.date]||[]).push(r); });
+  const dateKeys=Object.keys(byDate).sort((a,b)=>b.localeCompare(a));
+  const WD=['日','一','二','三','四','五','六'];
+  const groupsHtml=dateKeys.map((dk,idx)=>{
+    const list=byDate[dk].sort((a,b)=>(siteName(a.siteId)).localeCompare(siteName(b.siteId)));
+    const dayHours=list.reduce((s,r)=>s+(Number(r.hours)||0),0);
+    const dayTotal=list.reduce((s,r)=>s+((comp[r.id]||{}).total||0),0);
+    const wd=WD[new Date(dk+'T00:00:00').getDay()];
+    const open=(entryOpenDates[dk]!==undefined)?entryOpenDates[dk]:(idx<2); // 預設展開最近2天
+    const rows=list.map(r=>{
+      const c=comp[r.id]||{wage:0,allow:0,total:0};
+      const editing=(entryEditId===r.id);
+      const hoursCell=editing
+        ? `<span class="inline"><input type="number" id="edit-hours" value="${r.hours}" min="0" max="24" step="1" style="width:80px;height:30px"><span style="font-size:11px;color:var(--muted)">時</span><button class="act" id="edit-ok" data-editok="${r.id}">✓</button><button class="act muted" id="edit-cancel" style="cursor:pointer">✕</button></span>`
+        : `${gongH(r.hours)} <button class="act" data-edithours="${r.id}" style="font-size:12px">改</button>`;
+      return `<tr>
+        <td>${esc(siteName(r.siteId))}</td>
+        <td>${esc(empName(r.empId))}</td>
+        <td class="num">${hoursCell}</td>
+        <td class="num">${r.night?'<span class="moon">●夜</span>':'—'}</td>
+        <td class="num">${money(c.wage)}</td>
+        <td class="num">${c.allow>0?money(c.allow):'—'}</td>
+        <td class="num" style="font-weight:600">${money(c.total)}</td>
+        <td><button class="act danger" data-del="${r.id}">刪</button></td>
+      </tr>`;
+    }).join('');
+    return `<div style="margin-bottom:10px;border:1px solid var(--line);border-radius:8px;overflow:hidden">
+      <div data-togglegroup="${dk}" style="cursor:pointer;background:var(--bg);padding:10px 12px;display:flex;justify-content:space-between;align-items:center">
+        <div style="font-weight:600;font-size:14px">${open?'▼':'▶'} ${esc(dk)}（週${wd}）</div>
+        <div class="sub" style="margin:0">${list.length} 人 · ${gongStr(dayHours)} · ${money(dayTotal)}</div>
+      </div>
+      ${open?`<div class="scroll"><table>
+        <thead><tr><th>案場</th><th>員工</th><th class="num">工數</th><th class="num">過夜</th><th class="num">工資</th><th class="num">津貼</th><th class="num">小計</th><th></th></tr></thead>
+        <tbody>${rows}</tbody></table></div>`:''}
+    </div>`;
+  }).join('');
+  const empOptsSel=activeEmps.map(e=>`<option value="${e.id}" ${e.id===entryEmp?'selected':''}>${esc(e.name)}（日薪 ${e.daily}）</option>`).join('');
+  const siteOptsSel=activeSites.map(s=>`<option value="${s.id}" ${s.id===curSite?'selected':''}>${esc(s.name)}</option>`).join('');
+  return `
+  <div class="card">
+    <p class="sub">登記一筆出工。日期與案場會保留，方便連續登記同案場多人。同一人同一天跑多案場就分開登記多筆。</p>
+    ${noSetup?setupMsg:`
+    <div class="row">
+      <div class="field"><label>日期</label><input type="date" id="f-date" value="${curDate}"></div>
+      <div class="field"><label>員工</label><select id="f-emp">${empOptsSel}</select></div>
+      <div class="field"><label>案場</label><select id="f-site">${siteOptsSel}</select></div>
+      <div class="field"><label>工時（小時，整數）</label><input type="number" id="f-hours" min="0" max="24" step="1" value="8" style="width:110px"></div>
+      <div class="field"><label>過夜外宿</label><div style="height:36px;display:flex;align-items:center"><input type="checkbox" id="f-night"></div></div>
+      <button class="btn" id="f-add">＋ 新增</button>
+    </div>
+    ${todayNote}`}
+  </div>
+  <div class="card">
+    <div style="font-size:14px;font-weight:600;margin-bottom:8px">出工紀錄（依日期分組，點日期可收合）</div>
+    ${state.attendance.length===0?'<div class="empty">尚無出工紀錄。</div>':groupsHtml}
+  </div>`;
+}
+
+// 計薪週期以每月 11 號起算：一個週期 = 某月11號 ～ 次月10號
+// 「本月週期」：找出包含今天的那個週期
+function cycleContaining(d){
+  const day=d.getDate();
+  let startY=d.getFullYear(), startM=d.getMonth();
+  if(day>11){
+    // 12號之後，屬於本月11號起算的新週期
+  } else {
+    // 今天在 1~11 號，仍屬於上個月11號起算的週期
+    startM-=1; if(startM<0){ startM=11; startY-=1; }
+  }
+  const from=new Date(startY,startM,11);
+  const to=new Date(startY,startM+1,10);
+  const fmt=x=>`${x.getFullYear()}-${String(x.getMonth()+1).padStart(2,'0')}-${String(x.getDate()).padStart(2,'0')}`;
+  return {from:fmt(from),to:fmt(to)};
+}
+function defaultPayRange(){ return cycleContaining(new Date()); }
+function prevPayRange(){
+  const cur=cycleContaining(new Date());
+  const f=new Date(cur.from+'T00:00:00');
+  const pf=new Date(f.getFullYear(),f.getMonth()-1,11);
+  const pt=new Date(f.getFullYear(),f.getMonth(),10);
+  const fmt=x=>`${x.getFullYear()}-${String(x.getMonth()+1).padStart(2,'0')}-${String(x.getDate()).padStart(2,'0')}`;
+  return {from:fmt(pf),to:fmt(pt)};
+}
+// 預設調整項類型
+const ADD_TYPES=['獎金','全勤獎金','其他加給'];
+const DED_TYPES=['借支扣還','勞保自負額','健保自負額','工具遺失賠償','其他扣款'];
+
+// 建立某計薪區間的完整發薪資料（出工薪資 + 加扣項 = 實發）
+function buildPayroll(from,to){
+  const inRange=d=> (!from||d>=from) && (!to||d<=to);
+  const comp=computeRecords(state.attendance);
+  const byEmp={};
+  state.attendance.filter(r=>inRange(r.date)).forEach(r=>{ const c=comp[r.id]; if(!c)return;
+    const e=byEmp[r.empId]=byEmp[r.empId]||{empId:r.empId,hours:0,wage:0,allow:0,gross:0,days:new Set(),adds:[],deds:[]};
+    e.hours+=Number(r.hours)||0; e.wage+=c.wage; e.allow+=c.allow; e.gross+=c.total; e.days.add(r.date);
+  });
+  // 套用區間內的調整項
+  state.adjustments.filter(a=>inRange(a.date)).forEach(a=>{
+    const e=byEmp[a.empId]=byEmp[a.empId]||{empId:a.empId,hours:0,wage:0,allow:0,gross:0,days:new Set(),adds:[],deds:[]};
+    (a.kind==='add'?e.adds:e.deds).push(a);
+  });
+  Object.values(byEmp).forEach(e=>{
+    e.addTotal=e.adds.reduce((s,a)=>s+(Number(a.amount)||0),0);
+    e.dedTotal=e.deds.reduce((s,a)=>s+(Number(a.amount)||0),0);
+    e.net=e.gross+e.addTotal-e.dedTotal;
+  });
+  return byEmp;
+}
+
+function viewPayroll(){
+  if(!state.payFrom||!state.payTo){ const d=defaultPayRange(); state.payFrom=d.from; state.payTo=d.to; }
+  const byEmp=buildPayroll(state.payFrom,state.payTo);
+  const allIds=Object.keys(byEmp).sort((a,b)=>byEmp[b].net-byEmp[a].net);
+  // 股東照常計入薪資表與總額（只保留標記）
+  const grossSum=allIds.reduce((s,id)=>s+byEmp[id].gross,0);
+  const netSum=allIds.reduce((s,id)=>s+byEmp[id].net,0);
+
+  const rowFor=(id)=>{ const e=byEmp[id]; const emp=state.employees.find(x=>x.id===id);
+    return `<tr><td>${esc(empName(id))}${emp&&emp.partner?'<span class="tag" style="background:#e3efe9;color:var(--accent)">股東</span>':''}${emp&&!emp.active?'<span class="tag">已停用</span>':''}</td>
+      <td class="num">${e.days.size}</td><td class="num">${gongStr(e.hours)}</td>
+      <td class="num">${money(e.gross)}</td>
+      <td class="num" style="color:var(--accent)">${e.addTotal?'+'+money(e.addTotal):'—'}</td>
+      <td class="num" style="color:var(--danger)">${e.dedTotal?'−'+money(e.dedTotal):'—'}</td>
+      <td class="num" style="font-weight:600">${money(e.net)}</td>
+      <td><button class="act" data-payslip="${id}">明細單</button></td></tr>`;
+  };
+  const rows=allIds.map(id=>rowFor(id)).join('');
+
+  // 調整項輸入區
+  const activeEmps=state.employees.filter(e=>e.active);
+  const empOpts=activeEmps.map(e=>`<option value="${e.id}">${esc(e.name)}</option>`).join('');
+  const addOpts=ADD_TYPES.map(t=>`<option value="${t}">${t}</option>`).join('');
+  const dedOpts=DED_TYPES.map(t=>`<option value="${t}">${t}</option>`).join('');
+  const inRange=d=> (!state.payFrom||d>=state.payFrom) && (!state.payTo||d<=state.payTo);
+  const adjRows=state.adjustments.filter(a=>inRange(a.date)).sort((a,b)=>b.date.localeCompare(a.date)).map(a=>`<tr>
+    <td>${esc(a.date)}</td><td>${esc(empName(a.empId))}</td>
+    <td><span class="tag" style="background:${a.kind==='add'?'#e3efe9':'#f6e1e1'};color:${a.kind==='add'?'var(--accent)':'var(--danger)'}">${a.kind==='add'?'加項':'扣項'}</span> ${esc(a.label)}</td>
+    <td class="num">${a.kind==='add'?'+':'−'}${money(a.amount)}</td>
+    <td>${esc(a.note||'')}</td>
+    <td><button class="act danger" data-deladj="${a.id}">刪</button></td>
+  </tr>`).join('');
+
+  // 本期借支扣款提示：尚未還清、且本期還沒扣過的借支
+  const loanReminders=state.loans.filter(l=>loanBalance(l)>0 && !loanDeductedInRange(l.id,state.payFrom,state.payTo)).map(l=>{
+    const bal=loanBalance(l), suggest=Math.min(l.perPeriod,bal);
+    return `<tr>
+      <td>${esc(empName(l.empId))}</td>
+      <td class="num">${money(bal)}</td>
+      <td class="num">${money(suggest)}</td>
+      <td><button class="act" data-repay="${l.id}" style="border:1px solid var(--accent);border-radius:6px;padding:3px 10px;color:var(--accent)">扣這期 ${money(suggest)}</button></td>
+    </tr>`;
+  }).join('');
+
+  return `
+  <div class="card">
+    <div style="font-size:14px;font-weight:600;margin-bottom:4px">計薪期間</div>
+    <p class="sub">計薪週期以每月 11 號起算（本期＝上月11號～本月10號）。可隨時手動改起訖日期。</p>
+    <div class="row">
+      <div class="field"><label>起</label><input type="date" id="pay-from" value="${state.payFrom}"></div>
+      <div class="field"><label>訖</label><input type="date" id="pay-to" value="${state.payTo}"></div>
+      <button class="act" id="pay-thismonth" style="height:36px;border:1px solid var(--line2);border-radius:8px;padding:0 12px">本期</button>
+      <button class="act" id="pay-lastmonth" style="height:36px;border:1px solid var(--line2);border-radius:8px;padding:0 12px">上期</button>
+      <button class="act" id="pay-all" style="height:36px;border:1px solid var(--line2);border-radius:8px;padding:0 12px">全部</button>
+    </div>
+  </div>
+  <div class="metrics">
+    <div class="metric"><div class="l">區間</div><div class="v" style="font-size:15px">${state.payFrom||'—'} ～ ${state.payTo||'—'}</div></div>
+    <div class="metric"><div class="l">員工數</div><div class="v">${allIds.length}</div></div>
+    <div class="metric"><div class="l">出工薪資</div><div class="v" style="font-size:20px">${money(grossSum)}</div></div>
+    <div class="metric"><div class="l">實發總額</div><div class="v">${money(netSum)}</div></div>
+  </div>
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;gap:8px;flex-wrap:wrap">
+      <div style="font-size:14px;font-weight:600">本期薪資</div>
+      <button class="btn" id="export-summary" ${rows===''?'disabled style="opacity:.5"':''}>匯出總表 PDF</button>
+    </div>
+    ${rows===''?'<div class="empty">此區間內尚無可計算的薪資。</div>':`
+    <div class="scroll"><table>
+      <thead><tr><th>員工</th><th class="num">出勤天</th><th class="num">總工數</th><th class="num">出工薪資</th><th class="num">加項</th><th class="num">扣項</th><th class="num">實發金額</th><th></th></tr></thead>
+      <tbody>${rows}</tbody></table></div>
+    <p class="sub" style="margin:10px 0 0">出工薪資＝工資＋津貼。實發＝出工薪資＋加項−扣項。</p>`}
+  </div>
+  ${loanReminders===''?'':`<div class="card" style="border-color:var(--accent)">
+    <div style="font-size:14px;font-weight:600;margin-bottom:4px">💡 本期借支扣款提示</div>
+    <p class="sub">以下員工有未還清借支、且本期尚未扣款。點「扣這期」即把該筆金額加入本期扣項（可在下方加扣項清單微調或刪除）。</p>
+    <div class="scroll"><table>
+      <thead><tr><th>員工</th><th class="num">尚欠</th><th class="num">本期建議扣</th><th></th></tr></thead>
+      <tbody>${loanReminders}</tbody></table></div>
+  </div>`}
+  <div class="card">
+    <div style="font-size:14px;font-weight:600;margin-bottom:4px">本期加項／扣項</div>
+    <p class="sub">獎金、全勤為加項；借支扣還、勞健保自負額等為扣項。日期請填在本計薪區間內，才會算進本期。</p>
+    <div class="row" style="margin-bottom:10px">
+      <div class="field"><label>日期</label><input type="date" id="adj-date" value="${state.payTo||''}"></div>
+      <div class="field"><label>員工</label><select id="adj-emp">${empOpts}</select></div>
+      <div class="field"><label>性質</label><select id="adj-kind"><option value="add">加項（+）</option><option value="ded">扣項（−）</option></select></div>
+      <div class="field"><label>項目</label><select id="adj-label">${addOpts}</select></div>
+      <div class="field"><label>金額</label><input type="number" id="adj-amount" min="0" step="100" style="width:120px"></div>
+      <div class="field" style="flex:1;min-width:140px"><label>備註（選填）</label><input id="adj-note" placeholder="例：6月借支"></div>
+      <button class="btn" id="adj-add">＋ 新增</button>
+    </div>
+    ${adjRows===''?'<div class="empty">本期尚無加扣項。</div>':`<div class="scroll"><table>
+      <thead><tr><th>日期</th><th>員工</th><th>項目</th><th class="num">金額</th><th>備註</th><th></th></tr></thead>
+      <tbody>${adjRows}</tbody></table></div>`}
+  </div>`;
+}
+
+function viewSites(){
+  const comp=computeRecords(state.attendance);
+  const bySite={};
+  state.sites.forEach(s=>{ bySite[s.id]={hours:0,wage:0,allow:0,total:0,emp:{},opening:Number(s.opening)||0,manual:0}; });
+  state.attendance.forEach(r=>{ const c=comp[r.id]; if(!c)return;
+    const s=bySite[r.siteId]=bySite[r.siteId]||{hours:0,wage:0,allow:0,total:0,emp:{},opening:0,manual:0};
+    s.hours+=Number(r.hours)||0; s.wage+=c.wage; s.allow+=c.allow; s.total+=c.total;
+    s.emp[r.empId]=(s.emp[r.empId]||0)+c.total;
+  });
+  Object.values(bySite).forEach(s=>{ s.grandTotal=s.total+(s.opening||0)+(s.manual||0); });
+  const grand=Object.values(bySite).reduce((s,x)=>s+x.grandTotal,0);
+  const ids=Object.keys(bySite).sort((a,b)=>bySite[b].grandTotal-bySite[a].grandTotal);
+  const cardFor=(sid)=>{ const s=bySite[sid];
+    const empBreak=Object.entries(s.emp).sort((a,b)=>b[1]-a[1]).map(([eid,v])=>`<tr><td>${esc(empName(eid))}</td><td class="num">${money(v)}</td></tr>`).join('');
+    const pct=grand>0?Math.round(s.grandTotal/grand*100):0;
+    return `<div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px">
+        <div style="font-size:15px;font-weight:600">${esc(siteName(sid))}</div>
+        <div style="font-size:18px;font-weight:600">${money(s.grandTotal)}</div>
+      </div>
+      <p class="sub">總工數 ${gongStr(s.hours)}・系統工資 ${money(s.wage)}・津貼 ${money(s.allow)}${s.opening>0?`・期初 ${money(s.opening)}`:''}・占總成本 ${pct}%</p>
+      <div class="row" style="margin-bottom:6px">
+        <div class="field"><label>期初人事成本（從Excel抄入，選填）</label><input type="number" data-opening="${sid}" value="${s.opening||''}" placeholder="未設定" min="0" step="1000" style="width:170px"></div>
+      </div>
+      ${empBreak?`<details><summary>系統內各員工金額明細</summary>
+        <table style="margin-top:8px"><thead><tr><th>員工</th><th class="num">金額</th></tr></thead><tbody>${empBreak}</tbody></table>
+      </details>`:''}
+    </div>`;
+  };
+  const isPaused=sid=>{ const st=state.sites.find(x=>x.id===sid); return st&&st.active===false; };
+  const activeIds=ids.filter(sid=>!isPaused(sid));
+  const pausedIds=ids.filter(sid=>isPaused(sid));
+  const cards=activeIds.map(cardFor).join('');
+  const pausedCards=pausedIds.length?`<details style="margin-top:10px"><summary style="cursor:pointer;font-weight:600;padding:8px 0">已暫停案場（${pausedIds.length}）</summary>${pausedIds.map(cardFor).join('')}</details>`:'';
+  return `
+  <div class="metrics">
+    <div class="metric"><div class="l">案場數</div><div class="v">${activeIds.length}${pausedIds.length?`<span style="font-size:12px;color:var(--muted)"> +${pausedIds.length}暫停</span>`:''}</div></div>
+    <div class="metric"><div class="l">總成本</div><div class="v">${money(grand)}</div></div>
+  </div>
+  <p class="sub" style="margin:-6px 0 12px">案場成本＝期初人事成本＋出勤工資與津貼。<button class="btn" id="export-sites" style="margin-left:10px" ${ids.length===0?'disabled style="opacity:.5"':''}>匯出 PDF</button></p>
+  ${cards===''&&pausedCards===''?'<div class="card"><div class="empty">尚無案場成本資料。</div></div>':cards}${pausedCards}`;
+}
+
+function viewManage(){
+  const empRows=state.employees.map(e=>{
+    const hasRecords=state.attendance.some(r=>r.empId===e.id);
+    const delBtn=hasRecords?'<span class="act muted" title="已有出工紀錄，無法刪除">🔒</span>':`<button class="act danger" data-delemp="${e.id}">刪</button>`;
+    const toggle=e.active?`<button class="act" data-toggle="${e.id}">停用</button>`:`<button class="act" data-toggle="${e.id}">復用</button>`;
+    return `<tr><td>${esc(e.name)}${e.partner?'<span class="tag" style="background:#e3efe9;color:var(--accent)">股東</span>':''}${!e.active?'<span class="tag">已停用</span>':''}</td>
+      <td class="num">${money(e.daily)}</td>
+      <td><button class="act" data-renemp="${e.id}">改名</button></td>
+      <td><button class="act" data-raise="${e.id}">調薪</button></td>
+      <td><button class="act" data-partner="${e.id}">${e.partner?'取消股東':'設為股東'}</button></td>
+      <td>${toggle}</td><td>${delBtn}</td></tr>`;
+  }).join('');
+  const siteRowFor=(s)=>{
+    const hasRecords=state.attendance.some(r=>r.siteId===s.id);
+    const delBtn=hasRecords?'<span class="act muted" title="已有出工紀錄，無法刪除">🔒</span>':`<button class="act danger" data-delsite="${s.id}">刪</button>`;
+    const paused=s.active===false;
+    const toggle=`<button class="act" data-togglesite="${s.id}">${paused?'恢復啟用':'暫停'}</button>`;
+    const nameCell=`${esc(s.name)}${paused?'<span class="tag" style="background:var(--warn-bg);color:var(--warn-ink)">已暫停</span>':''}`;
+    return `<tr${paused?' style="color:var(--muted)"':''}><td>${nameCell}</td><td><button class="act" data-rensite="${s.id}">改名</button></td><td>${toggle}</td><td>${delBtn}</td></tr>`;
+  };
+  const activeSitesList=state.sites.filter(s=>s.active!==false);
+  const pausedSitesList=state.sites.filter(s=>s.active===false);
+  const siteRows=activeSitesList.map(siteRowFor).join('');
+  const pausedSiteTable=pausedSitesList.length?`<details style="margin-top:10px"><summary style="cursor:pointer;font-weight:600;padding:8px 0">已暫停案場（${pausedSitesList.length}）</summary><table><tbody>${pausedSitesList.map(siteRowFor).join('')}</tbody></table></details>`:'';
+  return `
+  <div class="card">
+    <div style="font-size:14px;font-weight:600;margin-bottom:4px">員工</div>
+    <p class="sub">調薪只影響之後登記的出工，舊紀錄維持當時日薪。離職請用「停用」保留歷史；只有從沒登記過出工的員工才能真正刪除。「股東」只是標記，薪資照常計算。</p>
+    <div class="row" style="margin-bottom:10px">
+      <div class="field"><label>姓名</label><input id="e-name" placeholder="例：王小明"></div>
+      <div class="field"><label>日薪</label><input id="e-daily" type="number" min="0" step="100" value="3000" style="width:120px"></div>
+      <button class="btn" id="e-add">＋ 新增員工</button>
+    </div>
+    ${state.employees.length===0?'<div class="empty">尚無員工。</div>':`<table><thead><tr><th>姓名</th><th class="num">目前日薪</th><th></th><th></th><th></th><th></th><th></th></tr></thead><tbody>${empRows}</tbody></table>`}
+  </div>
+  <div class="card">
+    <div style="font-size:14px;font-weight:600;margin-bottom:4px">案場</div>
+    <p class="sub">建立工地/案場，登記出工與計算成本時會用到。改名會套用到所有相關紀錄。暫時不用的案場可「暫停」，它就不會出現在出工登記，但歷史紀錄保留。</p>
+    <div class="row" style="margin-bottom:10px">
+      <div class="field" style="flex:1;min-width:200px"><label>案場名稱</label><input id="s-name" placeholder="例：台北富邦"></div>
+      <button class="btn" id="s-add">＋ 新增案場</button>
+    </div>
+    ${state.sites.length===0?'<div class="empty">尚無案場。</div>':`${activeSitesList.length?`<table><thead><tr><th>名稱</th><th></th><th></th><th></th></tr></thead><tbody>${siteRows}</tbody></table>`:'<div class="empty">沒有啟用中的案場。</div>'}${pausedSiteTable}`}
+  </div>`;
+}
+
+function bind(){
+  document.querySelectorAll('.nav-item').forEach(b=>b.onclick=()=>{ state.tab=b.dataset.tab; closeSidebar(); render(); });
+
+  const pf=document.getElementById('pay-from'); if(pf) pf.onchange=()=>{ state.payFrom=pf.value; render(); };
+  const pt=document.getElementById('pay-to'); if(pt) pt.onchange=()=>{ state.payTo=pt.value; render(); };
+  const pm=document.getElementById('pay-thismonth'); if(pm) pm.onclick=()=>{ const d=defaultPayRange(); state.payFrom=d.from; state.payTo=d.to; render(); };
+  const plm=document.getElementById('pay-lastmonth'); if(plm) plm.onclick=()=>{ const d=prevPayRange(); state.payFrom=d.from; state.payTo=d.to; render(); };
+  const pa=document.getElementById('pay-all'); if(pa) pa.onclick=()=>{ state.payFrom=''; state.payTo=''; render(); };
+
+  // 加扣項：性質改變時切換項目清單
+  const adjKind=document.getElementById('adj-kind'), adjLabel=document.getElementById('adj-label');
+  if(adjKind&&adjLabel) adjKind.onchange=()=>{
+    const opts=(adjKind.value==='add'?ADD_TYPES:DED_TYPES).map(t=>`<option value="${t}">${t}</option>`).join('');
+    adjLabel.innerHTML=opts;
+  };
+  const adjAdd=document.getElementById('adj-add');
+  if(adjAdd) adjAdd.onclick=()=>{
+    const date=document.getElementById('adj-date').value;
+    const empId=document.getElementById('adj-emp').value;
+    const kind=document.getElementById('adj-kind').value;
+    const label=document.getElementById('adj-label').value;
+    const amount=parseFloat(document.getElementById('adj-amount').value);
+    const note=document.getElementById('adj-note').value.trim();
+    if(!date||!empId||!label||isNaN(amount)||amount<0) return;
+    state.adjustments.push({id:uid(),date,empId,kind,label,amount,note});
+    saveData(); render();
+  };
+  document.querySelectorAll('[data-deladj]').forEach(b=>b.onclick=()=>{ if(!confirm('確定刪除這筆加扣項？')) return; state.adjustments=state.adjustments.filter(a=>a.id!==b.dataset.deladj); saveData(); render(); });
+  const es=document.getElementById('export-summary'); if(es) es.onclick=()=>exportSummaryPDF();
+  const esi=document.getElementById('export-sites'); if(esi) esi.onclick=()=>exportSitesPDF();
+  document.querySelectorAll('[data-payslip]').forEach(b=>b.onclick=()=>exportPayslipPDF(b.dataset.payslip));
+
+  const gotoM=document.getElementById('goto-manage'); if(gotoM) gotoM.onclick=()=>{ state.tab='manage'; render(); };
+
+  const fDate=document.getElementById('f-date'); if(fDate) fDate.onchange=()=>{ entryDate=fDate.value; const fe=document.getElementById('f-emp'); if(fe) entryEmp=fe.value; render(); };
+  const fSite=document.getElementById('f-site'); if(fSite) fSite.onchange=()=>{ entrySite=fSite.value; const fe=document.getElementById('f-emp'); if(fe) entryEmp=fe.value; render(); };
+  const fEmp=document.getElementById('f-emp'); if(fEmp) fEmp.onchange=()=>{ entryEmp=fEmp.value; };
+
+  const add=document.getElementById('f-add');
+  if(add) add.onclick=()=>{
+    const date=document.getElementById('f-date').value;
+    const empId=document.getElementById('f-emp').value;
+    const siteId=document.getElementById('f-site').value;
+    const hours=parseFloat(document.getElementById('f-hours').value);
+    const night=document.getElementById('f-night').checked;
+    const emp=state.employees.find(e=>e.id===empId);
+    if(!date||!empId||!siteId||isNaN(hours)||!emp) return;
+    if(!Number.isInteger(hours)){ alert('工時請輸入整數小時（例如 8、9），不接受小數。'); return; }
+    // 防呆：同人同日是否已登記
+    const sameDay=state.attendance.filter(r=>r.empId===empId&&r.date===date);
+    if(sameDay.length>0){
+      const sameSite=sameDay.find(r=>r.siteId===siteId);
+      let msg;
+      if(sameSite){
+        msg=`${emp.name} 在 ${date} 的「${siteName(siteId)}」已經登記過 ${sameSite.hours} 小時了。\n\n這很可能是重複登記。確定還要再記一筆嗎？`;
+      } else {
+        const where=sameDay.map(r=>`${siteName(r.siteId)} ${r.hours}h`).join('、');
+        msg=`${emp.name} 在 ${date} 已經登記過：${where}。\n\n如果他今天還跑了「${siteName(siteId)}」這個案場，可以繼續；否則請取消。\n\n確定要再記一筆嗎？`;
+      }
+      if(!confirm(msg)) return;
+    }
+    state.attendance.push({id:uid(),date,empId,siteId,hours,night,dailyRate:emp.daily});
+    // 保留日期與案場（員工不保留，登記後清空方便接著選下一個人）
+    entryDate=date; entrySite=siteId; entryEmp='';
+    saveData(); render();
+  };
+  document.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>{ const r=state.attendance.find(x=>x.id===b.dataset.del); if(!confirm(`確定刪除這筆出工？\n${r?esc(r.date)+'・'+empName(r.empId)+'・'+siteName(r.siteId):''}`)) return; state.attendance=state.attendance.filter(r=>r.id!==b.dataset.del); saveData(); render(); });
+  document.querySelectorAll('[data-togglegroup]').forEach(b=>b.onclick=()=>{
+    const dk=b.dataset.togglegroup;
+    const isOpen=b.textContent.trim().startsWith('▼');
+    entryOpenDates[dk]=!isOpen; render();
+  });
+  document.querySelectorAll('[data-edithours]').forEach(b=>b.onclick=()=>{ entryEditId=b.dataset.edithours; render(); });
+  document.querySelectorAll('[data-editok]').forEach(b=>b.onclick=()=>{
+    const r=state.attendance.find(x=>x.id===b.dataset.editok); if(!r) return;
+    const v=parseFloat(document.getElementById('edit-hours').value);
+    if(!isNaN(v)&&v>=0){ r.hours=v; saveData(); }
+    entryEditId=null; render();
+  });
+  const ecancel=document.getElementById('edit-cancel'); if(ecancel) ecancel.onclick=()=>{ entryEditId=null; render(); };
+
+  const ea=document.getElementById('e-add');
+  if(ea) ea.onclick=()=>{
+    const name=document.getElementById('e-name').value.trim();
+    const daily=parseFloat(document.getElementById('e-daily').value);
+    if(!name||isNaN(daily)) return;
+    state.employees.push({id:uid(),name,daily,active:true}); saveData(); render();
+  };
+  document.querySelectorAll('[data-raise]').forEach(b=>b.onclick=()=>{
+    const e=state.employees.find(x=>x.id===b.dataset.raise); if(!e)return;
+    const cell=b.closest('td');
+    cell.innerHTML=`<span class="inline"><input type="number" min="0" step="100" value="${e.daily}" id="raise-in"><button class="act" id="raise-ok">✓</button><button class="act muted" id="raise-cancel" style="cursor:pointer">✕</button></span>`;
+    const inp=cell.querySelector('#raise-in'); inp.focus();
+    cell.querySelector('#raise-ok').onclick=()=>{ const v=parseFloat(inp.value); if(!isNaN(v)){ e.daily=v; saveData(); } render(); };
+    cell.querySelector('#raise-cancel').onclick=()=>render();
+  });
+  document.querySelectorAll('[data-toggle]').forEach(b=>b.onclick=()=>{ const e=state.employees.find(x=>x.id===b.dataset.toggle); if(e){ e.active=!e.active; saveData(); render(); } });
+  document.querySelectorAll('[data-partner]').forEach(b=>b.onclick=()=>{ const e=state.employees.find(x=>x.id===b.dataset.partner); if(e){ e.partner=!e.partner; saveData(); render(); } });
+  document.querySelectorAll('[data-delemp]').forEach(b=>b.onclick=()=>{ const e=state.employees.find(x=>x.id===b.dataset.delemp); if(!confirm(`確定刪除員工「${e?esc(e.name):''}」？`)) return; state.employees=state.employees.filter(e=>e.id!==b.dataset.delemp); saveData(); render(); });
+  document.querySelectorAll('[data-renemp]').forEach(b=>b.onclick=()=>{
+    const e=state.employees.find(x=>x.id===b.dataset.renemp); if(!e)return;
+    const cell=b.closest('td');
+    cell.innerHTML=`<span class="inline"><input value="${esc(e.name)}" id="ren-in" style="width:120px"><button class="act" id="ren-ok">✓</button><button class="act muted" id="ren-cancel" style="cursor:pointer">✕</button></span>`;
+    const inp=cell.querySelector('#ren-in'); inp.focus();
+    cell.querySelector('#ren-ok').onclick=()=>{ const v=inp.value.trim(); if(v){ e.name=v; saveData(); } render(); };
+    cell.querySelector('#ren-cancel').onclick=()=>render();
+  });
+
+  const sa=document.getElementById('s-add');
+  if(sa) sa.onclick=()=>{
+    const name=document.getElementById('s-name').value.trim(); if(!name)return;
+    state.sites.push({id:uid(),name,active:true}); saveData(); render();
+  };
+  document.querySelectorAll('[data-delsite]').forEach(b=>b.onclick=()=>{ const s=state.sites.find(x=>x.id===b.dataset.delsite); if(!confirm(`確定刪除案場「${s?esc(s.name):''}」？`)) return; state.sites=state.sites.filter(s=>s.id!==b.dataset.delsite); saveData(); render(); });
+  document.querySelectorAll('[data-togglesite]').forEach(b=>b.onclick=()=>{
+    const s=state.sites.find(x=>x.id===b.dataset.togglesite); if(!s) return;
+    s.active = (s.active===false) ? true : false;
+    saveData(); render();
+  });
+  document.querySelectorAll('[data-opening]').forEach(inp=>inp.onchange=()=>{
+    const s=state.sites.find(x=>x.id===inp.dataset.opening); if(!s) return;
+    const v=parseFloat(inp.value);
+    if(isNaN(v)||v<=0) delete s.opening; else s.opening=v;
+    saveData(); render();
+  });
+  document.querySelectorAll('[data-rensite]').forEach(b=>b.onclick=()=>{
+    const s=state.sites.find(x=>x.id===b.dataset.rensite); if(!s)return;
+    const cell=b.closest('td');
+    cell.innerHTML=`<span class="inline"><input value="${esc(s.name)}" id="rens-in" style="width:160px"><button class="act" id="rens-ok">✓</button><button class="act muted" id="rens-cancel" style="cursor:pointer">✕</button></span>`;
+    const inp=cell.querySelector('#rens-in'); inp.focus();
+    cell.querySelector('#rens-ok').onclick=()=>{ const v=inp.value.trim(); if(v){ s.name=v; saveData(); } render(); };
+    cell.querySelector('#rens-cancel').onclick=()=>render();
+  });
+
+  const la=document.getElementById('loan-add');
+  if(la) la.onclick=()=>{
+    const date=document.getElementById('loan-date').value;
+    const empId=document.getElementById('loan-emp').value;
+    const amount=parseFloat(document.getElementById('loan-amount').value);
+    const perPeriod=parseFloat(document.getElementById('loan-per').value);
+    const note=document.getElementById('loan-note').value.trim();
+    if(!date||!empId||isNaN(amount)||amount<=0||isNaN(perPeriod)||perPeriod<=0) return;
+    state.loans.push({id:uid(),date,empId,amount,perPeriod,note});
+    saveData(); render();
+  };
+  document.querySelectorAll('[data-delloan]').forEach(b=>b.onclick=()=>{
+    if(!confirm('刪除這筆借支？已扣除的紀錄不會跟著刪除。')) return;
+    state.loans=state.loans.filter(l=>l.id!==b.dataset.delloan); saveData(); render();
+  });
+  document.querySelectorAll('[data-repay]').forEach(b=>b.onclick=()=>{
+    const loan=state.loans.find(l=>l.id===b.dataset.repay); if(!loan) return;
+    const bal=loanBalance(loan);
+    const amt=Math.min(loan.perPeriod, bal);
+    if(amt<=0) return;
+    state.adjustments.push({id:uid(),date:state.payTo||new Date().toISOString().slice(0,10),empId:loan.empId,kind:'ded',label:'借支扣還',amount:amt,note:(loan.note?loan.note+' ':'')+'借支分期',loanId:loan.id});
+    saveData(); render();
+  });
+
+  // 品佑收支明細
+  const pOpen=document.getElementById('park-opening'); if(pOpen) pOpen.onchange=()=>{ const v=parseFloat(pOpen.value); state.parkOpening=isNaN(v)?0:v; saveData(); render(); };
+  const pAdd=document.getElementById('park-add');
+  if(pAdd) pAdd.onclick=()=>{
+    const date=document.getElementById('park-date').value;
+    const kind=document.getElementById('park-kind').value;
+    const amount=parseFloat(document.getElementById('park-amount').value);
+    const note=document.getElementById('park-note').value.trim();
+    if(!date||isNaN(amount)||amount<=0){ alert('請填日期與金額'); return; }
+    state.parkLedger.push({id:uid(),date,kind,amount,note});
+    saveData(); render();
+  };
+  document.querySelectorAll('[data-delpark]').forEach(b=>b.onclick=()=>{
+    if(!confirm('確定刪除這筆收支？')) return;
+    state.parkLedger=state.parkLedger.filter(t=>t.id!==b.dataset.delpark); saveData(); render();
+  });
+  document.querySelectorAll('[data-parkedit]').forEach(b=>b.onclick=()=>{ parkEditId=b.dataset.parkedit; render(); });
+  document.querySelectorAll('[data-parkeditcancel]').forEach(b=>b.onclick=()=>{ parkEditId=null; render(); });
+  document.querySelectorAll('[data-parkeditok]').forEach(b=>b.onclick=()=>{
+    const t=state.parkLedger.find(x=>x.id===b.dataset.parkeditok); if(!t) return;
+    const amount=parseFloat(document.getElementById('pe-amount').value);
+    if(isNaN(amount)||amount<=0){ alert('金額請填正數'); return; }
+    t.date=document.getElementById('pe-date').value;
+    t.kind=document.getElementById('pe-kind').value;
+    t.amount=amount;
+    t.note=document.getElementById('pe-note').value.trim();
+    parkEditId=null; saveData(); render();
+  });
+  const pf2=document.getElementById('park-from'); if(pf2) pf2.onchange=()=>{ parkFrom=pf2.value; render(); };
+  const pt2=document.getElementById('park-to'); if(pt2) pt2.onchange=()=>{ parkTo=pt2.value; render(); };
+  const pclr=document.getElementById('park-clear'); if(pclr) pclr.onclick=()=>{ parkFrom=''; parkTo=''; render(); };
+  const pexp=document.getElementById('export-park'); if(pexp) pexp.onclick=()=>exportParkPDF();
+}
+
+// ---- PDF 匯出（以列印視窗產生，可存成 PDF 或直接列印）----
+function printHTML(title, inner){
+  const old=document.getElementById('print-overlay'); if(old) old.remove();
+  const ov=document.createElement('div');
+  ov.id='print-overlay';
+  ov.innerHTML=`
+    <div class="pbar">
+      <button class="btn" id="po-print">列印 / 存成 PDF</button>
+      <button class="act" id="po-close" style="border:1px solid var(--line2);border-radius:8px;padding:0 14px">關閉</button>
+    </div>
+    <div class="pdoc">${inner}</div>`;
+  document.body.appendChild(ov);
+  document.getElementById('po-print').onclick=()=>window.print();
+  document.getElementById('po-close').onclick=()=>ov.remove();
+  ov.scrollTop=0;
+}
+
+function exportSummaryPDF(){
+  const byEmp=buildPayroll(state.payFrom,state.payTo);
+  const ids=Object.keys(byEmp).sort((a,b)=>byEmp[b].net-byEmp[a].net);
+  if(ids.length===0) return;
+  let gG=0,gA=0,gD=0,gN=0;
+  const rows=ids.map(id=>{ const e=byEmp[id]; gG+=e.gross;gA+=e.addTotal;gD+=e.dedTotal;gN+=e.net;
+    return `<tr><td>${esc(empName(id))}</td><td class="num">${e.days.size}</td><td class="num">${gongStr(e.hours)}</td>
+      <td class="num">${money(e.gross)}</td><td class="num">${e.addTotal?money(e.addTotal):'-'}</td>
+      <td class="num">${e.dedTotal?money(e.dedTotal):'-'}</td><td class="num">${money(e.net)}</td></tr>`;
+  }).join('');
+  const inner=`<h1>薪資總表</h1>
+    <div class="meta">計薪期間：${state.payFrom||'起始'} ～ ${state.payTo||'迄今'}　|　列印日期：${new Date().toISOString().slice(0,10)}　|　共 ${ids.length} 人</div>
+    <table><thead><tr><th>員工</th><th class="num">出勤天</th><th class="num">總工數</th><th class="num">出工薪資</th><th class="num">加項</th><th class="num">扣項</th><th class="num">實發金額</th></tr></thead>
+    <tbody>${rows}
+      <tr class="total-row"><td>合計</td><td class="num"></td><td class="num"></td><td class="num">${money(gG)}</td><td class="num">${money(gA)}</td><td class="num">${money(gD)}</td><td class="num">${money(gN)}</td></tr>
+    </tbody></table>
+    <p class="sub">出工薪資＝工資＋津貼（工資為各案場工時×時薪，各案場各自計算）。實發＝出工薪資＋加項−扣項。金額四捨五入至整數。</p>`;
+  printHTML('薪資總表 '+(state.payFrom||''), inner);
+}
+
+function exportPayslipPDF(empId){
+  const byEmp=buildPayroll(state.payFrom,state.payTo);
+  const e=byEmp[empId]; if(!e) return;
+  const addRows=e.adds.map(a=>`<tr><td>${esc(a.label)}</td><td>${esc(a.note||'')}</td><td class="num">+${money(a.amount)}</td></tr>`).join('');
+  const dedRows=e.deds.map(a=>`<tr><td>${esc(a.label)}</td><td>${esc(a.note||'')}</td><td class="num">−${money(a.amount)}</td></tr>`).join('');
+  const inRange=d=> (!state.payFrom||d>=state.payFrom) && (!state.payTo||d<=state.payTo);
+  const comp=computeRecords(state.attendance);
+  const myRecs=state.attendance.filter(r=>r.empId===empId&&inRange(r.date)).sort((a,b)=>a.date.localeCompare(b.date));
+  const recRows=myRecs.map(r=>{ const c=comp[r.id]||{wage:0,allow:0,total:0};
+    return `<tr><td>${esc(r.date)}</td><td>${esc(siteName(r.siteId))}</td><td class="num">${gongStr(r.hours)}</td><td class="num">${r.night?'是':'-'}</td>
+      <td class="num">${money(c.wage)}</td><td class="num">${c.allow>0?money(c.allow):'-'}</td></tr>`;
+  }).join('');
+  const inner=`<h1>薪資明細單</h1>
+    <div class="meta">員工：${esc(empName(empId))}　|　計薪期間：${state.payFrom||'起始'} ～ ${state.payTo||'迄今'}　|　出勤 ${e.days.size} 天 / ${gongStr(e.hours)}</div>
+    <div class="sec">一、出工明細</div>
+    <table><thead><tr><th>日期</th><th>案場</th><th class="num">工數</th><th class="num">過夜</th><th class="num">工資</th><th class="num">津貼</th></tr></thead>
+    <tbody>${recRows||'<tr><td colspan="6">本期無出工</td></tr>'}
+      <tr class="total-row"><td colspan="4">出工薪資小計</td><td class="num">${money(e.wage)}</td><td class="num">${money(e.allow)}</td></tr>
+    </tbody></table>
+    <div class="sec">二、加項</div>
+    <table><thead><tr><th>項目</th><th>備註</th><th class="num">金額</th></tr></thead>
+    <tbody>${addRows||'<tr><td colspan="3">無</td></tr>'}<tr class="total-row"><td colspan="2">加項小計</td><td class="num">+${money(e.addTotal)}</td></tr></tbody></table>
+    <div class="sec">三、扣項</div>
+    <table><thead><tr><th>項目</th><th>備註</th><th class="num">金額</th></tr></thead>
+    <tbody>${dedRows||'<tr><td colspan="3">無</td></tr>'}<tr class="total-row"><td colspan="2">扣項小計</td><td class="num">−${money(e.dedTotal)}</td></tr></tbody></table>
+    <table style="margin-top:14px"><tbody>
+      <tr><td>出工薪資</td><td class="num">${money(e.gross)}</td></tr>
+      <tr><td>加項合計</td><td class="num">+${money(e.addTotal)}</td></tr>
+      <tr><td>扣項合計</td><td class="num">−${money(e.dedTotal)}</td></tr>
+      <tr class="total-row"><td>實發金額</td><td class="num">${money(e.net)}</td></tr>
+    </tbody></table>
+    <div class="sign"><div>員工簽收</div><div>主管核章</div></div>
+    <p class="sub">本明細之日薪採各筆出工登記當時鎖定金額；工資以時薪（日薪÷8）×工時計、各案場各自計算；外宿津貼每晚400元按當日出勤案場平均分攤。金額四捨五入至整數。</p>`;
+  printHTML('薪資明細單 '+esc(empName(empId)), inner);
+}
+
+// 案場成本明細 PDF
+function exportSitesPDF(){
+  const comp=computeRecords(state.attendance);
+  const bySite={};
+  state.sites.forEach(s=>{ bySite[s.id]={hours:0,wage:0,allow:0,total:0,emp:{},opening:Number(s.opening)||0,name:s.name}; });
+  state.attendance.forEach(r=>{ const c=comp[r.id]; if(!c)return;
+    const s=bySite[r.siteId]=bySite[r.siteId]||{hours:0,wage:0,allow:0,total:0,emp:{},opening:0,name:siteName(r.siteId)};
+    s.hours+=Number(r.hours)||0; s.wage+=c.wage; s.allow+=c.allow; s.total+=c.total; s.emp[r.empId]=(s.emp[r.empId]||0)+c.total;
+  });
+  const ids=Object.keys(bySite); if(ids.length===0) return;
+  ids.forEach(id=>{ bySite[id].grand=bySite[id].total+bySite[id].opening; });
+  const grand=ids.reduce((s,id)=>s+bySite[id].grand,0);
+  ids.sort((a,b)=>bySite[b].grand-bySite[a].grand);
+  const rows=ids.map(id=>{ const s=bySite[id];
+    return `<tr><td>${esc(s.name||siteName(id))}</td><td class="num">${gongStr(s.hours)}</td><td class="num">${money(s.opening)}</td><td class="num">${money(s.wage)}</td><td class="num">${money(s.allow)}</td><td class="num" style="font-weight:700">${money(s.grand)}</td></tr>`;
+  }).join('');
+  const inner=`<h1>案場人事成本明細</h1>
+    <div class="meta">列印日：${new Date().toISOString().slice(0,10)}　|　總人事成本 ${money(grand)}</div>
+    <table><thead><tr><th>案場</th><th class="num">系統工數</th><th class="num">期初成本</th><th class="num">系統工資</th><th class="num">津貼</th><th class="num">總成本</th></tr></thead>
+    <tbody>${rows}
+      <tr class="total-row"><td>合計</td><td class="num"></td><td class="num"></td><td class="num"></td><td class="num"></td><td class="num">${money(grand)}</td></tr>
+    </tbody></table>
+    <p class="sub">總成本＝期初人事成本（歷史抄入）＋系統內登記出勤的工資與津貼。金額四捨五入至整數。</p>`;
+  printHTML('案場成本明細', inner);
+}
+
+// ---- 借支 ----
+function loanRepaid(loanId){
+  return state.adjustments.filter(a=>a.loanId===loanId && a.kind==='ded').reduce((s,a)=>s+(Number(a.amount)||0),0);
+}
+function loanBalance(loan){ return Math.max(0, (Number(loan.amount)||0) - loanRepaid(loan.id)); }
+function loanDeductedInRange(loanId,from,to){
+  const inRange=d=>(!from||d>=from)&&(!to||d<=to);
+  return state.adjustments.some(a=>a.loanId===loanId && a.kind==='ded' && inRange(a.date));
+}
+
+function viewLoans(){
+  const activeEmps=state.employees.filter(e=>e.active);
+  const empOpts=activeEmps.map(e=>`<option value="${e.id}">${esc(e.name)}</option>`).join('');
+  const loans=[...state.loans].sort((a,b)=>b.date.localeCompare(a.date));
+  const outstanding=loans.filter(l=>loanBalance(l)>0).reduce((s,l)=>s+loanBalance(l),0);
+  const rows=loans.map(l=>{
+    const repaid=loanRepaid(l.id), bal=loanBalance(l), done=bal<=0;
+    const pct=l.amount>0?Math.round(repaid/l.amount*100):0;
+    return `<tr>
+      <td>${esc(l.date)}</td><td>${esc(empName(l.empId))}</td>
+      <td class="num">${money(l.amount)}</td>
+      <td class="num">${money(l.perPeriod)}</td>
+      <td class="num">${money(repaid)}（${pct}%）</td>
+      <td class="num" style="font-weight:600;color:${done?'var(--accent)':'var(--danger)'}">${done?'已還清':money(bal)}</td>
+      <td>${esc(l.note||'')}</td>
+      <td><button class="act danger" data-delloan="${l.id}">刪</button></td>
+    </tr>`;
+  }).join('');
+  return `
+  <div class="metrics">
+    <div class="metric"><div class="l">借支筆數</div><div class="v">${loans.length}</div></div>
+    <div class="metric"><div class="l">尚未還清總額</div><div class="v">${money(outstanding)}</div></div>
+  </div>
+  <div class="card">
+    <div style="font-size:14px;font-weight:600;margin-bottom:4px">新增借支</div>
+    <p class="sub">登記一筆借款：借出日、總額、每期固定扣款額。系統會追蹤已扣與剩餘，發薪時在薪資分頁提示應扣金額，由你確認後帶入該期扣項。</p>
+    <div class="row" style="margin-bottom:10px">
+      <div class="field"><label>借款日</label><input type="date" id="loan-date" value="${new Date().toISOString().slice(0,10)}"></div>
+      <div class="field"><label>員工</label><select id="loan-emp">${empOpts}</select></div>
+      <div class="field"><label>借款總額</label><input type="number" id="loan-amount" min="0" step="500" style="width:120px"></div>
+      <div class="field"><label>每期扣款</label><input type="number" id="loan-per" min="0" step="500" style="width:120px"></div>
+      <div class="field" style="flex:1;min-width:140px"><label>備註（選填）</label><input id="loan-note" placeholder="例：預支生活費"></div>
+      <button class="btn" id="loan-add">＋ 新增借支</button>
+    </div>
+    ${rows===''?'<div class="empty">尚無借支紀錄。</div>':`<div class="scroll"><table>
+      <thead><tr><th>借款日</th><th>員工</th><th class="num">總額</th><th class="num">每期扣</th><th class="num">已扣</th><th class="num">剩餘</th><th>備註</th><th></th></tr></thead>
+      <tbody>${rows}</tbody></table></div>`}
+  </div>`;
+}
+
+// ---- 品佑收支明細 ----
+let parkFrom='', parkTo='', parkEditId=null;
+function parkBalance(){
+  const opening=Number(state.parkOpening)||0;
+  const delta=state.parkLedger.reduce((s,t)=>s + (t.kind==='in'?1:-1)*(Number(t.amount)||0), 0);
+  return opening+delta;
+}
+function viewPark(){
+  const inRange=d=> (!parkFrom||d>=parkFrom) && (!parkTo||d<=parkTo);
+  const txs=state.parkLedger.filter(t=>inRange(t.date)).sort((a,b)=>b.date.localeCompare(a.date)||b.id.localeCompare(a.id));
+  const allIn=state.parkLedger.filter(t=>t.kind==='in').reduce((s,t)=>s+(Number(t.amount)||0),0);
+  const allOut=state.parkLedger.filter(t=>t.kind==='out').reduce((s,t)=>s+(Number(t.amount)||0),0);
+  const rangeIn=txs.filter(t=>t.kind==='in').reduce((s,t)=>s+(Number(t.amount)||0),0);
+  const rangeOut=txs.filter(t=>t.kind==='out').reduce((s,t)=>s+(Number(t.amount)||0),0);
+  const bal=parkBalance();
+  const txRows=txs.map(t=>{
+    if(parkEditId===t.id){
+      return `<tr><td colspan="5" style="background:var(--bg)">
+        <div class="row" style="margin:6px 0">
+          <div class="field"><label>日期</label><input type="date" id="pe-date" value="${t.date||''}"></div>
+          <div class="field"><label>性質</label><select id="pe-kind"><option value="in" ${t.kind==='in'?'selected':''}>收入（+）</option><option value="out" ${t.kind==='out'?'selected':''}>支出（−）</option></select></div>
+          <div class="field"><label>金額</label><input type="number" id="pe-amount" value="${t.amount||0}" min="0" step="100" style="width:120px"></div>
+          <div class="field" style="flex:1;min-width:160px"><label>說明</label><input id="pe-note" value="${esc(t.note||'')}"></div>
+          <button class="btn" data-parkeditok="${t.id}">儲存</button>
+          <button class="act muted" data-parkeditcancel="1" style="cursor:pointer;height:36px">取消</button>
+        </div>
+      </td></tr>`;
+    }
+    return `<tr>
+      <td>${esc(t.date)}</td>
+      <td>${esc(t.note||'')}</td>
+      <td class="num" style="color:var(--accent)">${t.kind==='in'?money(t.amount):'—'}</td>
+      <td class="num" style="color:var(--danger)">${t.kind==='out'?money(t.amount):'—'}</td>
+      <td><button class="act" data-parkedit="${t.id}">改</button> <button class="act danger" data-delpark="${t.id}">刪</button></td>
+    </tr>`;
+  }).join('');
+  return `
+  <div class="metrics">
+    <div class="metric"><div class="l">目前餘額</div><div class="v" style="color:${bal<0?'var(--danger)':'var(--ink)'}">${money(bal)}</div></div>
+    <div class="metric"><div class="l">累計收入</div><div class="v" style="font-size:20px;color:var(--accent)">${money(allIn)}</div></div>
+    <div class="metric"><div class="l">累計支出</div><div class="v" style="font-size:20px;color:var(--danger)">${money(allOut)}</div></div>
+  </div>
+  <div class="card">
+    <div style="font-size:14px;font-weight:600;margin-bottom:4px">品佑收支明細</div>
+    <p class="sub">手動記品佑帳戶的收入與支出，系統自動算餘額（餘額＝期初＋收入−支出）。期初餘額是承接先前的金額，下方可設定。</p>
+    <div class="row" style="margin-bottom:10px">
+      <div class="field"><label>期初餘額</label><input type="number" id="park-opening" value="${state.parkOpening||0}" step="1000" style="width:140px"></div>
+    </div>
+    <div class="row">
+      <div class="field"><label>日期</label><input type="date" id="park-date" value="${new Date().toISOString().slice(0,10)}"></div>
+      <div class="field"><label>性質</label><select id="park-kind"><option value="out">支出（−）</option><option value="in">收入（+）</option></select></div>
+      <div class="field"><label>金額</label><input type="number" id="park-amount" min="0" step="100" style="width:120px"></div>
+      <div class="field" style="flex:1;min-width:200px"><label>說明</label><input id="park-note" placeholder="例：收到工程款、Hilti租金、台北住宿"></div>
+      <button class="btn" id="park-add">＋ 記帳</button>
+    </div>
+  </div>
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:8px">
+      <div style="font-size:14px;font-weight:600">收支清單</div>
+      <button class="btn" id="export-park" ${state.parkLedger.length===0?'disabled style="opacity:.5"':''}>匯出 PDF</button>
+    </div>
+    <div class="row" style="margin-bottom:10px">
+      <div class="field"><label>起</label><input type="date" id="park-from" value="${parkFrom}"></div>
+      <div class="field"><label>訖</label><input type="date" id="park-to" value="${parkTo}"></div>
+      <button class="act" id="park-clear" style="height:36px;border:1px solid var(--line2);border-radius:8px;padding:0 12px">清除日期</button>
+      ${(parkFrom||parkTo)?`<div class="sub" style="margin:0;align-self:center">區間內　收入 ${money(rangeIn)}・支出 ${money(rangeOut)}・淨額 ${money(rangeIn-rangeOut)}</div>`:''}
+    </div>
+    ${txRows===''?'<div class="empty">尚無收支紀錄。</div>':`<div class="scroll"><table>
+      <thead><tr><th>日期</th><th>說明</th><th class="num">收入</th><th class="num">支出</th><th></th></tr></thead>
+      <tbody>${txRows}</tbody></table></div>`}
+  </div>`;
+}
+
+function exportParkPDF(){
+  const inRange=d=> (!parkFrom||d>=parkFrom) && (!parkTo||d<=parkTo);
+  const txs=state.parkLedger.filter(t=>inRange(t.date)).sort((a,b)=>a.date.localeCompare(b.date)||a.id.localeCompare(b.id));
+  if(txs.length===0) return;
+  const range=(parkFrom||parkTo)?`${parkFrom||'起始'} ～ ${parkTo||'迄今'}`:'全部期間';
+  let tin=0,tout=0;
+  const rows=txs.map(t=>{ tin+=t.kind==='in'?(Number(t.amount)||0):0; tout+=t.kind==='out'?(Number(t.amount)||0):0;
+    return `<tr><td>${esc(t.date)}</td><td>${esc(t.note||'')}</td>
+      <td class="num">${t.kind==='in'?money(t.amount):'-'}</td><td class="num">${t.kind==='out'?money(t.amount):'-'}</td></tr>`;
+  }).join('');
+  const inner=`<h1>品佑收支明細</h1>
+    <div class="meta">期間：${range}　|　期初餘額：${money(state.parkOpening||0)}　|　目前餘額：${money(parkBalance())}　|　列印日：${new Date().toISOString().slice(0,10)}</div>
+    <table><thead><tr><th>日期</th><th>說明</th><th class="num">收入</th><th class="num">支出</th></tr></thead>
+    <tbody>${rows}
+      <tr class="total-row"><td colspan="2">區間合計</td><td class="num">${money(tin)}</td><td class="num">${money(tout)}</td></tr>
+      <tr class="total-row"><td colspan="2">區間淨額（收−支）</td><td class="num" colspan="2">${money(tin-tout)}</td></tr>
+    </tbody></table>
+    <p class="sub">金額四捨五入至整數。</p>`;
+  printHTML('品佑收支明細', inner);
+}
+
+function openSidebar(){ document.getElementById('sidebar').classList.add('open'); document.getElementById('scrim').classList.add('show'); }
+function closeSidebar(){ document.getElementById('sidebar').classList.remove('open'); document.getElementById('scrim').classList.remove('show'); }
+document.getElementById('burger').onclick=()=>{
+  const sb=document.getElementById('sidebar');
+  if(sb.classList.contains('open')) closeSidebar(); else openSidebar();
+};
+document.getElementById('scrim').onclick=closeSidebar;
+document.getElementById('cloud-refresh').onclick=()=>loadCloud();
+
+loadLocal(); render(); loadCloud();
+</script>
+</body>
+</html>
