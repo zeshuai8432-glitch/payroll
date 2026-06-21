@@ -111,7 +111,7 @@
 <script>
 const LS = 'pm_data_v2';
 const CLOUD_URL = 'https://script.google.com/macros/s/AKfycbyMPs38UNzAwX3bcD2n9nQBz0HofUW9qFweSOnmoySs8VW2bJYHn47RdyZLQ8bD8SNWTg/exec';
-let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], tools:[], locations:[], assets:[], advances:[], accounts:[], ledger:[], deals:[], billings:[], contracts:{}, costs:[], parkAccId:'', oweBonus:{}, tab:'entry' };
+let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], tools:[], locations:[], assets:[], advances:[], accounts:[], ledger:[], deals:[], billings:[], contracts:{}, costs:[], parkAccId:'', oweBonus:{}, minFund:'', tab:'entry' };
 let cloudStatus='連線中…';
 let entryDate='', entrySite='', entryEmp=''; // 登記出工：記住上次選的日期、案場、員工
 let entryOpenDates={}, entryEditId=null; // 出工紀錄分組收合狀態與正在編輯的紀錄
@@ -144,11 +144,11 @@ const siteName = id => { const s=state.sites.find(x=>x.id===id); return s?s.name
 
 function applyData(d){
   if(!d) return;
-  state.employees=d.employees||[]; state.sites=d.sites||[]; state.attendance=d.attendance||[]; state.adjustments=d.adjustments||[]; state.loans=d.loans||[]; state.tools=d.tools||[]; state.locations=d.locations||[]; state.assets=d.assets||[]; state.advances=d.advances||[]; state.accounts=d.accounts||[]; state.ledger=d.ledger||[]; state.deals=d.deals||[]; state.billings=d.billings||[]; state.contracts=d.contracts||{}; state.costs=d.costs||[]; state.parkAccId=d.parkAccId||''; state.oweBonus=d.oweBonus||{};
+  state.employees=d.employees||[]; state.sites=d.sites||[]; state.attendance=d.attendance||[]; state.adjustments=d.adjustments||[]; state.loans=d.loans||[]; state.tools=d.tools||[]; state.locations=d.locations||[]; state.assets=d.assets||[]; state.advances=d.advances||[]; state.accounts=d.accounts||[]; state.ledger=d.ledger||[]; state.deals=d.deals||[]; state.billings=d.billings||[]; state.contracts=d.contracts||{}; state.costs=d.costs||[]; state.parkAccId=d.parkAccId||''; state.oweBonus=d.oweBonus||{}; state.minFund=(d.minFund!==undefined?d.minFund:'');
   state.employees.forEach(e=>{ if(e.active===undefined) e.active=true; });
 }
 function packData(){
-  return {employees:state.employees,sites:state.sites,attendance:state.attendance,adjustments:state.adjustments,loans:state.loans,tools:state.tools,locations:state.locations,assets:state.assets,advances:state.advances,accounts:state.accounts,ledger:state.ledger,deals:state.deals,billings:state.billings,contracts:state.contracts,costs:state.costs,parkAccId:state.parkAccId,oweBonus:state.oweBonus};
+  return {employees:state.employees,sites:state.sites,attendance:state.attendance,adjustments:state.adjustments,loans:state.loans,tools:state.tools,locations:state.locations,assets:state.assets,advances:state.advances,accounts:state.accounts,ledger:state.ledger,deals:state.deals,billings:state.billings,contracts:state.contracts,costs:state.costs,parkAccId:state.parkAccId,oweBonus:state.oweBonus,minFund:state.minFund};
 }
 
 // 先讀本機快取（讓畫面秒開），再從雲端拉最新
@@ -1349,6 +1349,7 @@ function bind(){
   const pkf=document.getElementById('park-from'); if(pkf) pkf.onchange=()=>{ parkFrom=pkf.value; render(); };
   const pkt=document.getElementById('park-to'); if(pkt) pkt.onchange=()=>{ parkTo=pkt.value; render(); };
   const pkc=document.getElementById('park-clear'); if(pkc) pkc.onclick=()=>{ parkFrom=''; parkTo=''; render(); };
+  const pmf=document.getElementById('park-minfund'); if(pmf) pmf.onchange=()=>{ const v=parseFloat(pmf.value); state.minFund=isNaN(v)?'':Math.max(0,v); saveData(); render(); };
   const paddowe=document.getElementById('park-addowe');
   if(paddowe) paddowe.onclick=()=>{
     if(!confirm('把本期少拿的獎金累加到「欠獎金」？\n（之後可在帳況允許時補發）')) return;
@@ -1358,7 +1359,9 @@ function bind(){
     let targetBonus={}, bookFund=0, totalTargetBonus=0;
     parkDeals.forEach(d=>{ const c=dealCalc(d); if(d.ownerId) targetBonus[d.ownerId]=(targetBonus[d.ownerId]||0)+c.bonus; bookFund+=c.fund; totalTargetBonus+=c.bonus; });
     const balance=accountBalance(state.parkAccId);
-    const fundPaid=Math.max(0,Math.min(balance,bookFund));
+    const minFund=Math.max(0, Number(state.minFund)||0);
+    const targetFund=Math.max(minFund, Math.round(bookFund));
+    const fundPaid=Math.max(0,Math.min(balance,targetFund));
     const avail=Math.max(0,balance-fundPaid);
     partners.forEach(p=>{
       const tgt=targetBonus[p.id]||0;
@@ -2488,21 +2491,24 @@ function viewParkAcc(){
 
   const balance=accountBalance(state.parkAccId); // 已扣完品佑垫付（記在帳戶支出）後的餘額
 
-  // 分配：公積金優先填滿，剩下分獎金（不夠照各人應拿比例分），少拿的記欠獎金
-  const fundPaid=Math.max(0, Math.min(balance, bookFund));
+  // 公積金「該留」＝ max(你設定的至少留, 帳面該進的公積金)
+  const minFund=Math.max(0, Number(state.minFund)||0);
+  const targetFund=Math.max(minFund, Math.round(bookFund));
+  // 分配：公積金先填「該留」，剩下分獎金（不夠照各人應拿比例分）
+  const fundPaid=Math.max(0, Math.min(balance, targetFund));
   let availForBonus=Math.max(0, balance-fundPaid);
   let bonusPaid={}, oweThis={};
   partners.forEach(p=>{
     const tgt=targetBonus[p.id]||0;
     let pay;
     if(totalTargetBonus<=0) pay=0;
-    else if(availForBonus>=totalTargetBonus) pay=tgt;          // 夠分，全額
-    else pay=tgt*(availForBonus/totalTargetBonus);             // 不夠，照比例
+    else if(availForBonus>=totalTargetBonus) pay=tgt;
+    else pay=tgt*(availForBonus/totalTargetBonus);
     pay=Math.round(pay);
     bonusPaid[p.id]=pay;
-    oweThis[p.id]=Math.max(0, Math.round(tgt)-pay);            // 這次少拿的
+    oweThis[p.id]=Math.max(0, Math.round(tgt)-pay);
   });
-  const fundShort=Math.max(0, bookFund-fundPaid);              // 公積金也不夠填的部分（極端）
+  const fundShort=Math.max(0, targetFund-fundPaid); // 連「該留」都填不滿的部分
 
   const bonusRows=partners.map(p=>{
     const tgt=Math.round(targetBonus[p.id]||0), pay=bonusPaid[p.id]||0, owe=oweThis[p.id]||0;
@@ -2520,19 +2526,47 @@ function viewParkAcc(){
   }).join('');
   const anyOwe=partners.some(p=>(state.oweBonus[p.id]||0)>0);
 
+  // 驗算區（餘額怎麼來、公積金/獎金怎麼算）
+  const parkIn=state.ledger.filter(t=>t.accId===state.parkAccId&&t.kind==='in').reduce((s,t)=>s+(Number(t.amount)||0),0);
+  const parkOut=state.ledger.filter(t=>t.accId===state.parkAccId&&t.kind==='out').reduce((s,t)=>s+(Number(t.amount)||0),0);
+  const parkAcc=state.accounts.find(a=>a.id===state.parkAccId);
+  const parkOpening=parkAcc?Number(parkAcc.opening)||0:0;
+  const verify=`<details class="card"><summary style="cursor:pointer;font-size:14px;font-weight:600">驗算明細（核對用，點開）</summary>
+    <div style="font-size:13px;line-height:1.9;margin-top:8px">
+      <div style="font-weight:600;margin-bottom:2px">① 品佑帳戶餘額怎麼來</div>
+      期初 ${money(parkOpening)} ＋ 收入合計 ${money(parkIn)} − 支出合計 ${money(parkOut)} ＝ <b>${money(balance)}</b>
+      <div style="font-weight:600;margin:8px 0 2px">② 公積金該留多少</div>
+      帳面該進公積金 ${money(Math.round(bookFund))}　你設定至少留 ${money(minFund)}　→ 取大的 ＝ <b>${money(targetFund)}</b><br>
+      實際填 min(餘額 ${money(balance)}, 該留 ${money(targetFund)}) ＝ <b>${money(fundPaid)}</b>${fundShort>0?`（連該留都差 ${money(fundShort)}）`:''}
+      <div style="font-weight:600;margin:8px 0 2px">③ 獎金可發</div>
+      餘額 ${money(balance)} − 公積金 ${money(fundPaid)} ＝ <b>${money(availForBonus)}</b>
+      <div style="font-weight:600;margin:8px 0 2px">④ 帳面該發獎金（各案相加）</div>
+      ${[...parkDeals].filter(d=>d.ownerId).map(d=>{const c=dealCalc(d);return `${esc(d.name)}（${esc(empName(d.ownerId))}）${money(c.bonus)}`;}).join('　+　')||'—'}<br>
+      合計應發 ＝ <b>${money(Math.round(totalTargetBonus))}</b>
+    </div>
+  </details>`;
+
   return picker+`
+  <div class="card">
+    <div style="font-size:14px;font-weight:600;margin-bottom:6px">今年公積金水位</div>
+    <div class="row" style="align-items:flex-end">
+      <div class="field"><label>今年至少留公積金（選填）</label><input type="number" id="park-minfund" value="${state.minFund!==''&&state.minFund!==undefined?state.minFund:''}" placeholder="例：800000" min="0" step="10000" style="width:170px"></div>
+      <div class="sub" style="margin:0 0 8px">留空＝照帳面該進的公積金。設了金額＝至少留這麼多（帳面該留更多時，以帳面為準）。</div>
+    </div>
+  </div>
   <div class="metrics">
     <div class="metric"><div class="l">品佑帳戶餘額（扣完垫付）</div><div class="v" style="font-size:18px">${money(balance)}</div></div>
-    <div class="metric"><div class="l">公積金（優先填滿）</div><div class="v" style="font-size:18px">${money(fundPaid)}${fundShort>0?`<span style="font-size:11px;color:var(--danger)"> 缺${money(fundShort)}</span>`:''}</div></div>
+    <div class="metric"><div class="l">公積金（該留 ${money(targetFund)}）</div><div class="v" style="font-size:18px">${money(fundPaid)}${fundShort>0?`<span style="font-size:11px;color:var(--danger)"> 缺${money(fundShort)}</span>`:''}</div></div>
     <div class="metric"><div class="l">獎金可發</div><div class="v" style="font-size:18px;color:var(--accent)">${money(availForBonus>=totalTargetBonus?Math.round(totalTargetBonus):availForBonus)}</div></div>
   </div>
+  ${verify}
   <div class="card">
-    <div style="font-size:14px;font-weight:600;margin-bottom:6px">本期分配（公積金優先，獎金不夠照比例分）</div>
+    <div style="font-size:14px;font-weight:600;margin-bottom:6px">本期分配（公積金先填該留，獎金不夠照比例分）</div>
     <p class="sub" style="margin:0 0 8px">餘額 ${money(balance)} 先填公積金 ${money(fundPaid)}，剩 ${money(availForBonus)} 分獎金。獎金不夠時按各人應拿比例分，少拿的列在「本期少拿」，可累加到下方「累計欠獎金」。</p>
     <table><thead><tr><th>項目</th><th class="num">應拿</th><th class="num">本期實發</th><th class="num">本期少拿</th></tr></thead><tbody>
       ${bonusRows}
-      <tr><td>公積金</td><td class="num">${money(Math.round(bookFund))}</td><td class="num" style="font-weight:600">${money(fundPaid)}</td><td class="num">${fundShort>0?money(fundShort):'—'}</td></tr>
-      <tr class="total-row" style="font-weight:600"><td>合計</td><td class="num">${money(Math.round(totalTargetBonus+bookFund))}</td><td class="num">${money(fundPaid+partners.reduce((s,p)=>s+(bonusPaid[p.id]||0),0))}</td><td class="num"></td></tr>
+      <tr><td>公積金</td><td class="num">${money(targetFund)}</td><td class="num" style="font-weight:600">${money(fundPaid)}</td><td class="num">${fundShort>0?money(fundShort):'—'}</td></tr>
+      <tr class="total-row" style="font-weight:600"><td>合計</td><td class="num">${money(Math.round(totalTargetBonus)+targetFund)}</td><td class="num">${money(fundPaid+partners.reduce((s,p)=>s+(bonusPaid[p.id]||0),0))}</td><td class="num"></td></tr>
     </tbody></table>
     ${partners.some(p=>oweThis[p.id]>0)?`<button class="btn" id="park-addowe" style="margin-top:10px">把本期少拿累加到「欠獎金」</button>`:''}
     <p class="sub" style="margin-top:8px">公積金 ${money(fundPaid)} 請你自行分配到東澤／廣昕帳戶（讓兩邊平衡）。實際撥款後到「公積金帳戶」記收支。</p>
@@ -2580,6 +2614,30 @@ function viewYearEnd(){
     <div class="field"><label>訖</label><input type="date" id="ye-to" value="${yearTo}"></div>
     <button class="act" id="ye-clear" style="height:36px;border:1px solid var(--line2);border-radius:8px;padding:0 12px">全部</button>
   </div>`;
+  // 驗算明細
+  const fundCalcRows=[...allDeals].sort((a,b)=>(b.date||'').localeCompare(a.date||'')).map(d=>{const c=dealCalc(d);return `<tr><td>${esc(d.name)}</td><td class="num">${money(d.amount)}</td><td class="num">${money(d.cost)}</td><td class="num">${money(c.tax)}</td><td class="num">${money(c.profit)}</td><td class="num" style="font-weight:600">${money(c.fund)}</td></tr>`;}).join('');
+  const bonusCalcByP=partners.map(p=>{
+    const items=allDeals.filter(d=>d.ownerId===p.id);
+    if(items.length===0) return '';
+    const detail=items.map(d=>{const c=dealCalc(d);return `${esc(d.name)} ${money(c.bonus)}`;}).join('　+　');
+    return `<div style="margin:4px 0"><b>${esc(p.name)}</b>：${detail||'—'}　=　<b style="color:var(--accent)">${money(bonusByP[p.id]||0)}</b></div>`;
+  }).join('');
+  const accCalcRows=state.accounts.map(a=>{
+    const inn=state.ledger.filter(t=>t.accId===a.id&&t.kind==='in').reduce((s,t)=>s+(Number(t.amount)||0),0);
+    const out=state.ledger.filter(t=>t.accId===a.id&&t.kind==='out').reduce((s,t)=>s+(Number(t.amount)||0),0);
+    const op=Number(a.opening)||0;
+    return `<tr><td>${esc(a.name)}</td><td class="num">${money(op)}</td><td class="num" style="color:var(--accent)">${money(inn)}</td><td class="num" style="color:var(--danger)">${money(out)}</td><td class="num" style="font-weight:600">${money(op+inn-out)}</td></tr>`;
+  }).join('');
+  const verifyYE=`<details class="card"><summary style="cursor:pointer;font-size:14px;font-weight:600">驗算明細（核對用，點開）</summary>
+    <div style="font-size:13px;margin-top:8px">
+      <div style="font-weight:600;margin:6px 0 4px">① 帳面公積金 = 各案場逐筆相加（核對有沒有漏案場）</div>
+      <div class="scroll"><table><thead><tr><th>案場</th><th class="num">金額</th><th class="num">成本</th><th class="num">稅</th><th class="num">淨利</th><th class="num">公積金</th></tr></thead><tbody>${fundCalcRows||'<tr><td colspan="6">無</td></tr>'}<tr class="total-row" style="font-weight:600"><td colspan="5">公積金合計</td><td class="num">${money(bookFund)}</td></tr></tbody></table></div>
+      <div style="font-weight:600;margin:12px 0 4px">② 各股東獎金 = 該股東各案相加</div>
+      ${bonusCalcByP||'<div class="sub">無</div>'}
+      <div style="font-weight:600;margin:12px 0 4px">③ 各帳戶餘額 = 期初 + 收入 − 支出</div>
+      <div class="scroll"><table><thead><tr><th>帳戶</th><th class="num">期初</th><th class="num">收入</th><th class="num">支出</th><th class="num">餘額</th></tr></thead><tbody>${accCalcRows||'<tr><td colspan="5">無</td></tr>'}</tbody></table></div>
+    </div>
+  </details>`;
   return `
   <div class="card">
     <div style="font-size:14px;font-weight:600;margin-bottom:4px">年度總結</div>
@@ -2590,6 +2648,7 @@ function viewYearEnd(){
     <div class="metric"><div class="l">帳面公積金（全部分潤）</div><div class="v" style="font-size:19px">${money(bookFund)}</div></div>
     <div class="metric"><div class="l">各帳戶實際餘額合計</div><div class="v" style="font-size:19px">${money(totalAcc)}</div></div>
   </div>
+  ${verifyYE}
   <div class="card">
     <div style="font-size:14px;font-weight:600;margin-bottom:4px">說明</div>
     <p class="sub">「帳面公積金」是所有案場分潤後該進公積金的總和（不管錢實際在哪個帳戶）。下面「各帳戶帳面公積金」把它依「錢進哪個帳戶」分開，讓你看出每個帳戶裡有多少是公積金。年底你再看兩個公積金帳戶（東澤、廣昕）的實際餘額，決定怎麼把公積金補足、平衡兩邊。</p>
