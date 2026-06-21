@@ -192,7 +192,7 @@ function loadData(){ loadLocal(); }
 
 function computeRecords(records){
   const byKey={};
-  records.forEach(r=>{ const k=r.empId+'|'+r.date; (byKey[k]=byKey[k]||[]).push(r); });
+  records.forEach(r=>{ if(r.kind&&r.kind!=='work') return; const k=r.empId+'|'+r.date; (byKey[k]=byKey[k]||[]).push(r); });
   const out={};
   Object.values(byKey).forEach(group=>{
     const attended=group.filter(r=>(Number(r.hours)||0)>0);
@@ -269,6 +269,14 @@ function viewEntry(){
     const wd=WD[new Date(dk+'T00:00:00').getDay()];
     const open=(entryOpenDates[dk]!==undefined)?entryOpenDates[dk]:(idx<2); // 預設展開最近2天
     const rows=list.map(r=>{
+      if(r.kind&&r.kind!=='work'){
+        const lab=r.kind==='leave'?`<span class="tag" style="background:var(--warn-bg);color:var(--warn-ink)">請假${r.half?'·半天':''}</span>`:'<span class="tag" style="background:#eef2f7;color:var(--info)">休假</span>';
+        return `<tr style="color:var(--muted)">
+          <td colspan="2">${esc(empName(r.empId))} ${lab}</td>
+          <td class="num" colspan="5" style="text-align:left;color:var(--muted)">${r.kind==='leave'?'扣全勤':'不扣全勤'}</td>
+          <td><button class="act danger" data-del="${r.id}">刪</button></td>
+        </tr>`;
+      }
       const c=comp[r.id]||{wage:0,allow:0,total:0};
       const editing=(entryEditId===r.id);
       const hoursCell=editing
@@ -304,9 +312,11 @@ function viewEntry(){
     <div class="row">
       <div class="field"><label>日期</label><input type="date" id="f-date" value="${curDate}"></div>
       <div class="field"><label>員工</label><select id="f-emp">${empOptsSel}</select></div>
-      <div class="field"><label>案場</label><select id="f-site">${siteOptsSel}</select></div>
-      <div class="field"><label>工時（小時，整數）</label><input type="number" id="f-hours" min="0" max="24" step="1" value="8" style="width:110px"></div>
-      <div class="field"><label>過夜外宿</label><div style="height:36px;display:flex;align-items:center"><input type="checkbox" id="f-night"></div></div>
+      <div class="field"><label>類型</label><select id="f-kind"><option value="work">出工</option><option value="leave">請假（扣全勤）</option><option value="off">休假（不扣全勤）</option></select></div>
+      <div class="field f-leave-only" style="display:none"><label>請假長度</label><select id="f-half"><option value="full">整天</option><option value="half">半天</option></select></div>
+      <div class="field f-work-only"><label>案場</label><select id="f-site">${siteOptsSel}</select></div>
+      <div class="field f-work-only"><label>工時（小時，整數）</label><input type="number" id="f-hours" min="0" max="24" step="1" value="8" style="width:110px"></div>
+      <div class="field f-work-only"><label>過夜外宿</label><div style="height:36px;display:flex;align-items:center"><input type="checkbox" id="f-night"></div></div>
       <button class="btn" id="f-add">＋ 新增</button>
     </div>
     ${todayNote}`}
@@ -334,6 +344,7 @@ function cycleContaining(d){
   return {from:fmt(from),to:fmt(to)};
 }
 function defaultPayRange(){ return cycleContaining(new Date()); }
+function periodOf(dateStr){ return cycleContaining(new Date((dateStr||new Date().toISOString().slice(0,10))+'T00:00:00')); }
 function prevPayRange(){
   const cur=cycleContaining(new Date());
   const f=new Date(cur.from+'T00:00:00');
@@ -515,10 +526,13 @@ function viewSites(){
       const canReimb=(c.payer==='dz'||c.payer==='gx');
       const reimbCell=canReimb
         ? (c.reimbursed
-            ? `<span class="tag" style="background:#e3efe9;color:var(--accent)">已報銷</span><button class="act" data-unreimb="${c.id}">取消</button>`
-            : `<button class="act" data-reimb="${c.id}" style="border:1px solid var(--info);border-radius:6px;padding:0 8px;color:var(--info)">報銷</button>`)
+            ? `<span class="tag" style="background:#e3efe9;color:var(--accent)">已報銷${c.reimbDate?' '+esc(c.reimbDate):''}</span><button class="act" data-unreimb="${c.id}">取消</button>`
+            : `<button class="act" data-reimb="${c.id}" style="border:1px solid var(--danger);border-radius:6px;padding:0 10px;color:#fff;background:var(--danger)">待報銷·按此報銷</button>`)
         : '';
-      return `<tr><td>${esc(c.date||'')}</td><td>${esc(c.item||'')}</td><td class="num">${money(c.amount)}</td><td>${esc(payerName(c.payer))}${c.reimbursed?'<span class="tag" style="background:#e3efe9;color:var(--accent)">已報銷</span>':''}</td><td>${reimbCell} <button class="act" data-costedit="${c.id}">改</button> <button class="act danger" data-delcost="${c.id}">刪</button></td></tr>`;
+      const payerTag=c.payer==='dz'||c.payer==='gx'
+        ? (c.reimbursed?'<span class="tag" style="background:#e3efe9;color:var(--accent)">已報銷</span>':'<span class="tag" style="background:var(--warn-bg);color:var(--warn-ink)">待報銷</span>')
+        : '';
+      return `<tr${(canReimb&&!c.reimbursed)?' style="background:#fff8f0"':''}><td>${esc(c.date||'')}</td><td>${esc(c.item||'')}</td><td class="num">${money(c.amount)}</td><td>${esc(payerName(c.payer))}${payerTag}</td><td>${reimbCell} <button class="act" data-costedit="${c.id}">改</button> <button class="act danger" data-delcost="${c.id}">刪</button></td></tr>`;
     }).join('');
     const byPayer={}; myCosts.forEach(c=>{ byPayer[c.payer||'—']=(byPayer[c.payer||'—']||0)+(Number(c.amount)||0); });
     const payerSummary=Object.keys(byPayer).length?`<div class="sub" style="margin:4px 0">各人墊付：${Object.entries(byPayer).map(([k,v])=>`${esc(payerName(k))} ${money(v)}`).join('、')}</div>`:'';
@@ -594,9 +608,9 @@ function viewManage(){
     const contractVal=(s.contract!==undefined&&s.contract!=='')?s.contract:(state.contracts[s.name]||'');
     const curType=s.type||(s.coop?'合作案':'代工');
     const settings=`<tr${paused?' style="color:var(--muted)"':''}><td colspan="4" style="padding-top:0">
-      <details style="margin:2px 0 8px"><summary style="cursor:pointer;font-size:12px;color:var(--info)">案場設定（類型／稅率／負責人／帳戶）</summary>
+      <details ${siteSettingsOpen[s.id]?'open':''} data-sitesettings="${s.id}" style="margin:2px 0 8px"><summary style="cursor:pointer;font-size:12px;color:var(--info)">案場設定（類型／稅率／負責人／帳戶）</summary>
         <div class="row" style="margin:8px 0 4px">
-          <div class="field"><label>類型</label><select data-sitetype="${s.id}"><option value="代工" ${curType==='代工'?'selected':''}>代工</option><option value="公司分潤" ${curType==='公司分潤'?'selected':''}>公司分潤</option><option value="舊制" ${curType==='舊制'?'selected':''}>舊制（全進公積金）</option><option value="合作案" ${curType==='合作案'?'selected':''}>合作案</option></select></div>
+          <div class="field"><label>類型</label><select data-sitetype="${s.id}">${['代工','連工代料','業主分潤','合作案','舊制'].map(t=>`<option value="${t}" ${curType===t?'selected':''}>${t}${t==='合作案'?'（50/50）':t==='舊制'?'（全進公積金）':'（30/70）'}</option>`).join('')}</select></div>
           <div class="field"><label>稅率 %</label><input type="number" data-sitetax="${s.id}" value="${s.siteTaxPct!==undefined?s.siteTaxPct:(s.coopTaxPct||0)}" min="0" max="100" step="0.5" style="width:90px"></div>
           <div class="field"><label>負責人</label><select data-siteowner="${s.id}"><option value="">（未指定）</option>${state.employees.filter(e=>e.partner).map(p=>`<option value="${p.id}" ${s.siteOwnerId===p.id?'selected':''}>${esc(p.name)}</option>`).join('')}</select></div>
           <div class="field"><label>錢進哪個帳戶</label><select data-siteacc="${s.id}"><option value="">（未指定）</option>${state.accounts.map(a=>`<option value="${a.id}" ${s.siteAcc===a.id?'selected':''}>${esc(a.name)}</option>`).join('')}</select></div>
@@ -628,7 +642,7 @@ function viewManage(){
     <p class="sub">建案場時設好<b>類型、稅率、負責人、錢進哪個帳戶</b>，之後請款追蹤一輸入，系統就自動算分潤、自動進帳戶，不用再去分潤頁手動建。<b>代工／公司分潤</b>＝（總請款−稅）做30/70；<b>合作案</b>＝（總請款−案場成本）對拆、不出現在出工登記、成本記「案場成本」頁。改名會套用到所有相關紀錄。</p>
     <div class="row" style="margin-bottom:8px">
       <div class="field" style="flex:1;min-width:180px"><label>案場名稱</label><input id="s-name" placeholder="例：台北富邦"></div>
-      <div class="field"><label>類型</label><select id="s-type"><option value="代工">代工</option><option value="公司分潤">公司分潤</option><option value="舊制">舊制（全進公積金）</option><option value="合作案">合作案</option></select></div>
+      <div class="field"><label>類型</label><select id="s-type">${['代工','連工代料','業主分潤','合作案','舊制'].map(t=>`<option value="${t}">${t}${t==='合作案'?'（50/50）':t==='舊制'?'（全進公積金）':'（30/70）'}</option>`).join('')}</select></div>
       <div class="field"><label>稅率 %</label><input type="number" id="s-tax" min="0" max="100" step="0.5" value="0" style="width:90px"></div>
     </div>
     <div class="row" style="margin-bottom:10px">
@@ -666,6 +680,16 @@ function bind(){
     const amount=parseFloat(document.getElementById('adj-amount').value);
     const note=document.getElementById('adj-note').value.trim();
     if(!date||!empId||!label||isNaN(amount)||amount<0) return;
+    // 全勤獎金提醒：該員工在該筆所屬計薪週期內若有「請假」，提醒
+    if(label.indexOf('全勤')>=0){
+      const per=periodOf(date); // {from,to}
+      const leaves=state.attendance.filter(r=>r.empId===empId && r.kind==='leave' && r.date>=per.from && r.date<=per.to);
+      if(leaves.length>0){
+        const emp=state.employees.find(e=>e.id===empId);
+        const days=leaves.map(r=>r.date+(r.half?'(半天)':'')).sort().join('、');
+        if(!confirm(`提醒：${emp?emp.name:''} 在本期（${per.from} ~ ${per.to}）有請假 ${leaves.length} 次（${days}）。\n\n請假會破全勤。確定還是要給全勤獎金嗎？`)) return;
+      }
+    }
     state.adjustments.push({id:uid(),date,empId,kind,label,amount,note});
     saveData(); render();
   };
@@ -715,19 +739,39 @@ function bind(){
   const fDate=document.getElementById('f-date'); if(fDate) fDate.onchange=()=>{ entryDate=fDate.value; const fe=document.getElementById('f-emp'); if(fe) entryEmp=fe.value; render(); };
   const fSite=document.getElementById('f-site'); if(fSite) fSite.onchange=()=>{ entrySite=fSite.value; const fe=document.getElementById('f-emp'); if(fe) entryEmp=fe.value; render(); };
   const fEmp=document.getElementById('f-emp'); if(fEmp) fEmp.onchange=()=>{ entryEmp=fEmp.value; };
+  const fKind=document.getElementById('f-kind'); if(fKind) fKind.onchange=()=>{
+    const show=fKind.value==='work';
+    document.querySelectorAll('.f-work-only').forEach(el=>{ el.style.display=show?'':'none'; });
+    document.querySelectorAll('.f-leave-only').forEach(el=>{ el.style.display=fKind.value==='leave'?'':'none'; });
+  };
 
   const add=document.getElementById('f-add');
   if(add) add.onclick=()=>{
     const date=document.getElementById('f-date').value;
     const empId=document.getElementById('f-emp').value;
+    const kindSel=document.getElementById('f-kind');
+    const kind=kindSel?kindSel.value:'work';
+    const emp=state.employees.find(e=>e.id===empId);
+    if(!date||!empId||!emp) return;
+
+    if(kind!=='work'){
+      // 請假/休假：不需要案場與工時
+      const label=kind==='leave'?'請假':'休假';
+      const half=(kind==='leave' && document.getElementById('f-half') && document.getElementById('f-half').value==='half');
+      const dup=state.attendance.find(r=>r.empId===empId&&r.date===date&&r.kind===kind);
+      if(dup){ alert(`${emp.name} 在 ${date} 已經登記過${label}了。`); return; }
+      state.attendance.push({id:uid(),date,empId,kind,half:half||false});
+      entryDate=date; entryEmp='';
+      saveData(); render();
+      return;
+    }
+
     const siteId=document.getElementById('f-site').value;
     const hours=parseFloat(document.getElementById('f-hours').value);
     const night=document.getElementById('f-night').checked;
-    const emp=state.employees.find(e=>e.id===empId);
-    if(!date||!empId||!siteId||isNaN(hours)||!emp) return;
+    if(!siteId||isNaN(hours)) return;
     if(!Number.isInteger(hours)){ alert('工時請輸入整數小時（例如 8、9），不接受小數。'); return; }
-    // 防呆：同人同日是否已登記
-    const sameDay=state.attendance.filter(r=>r.empId===empId&&r.date===date);
+    const sameDay=state.attendance.filter(r=>r.empId===empId&&r.date===date&&(!r.kind||r.kind==='work'));
     if(sameDay.length>0){
       const sameSite=sameDay.find(r=>r.siteId===siteId);
       let msg;
@@ -739,9 +783,9 @@ function bind(){
       }
       if(!confirm(msg)) return;
     }
-    state.attendance.push({id:uid(),date,empId,siteId,hours,night,dailyRate:emp.daily});
-    // 保留日期與案場（員工不保留，登記後清空方便接著選下一個人）
+    state.attendance.push({id:uid(),date,empId,siteId,hours,night,dailyRate:emp.daily,kind:'work'});
     entryDate=date; entrySite=siteId; entryEmp='';
+    resyncAllSiteDeals();
     resyncAllSiteDeals();
     saveData(); render();
   };
@@ -796,28 +840,29 @@ function bind(){
     else { s.contract=v; state.contracts[s.name]=v; }
     saveData(); render();
   });
+  document.querySelectorAll('[data-sitesettings]').forEach(dt=>dt.addEventListener('toggle',()=>{ siteSettingsOpen[dt.dataset.sitesettings]=dt.open; }));
   document.querySelectorAll('[data-sitetax]').forEach(inp=>inp.onchange=()=>{
     const s=state.sites.find(x=>x.id===inp.dataset.sitetax); if(!s) return;
     const v=parseFloat(inp.value); const nv=isNaN(v)?0:Math.max(0,v);
-    s.siteTaxPct=nv; s.coopTaxPct=nv; resyncSiteDeal(s); saveData(); render();
+    s.siteTaxPct=nv; s.coopTaxPct=nv; resyncSiteDeal(s); saveData();
   });
   document.querySelectorAll('[data-sitetype]').forEach(sel=>sel.onchange=()=>{
     const s=state.sites.find(x=>x.id===sel.dataset.sitetype); if(!s) return;
     s.type=sel.value; s.coop=(sel.value==='合作案');
     if(s.coop && s.coopMgrPct===undefined) s.coopMgrPct=50;
-    resyncSiteDeal(s); saveData(); render();
+    siteSettingsOpen[s.id]=true; resyncSiteDeal(s); saveData(); render();
   });
   document.querySelectorAll('[data-siteowner]').forEach(sel=>sel.onchange=()=>{
     const s=state.sites.find(x=>x.id===sel.dataset.siteowner); if(!s) return;
-    s.siteOwnerId=sel.value; s.coopOwnerId=sel.value; resyncSiteDeal(s); saveData(); render();
+    s.siteOwnerId=sel.value; s.coopOwnerId=sel.value; resyncSiteDeal(s); saveData();
   });
   document.querySelectorAll('[data-siteacc]').forEach(sel=>sel.onchange=()=>{
     const s=state.sites.find(x=>x.id===sel.dataset.siteacc); if(!s) return;
-    s.siteAcc=sel.value; resyncSiteDeal(s); saveData(); render();
+    s.siteAcc=sel.value; resyncSiteDeal(s); saveData();
   });
   document.querySelectorAll('[data-sitemgr]').forEach(inp=>inp.onchange=()=>{
     const s=state.sites.find(x=>x.id===inp.dataset.sitemgr); if(!s) return;
-    const v=parseFloat(inp.value); s.coopMgrPct=isNaN(v)?50:Math.max(0,Math.min(100,v)); saveData(); render();
+    const v=parseFloat(inp.value); s.coopMgrPct=isNaN(v)?50:Math.max(0,Math.min(100,v)); siteSettingsOpen[s.id]=true; saveData(); render();
   });
   const sType=document.getElementById('s-type');
   const sTypeToggle=()=>{ const mw=document.getElementById('s-mgr-wrap'); if(mw) mw.style.display=(sType&&sType.value==='合作案')?'':'none'; };
@@ -875,11 +920,11 @@ function bind(){
   });
   document.querySelectorAll('[data-reimb]').forEach(b=>b.onclick=()=>{
     const c=state.costs.find(x=>x.id===b.dataset.reimb); if(!c) return;
-    c.reimbursed=true; saveData(); render();
+    c.reimbursed=true; c.reimbDate=new Date().toISOString().slice(0,10); saveData(); render();
   });
   document.querySelectorAll('[data-unreimb]').forEach(b=>b.onclick=()=>{
     const c=state.costs.find(x=>x.id===b.dataset.unreimb); if(!c) return;
-    c.reimbursed=false; saveData(); render();
+    c.reimbursed=false; delete c.reimbDate; saveData(); render();
   });
   document.querySelectorAll('[data-costedit]').forEach(b=>b.onclick=()=>{ costEditId=b.dataset.costedit; render(); });
   document.querySelectorAll('[data-costeditcancel]').forEach(b=>b.onclick=()=>{ costEditId=null; render(); });
@@ -2032,6 +2077,7 @@ function resyncSiteDeal(site){
 }
 let dealSel={}; // 分潤清單勾選
 let costEditId=null; // 手動成本編輯中
+let siteSettingsOpen={}; // 案場設定展開狀態
 
 function viewDeals(){
   const partners=state.employees.filter(e=>e.partner);
@@ -2099,7 +2145,7 @@ function viewDeals(){
     }
     const isAuto=!!d.autoSiteId;
     const editBtn=(!d.posted&&!d.carriedTo&&!isAuto)?`<button class="act" data-dealedit="${d.id}">編輯</button> `:'';
-    const typeLabel=isCoop?`合作案(業主${c.ownerPct}/管理人${c.mgrPct})`:(d.type==='公司分潤'||d.type==='分潤/代料'?'公司分潤'+sc.label.split('（')[0].replace('新制','30/70').replace('舊制','0/100'):'代工');
+    const typeLabel=isCoop?`合作案(業主${c.ownerPct}/管理人${c.mgrPct})`:(d.type==='舊制'?'舊制·全進公積金':(d.type==='公司分潤'||d.type==='分潤/代料'?'公司分潤30/70':(d.type||'代工')+'·30/70'));
     const col6 = isCoop ? `<td class="num" style="color:var(--info)">管理人 ${money(c.companyShare)}</td>` : `<td class="num" style="color:var(--accent)">${money(c.bonus)}</td>`;
     const col7 = isCoop ? `<td class="num" style="color:var(--muted)">業主 ${money(c.partnerShare)}</td>` : `<td class="num">${money(c.fund)}</td>`;
     const lastCell = isAuto
@@ -2117,17 +2163,18 @@ function viewDeals(){
       <td>${lastCell}</td>
     </tr>`;
   };
-  // 依類型分組（合作案另在上方橘卡，這裡只列代工與公司分潤）
+  // 依類型分組（合作案另在上方橘卡）
   const sortByDate=(a,b)=>(b.date||'').localeCompare(a.date||'');
-  const daigongDeals=state.deals.filter(d=>d.type==='代工').sort(sortByDate);
-  const companyDeals=state.deals.filter(d=>d.type==='公司分潤'||d.type==='分潤/代料').sort(sortByDate);
-  const otherDeals=state.deals.filter(d=>d.type!=='代工'&&d.type!=='公司分潤'&&d.type!=='分潤/代料'&&d.type!=='合作案').sort(sortByDate);
+  const TYPE_ORDER=['代工','連工代料','業主分潤','舊制'];
+  const groupedByType=TYPE_ORDER.map(t=>[t, state.deals.filter(d=>d.type===t).sort(sortByDate)]);
+  const otherDeals=state.deals.filter(d=>!TYPE_ORDER.includes(d.type)&&d.type!=='合作案'&&d.type!=='公司分潤'&&d.type!=='分潤/代料').sort(sortByDate);
+  const legacyCompany=state.deals.filter(d=>d.type==='公司分潤'||d.type==='分潤/代料').sort(sortByDate);
   const tableHead=`<thead><tr><th style="width:28px"></th><th>案場</th><th class="num">金額</th><th class="num">成本</th><th class="num">稅金</th><th class="num">淨利</th><th class="num">獎金/管理人</th><th class="num">公積金/業主</th><th></th></tr></thead>`;
   const sectionFor=(title,list)=> list.length===0?'':`
     <details open style="margin-top:10px"><summary style="cursor:pointer;font-size:13px;font-weight:600;color:var(--accent);padding:6px 0">${title}（${list.length}）</summary>
     <div class="scroll"><table>${tableHead}<tbody>${list.map(dealRow).join('')}</tbody></table></div></details>`;
-  const dealsSections=sectionFor('代工',daigongDeals)+sectionFor('公司分潤',companyDeals)+sectionFor('其他',otherDeals);
-  const anyDeals=daigongDeals.length+companyDeals.length+otherDeals.length;
+  const dealsSections=groupedByType.map(([t,list])=>sectionFor(t,list)).join('')+sectionFor('公司分潤（舊資料）',legacyCompany)+sectionFor('其他',otherDeals);
+  const anyDeals=groupedByType.reduce((s,[,l])=>s+l.length,0)+otherDeals.length+legacyCompany.length;
 
   // 合作案場：自動匯總（一案一筆，可結案收合）
   const coopSites=state.sites.filter(s=>s.coop);
@@ -2216,7 +2263,6 @@ function viewDeals(){
         <button class="act" id="deals-selnone" style="border:1px solid var(--line2);border-radius:8px;padding:0 12px;height:34px">取消全選</button>
         <button class="btn" id="export-deals-sel" ${anyDeals===0?'disabled style="opacity:.5"':''}>匯出選取</button>
         <button class="btn" id="export-deals" ${anyDeals===0?'disabled style="opacity:.5"':''}>全部匯出</button>
-        <button class="act" id="rebuild-income" style="border:1px solid var(--info);border-radius:8px;padding:0 12px;height:34px;color:var(--info)">重建帳戶進帳</button>
         <button class="act" id="resync-deals" style="border:1px solid var(--accent);border-radius:8px;padding:0 12px;height:34px;color:var(--accent)">重算所有案場分潤</button>
       </div>
     </div>
