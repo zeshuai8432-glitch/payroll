@@ -566,16 +566,34 @@ function viewSites(){
   const pausedIds=ids.filter(sid=>isPaused(sid));
   const cards=activeIds.map(cardFor).join('');
   const pausedCards=pausedIds.length?`<details style="margin-top:10px"><summary style="cursor:pointer;font-weight:600;padding:8px 0">已暫停案場（${pausedIds.length}）</summary>${pausedIds.map(cardFor).join('')}</details>`:'';
-  // 東澤/廣昕 墊付報銷彙總（跨所有案場的手動成本）
+  // 東澤/廣昕 墊付報銷彙總（跨所有案場的手動成本，標示案場）
   const reimb={dz:{total:0,done:0},gx:{total:0,done:0}};
   state.costs.forEach(c=>{ if(c.payer==='dz'||c.payer==='gx'){ const amt=Number(c.amount)||0; reimb[c.payer].total+=amt; if(c.reimbursed) reimb[c.payer].done+=amt; } });
+  const personBlock=(k)=>{
+    if(reimb[k].total<=0) return '';
+    const pending=reimb[k].total-reimb[k].done;
+    // 待報銷的逐筆（標示案場）
+    const items=state.costs.filter(c=>c.payer===k && !c.reimbursed).sort((a,b)=>(a.date||'').localeCompare(b.date||''));
+    const byline=items.map(c=>{
+      const sName=siteName(c.siteId)||'（未知案場）';
+      return `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:5px 0;border-bottom:1px solid var(--line)">
+        <span><b>${esc(sName)}</b>　<span style="color:var(--muted);font-size:12px">${esc(c.date||'')}　${esc(c.item||'')}</span></span>
+        <span style="display:flex;align-items:center;gap:8px;white-space:nowrap"><span class="num">${money(c.amount)}</span><button class="act" data-reimb="${c.id}" style="border:1px solid var(--info);border-radius:6px;padding:0 8px;color:var(--info)">報銷</button></span>
+      </div>`;
+    }).join('');
+    return `<div style="margin-bottom:10px">
+      <div style="display:flex;justify-content:space-between;font-weight:600;padding:4px 0">
+        <span>${payerName(k)}</span>
+        <span class="num">墊付 ${money(reimb[k].total)}　已報銷 <span style="color:var(--accent)">${money(reimb[k].done)}</span>　待報銷 <span style="color:${pending>0?'var(--danger)':'var(--muted)'}">${money(pending)}</span></span>
+      </div>
+      ${pending>0?`<details ${'open'}><summary style="cursor:pointer;font-size:12px;color:var(--info);padding:2px 0">待報銷明細（${items.length} 筆，哪個案場）</summary>${byline}</details>`:'<div class="sub" style="padding:2px 0">全部已報銷 ✓</div>'}
+    </div>`;
+  };
   const reimbCard=(reimb.dz.total>0||reimb.gx.total>0)?`
   <div class="card">
     <div style="font-size:14px;font-weight:600;margin-bottom:8px">墊付報銷彙總（東澤／廣昕）</div>
-    <table><thead><tr><th>墊付人</th><th class="num">墊付總額</th><th class="num">已報銷</th><th class="num">待報銷</th></tr></thead><tbody>
-      ${['dz','gx'].filter(k=>reimb[k].total>0).map(k=>`<tr><td>${payerName(k)}</td><td class="num">${money(reimb[k].total)}</td><td class="num" style="color:var(--accent)">${money(reimb[k].done)}</td><td class="num" style="font-weight:600;color:${reimb[k].total-reimb[k].done>0?'var(--danger)':'var(--muted)'}">${money(reimb[k].total-reimb[k].done)}</td></tr>`).join('')}
-    </tbody></table>
-    <p class="sub" style="margin-top:6px">這是東澤、廣昕在各案場（含合作案）手動墊付的成本。在下方各案場明細按「報銷」可標記某筆已報銷。此處只記錄報銷狀態，不會動到帳戶餘額。</p>
+    ${personBlock('dz')}${personBlock('gx')}
+    <p class="sub" style="margin-top:6px">展開「待報銷明細」可看到是哪個案場、哪一筆，直接按「報銷」標記。此處只記錄報銷狀態，不會動到帳戶餘額。</p>
   </div>`:'';
   return `
   <div class="metrics">
@@ -617,7 +635,9 @@ function viewManage(){
           ${curType==='合作案'?`<div class="field"><label>管理人(你們)佔 %</label><input type="number" data-sitemgr="${s.id}" value="${s.coopMgrPct!==undefined?s.coopMgrPct:50}" min="0" max="100" step="5" style="width:120px"></div>`:''}
           <div class="field"><label>合約總額（選填）</label><input type="number" data-sitecontract="${s.id}" value="${contractVal}" placeholder="未設定" min="0" step="10000" style="width:140px"></div>
         </div>
-        <p class="sub" style="margin:0">改類型會影響分潤算法。代工/公司分潤＝（總請款−稅）做30/70；合作案＝（總請款−案場成本）對拆。改設定後請款的分潤會自動跟著重算。</p>
+        <p class="sub" style="margin:0 0 8px">改類型會影響分潤算法。代工/連工代料/業主分潤＝（總請款−成本−稅）做30/70；合作案＝（總請款−案場成本）對拆；舊制全進公積金。改設定後請款的分潤會自動跟著重算。</p>
+        <button class="btn" data-sitesave="${s.id}">✓ 儲存設定</button>
+        <span data-sitesaved="${s.id}" style="margin-left:10px;color:var(--accent);font-weight:600;display:none">已儲存 ✓</span>
       </details>
     </td></tr>`;
     return `<tr${paused?' style="color:var(--muted)"':''}><td>${nameCell}</td><td><button class="act" data-rensite="${s.id}">改名</button></td><td>${toggle}</td><td>${delBtn}</td></tr>${settings}`;
@@ -856,9 +876,18 @@ function bind(){
     const s=state.sites.find(x=>x.id===sel.dataset.siteowner); if(!s) return;
     s.siteOwnerId=sel.value; s.coopOwnerId=sel.value; resyncSiteDeal(s); saveData();
   });
-  document.querySelectorAll('[data-siteacc]').forEach(sel=>sel.onchange=()=>{
-    const s=state.sites.find(x=>x.id===sel.dataset.siteacc); if(!s) return;
-    s.siteAcc=sel.value; resyncSiteDeal(s); saveData();
+  document.querySelectorAll('[data-sitesave]').forEach(b=>b.onclick=()=>{
+    const id=b.dataset.sitesave; const s=state.sites.find(x=>x.id===id); if(!s) return;
+    // 主動把面板上目前的值讀進來（避免有欄位沒觸發 onchange）
+    const typeSel=document.querySelector(`[data-sitetype="${id}"]`); if(typeSel){ s.type=typeSel.value; s.coop=(typeSel.value==='合作案'); if(s.coop&&s.coopMgrPct===undefined) s.coopMgrPct=50; }
+    const taxInp=document.querySelector(`[data-sitetax="${id}"]`); if(taxInp){ const v=parseFloat(taxInp.value); s.siteTaxPct=isNaN(v)?0:Math.max(0,v); s.coopTaxPct=s.siteTaxPct; }
+    const ownSel=document.querySelector(`[data-siteowner="${id}"]`); if(ownSel){ s.siteOwnerId=ownSel.value; s.coopOwnerId=ownSel.value; }
+    const accSel=document.querySelector(`[data-siteacc="${id}"]`); if(accSel){ s.siteAcc=accSel.value; }
+    const mgrInp=document.querySelector(`[data-sitemgr="${id}"]`); if(mgrInp){ const v=parseFloat(mgrInp.value); s.coopMgrPct=isNaN(v)?50:Math.max(0,Math.min(100,v)); }
+    const conInp=document.querySelector(`[data-sitecontract="${id}"]`); if(conInp){ const v=parseFloat(conInp.value); if(isNaN(v)||v<=0){ s.contract=''; delete state.contracts[s.name]; } else { s.contract=v; state.contracts[s.name]=v; } }
+    resyncSiteDeal(s); saveData();
+    const tag=document.querySelector(`[data-sitesaved="${id}"]`);
+    if(tag){ tag.style.display='inline'; setTimeout(()=>{ if(tag) tag.style.display='none'; }, 2500); }
   });
   document.querySelectorAll('[data-sitemgr]').forEach(inp=>inp.onchange=()=>{
     const s=state.sites.find(x=>x.id===inp.dataset.sitemgr); if(!s) return;
