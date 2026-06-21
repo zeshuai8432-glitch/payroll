@@ -2324,7 +2324,7 @@ function viewAccounts(){
   return `
   <div class="metrics">
     ${accMetrics}
-    <div class="metric" style="background:var(--accent);color:#fff"><div class="l" style="color:#fff;opacity:.85">總餘額</div><div class="v">${money(totalBal)}</div></div>
+    <div class="metric" style="background:var(--accent);color:#fff"><div class="l" style="color:#fff;opacity:.85">總餘額</div><div class="v" style="-webkit-text-fill-color:#fff;background:none">${money(totalBal)}</div></div>
   </div>
 
   <details class="card">
@@ -2633,7 +2633,7 @@ function viewDeals(){
 
   return `
   <div class="metrics">
-    <div class="metric" style="background:var(--accent);color:#fff"><div class="l" style="color:#fff;opacity:.85">帳面公積金累計</div><div class="v">${money(totFund)}</div></div>
+    <div class="metric" style="background:var(--accent);color:#fff"><div class="l" style="color:#fff;opacity:.85">帳面公積金累計</div><div class="v" style="-webkit-text-fill-color:#fff;background:none">${money(totFund)}</div></div>
     ${bonusCards}
   </div>
   ${coopSites.length?`<details class="card" style="background:#fdf6ee"><summary style="cursor:pointer;font-size:14px;font-weight:600">合作案場（自動匯總）・${activeCoop.length} 進行中</summary><div class="card-body"><p class="sub" style="margin:0 0 8px">每個合作案場一筆，金額=該案場總請款、成本=該案場總成本，隨請款/成本變動。管理人那半可「帶去公司分潤」再算30/70。</p>${coopActiveHtml}${coopPausedHtml}${coopClosedHtml}</div></details>`:''}
