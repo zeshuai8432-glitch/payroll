@@ -949,10 +949,10 @@ function bind(){
   });
   document.querySelectorAll('[data-reimb]').forEach(b=>b.onclick=()=>{
     const c=state.costs.find(x=>x.id===b.dataset.reimb); if(!c) return;
-    const who=payerName(c.payer);
+    const pn=({dz:'東澤',gx:'廣昕',py:'品佑'})[c.payer]||c.payer||'—';
     const hasPark=!!state.parkAccId;
     const extra=hasPark?`・品佑帳戶會記一筆支出 ${money(c.amount)}（摘要：${esc(c.item||'報銷')}）`:'・（尚未設定品佑帳戶，這次只標記報銷、不記品佑支出。可到「品佑帳戶結算」設定後再用）';
-    if(!confirm(`報銷這筆？\n\n・${siteName(c.siteId)||''}　${esc(c.item||'')}　${money(c.amount)}\n・原墊付人：${who} → 改為品佑\n${extra}\n\n確定報銷？`)) return;
+    if(!confirm(`報銷這筆？\n\n・${siteName(c.siteId)||''}　${esc(c.item||'')}　${money(c.amount)}\n・原墊付人：${pn} → 改為品佑\n${extra}\n\n確定報銷？`)) return;
     c.origPayer=c.payer;
     c.payer='py';
     c.reimbursed=true;
