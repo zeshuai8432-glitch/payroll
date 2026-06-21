@@ -670,40 +670,43 @@ function viewPayroll(){
     <div class="metric"><div class="l">出工薪資</div><div class="v" style="font-size:20px">${money(grossSum)}</div></div>
     <div class="metric"><div class="l">實發總額</div><div class="v">${money(netSum)}</div></div>
   </div>
-  <div class="card">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;gap:8px;flex-wrap:wrap">
-      <div style="font-size:14px;font-weight:600">本期薪資</div>
-      <button class="btn" id="export-summary" ${rows===''?'disabled style="opacity:.5"':''}>匯出總表 PDF</button>
+  <details class="card">
+    <summary><span style="flex:1">本期薪資</span><button class="btn" onclick="event.preventDefault();exportSummaryPDF()" ${rows===''?'disabled style="opacity:.5"':''} style="height:30px;font-size:12px">匯出總表 PDF</button></summary>
+    <div class="card-body">
+      ${rows===''?'<div class="empty">此區間內尚無可計算的薪資。</div>':`
+      <div class="scroll"><table>
+        <thead><tr><th>員工</th><th class="num">出勤天</th><th class="num">總工數</th><th class="num">出工薪資</th><th class="num">加項</th><th class="num">扣項</th><th class="num">實發金額</th><th></th></tr></thead>
+        <tbody>${rows}</tbody></table></div>
+      <p class="sub" style="margin:10px 0 0">出工薪資＝工資＋津貼。實發＝出工薪資＋加項−扣項。</p>`}
     </div>
-    ${rows===''?'<div class="empty">此區間內尚無可計算的薪資。</div>':`
-    <div class="scroll"><table>
-      <thead><tr><th>員工</th><th class="num">出勤天</th><th class="num">總工數</th><th class="num">出工薪資</th><th class="num">加項</th><th class="num">扣項</th><th class="num">實發金額</th><th></th></tr></thead>
-      <tbody>${rows}</tbody></table></div>
-    <p class="sub" style="margin:10px 0 0">出工薪資＝工資＋津貼。實發＝出工薪資＋加項−扣項。</p>`}
-  </div>
-  ${loanReminders===''?'':`<div class="card" style="border-color:var(--accent)">
-    <div style="font-size:14px;font-weight:600;margin-bottom:4px">💡 本期借支扣款提示</div>
-    <p class="sub">以下員工有未還清借支、且本期尚未扣款。點「扣這期」即把該筆金額加入本期扣項（可在下方加扣項清單微調或刪除）。</p>
-    <div class="scroll"><table>
-      <thead><tr><th>員工</th><th class="num">尚欠</th><th class="num">本期建議扣</th><th></th></tr></thead>
-      <tbody>${loanReminders}</tbody></table></div>
-  </div>`}
-  <div class="card">
-    <div style="font-size:14px;font-weight:600;margin-bottom:4px">本期加項／扣項</div>
-    <p class="sub">獎金、全勤為加項；借支扣還、勞健保自負額等為扣項。日期請填在本計薪區間內，才會算進本期。</p>
-    <div class="row" style="margin-bottom:10px">
-      <div class="field"><label>日期</label><input type="date" id="adj-date" value="${state.payTo||''}"></div>
-      <div class="field"><label>員工</label><select id="adj-emp">${empOpts}</select></div>
-      <div class="field"><label>性質</label><select id="adj-kind"><option value="add">加項（+）</option><option value="ded">扣項（−）</option></select></div>
-      <div class="field"><label>項目</label><select id="adj-label">${addOpts}</select></div>
-      <div class="field"><label>金額</label><input type="number" id="adj-amount" min="0" step="100" style="width:120px"></div>
-      <div class="field" style="flex:1;min-width:140px"><label>備註（選填）</label><input id="adj-note" placeholder="例：6月借支"></div>
-      <button class="btn" id="adj-add">＋ 新增</button>
+  </details>
+  ${loanReminders===''?'':`<details class="card" style="border-color:var(--accent)">
+    <summary>💡 本期借支扣款提示</summary>
+    <div class="card-body">
+      <p class="sub">以下員工有未還清借支、且本期尚未扣款。點「扣這期」即把該筆金額加入本期扣項（可在下方加扣項清單微調或刪除）。</p>
+      <div class="scroll"><table>
+        <thead><tr><th>員工</th><th class="num">尚欠</th><th class="num">本期建議扣</th><th></th></tr></thead>
+        <tbody>${loanReminders}</tbody></table></div>
     </div>
-    ${adjRows===''?'<div class="empty">本期尚無加扣項。</div>':`<div class="scroll"><table>
-      <thead><tr><th>日期</th><th>員工</th><th>項目</th><th class="num">金額</th><th>備註</th><th></th></tr></thead>
-      <tbody>${adjRows}</tbody></table></div>`}
-  </div>`;
+  </details>`}
+  <details class="card">
+    <summary>本期加項／扣項</summary>
+    <div class="card-body">
+      <p class="sub">獎金、全勤為加項；借支扣還、勞健保自負額等為扣項。日期請填在本計薪區間內，才會算進本期。</p>
+      <div class="row" style="margin-bottom:10px">
+        <div class="field"><label>日期</label><input type="date" id="adj-date" value="${state.payTo||''}"></div>
+        <div class="field"><label>員工</label><select id="adj-emp">${empOpts}</select></div>
+        <div class="field"><label>性質</label><select id="adj-kind"><option value="add">加項（+）</option><option value="ded">扣項（−）</option></select></div>
+        <div class="field"><label>項目</label><select id="adj-label">${addOpts}</select></div>
+        <div class="field"><label>金額</label><input type="number" id="adj-amount" min="0" step="100" style="width:120px"></div>
+        <div class="field" style="flex:1;min-width:140px"><label>備註（選填）</label><input id="adj-note" placeholder="例：6月借支"></div>
+        <button class="btn" id="adj-add">＋ 新增</button>
+      </div>
+      ${adjRows===''?'<div class="empty">本期尚無加扣項。</div>':`<div class="scroll"><table>
+        <thead><tr><th>日期</th><th>員工</th><th>項目</th><th class="num">金額</th><th>備註</th><th></th></tr></thead>
+        <tbody>${adjRows}</tbody></table></div>`}
+    </div>
+  </details>`;
 }
 
 function viewSites(){
@@ -721,19 +724,18 @@ function viewSites(){
   const cardFor=(sid)=>{ const s=bySite[sid];
     const empBreak=Object.entries(s.emp).sort((a,b)=>b[1]-a[1]).map(([eid,v])=>`<tr><td>${esc(empName(eid))}</td><td class="num">${money(v)}</td></tr>`).join('');
     const pct=grand>0?Math.round(s.grandTotal/grand*100):0;
-    return `<div class="card">
-      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px">
-        <div style="font-size:15px;font-weight:600">${esc(siteName(sid))}</div>
-        <div style="font-size:18px;font-weight:600">${money(s.grandTotal)}</div>
+    return `<details class="card">
+      <summary>${esc(siteName(sid))}<span style="margin-left:auto;font-size:16px;font-weight:700;color:var(--ink)">${money(s.grandTotal)}</span></summary>
+      <div class="card-body">
+        <p class="sub">總工數 ${gongStr(s.hours)}・系統工資 ${money(s.wage)}・津貼 ${money(s.allow)}${s.opening>0?`・期初 ${money(s.opening)}`:''}・占總成本 ${pct}%</p>
+        <div class="row" style="margin-bottom:6px">
+          <div class="field"><label>期初人事成本（從Excel抄入，選填）</label><input type="number" data-opening="${sid}" value="${s.opening||''}" placeholder="未設定" min="0" step="1000" style="width:170px"></div>
+        </div>
+        ${empBreak?`<details><summary>系統內各員工金額明細</summary>
+          <table style="margin-top:8px"><thead><tr><th>員工</th><th class="num">金額</th></tr></thead><tbody>${empBreak}</tbody></table>
+        </details>`:''}
       </div>
-      <p class="sub">總工數 ${gongStr(s.hours)}・系統工資 ${money(s.wage)}・津貼 ${money(s.allow)}${s.opening>0?`・期初 ${money(s.opening)}`:''}・占總成本 ${pct}%</p>
-      <div class="row" style="margin-bottom:6px">
-        <div class="field"><label>期初人事成本（從Excel抄入，選填）</label><input type="number" data-opening="${sid}" value="${s.opening||''}" placeholder="未設定" min="0" step="1000" style="width:170px"></div>
-      </div>
-      ${empBreak?`<details><summary>系統內各員工金額明細</summary>
-        <table style="margin-top:8px"><thead><tr><th>員工</th><th class="num">金額</th></tr></thead><tbody>${empBreak}</tbody></table>
-      </details>`:''}
-    </div>`;
+    </details>`;
   };
   const isPaused=sid=>{ const st=state.sites.find(x=>x.id===sid); return st&&st.active===false; };
   const activeIds=ids.filter(sid=>!isPaused(sid));
@@ -774,25 +776,29 @@ function viewManage(){
   const siteRows=activeSitesList.map(siteRowFor).join('');
   const pausedSiteTable=pausedSitesList.length?`<details style="margin-top:10px"><summary style="cursor:pointer;font-weight:600;padding:8px 0">已暫停案場（${pausedSitesList.length}）</summary><table><tbody>${pausedSitesList.map(siteRowFor).join('')}</tbody></table></details>`:'';
   return `
-  <div class="card">
-    <div style="font-size:14px;font-weight:600;margin-bottom:4px">員工</div>
-    <p class="sub">調薪只影響之後登記的出工，舊紀錄維持當時日薪。離職請用「停用」保留歷史；只有從沒登記過出工的員工才能真正刪除。「股東」只是標記，薪資照常計算。</p>
-    <div class="row" style="margin-bottom:10px">
-      <div class="field"><label>姓名</label><input id="e-name" placeholder="例：王小明"></div>
-      <div class="field"><label>日薪</label><input id="e-daily" type="number" min="0" step="100" value="3000" style="width:120px"></div>
-      <button class="btn" id="e-add">＋ 新增員工</button>
+  <details class="card">
+    <summary>員工</summary>
+    <div class="card-body">
+      <p class="sub">調薪只影響之後登記的出工，舊紀錄維持當時日薪。離職請用「停用」保留歷史；只有從沒登記過出工的員工才能真正刪除。「股東」只是標記，薪資照常計算。</p>
+      <div class="row" style="margin-bottom:10px">
+        <div class="field"><label>姓名</label><input id="e-name" placeholder="例：王小明"></div>
+        <div class="field"><label>日薪</label><input id="e-daily" type="number" min="0" step="100" value="3000" style="width:120px"></div>
+        <button class="btn" id="e-add">＋ 新增員工</button>
+      </div>
+      ${state.employees.length===0?'<div class="empty">尚無員工。</div>':`<table><thead><tr><th>姓名</th><th class="num">目前日薪</th><th></th><th></th><th></th><th></th><th></th></tr></thead><tbody>${empRows}</tbody></table>`}
     </div>
-    ${state.employees.length===0?'<div class="empty">尚無員工。</div>':`<table><thead><tr><th>姓名</th><th class="num">目前日薪</th><th></th><th></th><th></th><th></th><th></th></tr></thead><tbody>${empRows}</tbody></table>`}
-  </div>
-  <div class="card">
-    <div style="font-size:14px;font-weight:600;margin-bottom:4px">案場</div>
-    <p class="sub">建立工地/案場，登記出工與計算成本時會用到。改名會套用到所有相關紀錄。暫時不用的案場可「暫停」，它就不會出現在出工登記，但歷史紀錄保留。</p>
-    <div class="row" style="margin-bottom:10px">
-      <div class="field" style="flex:1;min-width:200px"><label>案場名稱</label><input id="s-name" placeholder="例：台北富邦"></div>
-      <button class="btn" id="s-add">＋ 新增案場</button>
+  </details>
+  <details class="card">
+    <summary>案場</summary>
+    <div class="card-body">
+      <p class="sub">建立工地/案場，登記出工與計算成本時會用到。改名會套用到所有相關紀錄。暫時不用的案場可「暫停」，它就不會出現在出工登記，但歷史紀錄保留。</p>
+      <div class="row" style="margin-bottom:10px">
+        <div class="field" style="flex:1;min-width:200px"><label>案場名稱</label><input id="s-name" placeholder="例：台北富邦"></div>
+        <button class="btn" id="s-add">＋ 新增案場</button>
+      </div>
+      ${state.sites.length===0?'<div class="empty">尚無案場。</div>':`${activeSitesList.length?`<table><thead><tr><th>名稱</th><th></th><th></th><th></th></tr></thead><tbody>${siteRows}</tbody></table>`:'<div class="empty">沒有啟用中的案場。</div>'}${pausedSiteTable}`}
     </div>
-    ${state.sites.length===0?'<div class="empty">尚無案場。</div>':`${activeSitesList.length?`<table><thead><tr><th>名稱</th><th></th><th></th><th></th></tr></thead><tbody>${siteRows}</tbody></table>`:'<div class="empty">沒有啟用中的案場。</div>'}${pausedSiteTable}`}
-  </div>`;
+  </details>`;
 }
 
 function bind(){
@@ -823,7 +829,6 @@ function bind(){
     saveData(); render();
   };
   document.querySelectorAll('[data-deladj]').forEach(b=>b.onclick=()=>{ if(!confirm('確定刪除這筆加扣項？')) return; state.adjustments=state.adjustments.filter(a=>a.id!==b.dataset.deladj); saveData(); render(); });
-  const es=document.getElementById('export-summary'); if(es) es.onclick=()=>exportSummaryPDF();
   const esi=document.getElementById('export-sites'); if(esi) esi.onclick=()=>exportSitesPDF();
   document.querySelectorAll('[data-payslip]').forEach(b=>b.onclick=()=>exportPayslipPDF(b.dataset.payslip));
 
@@ -1018,7 +1023,6 @@ function bind(){
   const pf2=document.getElementById('park-from'); if(pf2) pf2.onchange=()=>{ parkFrom=pf2.value; render(); };
   const pt2=document.getElementById('park-to'); if(pt2) pt2.onchange=()=>{ parkTo=pt2.value; render(); };
   const pclr=document.getElementById('park-clear'); if(pclr) pclr.onclick=()=>{ parkFrom=''; parkTo=''; render(); };
-  const pexp=document.getElementById('export-park'); if(pexp) pexp.onclick=()=>exportParkPDF();
 }
 
 // ---- PDF 匯出（以列印視窗產生，可存成 PDF 或直接列印）----
@@ -1154,21 +1158,23 @@ function viewLoans(){
     <div class="metric"><div class="l">借支筆數</div><div class="v">${loans.length}</div></div>
     <div class="metric"><div class="l">尚未還清總額</div><div class="v">${money(outstanding)}</div></div>
   </div>
-  <div class="card">
-    <div style="font-size:14px;font-weight:600;margin-bottom:4px">新增借支</div>
-    <p class="sub">登記一筆借款：借出日、總額、每期固定扣款額。系統會追蹤已扣與剩餘，發薪時在薪資分頁提示應扣金額，由你確認後帶入該期扣項。</p>
-    <div class="row" style="margin-bottom:10px">
-      <div class="field"><label>借款日</label><input type="date" id="loan-date" value="${new Date().toISOString().slice(0,10)}"></div>
-      <div class="field"><label>員工</label><select id="loan-emp">${empOpts}</select></div>
-      <div class="field"><label>借款總額</label><input type="number" id="loan-amount" min="0" step="500" style="width:120px"></div>
-      <div class="field"><label>每期扣款</label><input type="number" id="loan-per" min="0" step="500" style="width:120px"></div>
-      <div class="field" style="flex:1;min-width:140px"><label>備註（選填）</label><input id="loan-note" placeholder="例：預支生活費"></div>
-      <button class="btn" id="loan-add">＋ 新增借支</button>
+  <details class="card">
+    <summary>新增借支</summary>
+    <div class="card-body">
+      <p class="sub">登記一筆借款：借出日、總額、每期固定扣款額。系統會追蹤已扣與剩餘，發薪時在薪資分頁提示應扣金額，由你確認後帶入該期扣項。</p>
+      <div class="row" style="margin-bottom:10px">
+        <div class="field"><label>借款日</label><input type="date" id="loan-date" value="${new Date().toISOString().slice(0,10)}"></div>
+        <div class="field"><label>員工</label><select id="loan-emp">${empOpts}</select></div>
+        <div class="field"><label>借款總額</label><input type="number" id="loan-amount" min="0" step="500" style="width:120px"></div>
+        <div class="field"><label>每期扣款</label><input type="number" id="loan-per" min="0" step="500" style="width:120px"></div>
+        <div class="field" style="flex:1;min-width:140px"><label>備註（選填）</label><input id="loan-note" placeholder="例：預支生活費"></div>
+        <button class="btn" id="loan-add">＋ 新增借支</button>
+      </div>
+      ${rows===''?'<div class="empty">尚無借支紀錄。</div>':`<div class="scroll"><table>
+        <thead><tr><th>借款日</th><th>員工</th><th class="num">總額</th><th class="num">每期扣</th><th class="num">已扣</th><th class="num">剩餘</th><th>備註</th><th></th></tr></thead>
+        <tbody>${rows}</tbody></table></div>`}
     </div>
-    ${rows===''?'<div class="empty">尚無借支紀錄。</div>':`<div class="scroll"><table>
-      <thead><tr><th>借款日</th><th>員工</th><th class="num">總額</th><th class="num">每期扣</th><th class="num">已扣</th><th class="num">剩餘</th><th>備註</th><th></th></tr></thead>
-      <tbody>${rows}</tbody></table></div>`}
-  </div>`;
+  </details>`;
 }
 
 // ---- 品佑收支明細 ----
@@ -1213,35 +1219,36 @@ function viewPark(){
     <div class="metric"><div class="l">累計收入</div><div class="v" style="font-size:20px;color:var(--accent)">${money(allIn)}</div></div>
     <div class="metric"><div class="l">累計支出</div><div class="v" style="font-size:20px;color:var(--danger)">${money(allOut)}</div></div>
   </div>
-  <div class="card">
-    <div style="font-size:14px;font-weight:600;margin-bottom:4px">品佑收支明細</div>
-    <p class="sub">手動記品佑帳戶的收入與支出，系統自動算餘額（餘額＝期初＋收入−支出）。期初餘額是承接先前的金額，下方可設定。</p>
-    <div class="row" style="margin-bottom:10px">
-      <div class="field"><label>期初餘額</label><input type="number" id="park-opening" value="${state.parkOpening||0}" step="1000" style="width:140px"></div>
+  <details class="card">
+    <summary>記一筆收支</summary>
+    <div class="card-body">
+      <p class="sub">手動記品佑帳戶的收入與支出，系統自動算餘額（餘額＝期初＋收入−支出）。期初餘額是承接先前的金額，下方可設定。</p>
+      <div class="row" style="margin-bottom:10px">
+        <div class="field"><label>期初餘額</label><input type="number" id="park-opening" value="${state.parkOpening||0}" step="1000" style="width:140px"></div>
+      </div>
+      <div class="row">
+        <div class="field"><label>日期</label><input type="date" id="park-date" value="${new Date().toISOString().slice(0,10)}"></div>
+        <div class="field"><label>性質</label><select id="park-kind"><option value="out">支出（−）</option><option value="in">收入（+）</option></select></div>
+        <div class="field"><label>金額</label><input type="number" id="park-amount" min="0" step="100" style="width:120px"></div>
+        <div class="field" style="flex:1;min-width:200px"><label>說明</label><input id="park-note" placeholder="例：收到工程款、Hilti租金、台北住宿"></div>
+        <button class="btn" id="park-add">＋ 記帳</button>
+      </div>
     </div>
-    <div class="row">
-      <div class="field"><label>日期</label><input type="date" id="park-date" value="${new Date().toISOString().slice(0,10)}"></div>
-      <div class="field"><label>性質</label><select id="park-kind"><option value="out">支出（−）</option><option value="in">收入（+）</option></select></div>
-      <div class="field"><label>金額</label><input type="number" id="park-amount" min="0" step="100" style="width:120px"></div>
-      <div class="field" style="flex:1;min-width:200px"><label>說明</label><input id="park-note" placeholder="例：收到工程款、Hilti租金、台北住宿"></div>
-      <button class="btn" id="park-add">＋ 記帳</button>
+  </details>
+  <details class="card">
+    <summary><span style="flex:1">收支清單</span><button class="btn" onclick="event.preventDefault();exportParkPDF()" ${state.parkLedger.length===0?'disabled style="opacity:.5"':''} style="height:30px;font-size:12px">匯出 PDF</button></summary>
+    <div class="card-body">
+      <div class="row" style="margin-bottom:10px">
+        <div class="field"><label>起</label><input type="date" id="park-from" value="${parkFrom}"></div>
+        <div class="field"><label>訖</label><input type="date" id="park-to" value="${parkTo}"></div>
+        <button class="act" id="park-clear" style="height:36px;border:1px solid var(--line2);border-radius:8px;padding:0 12px">清除日期</button>
+        ${(parkFrom||parkTo)?`<div class="sub" style="margin:0;align-self:center">區間內　收入 ${money(rangeIn)}・支出 ${money(rangeOut)}・淨額 ${money(rangeIn-rangeOut)}</div>`:''}
+      </div>
+      ${txRows===''?'<div class="empty">尚無收支紀錄。</div>':`<div class="scroll"><table>
+        <thead><tr><th>日期</th><th>說明</th><th class="num">收入</th><th class="num">支出</th><th></th></tr></thead>
+        <tbody>${txRows}</tbody></table></div>`}
     </div>
-  </div>
-  <div class="card">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:8px">
-      <div style="font-size:14px;font-weight:600">收支清單</div>
-      <button class="btn" id="export-park" ${state.parkLedger.length===0?'disabled style="opacity:.5"':''}>匯出 PDF</button>
-    </div>
-    <div class="row" style="margin-bottom:10px">
-      <div class="field"><label>起</label><input type="date" id="park-from" value="${parkFrom}"></div>
-      <div class="field"><label>訖</label><input type="date" id="park-to" value="${parkTo}"></div>
-      <button class="act" id="park-clear" style="height:36px;border:1px solid var(--line2);border-radius:8px;padding:0 12px">清除日期</button>
-      ${(parkFrom||parkTo)?`<div class="sub" style="margin:0;align-self:center">區間內　收入 ${money(rangeIn)}・支出 ${money(rangeOut)}・淨額 ${money(rangeIn-rangeOut)}</div>`:''}
-    </div>
-    ${txRows===''?'<div class="empty">尚無收支紀錄。</div>':`<div class="scroll"><table>
-      <thead><tr><th>日期</th><th>說明</th><th class="num">收入</th><th class="num">支出</th><th></th></tr></thead>
-      <tbody>${txRows}</tbody></table></div>`}
-  </div>`;
+  </details>`;
 }
 
 function exportParkPDF(){
