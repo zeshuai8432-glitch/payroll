@@ -1951,21 +1951,23 @@ function viewLoans(){
     <div class="metric"><div class="l">借支筆數</div><div class="v">${loans.length}</div></div>
     <div class="metric"><div class="l">尚未還清總額</div><div class="v">${money(outstanding)}</div></div>
   </div>
-  <div class="card">
-    <div style="font-size:14px;font-weight:600;margin-bottom:4px">新增借支</div>
-    <p class="sub">登記一筆借款：借出日、總額、每期固定扣款額。系統會追蹤已扣與剩餘，發薪時在薪資分頁提示應扣金額，由你確認後帶入該期扣項。</p>
-    <div class="row" style="margin-bottom:10px">
-      <div class="field"><label>借款日</label><input type="date" id="loan-date" value="${new Date().toISOString().slice(0,10)}"></div>
-      <div class="field"><label>員工</label><select id="loan-emp">${empOpts}</select></div>
-      <div class="field"><label>借款總額</label><input type="number" id="loan-amount" min="0" step="500" style="width:120px"></div>
-      <div class="field"><label>每期扣款</label><input type="number" id="loan-per" min="0" step="500" style="width:120px"></div>
-      <div class="field" style="flex:1;min-width:140px"><label>備註（選填）</label><input id="loan-note" placeholder="例：預支生活費"></div>
-      <button class="btn" id="loan-add">＋ 新增借支</button>
+  <details class="card">
+    <summary>新增借支</summary>
+    <div class="card-body">
+      <p class="sub">登記一筆借款：借出日、總額、每期固定扣款額。系統會追蹤已扣與剩餘，發薪時在薪資分頁提示應扣金額，由你確認後帶入該期扣項。</p>
+      <div class="row" style="margin-bottom:10px">
+        <div class="field"><label>借款日</label><input type="date" id="loan-date" value="${new Date().toISOString().slice(0,10)}"></div>
+        <div class="field"><label>員工</label><select id="loan-emp">${empOpts}</select></div>
+        <div class="field"><label>借款總額</label><input type="number" id="loan-amount" min="0" step="500" style="width:120px"></div>
+        <div class="field"><label>每期扣款</label><input type="number" id="loan-per" min="0" step="500" style="width:120px"></div>
+        <div class="field" style="flex:1;min-width:140px"><label>備註（選填）</label><input id="loan-note" placeholder="例：預支生活費"></div>
+        <button class="btn" id="loan-add">＋ 新增借支</button>
+      </div>
+      ${rows===''?'<div class="empty">尚無借支紀錄。</div>':`<div class="scroll"><table>
+        <thead><tr><th>借款日</th><th>員工</th><th class="num">總額</th><th class="num">每期扣</th><th class="num">已扣</th><th class="num">剩餘</th><th>備註</th><th></th></tr></thead>
+        <tbody>${rows}</tbody></table></div>`}
     </div>
-    ${rows===''?'<div class="empty">尚無借支紀錄。</div>':`<div class="scroll"><table>
-      <thead><tr><th>借款日</th><th>員工</th><th class="num">總額</th><th class="num">每期扣</th><th class="num">已扣</th><th class="num">剩餘</th><th>備註</th><th></th></tr></thead>
-      <tbody>${rows}</tbody></table></div>`}
-  </div>`;
+  </details>`;
 }
 
 // ---- 地點與工具資產 ----
@@ -2031,24 +2033,28 @@ function viewTools(){
   return `
   ${assetSection()}
   ${locationSection()}
-  <div class="card">
-    <div style="font-size:14px;font-weight:600;margin-bottom:4px">工具遺失賠償</div>
-    <p class="sub">填好一筆遺失工具，按「設定分攤」後勾選要分攤的員工。金額會在分攤確認後一次帶入各人當期扣項（全額均攤、不分期）。</p>
-    <div class="row">
-      <div class="field"><label>遺失日</label><input type="date" id="tool-date" value="${new Date().toISOString().slice(0,10)}"></div>
-      <div class="field"><label>廠牌</label><input id="tool-brand" placeholder="例：HILTI" style="width:120px"></div>
-      <div class="field"><label>型號</label><input id="tool-model" placeholder="例：PM30" style="width:140px"></div>
-      <div class="field"><label>金額</label><input type="number" id="tool-amount" min="0" step="100" style="width:120px"></div>
-      <button class="btn" id="tool-setup">設定分攤 →</button>
+  <details class="card">
+    <summary>工具遺失賠償</summary>
+    <div class="card-body">
+      <p class="sub">填好一筆遺失工具，按「設定分攤」後勾選要分攤的員工。金額會在分攤確認後一次帶入各人當期扣項（全額均攤、不分期）。</p>
+      <div class="row">
+        <div class="field"><label>遺失日</label><input type="date" id="tool-date" value="${new Date().toISOString().slice(0,10)}"></div>
+        <div class="field"><label>廠牌</label><input id="tool-brand" placeholder="例：HILTI" style="width:120px"></div>
+        <div class="field"><label>型號</label><input id="tool-model" placeholder="例：PM30" style="width:140px"></div>
+        <div class="field"><label>金額</label><input type="number" id="tool-amount" min="0" step="100" style="width:120px"></div>
+        <button class="btn" id="tool-setup">設定分攤 →</button>
+      </div>
     </div>
-  </div>
+  </details>
   ${draftBlock}
-  <div class="card">
-    <div style="font-size:14px;font-weight:600;margin-bottom:8px">工具遺失紀錄 ${tools.length?`<span style="color:var(--muted);font-size:12px">累計 ${money(totalLost)}</span>`:''}</div>
-    ${rows===''?'<div class="empty">尚無工具遺失紀錄。</div>':`<div class="scroll"><table>
-      <thead><tr><th>遺失日</th><th>廠牌</th><th>型號</th><th class="num">金額</th><th>分攤明細</th><th></th></tr></thead>
-      <tbody>${rows}</tbody></table></div>`}
-  </div>`;
+  <details class="card">
+    <summary>工具遺失紀錄${tools.length?` <span style="color:var(--muted);font-size:12px;font-weight:400">累計 ${money(totalLost)}</span>`:''}</summary>
+    <div class="card-body">
+      ${rows===''?'<div class="empty">尚無工具遺失紀錄。</div>':`<div class="scroll"><table>
+        <thead><tr><th>遺失日</th><th>廠牌</th><th>型號</th><th class="num">金額</th><th>分攤明細</th><th></th></tr></thead>
+        <tbody>${rows}</tbody></table></div>`}
+    </div>
+  </details>`;
 }
 
 function assetSection(){
@@ -2074,21 +2080,23 @@ function assetSection(){
     </div>`;
   }).join('');
   return `
-  <div class="card">
-    <div style="font-size:14px;font-weight:600;margin-bottom:4px">工具資產</div>
-    <p class="sub">登記你現有的工具，並標記目前所在位置。下方依位置分組，方便反查某地點（工地／倉庫／貨車）有哪些工具。改位置直接在該列下拉選即可。</p>
-    ${noLoc?'<div class="empty">請先在下方「地點管理」建立至少一個地點（或先到設定建立案場）。</div>':`
-    <div class="row">
-      <div class="field"><label>名稱</label><input id="as-name" placeholder="例：電鑽" style="width:140px"></div>
-      <div class="field"><label>廠牌</label><input id="as-brand" placeholder="HILTI" style="width:110px"></div>
-      <div class="field"><label>型號</label><input id="as-model" placeholder="TE6" style="width:110px"></div>
-      <div class="field"><label>購入日</label><input type="date" id="as-buy"></div>
-      <div class="field"><label>價格</label><input type="number" id="as-price" min="0" step="100" style="width:110px"></div>
-      <div class="field"><label>目前位置</label><select id="as-loc">${locOpts}</select></div>
-      <button class="btn" id="as-add">＋ 新增工具</button>
-    </div>`}
-    ${state.assets.length===0?'<div class="empty" style="margin-top:8px">尚無工具資產。</div>':grouped}
-  </div>`;
+  <details class="card">
+    <summary>工具資產</summary>
+    <div class="card-body">
+      <p class="sub">登記你現有的工具，並標記目前所在位置。下方依位置分組，方便反查某地點（工地／倉庫／貨車）有哪些工具。改位置直接在該列下拉選即可。</p>
+      ${noLoc?'<div class="empty">請先在下方「地點管理」建立至少一個地點（或先到設定建立案場）。</div>':`
+      <div class="row">
+        <div class="field"><label>名稱</label><input id="as-name" placeholder="例：電鑽" style="width:140px"></div>
+        <div class="field"><label>廠牌</label><input id="as-brand" placeholder="HILTI" style="width:110px"></div>
+        <div class="field"><label>型號</label><input id="as-model" placeholder="TE6" style="width:110px"></div>
+        <div class="field"><label>購入日</label><input type="date" id="as-buy"></div>
+        <div class="field"><label>價格</label><input type="number" id="as-price" min="0" step="100" style="width:110px"></div>
+        <div class="field"><label>目前位置</label><select id="as-loc">${locOpts}</select></div>
+        <button class="btn" id="as-add">＋ 新增工具</button>
+      </div>`}
+      ${state.assets.length===0?'<div class="empty" style="margin-top:8px">尚無工具資產。</div>':grouped}
+    </div>
+  </details>`;
 }
 
 function locationSection(){
@@ -2098,16 +2106,18 @@ function locationSection(){
     return `<tr><td>${esc(l.name)}</td><td>${esc(l.kind||'')}</td><td>${del}</td></tr>`;
   }).join('');
   return `
-  <div class="card">
-    <div style="font-size:14px;font-weight:600;margin-bottom:4px">地點管理</div>
-    <p class="sub">案場會自動成為可選位置。這裡額外新增非案場的地點，例如倉庫、貨車。</p>
-    <div class="row" style="margin-bottom:10px">
-      <div class="field"><label>地點名稱</label><input id="loc-name" placeholder="例：高雄倉庫、貨車BYG" style="width:180px"></div>
-      <div class="field"><label>類型</label><select id="loc-kind"><option>倉庫</option><option>貨車</option><option>其他</option></select></div>
-      <button class="btn" id="loc-add">＋ 新增地點</button>
+  <details class="card">
+    <summary>地點管理</summary>
+    <div class="card-body">
+      <p class="sub">案場會自動成為可選位置。這裡額外新增非案場的地點，例如倉庫、貨車。</p>
+      <div class="row" style="margin-bottom:10px">
+        <div class="field"><label>地點名稱</label><input id="loc-name" placeholder="例：高雄倉庫、貨車BYG" style="width:180px"></div>
+        <div class="field"><label>類型</label><select id="loc-kind"><option>倉庫</option><option>貨車</option><option>其他</option></select></div>
+        <button class="btn" id="loc-add">＋ 新增地點</button>
+      </div>
+      ${state.locations.length===0?'<div class="empty">尚無自訂地點。案場已可直接當位置選用。</div>':`<table><thead><tr><th>名稱</th><th>類型</th><th></th></tr></thead><tbody>${rows}</tbody></table>`}
     </div>
-    ${state.locations.length===0?'<div class="empty">尚無自訂地點。案場已可直接當位置選用。</div>':`<table><thead><tr><th>名稱</th><th>類型</th><th></th></tr></thead><tbody>${rows}</tbody></table>`}
-  </div>`;
+  </details>`;
 }
 
 // ---- 代墊款 ----
