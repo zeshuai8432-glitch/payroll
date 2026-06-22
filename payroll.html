@@ -451,7 +451,7 @@ function computeRecords(records){
 function tabsBar(){
   const groups=[
     ['薪資作業',[['entry','登記出工'],['payroll','員工薪資']]],
-    ['財務管理',[['loans','借支管理'],['tools','工具管理'],['advances','代墊款'],['accounts','公積金帳戶'],['deals','分潤結算'],['billing','請款追蹤'],['yearend','年度總結'],['parkacc','品佑帳戶結算'],['recon','對帳匯出']]],
+    ['財務管理',[['loans','借支管理'],['tools','工具管理'],['advances','代墊款'],['accounts','公積金帳戶'],['deals','分潤結算'],['billing','請款追蹤'],['billingAdd','追加單'],['yearend','年度總結'],['parkacc','品佑帳戶結算'],['recon','對帳匯出']]],
     ['設定',[['sites','案場成本'],['manage','員工/案場']]],
   ];
   return groups.map(([label,items])=>`
@@ -463,7 +463,7 @@ function tabsBar(){
 function render(){
   document.getElementById('sidebar').innerHTML=tabsBar();
   const body=document.getElementById('body');
-  body.innerHTML = state.tab==='entry'?viewEntry():state.tab==='payroll'?viewPayroll():state.tab==='sites'?viewSites():state.tab==='loans'?viewLoans():state.tab==='tools'?viewTools():state.tab==='advances'?viewAdvances():state.tab==='accounts'?viewAccounts():state.tab==='deals'?viewDeals():state.tab==='billing'?viewBilling():state.tab==='yearend'?viewYearEnd():state.tab==='parkacc'?viewParkAcc():state.tab==='recon'?viewRecon():viewManage();
+  body.innerHTML = state.tab==='entry'?viewEntry():state.tab==='payroll'?viewPayroll():state.tab==='sites'?viewSites():state.tab==='loans'?viewLoans():state.tab==='tools'?viewTools():state.tab==='advances'?viewAdvances():state.tab==='accounts'?viewAccounts():state.tab==='deals'?viewDeals():state.tab==='billing'?viewBilling():state.tab==='billingAdd'?viewBillingAdd():state.tab==='yearend'?viewYearEnd():state.tab==='parkacc'?viewParkAcc():state.tab==='recon'?viewRecon():viewManage();
   bind();
 }
 
@@ -1671,6 +1671,30 @@ function bind(){
     const so=state.sites.find(x=>x.name===site); if(so) resyncSiteDeal(so);
     saveData(); render();
   };
+  // 追加單頁：新增
+  const bnaAdd=document.getElementById('bna-add');
+  if(bnaAdd) bnaAdd.onclick=()=>{
+    const date=document.getElementById('bna-date').value;
+    const site=document.getElementById('bna-site').value.trim();
+    const amount=parseFloat(document.getElementById('bna-amount').value);
+    const method=document.getElementById('bna-method').value.trim();
+    const client=document.getElementById('bna-client').value.trim();
+    const note=document.getElementById('bna-note').value.trim();
+    const settled=document.getElementById('bna-settled').value==='1';
+    if(!date||!site||isNaN(amount)||amount<=0){ alert('請填日期、案場、金額'); return; }
+    state.billings.push({id:uid(),docType:'追加單',date,site,amount,method,client,note,settled});
+    const so=state.sites.find(x=>x.name===site); if(so) resyncSiteDeal(so);
+    saveData(); render();
+  };
+  // 追加單頁：改（簡易 inline prompt）
+  document.querySelectorAll('[data-billedit-add]').forEach(b=>b.onclick=()=>{
+    const bill=state.billings.find(x=>x.id===b.dataset.billeditAdd); if(!bill) return;
+    const amt=parseFloat(prompt('金額：',bill.amount)); if(isNaN(amt)||amt<=0) return;
+    bill.amount=amt;
+    const note=prompt('說明：',bill.note||''); if(note!==null) bill.note=note;
+    const so=state.sites.find(x=>x.name===bill.site); if(so) resyncSiteDeal(so);
+    saveData(); render();
+  });
   document.querySelectorAll('[data-billprint]').forEach(b=>b.onclick=()=>printBillingDoc(b.dataset.billprint));
   document.querySelectorAll('[data-togglesettle]').forEach(b=>b.onclick=()=>{
     const bill=state.billings.find(x=>x.id===b.dataset.togglesettle); if(bill){ bill.settled=!bill.settled; saveData(); render(); }
@@ -2653,6 +2677,65 @@ function viewDeals(){
 }
 
 // ---- 案場請款追蹤 ----
+function viewBillingAdd(){
+  const list=state.billings.filter(b=>(b.docType||'請款單')==='追加單').sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+  const total=list.reduce((s,b)=>s+(Number(b.amount)||0),0);
+  const settled=list.filter(b=>b.settled).reduce((s,b)=>s+(Number(b.amount)||0),0);
+  const unsettled=total-settled;
+  const siteSelOpts=`<option value="">（選案場）</option>`+state.sites.filter(s=>s.active!==false).map(s=>`<option value="${esc(s.name)}">${esc(s.name)}</option>`).join('');
+  const cards=list.map(b=>{
+    const photos=billingPhotos[b.id]||[];
+    const thumbs=photos.map((url,i)=>`<div style="position:relative;display:inline-block;vertical-align:top;margin:3px"><img src="${url}" class="photo-thumb" style="width:90px;height:68px;object-fit:cover;border-radius:8px;border:1px solid var(--line)"><button data-photodel="${b.id}" data-photoidx="${i}" style="position:absolute;top:-5px;right:-5px;width:22px;height:22px;border-radius:50%;border:none;background:var(--danger);color:#fff;font-size:13px;cursor:pointer;padding:0;line-height:22px;text-align:center">✕</button></div>`).join('');
+    return `<div class="card" style="border-left:3px solid ${b.settled?'var(--accent)':'#d97706'}">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+        <div>
+          <div style="font-size:15px;font-weight:700">${esc(b.site||'（未填案場）')}</div>
+          <div style="font-size:12px;color:var(--muted);margin-top:2px">${esc(b.date||'')}${b.note?'　'+esc(b.note):''}</div>
+        </div>
+        <div style="text-align:right;flex-shrink:0">
+          <div style="font-size:18px;font-weight:800;color:#9a5b1a">${money(b.amount)}</div>
+          <div style="margin-top:5px;display:flex;gap:4px;justify-content:flex-end;flex-wrap:wrap">
+            <button class="act ${b.settled?'':'muted'}" data-togglesettle="${b.id}" style="${b.settled?'color:var(--accent)':''}">${b.settled?'✓ 已結算':'未結算'}</button>
+            <button class="act" data-billprint="${b.id}">列印</button>
+            <button class="act" data-billedit-add="${b.id}">改</button>
+            <button class="act danger" data-delbill="${b.id}">刪</button>
+          </div>
+        </div>
+      </div>
+      <div>
+        <div style="font-size:11px;font-weight:600;color:var(--muted);letter-spacing:.4px;text-transform:uppercase;margin-bottom:8px">施作照片${photos.length?` (${photos.length})`:''}</div>
+        <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
+          ${thumbs}
+          <label style="cursor:pointer;display:flex;align-items:center;gap:6px;padding:10px 16px;background:var(--bg);border:1.5px dashed var(--line2);border-radius:12px;font-size:13px;color:var(--muted);min-height:48px;touch-action:manipulation">
+            📷 ${photos.length?'繼續上傳':'上傳施作照片'}
+            <input type="file" accept="image/*" multiple data-photoadd="${b.id}" style="display:none">
+          </label>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+  return `
+  <div class="metrics">
+    <div class="metric"><div class="l">追加單數</div><div class="v">${list.length}</div></div>
+    <div class="metric"><div class="l">追加總額</div><div class="v" style="font-size:21px">${money(total)}</div></div>
+    <div class="metric"><div class="l">未結算</div><div class="v" style="font-size:21px">${money(unsettled)}</div></div>
+  </div>
+  <div class="card">
+    <div style="font-size:14px;font-weight:600;margin-bottom:8px">新增追加單</div>
+    <div class="row">
+      <div class="field"><label>日期</label><input type="date" id="bna-date" value="${new Date().toISOString().slice(0,10)}"></div>
+      <div class="field" style="flex:1;min-width:150px"><label>案場</label><select id="bna-site">${siteSelOpts}</select></div>
+      <div class="field"><label>金額</label><input type="number" id="bna-amount" min="0" step="1000"></div>
+      <div class="field"><label>方式</label><input id="bna-method" placeholder="匯款" style="width:100px"></div>
+      <div class="field"><label>業主</label><input id="bna-client" placeholder="業主名稱" style="width:110px"></div>
+      <div class="field" style="flex:1;min-width:180px"><label>說明（追加項目）</label><input id="bna-note" placeholder="例：追加防水工程"></div>
+      <div class="field"><label>結算</label><select id="bna-settled"><option value="">未結算</option><option value="1">已結算</option></select></div>
+    </div>
+    <div class="row" style="margin-top:10px"><button class="btn" id="bna-add">＋ 新增追加單</button></div>
+  </div>
+  ${list.length===0?'<div class="card"><div class="empty">尚無追加單。點上方「新增追加單」開始登記，新增後可在每張卡片上傳施作照片。</div></div>':cards}`;
+}
+
 function viewBilling(){
   // 依案場名稱分組
   const groups={};
