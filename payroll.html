@@ -1861,7 +1861,7 @@ function exportPayslipPDF(empId){
   const recRows=myRecs.map(r=>{ const c=comp[r.id]||{wage:0,allow:0,total:0};
     const isLeaveR=r.kind==='leave'||r.kind==='off';
     const siteLabel=isLeaveR?(r.kind==='leave'?`請假${r.half?'（半天）':''}`:' 休假'):esc(siteName(r.siteId));
-    return `<tr><td>${esc(r.date)}</td><td>${siteLabel}</td><td class="num">${isLeaveR?'—':gongStr(r.hours)}</td><td class="num">${isLeaveR?'—':(r.night?'是':'-')}</td>
+    return `<tr><td>${esc(r.date)}</td><td>${siteLabel}</td><td class="num">${isLeaveR?'—':gongStr(r.hours)}</td><td class="num">${isLeaveR?'—':(r.night?'✓':'-')}</td>
       <td class="num">${isLeaveR?'—':money(c.wage)}</td><td class="num">${isLeaveR?'—':(c.allow>0?money(c.allow):'-')}</td></tr>`;
   }).join('');
   const inner=`<h1>薪資明細單</h1>
