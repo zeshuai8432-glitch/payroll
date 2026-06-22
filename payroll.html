@@ -135,7 +135,7 @@
   .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end; }
   .field { display: flex; flex-direction: column; gap: 5px; }
   .field label { font-size: 11.5px; font-weight: 600; color: var(--muted); letter-spacing: .3px; }
-  input, select {
+  input, select, textarea {
     height: 38px;
     padding: 0 12px;
     border: 1.5px solid var(--line2);
@@ -146,7 +146,8 @@
     color: var(--ink);
     transition: border-color .15s, box-shadow .15s;
   }
-  input:focus, select:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(79,70,229,.12); }
+  textarea { height: auto; min-height: 74px; padding: 9px 12px; resize: vertical; }
+  input:focus, select:focus, textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(79,70,229,.12); }
   input[type=checkbox] { width: 18px; height: 18px; accent-color: var(--accent); }
 
   /* ── 統計數字卡片（彩色漸層） ── */
@@ -451,9 +452,16 @@ function render(){
     const s=d.querySelector(':scope>summary');
     if(s) openKeys.add(state.tab+'|'+s.textContent.trim().slice(0,40));
   });
-  document.getElementById('sidebar').innerHTML=tabsBar();
+  const sidebar=document.getElementById('sidebar');
+  sidebar.innerHTML=tabsBar();
+  sidebar.insertAdjacentHTML('beforeend', `
+    <div class="nav-group">
+      <div class="nav-group-label">單據</div>
+      <button class="nav-item ${state.tab==='billingReq'?'active':''}" data-tab="billingReq">請款單</button>
+      <button class="nav-item ${state.tab==='billingAdd'?'active':''}" data-tab="billingAdd">追加單</button>
+    </div>`);
   const body=document.getElementById('body');
-  body.innerHTML = state.tab==='entry'?viewEntry():state.tab==='payroll'?viewPayroll():state.tab==='sites'?viewSites():state.tab==='loans'?viewLoans():state.tab==='tools'?viewTools():state.tab==='advances'?viewAdvances():state.tab==='accounts'?viewAccounts():state.tab==='deals'?viewDeals():state.tab==='billing'?viewBilling():state.tab==='yearend'?viewYearEnd():state.tab==='parkacc'?viewParkAcc():state.tab==='recon'?viewRecon():viewManage();
+  body.innerHTML = state.tab==='entry'?viewEntry():state.tab==='payroll'?viewPayroll():state.tab==='sites'?viewSites():state.tab==='loans'?viewLoans():state.tab==='tools'?viewTools():state.tab==='advances'?viewAdvances():state.tab==='accounts'?viewAccounts():state.tab==='deals'?viewDeals():state.tab==='billing'?viewBilling():state.tab==='billingReq'?viewBillingDocPage('請款單'):state.tab==='billingAdd'?viewBillingDocPage('追加單'):state.tab==='yearend'?viewYearEnd():state.tab==='parkacc'?viewParkAcc():state.tab==='recon'?viewRecon():viewManage();
   // 恢復開著的 details.card
   if(openKeys.size) document.querySelectorAll('details.card').forEach(d=>{
     const s=d.querySelector(':scope>summary');
@@ -1671,31 +1679,64 @@ function bind(){
   // 請款追蹤
   document.querySelectorAll('[data-billedit]').forEach(b=>b.onclick=()=>{ billEditId=b.dataset.billedit; render(); });
   document.querySelectorAll('[data-billeditcancel]').forEach(b=>b.onclick=()=>{ billEditId=null; render(); });
-  document.querySelectorAll('[data-billeditok]').forEach(b=>b.onclick=()=>{
+document.querySelectorAll('[data-billeditok]').forEach(b=>b.onclick=()=>{
     const bill=state.billings.find(x=>x.id===b.dataset.billeditok); if(!bill) return;
-    const amt=parseFloat(document.getElementById('be-amount').value);
+    const items=parseBillingItems(document.getElementById('be-items')?.value||'');
+    const typedAmt=parseFloat(document.getElementById('be-amount').value);
+    const amt=!isNaN(typedAmt)&&typedAmt>0?typedAmt:billingItemsTotal(items);
     if(isNaN(amt)||amt<=0){ alert('金額請填正數'); return; }
+    bill.type=document.getElementById('be-type').value;
+    bill.no=document.getElementById('be-no').value.trim()||makeBillingNo(bill.type);
     bill.date=document.getElementById('be-date').value;
     bill.amount=amt;
     bill.method=document.getElementById('be-method').value.trim();
     bill.client=document.getElementById('be-client').value.trim();
+    bill.title=document.getElementById('be-title').value.trim();
+    bill.items=items;
     bill.note=document.getElementById('be-note').value.trim();
     const so=state.sites.find(x=>x.name===bill.site); if(so) resyncSiteDeal(so);
     billEditId=null; saveData(); render();
   });
   const bAdd=document.getElementById('b-add');
   if(bAdd) bAdd.onclick=()=>{
+    const type=document.getElementById('b-type').value;
+    const no=document.getElementById('b-no').value.trim()||makeBillingNo(type);
     const date=document.getElementById('b-date').value;
     const site=document.getElementById('b-site').value.trim();
-    const amount=parseFloat(document.getElementById('b-amount').value);
+    const items=parseBillingItems(document.getElementById('b-items').value);
+    const typedAmount=parseFloat(document.getElementById('b-amount').value);
+    const amount=!isNaN(typedAmount)&&typedAmount>0?typedAmount:billingItemsTotal(items);
     const method=document.getElementById('b-method').value.trim();
     const client=document.getElementById('b-client').value.trim();
+    const title=document.getElementById('b-title').value.trim();
+    const note=document.getElementById('b-note').value.trim();
     const settled=document.getElementById('b-settled').value==='1';
     if(!date||!site||isNaN(amount)||amount<=0){ alert('請填請款日、案場、金額'); return; }
-    state.billings.push({id:uid(),date,site,amount,method,client,settled});
+    state.billings.push({id:uid(),type,no,date,site,amount,method,client,title,items,note,settled});
     const so=state.sites.find(x=>x.name===site); if(so) resyncSiteDeal(so);
     saveData(); render();
   };
+  const bdAdd=document.getElementById('bd-add');
+  if(bdAdd) bdAdd.onclick=()=>{
+    const type=bdAdd.dataset.bdtype;
+    const no=document.getElementById('bd-no').value.trim()||makeBillingNo(type);
+    const date=document.getElementById('bd-date').value;
+    const site=document.getElementById('bd-site').value.trim();
+    const items=parseBillingItems(document.getElementById('bd-items').value);
+    const typedAmount=parseFloat(document.getElementById('bd-amount').value);
+    const amount=!isNaN(typedAmount)&&typedAmount>0?typedAmount:billingItemsTotal(items);
+    const method=document.getElementById('bd-method').value.trim();
+    const client=document.getElementById('bd-client').value.trim();
+    const title=document.getElementById('bd-title').value.trim();
+    const note=document.getElementById('bd-note').value.trim();
+    const settled=document.getElementById('bd-settled').value==='1';
+    if(!date||!site||isNaN(amount)||amount<=0){ alert('請填日期、案場、金額或明細金額'); return; }
+    const rec={id:uid(),type,no,date,site,amount,method,client,title,items,note,settled};
+    state.billings.push(rec);
+    const so=state.sites.find(x=>x.name===site); if(so) resyncSiteDeal(so);
+    saveData(); render();
+  };
+  document.querySelectorAll('[data-billprint]').forEach(b=>b.onclick=()=>printBillingDoc(b.dataset.billprint));
   document.querySelectorAll('[data-togglesettle]').forEach(b=>b.onclick=()=>{
     const bill=state.billings.find(x=>x.id===b.dataset.togglesettle); if(bill){ bill.settled=!bill.settled; saveData(); render(); }
   });
@@ -1900,6 +1941,31 @@ function exportDealsPDF(selectedOnly){
   printHTML('分潤結算明細', inner);
 }
 
+function printBillingDoc(id){
+  const b=state.billings.find(x=>x.id===id);
+  if(!b) return;
+  const type=billingType(b);
+  const items=Array.isArray(b.items)&&b.items.length?b.items:[{name:billingTitle(b)||type, amount:Number(b.amount)||0}];
+  let total=0;
+  const rows=items.map((it,i)=>{
+    const amt=Number(it.amount)||0; total+=amt;
+    return `<tr><td class="num">${i+1}</td><td>${esc(it.name||'工程款')}</td><td>${esc(it.note||'')}</td><td class="num">${amt?money(amt):'-'}</td></tr>`;
+  }).join('');
+  const displayTotal=total>0?total:(Number(b.amount)||0);
+  const inner=`<h1>${esc(type)}</h1>
+    <div class="meta">單號：${esc(billingNo(b)||'-')}　|　日期：${esc(b.date||'')}　|　案場：${esc(b.site||'')}</div>
+    <table><tbody>
+      <tr><th style="width:90px">業主</th><td>${esc(b.client||'')}</td><th style="width:90px">付款方式</th><td>${esc(b.method||'')}</td></tr>
+      <tr><th>主旨</th><td colspan="3">${esc(billingTitle(b)||type)}</td></tr>
+    </tbody></table>
+    <div class="sec">明細</div>
+    <table><thead><tr><th class="num" style="width:48px">#</th><th>項目</th><th>備註</th><th class="num">金額</th></tr></thead>
+      <tbody>${rows}<tr class="total-row"><td colspan="3">合計</td><td class="num">${money(displayTotal)}</td></tr></tbody></table>
+    ${b.note?`<div class="sec">備註</div><p>${esc(b.note)}</p>`:''}
+    <div class="sign"><div>申請人</div><div>審核</div><div>業主簽收</div></div>`;
+  printHTML(`${type} ${billingNo(b)||''}`, inner);
+}
+
 // 請款追蹤明細 PDF
 function exportBillingPDF(filterNames){
   if(state.billings.length===0) return;
@@ -1917,9 +1983,9 @@ function exportBillingPDF(filterNames){
     GB+=billed; GS+=settled;
     const contract=Number(state.contracts[name])||0;
     const cline=contract>0?`　合約總額 ${money(contract)}　未請款 ${money(contract-billed)}`:'';
-    const rows=list.map(b=>`<tr><td>${esc(b.date||'')}</td><td class="num">${money(b.amount)}</td><td>${esc(b.method||'')}</td><td>${esc(b.client||'')}</td><td>${b.settled?'已結算':'未結算'}</td></tr>`).join('');
+    const rows=list.map(b=>`<tr><td>${esc(billingType(b))}</td><td>${esc(billingNo(b)||'-')}</td><td>${esc(b.date||'')}</td><td>${esc(billingTitle(b)||'-')}</td><td class="num">${money(b.amount)}</td><td>${esc(b.method||'')}</td><td>${esc(b.client||'')}</td><td>${b.settled?'已結算':'未結算'}</td></tr>`).join('');
     secs+=`<div class="sec">${esc(name)}　已請款 ${money(billed)}・已結算 ${money(settled)}・未結算 ${money(billed-settled)}${cline}</div>
-      <table><thead><tr><th>請款日</th><th class="num">金額</th><th>方式</th><th>業主</th><th>結算</th></tr></thead><tbody>${rows}</tbody></table>`;
+      <table><thead><tr><th>單據</th><th>單號</th><th>日期</th><th>主旨</th><th class="num">金額</th><th>方式</th><th>業主</th><th>結算</th></tr></thead><tbody>${rows}</tbody></table>`;
   });
   const inner=`<h1>案場請款追蹤明細</h1>
     <div class="meta">列印日：${new Date().toISOString().slice(0,10)}　|　累計請款 ${money(GB)}・已結算 ${money(GS)}・未結算 ${money(GB-GS)}</div>
@@ -2674,6 +2740,75 @@ function viewDeals(){
 }
 
 // ---- 案場請款追蹤 ----
+function billingType(b){ return b.type||'請款單'; }
+function billingNo(b){ return b.no||b.docNo||''; }
+function billingTitle(b){ return b.title||b.note||''; }
+function billingItemsText(b){
+  const items=Array.isArray(b.items)?b.items:[];
+  if(items.length) return items.map(i=>`${i.name||''}${i.amount?`，${i.amount}`:''}${i.note?`，${i.note}`:''}`).join('\n');
+  return '';
+}
+function parseBillingItems(text){
+  return String(text||'').split(/\n+/).map(line=>line.trim()).filter(Boolean).map(line=>{
+    const parts=line.split(/[,\uFF0C\t]/).map(x=>x.trim()).filter(Boolean);
+    const nums=parts.map(p=>Number(String(p).replace(/[$,\s]/g,'')));
+    const idx=nums.findIndex(n=>!isNaN(n)&&n>0);
+    if(idx>=0) return {name:parts.filter((_,i)=>i!==idx).join(' ')||'工程款', amount:nums[idx]};
+    return {name:line, amount:0};
+  });
+}
+function billingItemsTotal(items){ return (items||[]).reduce((s,i)=>s+(Number(i.amount)||0),0); }
+function makeBillingNo(type){
+  const prefix=type==='追加單'?'ADD':'REQ';
+  const day=new Date().toISOString().slice(0,10).replaceAll('-','');
+  return `${prefix}-${day}-${String(state.billings.length+1).padStart(3,'0')}`;
+}
+
+function viewBillingDocPage(type){
+  const list=state.billings.filter(b=>billingType(b)===type).sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+  const total=list.reduce((s,b)=>s+(Number(b.amount)||0),0);
+  const unsettled=list.filter(b=>!b.settled).reduce((s,b)=>s+(Number(b.amount)||0),0);
+  const siteSelOpts=`<option value="">（選案場）</option>`+state.sites.filter(s=>s.active!==false).map(s=>{
+    const tag=(s.coop||s.type==='合作案')?'（合作案）':(s.type?`（${s.type}）`:'');
+    return `<option value="${esc(s.name)}">${esc(s.name)}${tag}</option>`;
+  }).join('');
+  const titleHint=type==='追加單'?'例：追加防水工程、追加材料費':'例：第一期工程款、尾款請款';
+  const itemHint=type==='追加單'?'追加防水工程，30000&#10;追加材料費，12000':'第一期工程款，50000&#10;材料款，12000';
+  const rows=list.map(b=>`<tr>
+    <td>${esc(billingNo(b)||'-')}</td><td>${esc(b.date||'')}</td><td>${esc(b.site||'')}</td><td>${esc(billingTitle(b)||'-')}</td>
+    <td class="num">${money(b.amount)}</td><td>${esc(b.client||'')}</td>
+    <td>${b.settled?'已結算':'未結算'}</td>
+    <td><button class="act" data-billprint="${b.id}">列印</button> <button class="act danger" data-delbill="${b.id}">刪</button></td>
+  </tr>`).join('');
+  return `
+  <div class="metrics">
+    <div class="metric"><div class="l">${type}張數</div><div class="v">${list.length}</div></div>
+    <div class="metric"><div class="l">${type}總額</div><div class="v" style="font-size:20px">${money(total)}</div></div>
+    <div class="metric"><div class="l">未結算</div><div class="v" style="font-size:20px;color:var(--danger)">${money(unsettled)}</div></div>
+  </div>
+  <div class="card">
+    <div style="font-size:14px;font-weight:600;margin-bottom:4px">建立${type}</div>
+    <p class="sub">填完後按新增，系統會保存單據並可直接列印。金額可手填；若金額留空，會用明細裡的金額加總。</p>
+    <div class="row">
+      <div class="field"><label>單號</label><input id="bd-no" placeholder="自動產生" style="width:140px"></div>
+      <div class="field"><label>日期</label><input type="date" id="bd-date" value="${new Date().toISOString().slice(0,10)}"></div>
+      <div class="field" style="flex:1;min-width:150px"><label>案場</label><select id="bd-site">${siteSelOpts}</select></div>
+      <div class="field"><label>金額</label><input type="number" id="bd-amount" min="0" step="1000" style="width:130px"></div>
+      <div class="field"><label>業主</label><input id="bd-client" placeholder="公司/業主" style="width:130px"></div>
+      <div class="field"><label>付款方式</label><input id="bd-method" placeholder="匯款" style="width:110px"></div>
+      <div class="field"><label>結算</label><select id="bd-settled"><option value="">未結算</option><option value="1">已結算</option></select></div>
+      <div class="field" style="flex:1;min-width:220px"><label>主旨</label><input id="bd-title" placeholder="${titleHint}"></div>
+      <div class="field" style="flex-basis:100%"><label>明細（一行一項，可寫：項目，金額）</label><textarea id="bd-items" placeholder="${itemHint}"></textarea></div>
+      <div class="field" style="flex:1;min-width:220px"><label>備註</label><input id="bd-note" placeholder="付款條件、發票或其他說明"></div>
+      <button class="btn" id="bd-add" data-bdtype="${type}">＋ 新增並保存</button>
+    </div>
+  </div>
+  <div class="card">
+    <div style="font-size:14px;font-weight:600;margin-bottom:8px">${type}紀錄</div>
+    ${rows?`<div class="scroll"><table><thead><tr><th>單號</th><th>日期</th><th>案場</th><th>主旨</th><th class="num">金額</th><th>業主</th><th>狀態</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`:'<div class="empty">尚無單據。</div>'}
+  </div>`;
+}
+
 function viewBilling(){
   // 依案場名稱分組
   const groups={};
@@ -2681,6 +2816,8 @@ function viewBilling(){
   const siteNames=Object.keys(groups).sort((a,b)=>a.localeCompare(b));
 
   const totalBilled=state.billings.reduce((s,b)=>s+(Number(b.amount)||0),0);
+  const totalReq=state.billings.filter(b=>billingType(b)==='請款單').reduce((s,b)=>s+(Number(b.amount)||0),0);
+  const totalAdd=state.billings.filter(b=>billingType(b)==='追加單').reduce((s,b)=>s+(Number(b.amount)||0),0);
   const totalSettled=state.billings.filter(b=>b.settled).reduce((s,b)=>s+(Number(b.amount)||0),0);
   const totalUnsettled=totalBilled-totalSettled;
 
@@ -2698,35 +2835,42 @@ function viewBilling(){
       progress=`<div class="sub" style="margin:4px 0 8px">合約總額 ${money(contract)}　已請款 ${money(billed)}（${pct}%）　${remain>0?`尚未請款 <b>${money(remain)}</b>`:(remain<0?`<span style="color:var(--danger)">超出合約 ${money(-remain)}</span>`:'已請足')}
         <div style="height:6px;background:var(--line);border-radius:3px;margin-top:6px;overflow:hidden"><div style="height:100%;width:${pct}%;background:var(--accent)"></div></div></div>`;
     }
+    const reqAmt=list.filter(b=>billingType(b)==='請款單').reduce((s,b)=>s+(Number(b.amount)||0),0);
+    const addAmt=list.filter(b=>billingType(b)==='追加單').reduce((s,b)=>s+(Number(b.amount)||0),0);
     const rows=list.map(b=>{
       if(billEditId===b.id){
-        return `<tr><td colspan="7" style="background:var(--bg)">
+        return `<tr><td colspan="9" style="background:var(--bg)">
           <div class="row" style="margin:6px 0">
+            <div class="field"><label>單據</label><select id="be-type"><option value="請款單" ${billingType(b)==='請款單'?'selected':''}>請款單</option><option value="追加單" ${billingType(b)==='追加單'?'selected':''}>追加單</option></select></div>
+            <div class="field"><label>單號</label><input id="be-no" value="${esc(billingNo(b))}" style="width:130px"></div>
             <div class="field"><label>請款日</label><input type="date" id="be-date" value="${b.date||''}"></div>
             <div class="field"><label>金額</label><input type="number" id="be-amount" value="${b.amount||0}" step="1000" style="width:120px"></div>
             <div class="field"><label>方式</label><input id="be-method" value="${esc(b.method||'')}" style="width:100px"></div>
             <div class="field"><label>業主</label><input id="be-client" value="${esc(b.client||'')}" style="width:110px"></div>
-            <div class="field"><label>備註</label><input id="be-note" value="${esc(b.note||'')}" style="width:130px"></div>
+            <div class="field" style="flex:1;min-width:150px"><label>主旨</label><input id="be-title" value="${esc(billingTitle(b))}"></div>
+            <div class="field" style="flex-basis:100%"><label>明細（一行一項，可寫：項目，金額）</label><textarea id="be-items">${esc(billingItemsText(b))}</textarea></div>
+            <div class="field" style="flex:1;min-width:160px"><label>備註</label><input id="be-note" value="${esc(b.note||'')}"></div>
             <button class="btn" data-billeditok="${b.id}">儲存</button>
             <button class="act muted" data-billeditcancel="1" style="cursor:pointer;height:36px">取消</button>
           </div>
         </td></tr>`;
       }
       return `<tr>
-      <td>${esc(b.date||'')}</td><td class="num">${money(b.amount)}</td>
+      <td><span class="tag" style="${billingType(b)==='追加單'?'background:#fde9d4;color:#9a5b1a':'background:#e3efe9;color:var(--accent)'}">${esc(billingType(b))}</span></td>
+      <td>${esc(billingNo(b)||'-')}</td>
+      <td>${esc(b.date||'')}</td><td>${esc(billingTitle(b)||'-')}</td><td class="num">${money(b.amount)}</td>
       <td>${esc(b.method||'')}</td><td>${esc(b.client||'')}</td>
       <td><button class="act ${b.settled?'':'muted'}" data-togglesettle="${b.id}" style="${b.settled?'color:var(--accent)':''}">${b.settled?'✓ 已結算':'未結算'}</button></td>
-      <td>${esc(b.note||'')}</td>
-      <td><button class="act" data-billedit="${b.id}">改</button> <button class="act danger" data-delbill="${b.id}">刪</button></td>
+      <td><button class="act" data-billprint="${b.id}">列印</button> <button class="act" data-billedit="${b.id}">改</button> <button class="act danger" data-delbill="${b.id}">刪</button></td>
     </tr>`;}).join('');
     const siteTag=(()=>{const so=state.sites.find(x=>x.name===name);if(!so)return '';if(so.coop||so.type==='合作案')return '<span class="tag" style="background:#fde9d4;color:#9a5b1a">合作案</span>';if(so.type)return `<span class="tag" style="background:#e3efe9;color:var(--accent)">${esc(so.type)}</span>`;return '';})();
     const bSel=billingSel[name]||false;
     return `<details class="card">
-      <summary><input type="checkbox" data-billingsel="${esc(name)}" ${bSel?'checked':''} onclick="event.stopPropagation()" style="width:16px;height:16px;flex-shrink:0;cursor:pointer">${esc(name)}${siteTag}<span style="margin-left:auto;font-size:13px;font-weight:400;color:var(--muted)">已請款 <b style="color:var(--ink)">${money(billed)}</b>　未結算 <span style="color:var(--danger)">${money(unsettled)}</span></span></summary>
+      <summary><input type="checkbox" data-billingsel="${esc(name)}" ${bSel?'checked':''} onclick="event.stopPropagation()" style="width:16px;height:16px;flex-shrink:0;cursor:pointer">${esc(name)}${siteTag}<span style="margin-left:auto;font-size:13px;font-weight:400;color:var(--muted)">請款 <b style="color:var(--ink)">${money(reqAmt)}</b>　追加 <b style="color:#9a5b1a">${money(addAmt)}</b>　未結算 <span style="color:var(--danger)">${money(unsettled)}</span></span></summary>
       <div class="card-body">
         ${progress}
         <div class="scroll"><table>
-          <thead><tr><th>請款日</th><th class="num">金額</th><th>方式</th><th>業主</th><th>結算</th><th>備註</th><th></th></tr></thead>
+          <thead><tr><th>單據</th><th>單號</th><th>日期</th><th>主旨</th><th class="num">金額</th><th>方式</th><th>業主</th><th>結算</th><th></th></tr></thead>
           <tbody>${rows}</tbody></table></div>
       </div>
     </details>`;
@@ -2745,12 +2889,14 @@ function viewBilling(){
   return `
   <div class="metrics">
     <div class="metric"><div class="l">累計請款</div><div class="v" style="font-size:20px">${money(totalBilled)}</div></div>
+    <div class="metric"><div class="l">請款單</div><div class="v" style="font-size:20px;color:var(--accent)">${money(totalReq)}</div></div>
+    <div class="metric"><div class="l">追加單</div><div class="v" style="font-size:20px;color:#9a5b1a">${money(totalAdd)}</div></div>
     <div class="metric"><div class="l">已結算</div><div class="v" style="font-size:20px;color:var(--accent)">${money(totalSettled)}</div></div>
     <div class="metric"><div class="l">未結算（在外面的錢）</div><div class="v" style="font-size:20px;color:var(--danger)">${money(totalUnsettled)}</div></div>
   </div>
   <div class="card">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;flex-wrap:wrap;gap:8px">
-      <div style="font-size:14px;font-weight:600">新增請款</div>
+      <div style="font-size:14px;font-weight:600">新增請款單 / 追加單</div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
         <button class="act" id="billing-selall" style="height:32px;border:1px solid var(--line2);border-radius:8px;padding:0 10px;font-size:12px">全選</button>
         <button class="act" id="billing-selnone" style="height:32px;border:1px solid var(--line2);border-radius:8px;padding:0 10px;font-size:12px">取消選</button>
@@ -2758,16 +2904,21 @@ function viewBilling(){
         <button class="btn" id="billing-export-all" ${state.billings.length===0?'disabled style="opacity:.5"':''} style="height:32px;font-size:12px;background:var(--muted)">全部匯出</button>
       </div>
     </div>
-    <p class="sub">記一筆請款：何時、哪個案場、請了多少。同一案場可多次請款，下方自動按案場彙總。合約總額、稅率請到「員工/案場」設定。合作案場的分潤在「分潤結算」自動算（總請款−總成本）。</p>
+    <p class="sub">可建立請款單或追加單，單據會按案場彙總，並可單張列印。追加單金額也會併入案場請款總額，方便分潤與合約進度一起追。</p>
     <div class="row">
+      <div class="field"><label>單據類型</label><select id="b-type"><option value="請款單">請款單</option><option value="追加單">追加單</option></select></div>
+      <div class="field"><label>單號</label><input id="b-no" placeholder="自動產生" style="width:130px"></div>
       <div class="field"><label>請款日</label><input type="date" id="b-date" value="${new Date().toISOString().slice(0,10)}"></div>
       <div class="field" style="flex:1;min-width:140px"><label>案場名稱</label><select id="b-site">${siteSelOpts}</select></div>
       <div class="field"><label>金額（本期請款）</label><input type="number" id="b-amount" min="0" step="1000" style="width:140px"></div>
       <div class="field"><label>請款方式</label><input id="b-method" placeholder="匯款" style="width:100px"></div>
       <div class="field"><label>業主</label><input id="b-client" placeholder="品佑、廣昕" style="width:110px"></div>
       <div class="field"><label>結算</label><select id="b-settled"><option value="">未結算</option><option value="1">已結算</option></select></div>
+      <div class="field" style="flex:1;min-width:180px"><label>主旨</label><input id="b-title" placeholder="例：第一期工程款、追加防水工程"></div>
+      <div class="field" style="flex-basis:100%"><label>明細（一行一項，可寫：項目，金額）</label><textarea id="b-items" placeholder="例：第一期工程款，50000&#10;例：追加材料費，12000"></textarea></div>
+      <div class="field" style="flex:1;min-width:180px"><label>備註</label><input id="b-note" placeholder="付款條件、發票或其他說明"></div>
     </div>
-    <div class="row" style="margin-top:8px"><button class="btn" id="b-add">＋ 新增請款</button></div>
+    <div class="row" style="margin-top:8px"><button class="btn" id="b-add">＋ 新增單據</button></div>
   </div>
   ${cards===''&&pausedCards===''?'<div class="card"><div class="empty">尚無請款紀錄。</div></div>':cards}${pausedCards}`;
 }
