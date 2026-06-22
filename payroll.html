@@ -111,11 +111,53 @@
   .main { flex: 1; min-width: 0; padding: 24px 28px 60px; max-width: 1080px; }
   .scrim { display: none; }
   @media (max-width: 760px) {
+    /* ── 側邊欄抽屜 ── */
     .top .burger { display: block; }
-    .sidebar { position: fixed; top: 58px; left: 0; bottom: 0; z-index: 60; transform: translateX(-100%); transition: transform .22s cubic-bezier(.4,0,.2,1); box-shadow: 4px 0 24px rgba(79,70,229,.18); }
+    .sidebar { position: fixed; top: 52px; left: 0; bottom: 0; z-index: 60; transform: translateX(-100%); transition: transform .22s cubic-bezier(.4,0,.2,1); box-shadow: 4px 0 24px rgba(79,70,229,.18); }
     .sidebar.open { transform: translateX(0); }
-    .scrim.show { display: block; position: fixed; inset: 58px 0 0 0; background: rgba(30,27,75,.35); z-index: 55; backdrop-filter: blur(2px); }
-    .main { padding: 16px; }
+    .scrim.show { display: block; position: fixed; inset: 52px 0 0 0; background: rgba(30,27,75,.35); z-index: 55; backdrop-filter: blur(2px); }
+
+    /* ── 頂列精簡 ── */
+    .top { padding: 0 12px; height: 52px; gap: 10px; }
+    .top h1 { font-size: 15px; }
+    #cloud-status { display: none; }
+    #cloud-refresh { font-size: 12px; padding: 4px 10px; }
+
+    /* ── 主內容 ── */
+    .layout { min-height: calc(100vh - 52px); }
+    .main { padding: 12px 12px 60px; }
+
+    /* ── 卡片 ── */
+    .card { padding: 14px 14px; margin-bottom: 12px; border-radius: 12px; }
+
+    /* ── 指標卡片 ── */
+    .metrics { grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; margin-bottom: 14px; }
+    .metric { padding: 13px 14px; border-radius: 12px; }
+    .metric .v { font-size: 21px; }
+    .metric .l { font-size: 10.5px; }
+
+    /* ── 表單：欄位全寬堆疊 ── */
+    .row { gap: 10px; }
+    .field { width: 100%; }
+    .field input, .field select { width: 100% !important; min-width: 0 !important; box-sizing: border-box; }
+    /* 主要提交按鈕全寬 */
+    .row > .btn { width: 100%; }
+
+    /* ── 按鈕：加大觸控面積 ── */
+    .act { padding: 7px 10px; font-size: 13.5px; }
+    .btn { font-size: 15px; }
+
+    /* ── 表格 ── */
+    th { padding: 8px 7px; font-size: 10.5px; }
+    td { padding: 9px 7px; font-size: 13px; }
+
+    /* ── 側邊欄項目加高（觸控友善） ── */
+    .nav-item { padding: 12px 20px 12px 22px; font-size: 14px; }
+    /* ── 頂列按鈕文字切換 ── */
+    .mob-hide { display: none; }
+    .mob-show { display: inline !important; }
+    /* ── 照片列縮圖自動填滿 ── */
+    .photo-thumb { width: calc(33vw - 24px) !important; height: calc(25vw - 18px) !important; }
   }
 
   /* ── 卡片 ── */
@@ -135,7 +177,7 @@
   .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end; }
   .field { display: flex; flex-direction: column; gap: 5px; }
   .field label { font-size: 11.5px; font-weight: 600; color: var(--muted); letter-spacing: .3px; }
-  input, select, textarea {
+  input, select {
     height: 38px;
     padding: 0 12px;
     border: 1.5px solid var(--line2);
@@ -146,8 +188,7 @@
     color: var(--ink);
     transition: border-color .15s, box-shadow .15s;
   }
-  textarea { height: auto; min-height: 74px; padding: 9px 12px; resize: vertical; }
-  input:focus, select:focus, textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(79,70,229,.12); }
+  input:focus, select:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(79,70,229,.12); }
   input[type=checkbox] { width: 18px; height: 18px; accent-color: var(--accent); }
 
   /* ── 統計數字卡片（彩色漸層） ── */
@@ -264,35 +305,6 @@
   .inline { display: flex; gap: 6px; align-items: center; }
   .inline input { height: 32px; width: 100px; }
 
-  /* ── 可收合卡片（年度總結用） ── */
-  details.card { padding: 0; }
-  details.card > summary {
-    padding: 16px 24px;
-    font-size: 14px;
-    font-weight: 700;
-    cursor: pointer;
-    list-style: none;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    border-radius: var(--radius);
-    user-select: none;
-    color: var(--ink);
-  }
-  details.card > summary::-webkit-details-marker { display: none; }
-  details.card > summary::before {
-    content: '▶';
-    font-size: 10px;
-    color: var(--accent);
-    transition: transform .18s;
-    flex-shrink: 0;
-  }
-  details.card[open] > summary::before { transform: rotate(90deg); }
-  details.card[open] > summary { border-bottom: 1px solid var(--line); border-radius: var(--radius) var(--radius) 0 0; }
-  details.card > summary:hover { background: rgba(79,70,229,.04); border-radius: var(--radius); }
-  details.card[open] > summary:hover { border-radius: var(--radius) var(--radius) 0 0; }
-  .card-body { padding: 16px 24px 20px; }
-
   /* ── 列印用浮層（不動） ── */
   #print-overlay { position: fixed; inset: 0; background: #fff; z-index: 9999; overflow: auto; padding: 24px; }
   #print-overlay .pbar { position: sticky; top: 0; background: #fff; padding-bottom: 12px; margin-bottom: 12px; border-bottom: 1px solid var(--line2); display: flex; gap: 10px; justify-content: flex-end; }
@@ -323,7 +335,7 @@
   <h1>點工薪資管理系統</h1>
   <div style="margin-left:auto;display:flex;align-items:center;gap:10px">
     <span id="cloud-status" style="font-size:12px;opacity:.85;letter-spacing:.2px">連線中…</span>
-    <button id="cloud-refresh" style="background:rgba(255,255,255,.22);color:#fff;border:1px solid rgba(255,255,255,.3);border-radius:8px;padding:5px 12px;cursor:pointer;font-size:13px;font-weight:600;backdrop-filter:blur(4px);transition:background .15s">↻ 重新整理</button>
+    <button id="cloud-refresh" style="background:rgba(255,255,255,.22);color:#fff;border:1px solid rgba(255,255,255,.3);border-radius:8px;padding:5px 12px;cursor:pointer;font-size:13px;font-weight:600;backdrop-filter:blur(4px);transition:background .15s"><span class="mob-hide">↻ 重新整理</span><span class="mob-show" style="display:none">↻</span></button>
   </div>
 </div>
 <div class="layout">
@@ -334,6 +346,7 @@
 
 <script>
 const LS = 'pm_data_v2';
+const LS_PHOTOS = 'pm_billing_photos_v1';
 const CLOUD_URL = 'https://script.google.com/macros/s/AKfycbyMPs38UNzAwX3bcD2n9nQBz0HofUW9qFweSOnmoySs8VW2bJYHn47RdyZLQ8bD8SNWTg/exec';
 let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], tools:[], locations:[], assets:[], advances:[], accounts:[], ledger:[], deals:[], billings:[], contracts:{}, costs:[], parkAccId:'', oweBonus:{}, minFund:'', tab:'entry' };
 let cloudStatus='連線中…';
@@ -415,6 +428,8 @@ function setCloud(s){ cloudStatus=s; const el=document.getElementById('cloud-sta
 
 // 保留舊名稱相容
 function loadData(){ loadLocal(); }
+function loadPhotos(){ try{ const raw=localStorage.getItem(LS_PHOTOS); if(raw) billingPhotos=JSON.parse(raw); }catch(e){} }
+function savePhotos(){ try{ localStorage.setItem(LS_PHOTOS,JSON.stringify(billingPhotos)); }catch(e){} }
 
 function computeRecords(records){
   const byKey={};
@@ -436,7 +451,7 @@ function computeRecords(records){
 function tabsBar(){
   const groups=[
     ['薪資作業',[['entry','登記出工'],['payroll','員工薪資']]],
-    ['財務管理',[['loans','借支管理'],['tools','工具管理'],['advances','代墊款'],['accounts','公積金帳戶'],['deals','分潤結算'],['billing','請款追蹤'],['yearend','年度總結'],['parkacc','品佑帳戶結算'],['recon','對帳匯出']]],
+    ['財務管理',[['loans','借支管理'],['tools','工具管理'],['advances','代墊款'],['accounts','公積金帳戶'],['deals','分潤結算'],['billing','請款追蹤'],['billingAdd','追加單'],['yearend','年度總結'],['parkacc','品佑帳戶結算'],['recon','對帳匯出']]],
     ['設定',[['sites','案場成本'],['manage','員工/案場']]],
   ];
   return groups.map(([label,items])=>`
@@ -446,27 +461,9 @@ function tabsBar(){
     </div>`).join('');
 }
 function render(){
-  // 記住目前開著的 details.card（用 tab+summary文字 當 key）
-  const openKeys=new Set();
-  document.querySelectorAll('details.card[open]').forEach(d=>{
-    const s=d.querySelector(':scope>summary');
-    if(s) openKeys.add(state.tab+'|'+s.textContent.trim().slice(0,40));
-  });
-  const sidebar=document.getElementById('sidebar');
-  sidebar.innerHTML=tabsBar();
-  sidebar.insertAdjacentHTML('beforeend', `
-    <div class="nav-group">
-      <div class="nav-group-label">單據</div>
-      <button class="nav-item ${state.tab==='billingReq'?'active':''}" data-tab="billingReq">請款單</button>
-      <button class="nav-item ${state.tab==='billingAdd'?'active':''}" data-tab="billingAdd">追加單</button>
-    </div>`);
+  document.getElementById('sidebar').innerHTML=tabsBar();
   const body=document.getElementById('body');
-  body.innerHTML = state.tab==='entry'?viewEntry():state.tab==='payroll'?viewPayroll():state.tab==='sites'?viewSites():state.tab==='loans'?viewLoans():state.tab==='tools'?viewTools():state.tab==='advances'?viewAdvances():state.tab==='accounts'?viewAccounts():state.tab==='deals'?viewDeals():state.tab==='billing'?viewBilling():state.tab==='billingReq'?viewBillingDocPage('請款單'):state.tab==='billingAdd'?viewBillingDocPage('追加單'):state.tab==='yearend'?viewYearEnd():state.tab==='parkacc'?viewParkAcc():state.tab==='recon'?viewRecon():viewManage();
-  // 恢復開著的 details.card
-  if(openKeys.size) document.querySelectorAll('details.card').forEach(d=>{
-    const s=d.querySelector(':scope>summary');
-    if(s && openKeys.has(state.tab+'|'+s.textContent.trim().slice(0,40))) d.open=true;
-  });
+  body.innerHTML = state.tab==='entry'?viewEntry():state.tab==='payroll'?viewPayroll():state.tab==='sites'?viewSites():state.tab==='loans'?viewLoans():state.tab==='tools'?viewTools():state.tab==='advances'?viewAdvances():state.tab==='accounts'?viewAccounts():state.tab==='deals'?viewDeals():state.tab==='billing'?viewBilling():state.tab==='billingAdd'?viewBillingAdd():state.tab==='yearend'?viewYearEnd():state.tab==='parkacc'?viewParkAcc():state.tab==='recon'?viewRecon():viewManage();
   bind();
 }
 
@@ -704,46 +701,43 @@ function viewPayroll(){
     <div class="metric"><div class="l">出工薪資</div><div class="v" style="font-size:20px">${money(grossSum)}</div></div>
     <div class="metric"><div class="l">實發總額</div><div class="v">${money(netSum)}</div></div>
   </div>
-  <details class="card">
-    <summary>本期薪資<span style="margin-left:auto;display:flex;gap:8px;align-items:center">
-      ${partnerIds.length?`<button class="act" id="toggle-partners" style="border:1px solid var(--line2);border-radius:8px;padding:0 12px;height:34px" onclick="event.preventDefault()">${state.showPartners?'隱藏股東':'顯示股東'}</button>`:''}
-      <button class="btn" id="export-summary" ${rows===''?'disabled style="opacity:.5"':''} onclick="event.preventDefault()">匯出總表 PDF</button>
-    </span></summary>
-    <div class="card-body">
-      ${rows===''?'<div class="empty">此區間內尚無可計算的薪資。</div>':`
-      <div class="scroll"><table>
-        <thead><tr><th>員工</th><th class="num">出勤天</th><th class="num">總工數</th><th class="num">出工薪資</th><th class="num">加項</th><th class="num">扣項</th><th class="num">實發金額</th><th></th></tr></thead>
-        <tbody>${rows}</tbody></table></div>
-      <p class="sub" style="margin:10px 0 0">實發總額與員工數只計一般員工。股東工資計入案場成本，但從「代墊款」分頁發放，不在此重複發。出工薪資＝工資＋津貼。實發＝出工薪資＋加項−扣項。</p>`}
-    </div>
-  </details>
-  ${loanReminders===''?'':`<details class="card" style="border-color:var(--accent)">
-    <summary>💡 本期借支扣款提示</summary>
-    <div class="card-body">
-      <p class="sub">以下員工有未還清借支、且本期尚未扣款。點「扣這期」即把該筆金額加入本期扣項（可在下方加扣項清單微調或刪除）。</p>
-      <div class="scroll"><table>
-        <thead><tr><th>員工</th><th class="num">尚欠</th><th class="num">本期建議扣</th><th></th></tr></thead>
-        <tbody>${loanReminders}</tbody></table></div>
-    </div>
-  </details>`}
-  <details class="card">
-    <summary>本期加項／扣項</summary>
-    <div class="card-body">
-      <p class="sub">獎金、全勤為加項；借支扣還、勞健保自負額、工具遺失賠償等為扣項。日期請填在本計薪區間內，才會算進本期。</p>
-      <div class="row" style="margin-bottom:10px">
-        <div class="field"><label>日期</label><input type="date" id="adj-date" value="${state.payTo||''}"></div>
-        <div class="field"><label>員工</label><select id="adj-emp">${empOpts}</select></div>
-        <div class="field"><label>性質</label><select id="adj-kind"><option value="add">加項（+）</option><option value="ded">扣項（−）</option></select></div>
-        <div class="field"><label>項目</label><select id="adj-label">${addOpts}</select></div>
-        <div class="field"><label>金額</label><input type="number" id="adj-amount" min="0" step="100" style="width:120px"></div>
-        <div class="field" style="flex:1;min-width:140px"><label>備註（選填）</label><input id="adj-note" placeholder="例：6月借支"></div>
-        <button class="btn" id="adj-add">＋ 新增</button>
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;gap:8px;flex-wrap:wrap">
+      <div style="font-size:14px;font-weight:600">本期薪資</div>
+      <div style="display:flex;gap:8px">
+        ${partnerIds.length?`<button class="act" id="toggle-partners" style="border:1px solid var(--line2);border-radius:8px;padding:0 12px;height:36px">${state.showPartners?'隱藏股東':'顯示股東'}</button>`:''}
+        <button class="btn" id="export-summary" ${rows===''?'disabled style="opacity:.5"':''}>匯出總表 PDF</button>
       </div>
-      ${adjRows===''?'<div class="empty">本期尚無加扣項。</div>':`<div class="scroll"><table>
-        <thead><tr><th>日期</th><th>員工</th><th>項目</th><th class="num">金額</th><th>備註</th><th></th></tr></thead>
-        <tbody>${adjRows}</tbody></table></div>`}
     </div>
-  </details>`;
+    ${rows===''?'<div class="empty">此區間內尚無可計算的薪資。</div>':`
+    <div class="scroll"><table>
+      <thead><tr><th>員工</th><th class="num">出勤天</th><th class="num">總工數</th><th class="num">出工薪資</th><th class="num">加項</th><th class="num">扣項</th><th class="num">實發金額</th><th></th></tr></thead>
+      <tbody>${rows}</tbody></table></div>
+    <p class="sub" style="margin:10px 0 0">實發總額與員工數只計一般員工。股東工資計入案場成本，但從「代墊款」分頁發放，不在此重複發。出工薪資＝工資＋津貼。實發＝出工薪資＋加項−扣項。</p>`}
+  </div>
+  ${loanReminders===''?'':`<div class="card" style="border-color:var(--accent)">
+    <div style="font-size:14px;font-weight:600;margin-bottom:4px">💡 本期借支扣款提示</div>
+    <p class="sub">以下員工有未還清借支、且本期尚未扣款。點「扣這期」即把該筆金額加入本期扣項（可在下方加扣項清單微調或刪除）。</p>
+    <div class="scroll"><table>
+      <thead><tr><th>員工</th><th class="num">尚欠</th><th class="num">本期建議扣</th><th></th></tr></thead>
+      <tbody>${loanReminders}</tbody></table></div>
+  </div>`}
+  <div class="card">
+    <div style="font-size:14px;font-weight:600;margin-bottom:4px">本期加項／扣項</div>
+    <p class="sub">獎金、全勤為加項；借支扣還、勞健保自負額、工具遺失賠償等為扣項。日期請填在本計薪區間內，才會算進本期。</p>
+    <div class="row" style="margin-bottom:10px">
+      <div class="field"><label>日期</label><input type="date" id="adj-date" value="${state.payTo||''}"></div>
+      <div class="field"><label>員工</label><select id="adj-emp">${empOpts}</select></div>
+      <div class="field"><label>性質</label><select id="adj-kind"><option value="add">加項（+）</option><option value="ded">扣項（−）</option></select></div>
+      <div class="field"><label>項目</label><select id="adj-label">${addOpts}</select></div>
+      <div class="field"><label>金額</label><input type="number" id="adj-amount" min="0" step="100" style="width:120px"></div>
+      <div class="field" style="flex:1;min-width:140px"><label>備註（選填）</label><input id="adj-note" placeholder="例：6月借支"></div>
+      <button class="btn" id="adj-add">＋ 新增</button>
+    </div>
+    ${adjRows===''?'<div class="empty">本期尚無加扣項。</div>':`<div class="scroll"><table>
+      <thead><tr><th>日期</th><th>員工</th><th>項目</th><th class="num">金額</th><th>備註</th><th></th></tr></thead>
+      <tbody>${adjRows}</tbody></table></div>`}
+  </div>`;
 }
 
 function viewSites(){
@@ -790,30 +784,30 @@ function viewSites(){
     }).join('');
     const byPayer={}; myCosts.forEach(c=>{ byPayer[c.payer||'—']=(byPayer[c.payer||'—']||0)+(Number(c.amount)||0); });
     const payerSummary=Object.keys(byPayer).length?`<div class="sub" style="margin:4px 0">各人墊付：${Object.entries(byPayer).map(([k,v])=>`${esc(payerName(k))} ${money(v)}`).join('、')}</div>`:'';
-    const sSel=sitesSel[sid]||false;
-    return `<details class="card" ${isCoop?'style="border-left:3px solid #d98430"':''}>
-      <summary><input type="checkbox" data-sitesel="${esc(sid)}" ${sSel?'checked':''} onclick="event.stopPropagation()" style="width:16px;height:16px;flex-shrink:0;cursor:pointer">${esc(siteName(sid))}${isCoop?'<span class="tag" style="background:#fde9d4;color:#9a5b1a">合作案場</span>':''}<span style="margin-left:auto;font-size:16px;font-weight:700;color:var(--ink)">${money(s.grandTotal)}</span></summary>
-      <div class="card-body">
-        <p class="sub">${isCoop?'手動成本明細加總':`總工數 ${gongStr(s.hours)}・系統工資 ${money(s.wage)}・津貼 ${money(s.allow)}`}${s.opening>0?`・期初 ${money(s.opening)}`:''}${s.manual>0?`・手動成本 ${money(s.manual)}`:''}・占總成本 ${pct}%</p>
-        ${isCoop?'':`<div class="row" style="margin-bottom:6px">
-          <div class="field"><label>期初人事成本（從Excel抄入，選填）</label><input type="number" data-opening="${sid}" value="${s.opening||''}" placeholder="未設定" min="0" step="1000" style="width:170px"></div>
-        </div>`}
-        ${payerSummary}
-        <details ${isCoop?'open':''}><summary>手動成本明細（${myCosts.length} 筆）</summary>
-          <div class="row" style="margin:8px 0">
-            <div class="field"><label>日期</label><input type="date" data-costdate="${sid}" value="${new Date().toISOString().slice(0,10)}"></div>
-            <div class="field" style="flex:1;min-width:120px"><label>項目</label><input data-costitem="${sid}" placeholder="材料、工資、機具…"></div>
-            <div class="field"><label>金額</label><input type="number" data-costamount="${sid}" min="0" step="1000" style="width:120px"></div>
-            <div class="field"><label>誰支付</label><select data-costpayer="${sid}"><option value="dz">東澤</option><option value="gx">廣昕</option><option value="py">品佑</option></select></div>
-            <button class="act" data-costadd="${sid}" style="border:1px solid var(--accent);border-radius:6px;padding:0 12px;color:var(--accent);height:36px">＋ 加成本</button>
-          </div>
-          ${costRows?`<table><thead><tr><th>日期</th><th>項目</th><th class="num">金額</th><th>誰付</th><th></th></tr></thead><tbody>${costRows}</tbody></table>`:'<div class="sub">尚無手動成本。</div>'}
-        </details>
-        ${empBreak&&!isCoop?`<details><summary>系統內各員工金額明細</summary>
-          <table style="margin-top:8px"><thead><tr><th>員工</th><th class="num">金額</th></tr></thead><tbody>${empBreak}</tbody></table>
-        </details>`:''}
+    return `<div class="card" ${isCoop?'style="border-left:3px solid #d98430"':''}>
+      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px">
+        <div style="font-size:15px;font-weight:600">${esc(siteName(sid))}${isCoop?'<span class="tag" style="background:#fde9d4;color:#9a5b1a">合作案場</span>':''}</div>
+        <div style="font-size:18px;font-weight:600">${money(s.grandTotal)}</div>
       </div>
-    </details>`;
+      <p class="sub">${isCoop?'手動成本明細加總':`總工數 ${gongStr(s.hours)}・系統工資 ${money(s.wage)}・津貼 ${money(s.allow)}`}${s.opening>0?`・期初 ${money(s.opening)}`:''}${s.manual>0?`・手動成本 ${money(s.manual)}`:''}・占總成本 ${pct}%</p>
+      ${isCoop?'':`<div class="row" style="margin-bottom:6px">
+        <div class="field"><label>期初人事成本（從Excel抄入，選填）</label><input type="number" data-opening="${sid}" value="${s.opening||''}" placeholder="未設定" min="0" step="1000" style="width:170px"></div>
+      </div>`}
+      ${payerSummary}
+      <details ${isCoop?'open':''}><summary>手動成本明細（${myCosts.length} 筆）</summary>
+        <div class="row" style="margin:8px 0">
+          <div class="field"><label>日期</label><input type="date" data-costdate="${sid}" value="${new Date().toISOString().slice(0,10)}"></div>
+          <div class="field" style="flex:1;min-width:120px"><label>項目</label><input data-costitem="${sid}" placeholder="材料、工資、機具…"></div>
+          <div class="field"><label>金額</label><input type="number" data-costamount="${sid}" min="0" step="1000" style="width:120px"></div>
+          <div class="field"><label>誰支付</label><select data-costpayer="${sid}"><option value="dz">東澤</option><option value="gx">廣昕</option><option value="py">品佑</option></select></div>
+          <button class="act" data-costadd="${sid}" style="border:1px solid var(--accent);border-radius:6px;padding:0 12px;color:var(--accent);height:36px">＋ 加成本</button>
+        </div>
+        ${costRows?`<table><thead><tr><th>日期</th><th>項目</th><th class="num">金額</th><th>誰付</th><th></th></tr></thead><tbody>${costRows}</tbody></table>`:'<div class="sub">尚無手動成本。</div>'}
+      </details>
+      ${empBreak&&!isCoop?`<details><summary>系統內各員工金額明細</summary>
+        <table style="margin-top:8px"><thead><tr><th>員工</th><th class="num">金額</th></tr></thead><tbody>${empBreak}</tbody></table>
+      </details>`:''}
+    </div>`;
   };
   const isPaused=sid=>{ const st=state.sites.find(x=>x.id===sid); return st&&st.active===false; };
   const activeIds=ids.filter(sid=>!isPaused(sid));
@@ -844,28 +838,18 @@ function viewSites(){
     </div>`;
   };
   const reimbCard=(reimb.dz.total>0||reimb.gx.total>0)?`
-  <details class="card">
-    <summary>墊付報銷彙總（東澤／廣昕）</summary>
-    <div class="card-body">
-      ${personBlock('dz')}${personBlock('gx')}
-      <p class="sub" style="margin-top:6px">展開「待報銷明細」可看到是哪個案場、哪一筆，直接按「報銷」標記。此處只記錄報銷狀態，不會動到帳戶餘額。</p>
-    </div>
-  </details>`:'';
+  <div class="card">
+    <div style="font-size:14px;font-weight:600;margin-bottom:8px">墊付報銷彙總（東澤／廣昕）</div>
+    ${personBlock('dz')}${personBlock('gx')}
+    <p class="sub" style="margin-top:6px">展開「待報銷明細」可看到是哪個案場、哪一筆，直接按「報銷」標記。此處只記錄報銷狀態，不會動到帳戶餘額。</p>
+  </div>`:'';
   return `
   <div class="metrics">
     <div class="metric"><div class="l">案場數</div><div class="v">${activeIds.length}${pausedIds.length?`<span style="font-size:12px;color:var(--muted)"> +${pausedIds.length}暫停</span>`:''}</div></div>
     <div class="metric"><div class="l">總成本</div><div class="v">${money(grand)}</div></div>
   </div>
   ${reimbCard}
-  <div style="margin:-6px 0 12px;display:flex;align-items:center;flex-wrap:wrap;gap:8px">
-    <p class="sub" style="margin:0;flex:1;min-width:200px">一般案場成本＝期初＋出勤工資津貼＋手動成本；合作案場（橙色）成本＝手動成本明細加總（日期/項目/金額/誰付）。</p>
-    <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
-      <button class="act" id="sites-selall" style="height:32px;border:1px solid var(--line2);border-radius:8px;padding:0 10px;font-size:12px">全選</button>
-      <button class="act" id="sites-selnone" style="height:32px;border:1px solid var(--line2);border-radius:8px;padding:0 10px;font-size:12px">取消選</button>
-      <button class="btn" id="sites-export-sel" ${ids.length===0?'disabled style="opacity:.5"':''} style="height:32px;font-size:12px">匯出選取</button>
-      <button class="btn" id="sites-export-all" ${ids.length===0?'disabled style="opacity:.5"':''} style="height:32px;font-size:12px;background:var(--muted)">全部匯出</button>
-    </div>
-  </div>
+  <p class="sub" style="margin:-6px 0 12px">一般案場成本＝期初＋出勤工資津貼＋手動成本；合作案場（橙色）成本＝手動成本明細加總（日期/項目/金額/誰付）。<button class="btn" id="export-sites" style="margin-left:10px" ${ids.length===0?'disabled style="opacity:.5"':''}>匯出 PDF</button></p>
   ${cards===''&&pausedCards===''?'<div class="card"><div class="empty">尚無案場成本資料。</div></div>':cards}${pausedCards}`;
 }
 
@@ -911,36 +895,32 @@ function viewManage(){
   const siteRows=activeSitesList.map(siteRowFor).join('');
   const pausedSiteTable=pausedSitesList.length?`<details style="margin-top:10px"><summary style="cursor:pointer;font-weight:600;padding:8px 0">已暫停案場（${pausedSitesList.length}）</summary><table><tbody>${pausedSitesList.map(siteRowFor).join('')}</tbody></table></details>`:'';
   return `
-  <details class="card">
-    <summary>員工</summary>
-    <div class="card-body">
-      <p class="sub">調薪只影響之後登記的出工，舊紀錄維持當時日薪。離職請用「停用」保留歷史；只有從沒登記過出工的員工才能真正刪除。標記為「股東」的人會出現在代墊款分頁。</p>
-      <div class="row" style="margin-bottom:10px">
-        <div class="field"><label>姓名</label><input id="e-name" placeholder="例：潘東澤"></div>
-        <div class="field"><label>日薪</label><input id="e-daily" type="number" min="0" step="100" value="3000" style="width:120px"></div>
-        <button class="btn" id="e-add">＋ 新增員工</button>
-      </div>
-      ${state.employees.length===0?'<div class="empty">尚無員工。</div>':`<table><thead><tr><th>姓名</th><th class="num">目前日薪</th><th></th><th></th><th></th><th></th><th></th></tr></thead><tbody>${empRows}</tbody></table>`}
+  <div class="card">
+    <div style="font-size:14px;font-weight:600;margin-bottom:4px">員工</div>
+    <p class="sub">調薪只影響之後登記的出工，舊紀錄維持當時日薪。離職請用「停用」保留歷史；只有從沒登記過出工的員工才能真正刪除。標記為「股東」的人會出現在代墊款分頁。</p>
+    <div class="row" style="margin-bottom:10px">
+      <div class="field"><label>姓名</label><input id="e-name" placeholder="例：潘東澤"></div>
+      <div class="field"><label>日薪</label><input id="e-daily" type="number" min="0" step="100" value="3000" style="width:120px"></div>
+      <button class="btn" id="e-add">＋ 新增員工</button>
     </div>
-  </details>
-  <details class="card">
-    <summary>案場</summary>
-    <div class="card-body">
-      <p class="sub">建案場時設好<b>類型、稅率、負責人、錢進哪個帳戶</b>，之後請款追蹤一輸入，系統就自動算分潤、自動進帳戶，不用再去分潤頁手動建。<b>代工／公司分潤</b>＝（總請款−稅）做30/70；<b>合作案</b>＝（總請款−案場成本）對拆、不出現在出工登記、成本記「案場成本」頁。改名會套用到所有相關紀錄。</p>
-      <div class="row" style="margin-bottom:8px">
-        <div class="field" style="flex:1;min-width:180px"><label>案場名稱</label><input id="s-name" placeholder="例：台北富邦"></div>
-        <div class="field"><label>類型</label><select id="s-type">${['代工','連工代料','業主分潤','合作案','舊制'].map(t=>`<option value="${t}">${t}${t==='合作案'?'（50/50）':t==='舊制'?'（全進公積金）':'（30/70）'}</option>`).join('')}</select></div>
-        <div class="field"><label>稅率 %</label><input type="number" id="s-tax" min="0" max="100" step="0.5" value="0" style="width:90px"></div>
-      </div>
-      <div class="row" style="margin-bottom:10px">
-        <div class="field"><label>負責人</label><select id="s-owner"><option value="">（未指定）</option>${state.employees.filter(e=>e.partner).map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join('')}</select></div>
-        <div class="field"><label>錢進哪個帳戶</label><select id="s-acc"><option value="">（未指定）</option>${state.accounts.map(a=>`<option value="${a.id}">${esc(a.name)}</option>`).join('')}</select></div>
-        <div class="field" id="s-mgr-wrap" style="display:none"><label>管理人(你們)佔 %</label><input type="number" id="s-mgrpct" min="0" max="100" step="5" value="50" style="width:120px"></div>
-        <button class="btn" id="s-add">＋ 新增案場</button>
-      </div>
-      ${state.sites.length===0?'<div class="empty">尚無案場。</div>':`${activeSitesList.length?`<table><thead><tr><th>名稱</th><th></th><th></th><th></th></tr></thead><tbody>${siteRows}</tbody></table>`:'<div class="empty">沒有啟用中的案場。</div>'}${pausedSiteTable}`}
+    ${state.employees.length===0?'<div class="empty">尚無員工。</div>':`<table><thead><tr><th>姓名</th><th class="num">目前日薪</th><th></th><th></th><th></th><th></th><th></th></tr></thead><tbody>${empRows}</tbody></table>`}
+  </div>
+  <div class="card">
+    <div style="font-size:14px;font-weight:600;margin-bottom:4px">案場</div>
+    <p class="sub">建案場時設好<b>類型、稅率、負責人、錢進哪個帳戶</b>，之後請款追蹤一輸入，系統就自動算分潤、自動進帳戶，不用再去分潤頁手動建。<b>代工／公司分潤</b>＝（總請款−稅）做30/70；<b>合作案</b>＝（總請款−案場成本）對拆、不出現在出工登記、成本記「案場成本」頁。改名會套用到所有相關紀錄。</p>
+    <div class="row" style="margin-bottom:8px">
+      <div class="field" style="flex:1;min-width:180px"><label>案場名稱</label><input id="s-name" placeholder="例：台北富邦"></div>
+      <div class="field"><label>類型</label><select id="s-type">${['代工','連工代料','業主分潤','合作案','舊制'].map(t=>`<option value="${t}">${t}${t==='合作案'?'（50/50）':t==='舊制'?'（全進公積金）':'（30/70）'}</option>`).join('')}</select></div>
+      <div class="field"><label>稅率 %</label><input type="number" id="s-tax" min="0" max="100" step="0.5" value="0" style="width:90px"></div>
     </div>
-  </details>`;
+    <div class="row" style="margin-bottom:10px">
+      <div class="field"><label>負責人</label><select id="s-owner"><option value="">（未指定）</option>${state.employees.filter(e=>e.partner).map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join('')}</select></div>
+      <div class="field"><label>錢進哪個帳戶</label><select id="s-acc"><option value="">（未指定）</option>${state.accounts.map(a=>`<option value="${a.id}">${esc(a.name)}</option>`).join('')}</select></div>
+      <div class="field" id="s-mgr-wrap" style="display:none"><label>管理人(你們)佔 %</label><input type="number" id="s-mgrpct" min="0" max="100" step="5" value="50" style="width:120px"></div>
+      <button class="btn" id="s-add">＋ 新增案場</button>
+    </div>
+    ${state.sites.length===0?'<div class="empty">尚無案場。</div>':`${activeSitesList.length?`<table><thead><tr><th>名稱</th><th></th><th></th><th></th></tr></thead><tbody>${siteRows}</tbody></table>`:'<div class="empty">沒有啟用中的案場。</div>'}${pausedSiteTable}`}
+  </div>`;
 }
 
 function bind(){
@@ -1018,24 +998,8 @@ function bind(){
   };  document.querySelectorAll('[data-dealpick-cb]').forEach(cb=>cb.onchange=()=>{ dealSel[cb.dataset.dealpickCb]=cb.checked; });
   const dsa=document.getElementById('deals-selall'); if(dsa) dsa.onclick=()=>{ state.deals.forEach(d=>{ if(d.type==='代工'||d.type==='公司分潤'||d.type==='分潤/代料'||(d.type!=='合作案')) dealSel[d.id]=true; }); render(); };
   const dsn=document.getElementById('deals-selnone'); if(dsn) dsn.onclick=()=>{ dealSel={}; render(); };
-  // 請款追蹤 export
-  document.querySelectorAll('[data-billingsel]').forEach(cb=>cb.onchange=()=>{ billingSel[cb.dataset.billingsel]=cb.checked; });
-  const bSelAll=document.getElementById('billing-selall'); if(bSelAll) bSelAll.onclick=()=>{ const groups={}; state.billings.forEach(b=>{ const k=b.site||'（未填案場）'; groups[k]=true; }); Object.keys(groups).forEach(k=>{ billingSel[k]=true; }); render(); };
-  const bSelNone=document.getElementById('billing-selnone'); if(bSelNone) bSelNone.onclick=()=>{ billingSel={}; render(); };
-  const bExpSel=document.getElementById('billing-export-sel'); if(bExpSel) bExpSel.onclick=()=>{ const names=Object.keys(billingSel).filter(k=>billingSel[k]); exportBillingPDF(names); };
-  const bExpAll=document.getElementById('billing-export-all'); if(bExpAll) bExpAll.onclick=()=>exportBillingPDF();
-  // 案場成本 export
-  document.querySelectorAll('[data-sitesel]').forEach(cb=>cb.onchange=()=>{ sitesSel[cb.dataset.sitesel]=cb.checked; });
-  const sSelAll=document.getElementById('sites-selall'); if(sSelAll) sSelAll.onclick=()=>{ state.sites.forEach(s=>{ sitesSel[s.id]=true; }); render(); };
-  const sSelNone=document.getElementById('sites-selnone'); if(sSelNone) sSelNone.onclick=()=>{ sitesSel={}; render(); };
-  const sExpSel=document.getElementById('sites-export-sel'); if(sExpSel) sExpSel.onclick=()=>{ const ids=Object.keys(sitesSel).filter(k=>sitesSel[k]); exportSitesPDF(ids); };
-  const sExpAll=document.getElementById('sites-export-all'); if(sExpAll) sExpAll.onclick=()=>exportSitesPDF();
-  // 代墊款 export
-  document.querySelectorAll('[data-advsel]').forEach(cb=>cb.onchange=()=>{ advSel[cb.dataset.advsel]=cb.checked; });
-  const aSelAll=document.getElementById('adv-selall'); if(aSelAll) aSelAll.onclick=()=>{ state.employees.filter(e=>e.partner).forEach(p=>{ advSel[p.id]=true; }); render(); };
-  const aSelNone=document.getElementById('adv-selnone'); if(aSelNone) aSelNone.onclick=()=>{ advSel={}; render(); };
-  const aExpSel=document.getElementById('adv-export-sel'); if(aExpSel) aExpSel.onclick=()=>{ const ids=Object.keys(advSel).filter(k=>advSel[k]); exportAdvPDF(ids); };
-  const aExpAll=document.getElementById('adv-export-all'); if(aExpAll) aExpAll.onclick=()=>exportAdvPDF();
+  const eb=document.getElementById('export-billing'); if(eb) eb.onclick=()=>exportBillingPDF();
+  const esi=document.getElementById('export-sites'); if(esi) esi.onclick=()=>exportSitesPDF();
   document.querySelectorAll('[data-payslip]').forEach(b=>b.onclick=()=>exportPayslipPDF(b.dataset.payslip));
 
   const gotoM=document.getElementById('goto-manage'); if(gotoM) gotoM.onclick=()=>{ state.tab='manage'; render(); };
@@ -1679,61 +1643,78 @@ function bind(){
   // 請款追蹤
   document.querySelectorAll('[data-billedit]').forEach(b=>b.onclick=()=>{ billEditId=b.dataset.billedit; render(); });
   document.querySelectorAll('[data-billeditcancel]').forEach(b=>b.onclick=()=>{ billEditId=null; render(); });
-document.querySelectorAll('[data-billeditok]').forEach(b=>b.onclick=()=>{
+  document.querySelectorAll('[data-billeditok]').forEach(b=>b.onclick=()=>{
     const bill=state.billings.find(x=>x.id===b.dataset.billeditok); if(!bill) return;
-    const items=readBillingItems('be');
-    const amt=billingItemsTotal(items);
+    const amt=parseFloat(document.getElementById('be-amount').value);
     if(isNaN(amt)||amt<=0){ alert('金額請填正數'); return; }
-    bill.type=document.getElementById('be-type').value;
-    delete bill.no; delete bill.docNo;
+    const beType=document.getElementById('be-type'); if(beType) bill.docType=beType.value;
     bill.date=document.getElementById('be-date').value;
     bill.amount=amt;
     bill.method=document.getElementById('be-method').value.trim();
     bill.client=document.getElementById('be-client').value.trim();
-    bill.title=document.getElementById('be-title').value.trim();
-    bill.items=items;
     bill.note=document.getElementById('be-note').value.trim();
     const so=state.sites.find(x=>x.name===bill.site); if(so) resyncSiteDeal(so);
     billEditId=null; saveData(); render();
   });
   const bAdd=document.getElementById('b-add');
   if(bAdd) bAdd.onclick=()=>{
-    const type=document.getElementById('b-type').value;
+    const docType=(document.getElementById('b-type')||{}).value||'請款單';
     const date=document.getElementById('b-date').value;
     const site=document.getElementById('b-site').value.trim();
-    const items=readBillingItems('b');
-    const amount=billingItemsTotal(items);
+    const amount=parseFloat(document.getElementById('b-amount').value);
     const method=document.getElementById('b-method').value.trim();
     const client=document.getElementById('b-client').value.trim();
-    const title=document.getElementById('b-title').value.trim();
-    const note=document.getElementById('b-note').value.trim();
+    const note=(document.getElementById('b-note')||{}).value||'';
     const settled=document.getElementById('b-settled').value==='1';
     if(!date||!site||isNaN(amount)||amount<=0){ alert('請填請款日、案場、金額'); return; }
-    state.billings.push({id:uid(),type,date,site,amount,method,client,title,items,note,settled});
+    state.billings.push({id:uid(),docType,date,site,amount,method,client,note,settled});
     const so=state.sites.find(x=>x.name===site); if(so) resyncSiteDeal(so);
     saveData(); render();
   };
-  const bdAdd=document.getElementById('bd-add');
-  if(bdAdd) bdAdd.onclick=()=>{
-    const type=bdAdd.dataset.bdtype;
-    const date=document.getElementById('bd-date').value;
-    const site=document.getElementById('bd-site').value.trim();
-    const items=readBillingItems('bd');
-    const amount=billingItemsTotal(items);
-    const method=document.getElementById('bd-method').value.trim();
-    const client=document.getElementById('bd-client').value.trim();
-    const title=document.getElementById('bd-title').value.trim();
-    const note=document.getElementById('bd-note').value.trim();
-    const settled=document.getElementById('bd-settled').value==='1';
-    if(!date||!site||isNaN(amount)||amount<=0){ alert('請填日期、案場、金額或明細金額'); return; }
-    const rec={id:uid(),type,date,site,amount,method,client,title,items,note,settled};
-    state.billings.push(rec);
+  // 追加單頁：新增
+  const bnaAdd=document.getElementById('bna-add');
+  if(bnaAdd) bnaAdd.onclick=()=>{
+    const date=document.getElementById('bna-date').value;
+    const site=document.getElementById('bna-site').value.trim();
+    const amount=parseFloat(document.getElementById('bna-amount').value);
+    const method=document.getElementById('bna-method').value.trim();
+    const client=document.getElementById('bna-client').value.trim();
+    const note=document.getElementById('bna-note').value.trim();
+    const settled=document.getElementById('bna-settled').value==='1';
+    if(!date||!site||isNaN(amount)||amount<=0){ alert('請填日期、案場、金額'); return; }
+    state.billings.push({id:uid(),docType:'追加單',date,site,amount,method,client,note,settled});
     const so=state.sites.find(x=>x.name===site); if(so) resyncSiteDeal(so);
     saveData(); render();
   };
+  // 追加單頁：改（簡易 inline prompt）
+  document.querySelectorAll('[data-billedit-add]').forEach(b=>b.onclick=()=>{
+    const bill=state.billings.find(x=>x.id===b.dataset.billeditAdd); if(!bill) return;
+    const amt=parseFloat(prompt('金額：',bill.amount)); if(isNaN(amt)||amt<=0) return;
+    bill.amount=amt;
+    const note=prompt('說明：',bill.note||''); if(note!==null) bill.note=note;
+    const so=state.sites.find(x=>x.name===bill.site); if(so) resyncSiteDeal(so);
+    saveData(); render();
+  });
   document.querySelectorAll('[data-billprint]').forEach(b=>b.onclick=()=>printBillingDoc(b.dataset.billprint));
   document.querySelectorAll('[data-togglesettle]').forEach(b=>b.onclick=()=>{
     const bill=state.billings.find(x=>x.id===b.dataset.togglesettle); if(bill){ bill.settled=!bill.settled; saveData(); render(); }
+  });
+  document.querySelectorAll('[data-photoadd]').forEach(inp=>inp.onchange=()=>{
+    const id=inp.dataset.photoadd;
+    const files=Array.from(inp.files); if(!files.length) return;
+    const arr=(billingPhotos[id]||[]).slice();
+    let done=0;
+    files.forEach(file=>compressImage(file,1200,0.75,dataUrl=>{
+      arr.push(dataUrl); done++;
+      if(done===files.length){ billingPhotos[id]=arr; savePhotos(); render(); }
+    }));
+  });
+  document.querySelectorAll('[data-photodel]').forEach(b=>b.onclick=()=>{
+    const id=b.dataset.photodel; const idx=parseInt(b.dataset.photoidx);
+    if(!billingPhotos[id]) return;
+    billingPhotos[id].splice(idx,1);
+    if(billingPhotos[id].length===0) delete billingPhotos[id];
+    savePhotos(); render();
   });
   document.querySelectorAll('[data-delbill]').forEach(b=>b.onclick=()=>{
     const bill=state.billings.find(x=>x.id===b.dataset.delbill);
@@ -1936,39 +1917,54 @@ function exportDealsPDF(selectedOnly){
   printHTML('分潤結算明細', inner);
 }
 
+// 壓縮圖片為 base64 JPEG
+function compressImage(file, maxW, quality, cb){
+  const reader=new FileReader();
+  reader.onload=e=>{
+    const img=new Image();
+    img.onload=()=>{
+      const scale=Math.min(1,maxW/img.width);
+      const w=Math.round(img.width*scale), h=Math.round(img.height*scale);
+      const c=document.createElement('canvas'); c.width=w; c.height=h;
+      c.getContext('2d').drawImage(img,0,0,w,h);
+      cb(c.toDataURL('image/jpeg',quality));
+    };
+    img.src=e.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+// 列印單張追加單 / 請款單
 function printBillingDoc(id){
-  const b=state.billings.find(x=>x.id===id);
-  if(!b) return;
-  const type=billingType(b);
-  const items=normalizeBillingItems(Array.isArray(b.items)&&b.items.length?b.items:[{name:billingTitle(b)||type, qty:1, price:Number(b.amount)||0}]);
-  let total=0;
-  const rows=items.map((it,i)=>{
-    const qty=Number(it.qty)||0, price=Number(it.price)||0, subtotal=qty*price; total+=subtotal;
-    return `<tr><td class="num">${i+1}</td><td>${esc(it.name||'工程款')}</td><td>${esc(it.unit||'')}</td><td class="num">${qty||'-'}</td><td class="num">${price?money(price):'-'}</td><td class="num">${subtotal?money(subtotal):'-'}</td></tr>`;
-  }).join('');
-  const displayTotal=total>0?total:(Number(b.amount)||0);
+  const b=state.billings.find(x=>x.id===id); if(!b) return;
+  const type=(b.docType||'請款單');
+  const photos=billingPhotos[id]||[];
+  const photoSec=photos.length?`<div class="sec">施作照片</div>
+    <div style="display:flex;flex-wrap:wrap;gap:10px;margin:8px 0 16px">
+      ${photos.map(url=>`<img src="${url}" style="width:180px;height:135px;object-fit:cover;border:1px solid #ddd;border-radius:4px">`).join('')}
+    </div>`:'';
   const inner=`<h1>${esc(type)}</h1>
     <div class="meta">日期：${esc(b.date||'')}　|　案場：${esc(b.site||'')}</div>
     <table><tbody>
       <tr><th style="width:90px">業主</th><td>${esc(b.client||'')}</td><th style="width:90px">付款方式</th><td>${esc(b.method||'')}</td></tr>
-      <tr><th>主旨</th><td colspan="3">${esc(billingTitle(b)||type)}</td></tr>
+      ${b.note?`<tr><th>備註</th><td colspan="3">${esc(b.note)}</td></tr>`:''}
     </tbody></table>
-    <div class="sec">明細</div>
-    <table><thead><tr><th class="num" style="width:48px">#</th><th>項目</th><th>單位</th><th class="num">數量</th><th class="num">金額</th><th class="num">小計</th></tr></thead>
-      <tbody>${rows}<tr class="total-row"><td colspan="5">總金額</td><td class="num">${money(displayTotal)}</td></tr></tbody></table>
-    ${b.note?`<div class="sec">備註</div><p>${esc(b.note)}</p>`:''}
+    <div class="sec">金額</div>
+    <table><thead><tr><th>項目</th><th class="num">金額</th></tr></thead>
+      <tbody><tr><td>${esc(b.note||type)}</td><td class="num">${money(b.amount)}</td></tr>
+        <tr class="total-row"><td>總金額</td><td class="num">${money(b.amount)}</td></tr>
+      </tbody></table>
+    ${photoSec}
     <div class="sign"><div>申請人</div><div>審核</div><div>業主簽收</div></div>`;
   printHTML(`${type} ${esc(b.site||'')}`, inner);
 }
 
 // 請款追蹤明細 PDF
-function exportBillingPDF(filterNames){
+function exportBillingPDF(){
   if(state.billings.length===0) return;
   const groups={};
   state.billings.forEach(b=>{ const k=b.site||'（未填案場）'; (groups[k]=groups[k]||[]).push(b); });
-  let names=Object.keys(groups).sort((a,b)=>a.localeCompare(b));
-  if(filterNames&&filterNames.length) names=names.filter(n=>filterNames.includes(n));
-  if(names.length===0) return;
+  const names=Object.keys(groups).sort((a,b)=>a.localeCompare(b));
   let secs='';
   let GB=0,GS=0;
   names.forEach(name=>{
@@ -1978,9 +1974,9 @@ function exportBillingPDF(filterNames){
     GB+=billed; GS+=settled;
     const contract=Number(state.contracts[name])||0;
     const cline=contract>0?`　合約總額 ${money(contract)}　未請款 ${money(contract-billed)}`:'';
-    const rows=list.map(b=>`<tr><td>${esc(billingType(b))}</td><td>${esc(b.date||'')}</td><td>${esc(billingTitle(b)||'-')}</td><td class="num">${money(b.amount)}</td><td>${esc(b.method||'')}</td><td>${esc(b.client||'')}</td><td>${b.settled?'已結算':'未結算'}</td></tr>`).join('');
+    const rows=list.map(b=>`<tr><td>${esc(b.date||'')}</td><td class="num">${money(b.amount)}</td><td>${esc(b.method||'')}</td><td>${esc(b.client||'')}</td><td>${b.settled?'已結算':'未結算'}</td></tr>`).join('');
     secs+=`<div class="sec">${esc(name)}　已請款 ${money(billed)}・已結算 ${money(settled)}・未結算 ${money(billed-settled)}${cline}</div>
-      <table><thead><tr><th>單據</th><th>日期</th><th>主旨</th><th class="num">總金額</th><th>方式</th><th>業主</th><th>結算</th></tr></thead><tbody>${rows}</tbody></table>`;
+      <table><thead><tr><th>請款日</th><th class="num">金額</th><th>方式</th><th>業主</th><th>結算</th></tr></thead><tbody>${rows}</tbody></table>`;
   });
   const inner=`<h1>案場請款追蹤明細</h1>
     <div class="meta">列印日：${new Date().toISOString().slice(0,10)}　|　累計請款 ${money(GB)}・已結算 ${money(GS)}・未結算 ${money(GB-GS)}</div>
@@ -1990,7 +1986,7 @@ function exportBillingPDF(filterNames){
 }
 
 // 案場成本明細 PDF
-function exportSitesPDF(filterIds){
+function exportSitesPDF(){
   const comp=computeRecords(state.attendance);
   const bySite={};
   state.sites.forEach(s=>{ bySite[s.id]={hours:0,wage:0,allow:0,total:0,emp:{},opening:Number(s.opening)||0,name:s.name}; });
@@ -1998,9 +1994,7 @@ function exportSitesPDF(filterIds){
     const s=bySite[r.siteId]=bySite[r.siteId]||{hours:0,wage:0,allow:0,total:0,emp:{},opening:0,name:siteName(r.siteId)};
     s.hours+=Number(r.hours)||0; s.wage+=c.wage; s.allow+=c.allow; s.total+=c.total; s.emp[r.empId]=(s.emp[r.empId]||0)+c.total;
   });
-  let ids=Object.keys(bySite); if(ids.length===0) return;
-  if(filterIds&&filterIds.length) ids=ids.filter(id=>filterIds.includes(id));
-  if(ids.length===0) return;
+  const ids=Object.keys(bySite); if(ids.length===0) return;
   ids.forEach(id=>{ bySite[id].grand=bySite[id].total+bySite[id].opening; });
   const grand=ids.reduce((s,id)=>s+bySite[id].grand,0);
   ids.sort((a,b)=>bySite[b].grand-bySite[a].grand);
@@ -2015,34 +2009,6 @@ function exportSitesPDF(filterIds){
     </tbody></table>
     <p class="sub">總成本＝期初人事成本（歷史抄入）＋系統內登記出勤的工資與津貼。金額四捨五入至整數。</p>`;
   printHTML('案場成本明細', inner);
-}
-
-// 代墊款 PDF
-function exportAdvPDF(filterIds){
-  const partners=state.employees.filter(e=>e.partner);
-  let list=partners;
-  if(filterIds&&filterIds.length) list=partners.filter(p=>filterIds.includes(p.id));
-  if(list.length===0) return;
-  if(!advFrom||!advTo){ const d=defaultPayRange(); advFrom=d.from; advTo=d.to; }
-  const byEmp=buildPayroll(advFrom,advTo);
-  const inRange=dt=>(!advFrom||dt>=advFrom)&&(!advTo||dt<=advTo);
-  const advs=state.advances.filter(a=>inRange(a.date));
-  let secs='';
-  let grandDue=0;
-  list.forEach(p=>{
-    const wage=byEmp[p.id]?byEmp[p.id].gross:0;
-    const mine=advs.filter(a=>a.empId===p.id).sort((a,b)=>a.date.localeCompare(b.date));
-    const advTotal=mine.reduce((s,a)=>s+(Number(a.amount)||0),0);
-    const due=wage+advTotal;
-    grandDue+=due;
-    const rows=mine.map(a=>`<tr><td>${esc(a.date)}</td><td>${esc(a.purpose||'')}</td><td class="num">${money(a.amount)}</td></tr>`).join('');
-    secs+=`<div class="sec">${esc(p.name)}　工資 ${money(wage)}　代墊款 ${money(advTotal)}　應領 ${money(due)}</div>
-      ${rows?`<table><thead><tr><th>日期</th><th>用途</th><th class="num">金額</th></tr></thead><tbody>${rows}</tbody></table>`:'<p class="sub">本期無代墊款。</p>'}`;
-  });
-  const inner=`<h1>代墊款明細</h1>
-    <div class="meta">期間：${advFrom} ～ ${advTo}　|　列印日：${new Date().toISOString().slice(0,10)}　|　合計應領 ${money(grandDue)}</div>
-    ${secs}`;
-  printHTML('代墊款明細', inner);
 }
 
 // ---- 借支 ----
@@ -2080,23 +2046,21 @@ function viewLoans(){
     <div class="metric"><div class="l">借支筆數</div><div class="v">${loans.length}</div></div>
     <div class="metric"><div class="l">尚未還清總額</div><div class="v">${money(outstanding)}</div></div>
   </div>
-  <details class="card">
-    <summary>新增借支</summary>
-    <div class="card-body">
-      <p class="sub">登記一筆借款：借出日、總額、每期固定扣款額。系統會追蹤已扣與剩餘，發薪時在薪資分頁提示應扣金額，由你確認後帶入該期扣項。</p>
-      <div class="row" style="margin-bottom:10px">
-        <div class="field"><label>借款日</label><input type="date" id="loan-date" value="${new Date().toISOString().slice(0,10)}"></div>
-        <div class="field"><label>員工</label><select id="loan-emp">${empOpts}</select></div>
-        <div class="field"><label>借款總額</label><input type="number" id="loan-amount" min="0" step="500" style="width:120px"></div>
-        <div class="field"><label>每期扣款</label><input type="number" id="loan-per" min="0" step="500" style="width:120px"></div>
-        <div class="field" style="flex:1;min-width:140px"><label>備註（選填）</label><input id="loan-note" placeholder="例：預支生活費"></div>
-        <button class="btn" id="loan-add">＋ 新增借支</button>
-      </div>
-      ${rows===''?'<div class="empty">尚無借支紀錄。</div>':`<div class="scroll"><table>
-        <thead><tr><th>借款日</th><th>員工</th><th class="num">總額</th><th class="num">每期扣</th><th class="num">已扣</th><th class="num">剩餘</th><th>備註</th><th></th></tr></thead>
-        <tbody>${rows}</tbody></table></div>`}
+  <div class="card">
+    <div style="font-size:14px;font-weight:600;margin-bottom:4px">新增借支</div>
+    <p class="sub">登記一筆借款：借出日、總額、每期固定扣款額。系統會追蹤已扣與剩餘，發薪時在薪資分頁提示應扣金額，由你確認後帶入該期扣項。</p>
+    <div class="row" style="margin-bottom:10px">
+      <div class="field"><label>借款日</label><input type="date" id="loan-date" value="${new Date().toISOString().slice(0,10)}"></div>
+      <div class="field"><label>員工</label><select id="loan-emp">${empOpts}</select></div>
+      <div class="field"><label>借款總額</label><input type="number" id="loan-amount" min="0" step="500" style="width:120px"></div>
+      <div class="field"><label>每期扣款</label><input type="number" id="loan-per" min="0" step="500" style="width:120px"></div>
+      <div class="field" style="flex:1;min-width:140px"><label>備註（選填）</label><input id="loan-note" placeholder="例：預支生活費"></div>
+      <button class="btn" id="loan-add">＋ 新增借支</button>
     </div>
-  </details>`;
+    ${rows===''?'<div class="empty">尚無借支紀錄。</div>':`<div class="scroll"><table>
+      <thead><tr><th>借款日</th><th>員工</th><th class="num">總額</th><th class="num">每期扣</th><th class="num">已扣</th><th class="num">剩餘</th><th>備註</th><th></th></tr></thead>
+      <tbody>${rows}</tbody></table></div>`}
+  </div>`;
 }
 
 // ---- 地點與工具資產 ----
@@ -2162,28 +2126,24 @@ function viewTools(){
   return `
   ${assetSection()}
   ${locationSection()}
-  <details class="card">
-    <summary>工具遺失賠償</summary>
-    <div class="card-body">
-      <p class="sub">填好一筆遺失工具，按「設定分攤」後勾選要分攤的員工。金額會在分攤確認後一次帶入各人當期扣項（全額均攤、不分期）。</p>
-      <div class="row">
-        <div class="field"><label>遺失日</label><input type="date" id="tool-date" value="${new Date().toISOString().slice(0,10)}"></div>
-        <div class="field"><label>廠牌</label><input id="tool-brand" placeholder="例：HILTI" style="width:120px"></div>
-        <div class="field"><label>型號</label><input id="tool-model" placeholder="例：PM30" style="width:140px"></div>
-        <div class="field"><label>金額</label><input type="number" id="tool-amount" min="0" step="100" style="width:120px"></div>
-        <button class="btn" id="tool-setup">設定分攤 →</button>
-      </div>
+  <div class="card">
+    <div style="font-size:14px;font-weight:600;margin-bottom:4px">工具遺失賠償</div>
+    <p class="sub">填好一筆遺失工具，按「設定分攤」後勾選要分攤的員工。金額會在分攤確認後一次帶入各人當期扣項（全額均攤、不分期）。</p>
+    <div class="row">
+      <div class="field"><label>遺失日</label><input type="date" id="tool-date" value="${new Date().toISOString().slice(0,10)}"></div>
+      <div class="field"><label>廠牌</label><input id="tool-brand" placeholder="例：HILTI" style="width:120px"></div>
+      <div class="field"><label>型號</label><input id="tool-model" placeholder="例：PM30" style="width:140px"></div>
+      <div class="field"><label>金額</label><input type="number" id="tool-amount" min="0" step="100" style="width:120px"></div>
+      <button class="btn" id="tool-setup">設定分攤 →</button>
     </div>
-  </details>
+  </div>
   ${draftBlock}
-  <details class="card">
-    <summary>工具遺失紀錄${tools.length?` <span style="color:var(--muted);font-size:12px;font-weight:400">累計 ${money(totalLost)}</span>`:''}</summary>
-    <div class="card-body">
-      ${rows===''?'<div class="empty">尚無工具遺失紀錄。</div>':`<div class="scroll"><table>
-        <thead><tr><th>遺失日</th><th>廠牌</th><th>型號</th><th class="num">金額</th><th>分攤明細</th><th></th></tr></thead>
-        <tbody>${rows}</tbody></table></div>`}
-    </div>
-  </details>`;
+  <div class="card">
+    <div style="font-size:14px;font-weight:600;margin-bottom:8px">工具遺失紀錄 ${tools.length?`<span style="color:var(--muted);font-size:12px">累計 ${money(totalLost)}</span>`:''}</div>
+    ${rows===''?'<div class="empty">尚無工具遺失紀錄。</div>':`<div class="scroll"><table>
+      <thead><tr><th>遺失日</th><th>廠牌</th><th>型號</th><th class="num">金額</th><th>分攤明細</th><th></th></tr></thead>
+      <tbody>${rows}</tbody></table></div>`}
+  </div>`;
 }
 
 function assetSection(){
@@ -2209,23 +2169,21 @@ function assetSection(){
     </div>`;
   }).join('');
   return `
-  <details class="card">
-    <summary>工具資產</summary>
-    <div class="card-body">
-      <p class="sub">登記你現有的工具，並標記目前所在位置。下方依位置分組，方便反查某地點（工地／倉庫／貨車）有哪些工具。改位置直接在該列下拉選即可。</p>
-      ${noLoc?'<div class="empty">請先在下方「地點管理」建立至少一個地點（或先到設定建立案場）。</div>':`
-      <div class="row">
-        <div class="field"><label>名稱</label><input id="as-name" placeholder="例：電鑽" style="width:140px"></div>
-        <div class="field"><label>廠牌</label><input id="as-brand" placeholder="HILTI" style="width:110px"></div>
-        <div class="field"><label>型號</label><input id="as-model" placeholder="TE6" style="width:110px"></div>
-        <div class="field"><label>購入日</label><input type="date" id="as-buy"></div>
-        <div class="field"><label>價格</label><input type="number" id="as-price" min="0" step="100" style="width:110px"></div>
-        <div class="field"><label>目前位置</label><select id="as-loc">${locOpts}</select></div>
-        <button class="btn" id="as-add">＋ 新增工具</button>
-      </div>`}
-      ${state.assets.length===0?'<div class="empty" style="margin-top:8px">尚無工具資產。</div>':grouped}
-    </div>
-  </details>`;
+  <div class="card">
+    <div style="font-size:14px;font-weight:600;margin-bottom:4px">工具資產</div>
+    <p class="sub">登記你現有的工具，並標記目前所在位置。下方依位置分組，方便反查某地點（工地／倉庫／貨車）有哪些工具。改位置直接在該列下拉選即可。</p>
+    ${noLoc?'<div class="empty">請先在下方「地點管理」建立至少一個地點（或先到設定建立案場）。</div>':`
+    <div class="row">
+      <div class="field"><label>名稱</label><input id="as-name" placeholder="例：電鑽" style="width:140px"></div>
+      <div class="field"><label>廠牌</label><input id="as-brand" placeholder="HILTI" style="width:110px"></div>
+      <div class="field"><label>型號</label><input id="as-model" placeholder="TE6" style="width:110px"></div>
+      <div class="field"><label>購入日</label><input type="date" id="as-buy"></div>
+      <div class="field"><label>價格</label><input type="number" id="as-price" min="0" step="100" style="width:110px"></div>
+      <div class="field"><label>目前位置</label><select id="as-loc">${locOpts}</select></div>
+      <button class="btn" id="as-add">＋ 新增工具</button>
+    </div>`}
+    ${state.assets.length===0?'<div class="empty" style="margin-top:8px">尚無工具資產。</div>':grouped}
+  </div>`;
 }
 
 function locationSection(){
@@ -2235,18 +2193,16 @@ function locationSection(){
     return `<tr><td>${esc(l.name)}</td><td>${esc(l.kind||'')}</td><td>${del}</td></tr>`;
   }).join('');
   return `
-  <details class="card">
-    <summary>地點管理</summary>
-    <div class="card-body">
-      <p class="sub">案場會自動成為可選位置。這裡額外新增非案場的地點，例如倉庫、貨車。</p>
-      <div class="row" style="margin-bottom:10px">
-        <div class="field"><label>地點名稱</label><input id="loc-name" placeholder="例：高雄倉庫、貨車BYG" style="width:180px"></div>
-        <div class="field"><label>類型</label><select id="loc-kind"><option>倉庫</option><option>貨車</option><option>其他</option></select></div>
-        <button class="btn" id="loc-add">＋ 新增地點</button>
-      </div>
-      ${state.locations.length===0?'<div class="empty">尚無自訂地點。案場已可直接當位置選用。</div>':`<table><thead><tr><th>名稱</th><th>類型</th><th></th></tr></thead><tbody>${rows}</tbody></table>`}
+  <div class="card">
+    <div style="font-size:14px;font-weight:600;margin-bottom:4px">地點管理</div>
+    <p class="sub">案場會自動成為可選位置。這裡額外新增非案場的地點，例如倉庫、貨車。</p>
+    <div class="row" style="margin-bottom:10px">
+      <div class="field"><label>地點名稱</label><input id="loc-name" placeholder="例：高雄倉庫、貨車BYG" style="width:180px"></div>
+      <div class="field"><label>類型</label><select id="loc-kind"><option>倉庫</option><option>貨車</option><option>其他</option></select></div>
+      <button class="btn" id="loc-add">＋ 新增地點</button>
     </div>
-  </details>`;
+    ${state.locations.length===0?'<div class="empty">尚無自訂地點。案場已可直接當位置選用。</div>':`<table><thead><tr><th>名稱</th><th>類型</th><th></th></tr></thead><tbody>${rows}</tbody></table>`}
+  </div>`;
 }
 
 // ---- 代墊款 ----
@@ -2285,16 +2241,16 @@ function viewAdvances(){
               <button class="act muted" data-postcancel="1" style="cursor:pointer">取消</button>
             </div>`
           : `<button class="act" data-postadv="${p.id}" style="border:1px solid var(--accent);border-radius:6px;padding:3px 12px;color:var(--accent)">入帳為支出 →</button>`)));
-    const aSel=advSel[p.id]||false;
-    return `<details class="card">
-      <summary><input type="checkbox" data-advsel="${p.id}" ${aSel?'checked':''} onclick="event.stopPropagation()" style="width:16px;height:16px;flex-shrink:0;cursor:pointer"><span style="font-size:15px;font-weight:600">${esc(p.name)}</span><span style="margin-left:auto;font-size:16px;font-weight:700">應領 ${money(due)}</span></summary>
-      <div class="card-body">
-        <div class="sub" style="margin-bottom:8px">工資 ${money(wage)}（本期出工薪資自動帶入）＋ 代墊款 ${money(advTotal)} ＝ 應領 ${money(due)}</div>
-        ${advRows===''?'<div class="empty" style="padding:10px 0">本期尚無代墊款。</div>':`<div class="scroll"><table>
-          <thead><tr><th>日期</th><th>用途</th><th class="num">金額</th><th></th></tr></thead><tbody>${advRows}</tbody></table></div>`}
-        <div style="margin-top:8px">${postBtn}</div>
+    return `<div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px">
+        <div style="font-size:15px;font-weight:600">${esc(p.name)}</div>
+        <div style="font-size:18px;font-weight:600">應領 ${money(due)}</div>
       </div>
-    </details>`;
+      <div class="sub">工資 ${money(wage)}（本期出工薪資自動帶入）＋ 代墊款 ${money(advTotal)} ＝ 應領 ${money(due)}</div>
+      ${advRows===''?'<div class="empty" style="padding:10px 0">本期尚無代墊款。</div>':`<div class="scroll"><table>
+        <thead><tr><th>日期</th><th>用途</th><th class="num">金額</th><th></th></tr></thead><tbody>${advRows}</tbody></table></div>`}
+      <div style="margin-top:8px">${postBtn}</div>
+    </div>`;
   }).join('');
 
   const grandDue=partners.reduce((s,p)=>{ const w=byEmp[p.id]?byEmp[p.id].gross:0; const at=advs.filter(a=>a.empId===p.id).reduce((x,a)=>x+(Number(a.amount)||0),0); return s+w+at; },0);
@@ -2303,32 +2259,24 @@ function viewAdvances(){
   <div class="card">
     <div style="font-size:14px;font-weight:600;margin-bottom:4px">代墊款報銷</div>
     <p class="sub">每期（11號週期）列出各股東：工資（本期出工薪資自動帶入）＋ 代墊款 ＝ 應領。代墊款請填用途說明，方便日後對帳。</p>
-    <div class="row" style="align-items:flex-end;flex-wrap:wrap;gap:8px">
+    <div class="row">
       <div class="field"><label>起</label><input type="date" id="adv-from" value="${advFrom}"></div>
       <div class="field"><label>訖</label><input type="date" id="adv-to" value="${advTo}"></div>
       <button class="act" id="adv-thisperiod" style="height:36px;border:1px solid var(--line2);border-radius:8px;padding:0 12px">本期</button>
       <button class="act" id="adv-lastperiod" style="height:36px;border:1px solid var(--line2);border-radius:8px;padding:0 12px">上期</button>
-      <div style="margin-left:auto;display:flex;gap:6px;flex-wrap:wrap">
-        <button class="act" id="adv-selall" style="height:32px;border:1px solid var(--line2);border-radius:8px;padding:0 10px;font-size:12px">全選</button>
-        <button class="act" id="adv-selnone" style="height:32px;border:1px solid var(--line2);border-radius:8px;padding:0 10px;font-size:12px">取消選</button>
-        <button class="btn" id="adv-export-sel" ${partners.length===0?'disabled style="opacity:.5"':''} style="height:32px;font-size:12px">匯出選取</button>
-        <button class="btn" id="adv-export-all" ${partners.length===0?'disabled style="opacity:.5"':''} style="height:32px;font-size:12px;background:var(--muted)">全部匯出</button>
-      </div>
     </div>
   </div>
   ${partners.length===0?'<div class="card"><div class="empty">尚未標記股東。請到「員工/案場」分頁把股東（潘東澤、潘建龍）設為股東。</div></div>':`
-  <details class="card">
-    <summary>新增代墊款</summary>
-    <div class="card-body">
-      <div class="row">
-        <div class="field"><label>日期</label><input type="date" id="adv-date" value="${new Date().toISOString().slice(0,10)}"></div>
-        <div class="field"><label>股東</label><select id="adv-emp">${partnerOpts}</select></div>
-        <div class="field"><label>金額</label><input type="number" id="adv-amount" min="0" step="100" style="width:120px"></div>
-        <div class="field" style="flex:1;min-width:200px"><label>用途說明</label><input id="adv-purpose" placeholder="例：酷擊五金材料、Hilti租金、台北住宿"></div>
-        <button class="btn" id="adv-add">＋ 新增</button>
-      </div>
+  <div class="card">
+    <div style="font-size:14px;font-weight:600;margin-bottom:4px">新增代墊款</div>
+    <div class="row">
+      <div class="field"><label>日期</label><input type="date" id="adv-date" value="${new Date().toISOString().slice(0,10)}"></div>
+      <div class="field"><label>股東</label><select id="adv-emp">${partnerOpts}</select></div>
+      <div class="field"><label>金額</label><input type="number" id="adv-amount" min="0" step="100" style="width:120px"></div>
+      <div class="field" style="flex:1;min-width:200px"><label>用途說明</label><input id="adv-purpose" placeholder="例：酷擊五金材料、Hilti租金、台北住宿"></div>
+      <button class="btn" id="adv-add">＋ 新增</button>
     </div>
-  </details>
+  </div>
   <div class="metric" style="margin-bottom:16px"><div class="l">本期應領總額（全體股東）</div><div class="v">${money(grandDue)}</div></div>
   ${cards}`}`;
 }
@@ -2385,59 +2333,53 @@ function viewAccounts(){
   return `
   <div class="metrics">
     ${accMetrics}
-    <div class="metric" style="background:var(--accent);color:#fff"><div class="l" style="color:#fff;opacity:.85">總餘額</div><div class="v" style="-webkit-text-fill-color:#fff;background:none">${money(totalBal)}</div></div>
+    <div class="metric" style="background:var(--accent);color:#fff"><div class="l" style="color:#fff;opacity:.85">總餘額</div><div class="v">${money(totalBal)}</div></div>
   </div>
 
-  <details class="card">
-    <summary>帳戶管理</summary>
-    <div class="card-body">
-      <p class="sub">建立帳戶並設定「期初餘額」（承接上期的金額）。餘額＝期初＋所有收入−所有支出，系統自動計算。</p>
-      <div class="row" style="margin-bottom:10px">
-        <div class="field"><label>帳戶名稱</label><input id="acc-name" placeholder="例：東澤工程帳戶" style="width:180px"></div>
-        <div class="field"><label>期初餘額</label><input type="number" id="acc-opening" min="0" step="1000" value="0" style="width:130px"></div>
-        <button class="btn" id="acc-add">＋ 新增帳戶</button>
-      </div>
-      ${accs.length===0?'<div class="empty">尚無帳戶，請先新增。</div>':`<table><thead><tr><th>帳戶</th><th class="num">期初</th><th class="num">目前餘額</th><th></th></tr></thead>
-        <tbody>${accs.map(a=>{
-          const inUse=state.ledger.some(t=>t.accId===a.id);
-          const del=inUse?'<span class="act muted" title="已有交易，無法刪除">🔒</span>':`<button class="act danger" data-delacc="${a.id}">刪</button>`;
-          return `<tr><td>${esc(a.name)}</td><td class="num">${money(a.opening||0)}</td><td class="num" style="font-weight:600">${money(accountBalance(a.id))}</td><td><button class="act" data-editopen="${a.id}">改期初</button> ${del}</td></tr>`;
-        }).join('')}</tbody></table>`}
+  <div class="card">
+    <div style="font-size:14px;font-weight:600;margin-bottom:4px">帳戶管理</div>
+    <p class="sub">建立帳戶並設定「期初餘額」（承接上期的金額）。餘額＝期初＋所有收入−所有支出，系統自動計算。</p>
+    <div class="row" style="margin-bottom:10px">
+      <div class="field"><label>帳戶名稱</label><input id="acc-name" placeholder="例：東澤工程帳戶" style="width:180px"></div>
+      <div class="field"><label>期初餘額</label><input type="number" id="acc-opening" min="0" step="1000" value="0" style="width:130px"></div>
+      <button class="btn" id="acc-add">＋ 新增帳戶</button>
     </div>
-  </details>
+    ${accs.length===0?'<div class="empty">尚無帳戶，請先新增。</div>':`<table><thead><tr><th>帳戶</th><th class="num">期初</th><th class="num">目前餘額</th><th></th></tr></thead>
+      <tbody>${accs.map(a=>{
+        const inUse=state.ledger.some(t=>t.accId===a.id);
+        const del=inUse?'<span class="act muted" title="已有交易，無法刪除">🔒</span>':`<button class="act danger" data-delacc="${a.id}">刪</button>`;
+        return `<tr><td>${esc(a.name)}</td><td class="num">${money(a.opening||0)}</td><td class="num" style="font-weight:600">${money(accountBalance(a.id))}</td><td><button class="act" data-editopen="${a.id}">改期初</button> ${del}</td></tr>`;
+      }).join('')}</tbody></table>`}
+  </div>
 
   ${accs.length===0?'':`
-  <details class="card">
-    <summary>記一筆收支</summary>
-    <div class="card-body">
-      <div class="row">
-        <div class="field"><label>日期</label><input type="date" id="led-date" value="${new Date().toISOString().slice(0,10)}"></div>
-        <div class="field"><label>帳戶</label><select id="led-acc">${accOpts}</select></div>
-        <div class="field"><label>性質</label><select id="led-kind"><option value="out">支出（−）</option><option value="in">收入（+）</option></select></div>
-        <div class="field"><label>金額</label><input type="number" id="led-amount" min="0" step="100" style="width:120px"></div>
-        <div class="field" style="flex:1;min-width:200px"><label>項目/來源說明</label><input id="led-note" placeholder="例：酷擊五金材料、Hilti租金、台北住宿"></div>
-        <button class="btn" id="led-add">＋ 記帳</button>
-      </div>
+  <div class="card">
+    <div style="font-size:14px;font-weight:600;margin-bottom:4px">記一筆收支</div>
+    <div class="row">
+      <div class="field"><label>日期</label><input type="date" id="led-date" value="${new Date().toISOString().slice(0,10)}"></div>
+      <div class="field"><label>帳戶</label><select id="led-acc">${accOpts}</select></div>
+      <div class="field"><label>性質</label><select id="led-kind"><option value="out">支出（−）</option><option value="in">收入（+）</option></select></div>
+      <div class="field"><label>金額</label><input type="number" id="led-amount" min="0" step="100" style="width:120px"></div>
+      <div class="field" style="flex:1;min-width:200px"><label>項目/來源說明</label><input id="led-note" placeholder="例：酷擊五金材料、Hilti租金、台北住宿"></div>
+      <button class="btn" id="led-add">＋ 記帳</button>
     </div>
-  </details>
-  <details class="card">
-    <summary>收支明細${txs.length>300?' <span style="color:var(--muted);font-size:12px">（顯示最近300筆）</span>':''}</summary>
-    <div class="card-body">
-      <div style="display:flex;justify-content:flex-end;margin-bottom:10px">
-        <button class="btn" id="export-ledger" ${txRows===''?'disabled style="opacity:.5"':''}>匯出 PDF</button>
-      </div>
-      <div class="row" style="margin-bottom:10px">
-        <div class="field"><label>帳戶</label><select id="led-filter" style="height:36px">${filterOpts}</select></div>
-        <div class="field"><label>起</label><input type="date" id="led-from" value="${ledgerFrom}"></div>
-        <div class="field"><label>訖</label><input type="date" id="led-to" value="${ledgerTo}"></div>
-        <button class="act" id="led-clearrange" style="height:36px;border:1px solid var(--line2);border-radius:8px;padding:0 12px">清除日期</button>
-        ${(ledgerFrom||ledgerTo)?`<div class="sub" style="margin:0;align-self:center">區間內　收入 ${money(rangeIn)}・支出 ${money(rangeOut)}</div>`:''}
-      </div>
-      ${txRows===''?'<div class="empty">此條件下尚無收支紀錄。</div>':`<div class="scroll"><table>
-        <thead><tr><th>日期</th><th>帳戶</th><th>項目/來源</th><th class="num">收入</th><th class="num">支出</th><th></th></tr></thead>
-        <tbody>${txRows}</tbody></table></div>`}
+  </div>
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:8px">
+      <div style="font-size:14px;font-weight:600">收支明細 ${txs.length>300?'<span style="color:var(--muted);font-size:12px">（顯示最近300筆）</span>':''}</div>
+      <button class="btn" id="export-ledger" ${txRows===''?'disabled style="opacity:.5"':''}>匯出 PDF</button>
     </div>
-  </details>`}`;
+    <div class="row" style="margin-bottom:10px">
+      <div class="field"><label>帳戶</label><select id="led-filter" style="height:36px">${filterOpts}</select></div>
+      <div class="field"><label>起</label><input type="date" id="led-from" value="${ledgerFrom}"></div>
+      <div class="field"><label>訖</label><input type="date" id="led-to" value="${ledgerTo}"></div>
+      <button class="act" id="led-clearrange" style="height:36px;border:1px solid var(--line2);border-radius:8px;padding:0 12px">清除日期</button>
+      ${(ledgerFrom||ledgerTo)?`<div class="sub" style="margin:0;align-self:center">區間內　收入 ${money(rangeIn)}・支出 ${money(rangeOut)}</div>`:''}
+    </div>
+    ${txRows===''?'<div class="empty">此條件下尚無收支紀錄。</div>':`<div class="scroll"><table>
+      <thead><tr><th>日期</th><th>帳戶</th><th>項目/來源</th><th class="num">收入</th><th class="num">支出</th><th></th></tr></thead>
+      <tbody>${txRows}</tbody></table></div>`}
+  </div>`}`;
 }
 
 // ---- 案場損益及分潤結算 ----
@@ -2476,7 +2418,7 @@ function dealCalc(d){
   return {profit,bonus,fund,tax,isDeal:false};
 }
 let dealPosting=null, dealEditId=null, dealCarry=null, coopCarry=null, billEditId=null, dealAccPick=null; // 入帳/編輯/帶去/請款編輯/選帳戶中
-let billingSel={}, sitesSel={}, advSel={};
+let billingPhotos={}; // { [billingId]: [dataUrl, ...] }
 
 // 一筆分潤進帳戶的金額：代工/公司分潤＝金額−稅；（合作案在卡片另算，這裡不處理）
 function dealIncomeAmount(d){
@@ -2635,7 +2577,7 @@ function viewDeals(){
   const legacyCompany=state.deals.filter(d=>d.type==='公司分潤'||d.type==='分潤/代料').sort(sortByDate);
   const tableHead=`<thead><tr><th style="width:28px"></th><th>案場</th><th class="num">金額</th><th class="num">成本</th><th class="num">稅金</th><th class="num">淨利</th><th class="num">獎金/管理人</th><th class="num">公積金/業主</th><th></th></tr></thead>`;
   const sectionFor=(title,list)=> list.length===0?'':`
-    <details style="margin-top:10px"><summary style="cursor:pointer;font-size:13px;font-weight:600;color:var(--accent);padding:6px 0">${title}（${list.length}）</summary>
+    <details open style="margin-top:10px"><summary style="cursor:pointer;font-size:13px;font-weight:600;color:var(--accent);padding:6px 0">${title}（${list.length}）</summary>
     <div class="scroll"><table>${tableHead}<tbody>${list.map(dealRow).join('')}</tbody></table></div></details>`;
   const dealsSections=groupedByType.map(([t,list])=>sectionFor(t,list)).join('')+sectionFor('公司分潤（舊資料）',legacyCompany)+sectionFor('其他',otherDeals);
   const anyDeals=groupedByType.reduce((s,[,l])=>s+l.length,0)+otherDeals.length+legacyCompany.length;
@@ -2694,10 +2636,10 @@ function viewDeals(){
 
   return `
   <div class="metrics">
-    <div class="metric" style="background:var(--accent);color:#fff"><div class="l" style="color:#fff;opacity:.85">帳面公積金累計</div><div class="v" style="-webkit-text-fill-color:#fff;background:none">${money(totFund)}</div></div>
+    <div class="metric" style="background:var(--accent);color:#fff"><div class="l" style="color:#fff;opacity:.85">帳面公積金累計</div><div class="v">${money(totFund)}</div></div>
     ${bonusCards}
   </div>
-  ${coopSites.length?`<details class="card" style="background:#fdf6ee"><summary style="cursor:pointer;font-size:14px;font-weight:600">合作案場（自動匯總）・${activeCoop.length} 進行中</summary><div class="card-body"><p class="sub" style="margin:0 0 8px">每個合作案場一筆，金額=該案場總請款、成本=該案場總成本，隨請款/成本變動。管理人那半可「帶去公司分潤」再算30/70。</p>${coopActiveHtml}${coopPausedHtml}${coopClosedHtml}</div></details>`:''}
+  ${coopSites.length?`<details open class="card" style="background:#fdf6ee"><summary style="cursor:pointer;font-size:14px;font-weight:600">合作案場（自動匯總）・${activeCoop.length} 進行中</summary><p class="sub" style="margin:6px 0 8px">每個合作案場一筆，金額=該案場總請款、成本=該案場總成本，隨請款/成本變動。管理人那半可「帶去公司分潤」再算30/70。</p>${coopActiveHtml}${coopPausedHtml}${coopClosedHtml}</details>`:''}
   <div class="card">
     <details><summary style="cursor:pointer;font-size:14px;font-weight:600">進階：手動補一筆分潤（一般不用）</summary>
     <p class="sub" style="margin-top:8px">正常流程是<b>到「員工/案場」建案場（設好類型/稅率/負責人/帳戶）→ 在「請款追蹤」記請款</b>，分潤就自動生出來、自動進帳戶，不用在這裡建。這裡只給「不屬於任何案場的一次性損益」臨時補用。手動建的不會自動跟請款連動。</p>
@@ -2735,83 +2677,63 @@ function viewDeals(){
 }
 
 // ---- 案場請款追蹤 ----
-function billingType(b){ return b.type||'請款單'; }
-function billingTitle(b){ return b.title||b.note||''; }
-function normalizeBillingItems(items){
-  return (Array.isArray(items)?items:[]).map(i=>{
-    const qty=Number(i.qty!==undefined?i.qty:1)||0;
-    const price=Number(i.price!==undefined?i.price:i.amount)||0;
-    return {name:i.name||'', unit:i.unit||'', qty, price, note:i.note||''};
-  }).filter(i=>i.name||i.unit||i.qty||i.price);
-}
-function billingItemsTotal(items){ return normalizeBillingItems(items).reduce((s,i)=>s+(Number(i.qty)||0)*(Number(i.price)||0),0); }
-function billingItemInputs(prefix, items=[]){
-  const rows=normalizeBillingItems(items);
-  while(rows.length<6) rows.push({name:'',unit:'',qty:'',price:''});
-  return `<div class="scroll" style="flex-basis:100%"><table>
-    <thead><tr><th>項目</th><th>單位</th><th class="num">數量</th><th class="num">金額</th><th class="num">小計</th></tr></thead>
-    <tbody>${rows.slice(0,8).map((it,i)=>`<tr>
-      <td><input data-${prefix}-item="${i}" value="${esc(it.name||'')}" style="width:100%;min-width:150px"></td>
-      <td><input data-${prefix}-unit="${i}" value="${esc(it.unit||'')}" style="width:80px" placeholder="式"></td>
-      <td><input type="number" data-${prefix}-qty="${i}" value="${it.qty||''}" min="0" step="0.01" style="width:90px;text-align:right"></td>
-      <td><input type="number" data-${prefix}-price="${i}" value="${it.price||''}" min="0" step="1" style="width:120px;text-align:right"></td>
-      <td class="num">${money((Number(it.qty)||0)*(Number(it.price)||0))}</td>
-    </tr>`).join('')}</tbody></table></div>`;
-}
-function readBillingItems(prefix){
-  const rows=[];
-  document.querySelectorAll(`[data-${prefix}-item]`).forEach(inp=>{
-    const i=inp.dataset[`${prefix}Item`];
-    const name=inp.value.trim();
-    const unit=(document.querySelector(`[data-${prefix}-unit="${i}"]`)?.value||'').trim();
-    const qty=parseFloat(document.querySelector(`[data-${prefix}-qty="${i}"]`)?.value||'');
-    const price=parseFloat(document.querySelector(`[data-${prefix}-price="${i}"]`)?.value||'');
-    if(name||unit||(!isNaN(qty)&&qty>0)||(!isNaN(price)&&price>0)){
-      rows.push({name:name||'工程款',unit,qty:isNaN(qty)?0:qty,price:isNaN(price)?0:price});
-    }
-  });
-  return rows;
-}
-
-function viewBillingDocPage(type){
-  const list=state.billings.filter(b=>billingType(b)===type).sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+function viewBillingAdd(){
+  const list=state.billings.filter(b=>(b.docType||'請款單')==='追加單').sort((a,b)=>(b.date||'').localeCompare(a.date||''));
   const total=list.reduce((s,b)=>s+(Number(b.amount)||0),0);
-  const unsettled=list.filter(b=>!b.settled).reduce((s,b)=>s+(Number(b.amount)||0),0);
-  const siteSelOpts=`<option value="">（選案場）</option>`+state.sites.filter(s=>s.active!==false).map(s=>{
-    const tag=(s.coop||s.type==='合作案')?'（合作案）':(s.type?`（${s.type}）`:'');
-    return `<option value="${esc(s.name)}">${esc(s.name)}${tag}</option>`;
+  const settled=list.filter(b=>b.settled).reduce((s,b)=>s+(Number(b.amount)||0),0);
+  const unsettled=total-settled;
+  const siteSelOpts=`<option value="">（選案場）</option>`+state.sites.filter(s=>s.active!==false).map(s=>`<option value="${esc(s.name)}">${esc(s.name)}</option>`).join('');
+  const cards=list.map(b=>{
+    const photos=billingPhotos[b.id]||[];
+    const thumbs=photos.map((url,i)=>`<div style="position:relative;display:inline-block;vertical-align:top;margin:3px"><img src="${url}" class="photo-thumb" style="width:90px;height:68px;object-fit:cover;border-radius:8px;border:1px solid var(--line)"><button data-photodel="${b.id}" data-photoidx="${i}" style="position:absolute;top:-5px;right:-5px;width:22px;height:22px;border-radius:50%;border:none;background:var(--danger);color:#fff;font-size:13px;cursor:pointer;padding:0;line-height:22px;text-align:center">✕</button></div>`).join('');
+    return `<div class="card" style="border-left:3px solid ${b.settled?'var(--accent)':'#d97706'}">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+        <div>
+          <div style="font-size:15px;font-weight:700">${esc(b.site||'（未填案場）')}</div>
+          <div style="font-size:12px;color:var(--muted);margin-top:2px">${esc(b.date||'')}${b.note?'　'+esc(b.note):''}</div>
+        </div>
+        <div style="text-align:right;flex-shrink:0">
+          <div style="font-size:18px;font-weight:800;color:#9a5b1a">${money(b.amount)}</div>
+          <div style="margin-top:5px;display:flex;gap:4px;justify-content:flex-end;flex-wrap:wrap">
+            <button class="act ${b.settled?'':'muted'}" data-togglesettle="${b.id}" style="${b.settled?'color:var(--accent)':''}">${b.settled?'✓ 已結算':'未結算'}</button>
+            <button class="act" data-billprint="${b.id}">列印</button>
+            <button class="act" data-billedit-add="${b.id}">改</button>
+            <button class="act danger" data-delbill="${b.id}">刪</button>
+          </div>
+        </div>
+      </div>
+      <div>
+        <div style="font-size:11px;font-weight:600;color:var(--muted);letter-spacing:.4px;text-transform:uppercase;margin-bottom:8px">施作照片${photos.length?` (${photos.length})`:''}</div>
+        <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
+          ${thumbs}
+          <label style="cursor:pointer;display:flex;align-items:center;gap:6px;padding:10px 16px;background:var(--bg);border:1.5px dashed var(--line2);border-radius:12px;font-size:13px;color:var(--muted);min-height:48px;touch-action:manipulation">
+            📷 ${photos.length?'繼續上傳':'上傳施作照片'}
+            <input type="file" accept="image/*" multiple data-photoadd="${b.id}" style="display:none">
+          </label>
+        </div>
+      </div>
+    </div>`;
   }).join('');
-  const rows=list.map(b=>`<tr>
-    <td>${esc(b.date||'')}</td><td>${esc(b.site||'')}</td><td>${esc(billingTitle(b)||'-')}</td>
-    <td class="num">${money(b.amount)}</td><td>${esc(b.client||'')}</td>
-    <td>${b.settled?'已結算':'未結算'}</td>
-    <td><button class="act" data-billprint="${b.id}">列印</button> <button class="act danger" data-delbill="${b.id}">刪</button></td>
-  </tr>`).join('');
   return `
   <div class="metrics">
-    <div class="metric"><div class="l">${type}張數</div><div class="v">${list.length}</div></div>
-    <div class="metric"><div class="l">${type}總額</div><div class="v" style="font-size:20px">${money(total)}</div></div>
-    <div class="metric"><div class="l">未結算</div><div class="v" style="font-size:20px;color:var(--danger)">${money(unsettled)}</div></div>
+    <div class="metric"><div class="l">追加單數</div><div class="v">${list.length}</div></div>
+    <div class="metric"><div class="l">追加總額</div><div class="v" style="font-size:21px">${money(total)}</div></div>
+    <div class="metric"><div class="l">未結算</div><div class="v" style="font-size:21px">${money(unsettled)}</div></div>
   </div>
   <div class="card">
-    <div style="font-size:14px;font-weight:600;margin-bottom:4px">建立${type}</div>
-    <p class="sub">填項目、單位、數量、金額，系統會用「數量 × 金額」自動加總成單據總金額。</p>
+    <div style="font-size:14px;font-weight:600;margin-bottom:8px">新增追加單</div>
     <div class="row">
-      <div class="field"><label>日期</label><input type="date" id="bd-date" value="${new Date().toISOString().slice(0,10)}"></div>
-      <div class="field" style="flex:1;min-width:150px"><label>案場</label><select id="bd-site">${siteSelOpts}</select></div>
-      <div class="field"><label>業主</label><input id="bd-client" placeholder="公司/業主" style="width:130px"></div>
-      <div class="field"><label>付款方式</label><input id="bd-method" placeholder="匯款" style="width:110px"></div>
-      <div class="field"><label>結算</label><select id="bd-settled"><option value="">未結算</option><option value="1">已結算</option></select></div>
-      <div class="field" style="flex:1;min-width:220px"><label>主旨</label><input id="bd-title" placeholder="${type==='追加單'?'例：追加防水工程':'例：第一期工程款'}"></div>
-      <div class="field" style="flex-basis:100%"><label>明細</label>${billingItemInputs('bd')}</div>
-      <div class="field" style="flex:1;min-width:220px"><label>備註</label><input id="bd-note" placeholder="付款條件、發票或其他說明"></div>
-      <button class="btn" id="bd-add" data-bdtype="${type}">＋ 新增並保存</button>
+      <div class="field"><label>日期</label><input type="date" id="bna-date" value="${new Date().toISOString().slice(0,10)}"></div>
+      <div class="field" style="flex:1;min-width:150px"><label>案場</label><select id="bna-site">${siteSelOpts}</select></div>
+      <div class="field"><label>金額</label><input type="number" id="bna-amount" min="0" step="1000"></div>
+      <div class="field"><label>方式</label><input id="bna-method" placeholder="匯款" style="width:100px"></div>
+      <div class="field"><label>業主</label><input id="bna-client" placeholder="業主名稱" style="width:110px"></div>
+      <div class="field" style="flex:1;min-width:180px"><label>說明（追加項目）</label><input id="bna-note" placeholder="例：追加防水工程"></div>
+      <div class="field"><label>結算</label><select id="bna-settled"><option value="">未結算</option><option value="1">已結算</option></select></div>
     </div>
+    <div class="row" style="margin-top:10px"><button class="btn" id="bna-add">＋ 新增追加單</button></div>
   </div>
-  <div class="card">
-    <div style="font-size:14px;font-weight:600;margin-bottom:8px">${type}紀錄</div>
-    ${rows?`<div class="scroll"><table><thead><tr><th>日期</th><th>案場</th><th>主旨</th><th class="num">總金額</th><th>業主</th><th>狀態</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`:'<div class="empty">尚無單據。</div>'}
-  </div>`;
+  ${list.length===0?'<div class="card"><div class="empty">尚無追加單。點上方「新增追加單」開始登記，新增後可在每張卡片上傳施作照片。</div></div>':cards}`;
 }
 
 function viewBilling(){
@@ -2821,8 +2743,6 @@ function viewBilling(){
   const siteNames=Object.keys(groups).sort((a,b)=>a.localeCompare(b));
 
   const totalBilled=state.billings.reduce((s,b)=>s+(Number(b.amount)||0),0);
-  const totalReq=state.billings.filter(b=>billingType(b)==='請款單').reduce((s,b)=>s+(Number(b.amount)||0),0);
-  const totalAdd=state.billings.filter(b=>billingType(b)==='追加單').reduce((s,b)=>s+(Number(b.amount)||0),0);
   const totalSettled=state.billings.filter(b=>b.settled).reduce((s,b)=>s+(Number(b.amount)||0),0);
   const totalUnsettled=totalBilled-totalSettled;
 
@@ -2840,42 +2760,51 @@ function viewBilling(){
       progress=`<div class="sub" style="margin:4px 0 8px">合約總額 ${money(contract)}　已請款 ${money(billed)}（${pct}%）　${remain>0?`尚未請款 <b>${money(remain)}</b>`:(remain<0?`<span style="color:var(--danger)">超出合約 ${money(-remain)}</span>`:'已請足')}
         <div style="height:6px;background:var(--line);border-radius:3px;margin-top:6px;overflow:hidden"><div style="height:100%;width:${pct}%;background:var(--accent)"></div></div></div>`;
     }
-    const reqAmt=list.filter(b=>billingType(b)==='請款單').reduce((s,b)=>s+(Number(b.amount)||0),0);
-    const addAmt=list.filter(b=>billingType(b)==='追加單').reduce((s,b)=>s+(Number(b.amount)||0),0);
     const rows=list.map(b=>{
+      const docType=b.docType||'請款單';
       if(billEditId===b.id){
-        return `<tr><td colspan="9" style="background:var(--bg)">
+        return `<tr><td colspan="8" style="background:var(--bg)">
           <div class="row" style="margin:6px 0">
-            <div class="field"><label>單據</label><select id="be-type"><option value="請款單" ${billingType(b)==='請款單'?'selected':''}>請款單</option><option value="追加單" ${billingType(b)==='追加單'?'selected':''}>追加單</option></select></div>
+            <div class="field"><label>類型</label><select id="be-type"><option value="請款單" ${docType==='請款單'?'selected':''}>請款單</option><option value="追加單" ${docType==='追加單'?'selected':''}>追加單</option></select></div>
             <div class="field"><label>請款日</label><input type="date" id="be-date" value="${b.date||''}"></div>
+            <div class="field"><label>金額</label><input type="number" id="be-amount" value="${b.amount||0}" step="1000" style="width:120px"></div>
             <div class="field"><label>方式</label><input id="be-method" value="${esc(b.method||'')}" style="width:100px"></div>
             <div class="field"><label>業主</label><input id="be-client" value="${esc(b.client||'')}" style="width:110px"></div>
-            <div class="field" style="flex:1;min-width:150px"><label>主旨</label><input id="be-title" value="${esc(billingTitle(b))}"></div>
-            <div class="field" style="flex-basis:100%"><label>明細</label>${billingItemInputs('be', b.items)}</div>
-            <div class="field" style="flex:1;min-width:160px"><label>備註</label><input id="be-note" value="${esc(b.note||'')}"></div>
+            <div class="field"><label>備註</label><input id="be-note" value="${esc(b.note||'')}" style="width:130px"></div>
             <button class="btn" data-billeditok="${b.id}">儲存</button>
             <button class="act muted" data-billeditcancel="1" style="cursor:pointer;height:36px">取消</button>
           </div>
         </td></tr>`;
       }
+      const typeStyle=docType==='追加單'?'background:#fde9d4;color:#9a5b1a':'background:#e3efe9;color:var(--accent)';
+      const photos=billingPhotos[b.id]||[];
+      const thumbs=photos.map((url,i)=>`<div style="position:relative;display:inline-block;vertical-align:top"><img src="${url}" class="photo-thumb" style="width:80px;height:60px;object-fit:cover;border-radius:5px;border:1px solid var(--line)"><button data-photodel="${b.id}" data-photoidx="${i}" style="position:absolute;top:-5px;right:-5px;width:20px;height:20px;border-radius:50%;border:none;background:var(--danger);color:#fff;font-size:12px;cursor:pointer;padding:0;line-height:20px;text-align:center">✕</button></div>`).join('');
       return `<tr>
-      <td><span class="tag" style="${billingType(b)==='追加單'?'background:#fde9d4;color:#9a5b1a':'background:#e3efe9;color:var(--accent)'}">${esc(billingType(b))}</span></td>
-      <td>${esc(b.date||'')}</td><td>${esc(billingTitle(b)||'-')}</td><td class="num">${money(b.amount)}</td>
+      <td><span class="tag" style="${typeStyle}">${esc(docType)}</span> ${esc(b.date||'')}</td>
+      <td class="num">${money(b.amount)}</td>
       <td>${esc(b.method||'')}</td><td>${esc(b.client||'')}</td>
       <td><button class="act ${b.settled?'':'muted'}" data-togglesettle="${b.id}" style="${b.settled?'color:var(--accent)':''}">${b.settled?'✓ 已結算':'未結算'}</button></td>
+      <td>${esc(b.note||'')}</td>
       <td><button class="act" data-billprint="${b.id}">列印</button> <button class="act" data-billedit="${b.id}">改</button> <button class="act danger" data-delbill="${b.id}">刪</button></td>
+    </tr>
+    <tr style="background:var(--bg)">
+      <td colspan="8" style="padding:5px 10px 8px">
+        <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center">
+          ${thumbs}
+          <label style="cursor:pointer;display:flex;align-items:center;gap:4px;padding:5px 10px;background:var(--surface);border:1px dashed var(--line2);border-radius:8px;font-size:12px;color:var(--muted)">📷 上傳施作照片<input type="file" accept="image/*" multiple data-photoadd="${b.id}" style="display:none"></label>
+        </div>
+      </td>
     </tr>`;}).join('');
-    const siteTag=(()=>{const so=state.sites.find(x=>x.name===name);if(!so)return '';if(so.coop||so.type==='合作案')return '<span class="tag" style="background:#fde9d4;color:#9a5b1a">合作案</span>';if(so.type)return `<span class="tag" style="background:#e3efe9;color:var(--accent)">${esc(so.type)}</span>`;return '';})();
-    const bSel=billingSel[name]||false;
-    return `<details class="card">
-      <summary><input type="checkbox" data-billingsel="${esc(name)}" ${bSel?'checked':''} onclick="event.stopPropagation()" style="width:16px;height:16px;flex-shrink:0;cursor:pointer">${esc(name)}${siteTag}<span style="margin-left:auto;font-size:13px;font-weight:400;color:var(--muted)">請款 <b style="color:var(--ink)">${money(reqAmt)}</b>　追加 <b style="color:#9a5b1a">${money(addAmt)}</b>　未結算 <span style="color:var(--danger)">${money(unsettled)}</span></span></summary>
-      <div class="card-body">
-        ${progress}
-        <div class="scroll"><table>
-          <thead><tr><th>單據</th><th>日期</th><th>主旨</th><th class="num">總金額</th><th>方式</th><th>業主</th><th>結算</th><th></th></tr></thead>
-          <tbody>${rows}</tbody></table></div>
+    return `<div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px;flex-wrap:wrap;gap:8px">
+        <div style="font-size:15px;font-weight:600">${esc(name)}${(()=>{const so=state.sites.find(x=>x.name===name);if(!so)return '';if(so.coop||so.type==='合作案')return '<span class="tag" style="background:#fde9d4;color:#9a5b1a">合作案</span>';if(so.type)return `<span class="tag" style="background:#e3efe9;color:var(--accent)">${esc(so.type)}</span>`;return '';})()}</div>
+        <div style="font-size:14px">已請款 <b>${money(billed)}</b>　|　已結算 <span style="color:var(--accent)">${money(settled)}</span>　|　未結算 <span style="color:var(--danger)">${money(unsettled)}</span></div>
       </div>
-    </details>`;
+      ${progress}
+      <div class="scroll"><table>
+        <thead><tr><th>日期</th><th class="num">金額</th><th>方式</th><th>業主</th><th>結算</th><th>備註</th><th></th></tr></thead>
+        <tbody>${rows}</tbody></table></div>
+    </div>`;
   };
   const namePaused=name=>{ const st=state.sites.find(x=>x.name===name); return st&&st.active===false; };
   const activeNames=siteNames.filter(n=>!namePaused(n));
@@ -2891,34 +2820,26 @@ function viewBilling(){
   return `
   <div class="metrics">
     <div class="metric"><div class="l">累計請款</div><div class="v" style="font-size:20px">${money(totalBilled)}</div></div>
-    <div class="metric"><div class="l">請款單</div><div class="v" style="font-size:20px;color:var(--accent)">${money(totalReq)}</div></div>
-    <div class="metric"><div class="l">追加單</div><div class="v" style="font-size:20px;color:#9a5b1a">${money(totalAdd)}</div></div>
     <div class="metric"><div class="l">已結算</div><div class="v" style="font-size:20px;color:var(--accent)">${money(totalSettled)}</div></div>
     <div class="metric"><div class="l">未結算（在外面的錢）</div><div class="v" style="font-size:20px;color:var(--danger)">${money(totalUnsettled)}</div></div>
   </div>
   <div class="card">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;flex-wrap:wrap;gap:8px">
-      <div style="font-size:14px;font-weight:600">新增請款單 / 追加單</div>
-      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
-        <button class="act" id="billing-selall" style="height:32px;border:1px solid var(--line2);border-radius:8px;padding:0 10px;font-size:12px">全選</button>
-        <button class="act" id="billing-selnone" style="height:32px;border:1px solid var(--line2);border-radius:8px;padding:0 10px;font-size:12px">取消選</button>
-        <button class="btn" id="billing-export-sel" ${state.billings.length===0?'disabled style="opacity:.5"':''} style="height:32px;font-size:12px">匯出選取</button>
-        <button class="btn" id="billing-export-all" ${state.billings.length===0?'disabled style="opacity:.5"':''} style="height:32px;font-size:12px;background:var(--muted)">全部匯出</button>
-      </div>
+      <div style="font-size:14px;font-weight:600">新增單據</div>
+      <button class="btn" id="export-billing" ${state.billings.length===0?'disabled style="opacity:.5"':''}>匯出 PDF</button>
     </div>
-    <p class="sub">可建立請款單或追加單，單據會按案場彙總，並可單張列印。追加單金額也會併入案場請款總額，方便分潤與合約進度一起追。</p>
+    <p class="sub">記一筆請款單或追加單。同一案場可多次登記，下方自動按案場彙總。追加單可在記錄後上傳施作照片，列印時會一併嵌入縮圖。</p>
     <div class="row">
-      <div class="field"><label>單據類型</label><select id="b-type"><option value="請款單">請款單</option><option value="追加單">追加單</option></select></div>
+      <div class="field"><label>類型</label><select id="b-type"><option value="請款單">請款單</option><option value="追加單">追加單</option></select></div>
       <div class="field"><label>請款日</label><input type="date" id="b-date" value="${new Date().toISOString().slice(0,10)}"></div>
       <div class="field" style="flex:1;min-width:140px"><label>案場名稱</label><select id="b-site">${siteSelOpts}</select></div>
-      <div class="field"><label>請款方式</label><input id="b-method" placeholder="匯款" style="width:100px"></div>
+      <div class="field"><label>金額</label><input type="number" id="b-amount" min="0" step="1000" style="width:140px"></div>
+      <div class="field"><label>方式</label><input id="b-method" placeholder="匯款" style="width:100px"></div>
       <div class="field"><label>業主</label><input id="b-client" placeholder="品佑、廣昕" style="width:110px"></div>
+      <div class="field"><label>備註</label><input id="b-note" placeholder="工程項目說明" style="width:160px"></div>
       <div class="field"><label>結算</label><select id="b-settled"><option value="">未結算</option><option value="1">已結算</option></select></div>
-      <div class="field" style="flex:1;min-width:180px"><label>主旨</label><input id="b-title" placeholder="例：第一期工程款、追加防水工程"></div>
-      <div class="field" style="flex-basis:100%"><label>明細</label>${billingItemInputs('b')}</div>
-      <div class="field" style="flex:1;min-width:180px"><label>備註</label><input id="b-note" placeholder="付款條件、發票或其他說明"></div>
     </div>
-    <div class="row" style="margin-top:8px"><button class="btn" id="b-add">＋ 新增單據</button></div>
+    <div class="row" style="margin-top:8px"><button class="btn" id="b-add">＋ 新增</button></div>
   </div>
   ${cards===''&&pausedCards===''?'<div class="card"><div class="empty">尚無請款紀錄。</div></div>':cards}${pausedCards}`;
 }
@@ -3149,35 +3070,36 @@ function viewParkAcc(){
   const parkInTx=state.ledger.filter(t=>t.accId===state.parkAccId&&t.kind==='in').sort((a,b)=>(b.date||'').localeCompare(a.date||''));
   const parkOutTx=state.ledger.filter(t=>t.accId===state.parkAccId&&t.kind==='out').sort((a,b)=>(b.date||'').localeCompare(a.date||''));
   const txDetail=(arr,color)=>`<details style="margin:2px 0 4px 0"><summary style="cursor:pointer;font-size:12px;color:var(--info)">明細（${arr.length} 筆）</summary><div style="padding-left:8px">${arr.map(t=>vline(`${esc(t.date||'')}　${esc(t.note||'—')}`,money(t.amount),{sub:true,color})).join('')||'<div class="sub" style="padding:4px 0">無</div>'}</div></details>`;
-  const verify=`<details class="card">
-    <summary>驗算明細（核對用）</summary>
-    <div class="card-body">
-      <div style="display:flex;justify-content:flex-end;margin-bottom:10px">
-        <button class="btn" id="park-verify-pdf">匯出勾選 PDF</button>
+  const verify=`<div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+      <details style="flex:1;min-width:200px"><summary style="cursor:pointer;font-size:14px;font-weight:600">驗算明細（核對用，點開）</summary>
+      <div style="margin-top:4px">
+        ${vhead('① 品佑帳戶餘額','a')}
+        ${vline('期初',money(parkOpening))}
+        ${vline('＋ 收入合計',money(parkIn),{color:'var(--accent)'})}
+        ${txDetail(parkInTx,'var(--accent)')}
+        ${vline('− 支出合計',money(parkOut),{color:'var(--danger)'})}
+        ${txDetail(parkOutTx,'var(--danger)')}
+        ${vline('＝ 餘額',money(balance),{strong:true})}
+        ${vhead('② 公積金該留多少','b')}
+        ${vline('帳面該進公積金',money(Math.round(bookFund)))}
+        ${vline('你設定至少留',money(minFund))}
+        ${vline('＝ 取大的（該留）',money(targetFund),{strong:true})}
+        ${vline('實際填入（不超過餘額）',money(fundPaid),{strong:true})}
+        ${fundShort>0?vline('連該留都還差',money(fundShort),{color:'var(--danger)'}):''}
+        ${vhead('③ 獎金可發','c')}
+        ${vline('餘額',money(balance))}
+        ${vline('− 公積金',money(fundPaid))}
+        ${vline('＝ 可發獎金',money(availForBonus),{strong:true})}
+        ${vhead('④ 帳面該發獎金（各案相加）','d')}
+        ${bonusByDeal||'<div class="sub" style="padding:5px 0">無</div>'}
+        ${vline('合計應發',money(Math.round(totalTargetBonus)),{strong:true})}
       </div>
-      ${vhead('① 品佑帳戶餘額','a')}
-      ${vline('期初',money(parkOpening))}
-      ${vline('＋ 收入合計',money(parkIn),{color:'var(--accent)'})}
-      ${txDetail(parkInTx,'var(--accent)')}
-      ${vline('− 支出合計',money(parkOut),{color:'var(--danger)'})}
-      ${txDetail(parkOutTx,'var(--danger)')}
-      ${vline('＝ 餘額',money(balance),{strong:true})}
-      ${vhead('② 公積金該留多少','b')}
-      ${vline('帳面該進公積金',money(Math.round(bookFund)))}
-      ${vline('你設定至少留',money(minFund))}
-      ${vline('＝ 取大的（該留）',money(targetFund),{strong:true})}
-      ${vline('實際填入（不超過餘額）',money(fundPaid),{strong:true})}
-      ${fundShort>0?vline('連該留都還差',money(fundShort),{color:'var(--danger)'}):''}
-      ${vhead('③ 獎金可發','c')}
-      ${vline('餘額',money(balance))}
-      ${vline('− 公積金',money(fundPaid))}
-      ${vline('＝ 可發獎金',money(availForBonus),{strong:true})}
-      ${vhead('④ 帳面該發獎金（各案相加）','d')}
-      ${bonusByDeal||'<div class="sub" style="padding:5px 0">無</div>'}
-      ${vline('合計應發',money(Math.round(totalTargetBonus)),{strong:true})}
-      <p class="sub" style="margin:12px 0 0">勾選①②③④要匯出的段落，按「匯出勾選 PDF」。</p>
+      </details>
+      <button class="btn" id="park-verify-pdf" style="align-self:flex-start">匯出勾選 PDF</button>
     </div>
-  </details>`;
+    <p class="sub" style="margin:6px 0 0">勾選①②③④要匯出的段落，按「匯出勾選 PDF」。</p>
+  </div>`;
 
   return picker+`
   <div class="card">
@@ -3193,33 +3115,27 @@ function viewParkAcc(){
     <div class="metric"><div class="l">獎金可發</div><div class="v" style="font-size:18px;color:var(--accent)">${money(availForBonus>=totalTargetBonus?Math.round(totalTargetBonus):availForBonus)}</div></div>
   </div>
   ${verify}
-  <details class="card">
-    <summary>本期分配（公積金先填該留，獎金不夠照比例分）</summary>
-    <div class="card-body">
-      <p class="sub" style="margin:0 0 8px">餘額 ${money(balance)} 先填公積金 ${money(fundPaid)}，剩 ${money(availForBonus)} 分獎金。獎金不夠時按各人應拿比例分，少拿的列在「本期少拿」，可累加到下方「累計欠獎金」。</p>
-      <table><thead><tr><th>項目</th><th class="num">應拿</th><th class="num">本期實發</th><th class="num">本期少拿</th></tr></thead><tbody>
-        ${bonusRows}
-        <tr><td>公積金</td><td class="num">${money(targetFund)}</td><td class="num" style="font-weight:600">${money(fundPaid)}</td><td class="num">${fundShort>0?money(fundShort):'—'}</td></tr>
-        <tr class="total-row" style="font-weight:600"><td>合計</td><td class="num">${money(Math.round(totalTargetBonus)+targetFund)}</td><td class="num">${money(fundPaid+partners.reduce((s,p)=>s+(bonusPaid[p.id]||0),0))}</td><td class="num"></td></tr>
-      </tbody></table>
-      ${partners.some(p=>oweThis[p.id]>0)?`<button class="btn" id="park-addowe" style="margin-top:10px">把本期少拿累加到「欠獎金」</button>`:''}
-      <p class="sub" style="margin-top:8px">公積金 ${money(fundPaid)} 請你自行分配到東澤／廣昕帳戶（讓兩邊平衡）。實際撥款後到「公積金帳戶」記收支。</p>
-    </div>
-  </details>
-  <details class="card">
-    <summary>累計欠獎金（跨年）</summary>
-    <div class="card-body">
-      <p class="sub" style="margin:0 0 8px">系統幫你記著每人被欠多少，一直累加。下一年你看公司帳況決定補多少——帳健康就補、不夠就繼續欠。按「補發」輸入補的金額，會從欠額扣掉。</p>
-      ${oweRows?`<table><thead><tr><th>股東</th><th class="num">目前被欠</th><th></th></tr></thead><tbody>${oweRows}</tbody></table>`:'<div class="empty">尚未標記股東。</div>'}
-      ${anyOwe?'':'<div class="sub" style="margin-top:6px">目前沒有欠任何人獎金。</div>'}
-    </div>
-  </details>
-  <details class="card">
-    <summary>明細（錢在品佑帳戶的分潤）</summary>
-    <div class="card-body">
-      ${detailRows===''?'<div class="empty">目前沒有「錢進哪個帳戶＝品佑」的分潤。建分潤時記得把「錢進哪個帳戶」選品佑。</div>':`<div class="scroll"><table><thead><tr><th>案場</th><th class="num">金額</th><th class="num">獎金</th><th class="num">公積金</th></tr></thead><tbody>${detailRows}</tbody></table></div>`}
-    </div>
-  </details>`;
+  <div class="card">
+    <div style="font-size:14px;font-weight:600;margin-bottom:6px">本期分配（公積金先填該留，獎金不夠照比例分）</div>
+    <p class="sub" style="margin:0 0 8px">餘額 ${money(balance)} 先填公積金 ${money(fundPaid)}，剩 ${money(availForBonus)} 分獎金。獎金不夠時按各人應拿比例分，少拿的列在「本期少拿」，可累加到下方「累計欠獎金」。</p>
+    <table><thead><tr><th>項目</th><th class="num">應拿</th><th class="num">本期實發</th><th class="num">本期少拿</th></tr></thead><tbody>
+      ${bonusRows}
+      <tr><td>公積金</td><td class="num">${money(targetFund)}</td><td class="num" style="font-weight:600">${money(fundPaid)}</td><td class="num">${fundShort>0?money(fundShort):'—'}</td></tr>
+      <tr class="total-row" style="font-weight:600"><td>合計</td><td class="num">${money(Math.round(totalTargetBonus)+targetFund)}</td><td class="num">${money(fundPaid+partners.reduce((s,p)=>s+(bonusPaid[p.id]||0),0))}</td><td class="num"></td></tr>
+    </tbody></table>
+    ${partners.some(p=>oweThis[p.id]>0)?`<button class="btn" id="park-addowe" style="margin-top:10px">把本期少拿累加到「欠獎金」</button>`:''}
+    <p class="sub" style="margin-top:8px">公積金 ${money(fundPaid)} 請你自行分配到東澤／廣昕帳戶（讓兩邊平衡）。實際撥款後到「公積金帳戶」記收支。</p>
+  </div>
+  <div class="card">
+    <div style="font-size:14px;font-weight:600;margin-bottom:6px">累計欠獎金（跨年）</div>
+    <p class="sub" style="margin:0 0 8px">系統幫你記著每人被欠多少，一直累加。下一年你看公司帳況決定補多少——帳健康就補、不夠就繼續欠。按「補發」輸入補的金額，會從欠額扣掉。</p>
+    ${oweRows?`<table><thead><tr><th>股東</th><th class="num">目前被欠</th><th></th></tr></thead><tbody>${oweRows}</tbody></table>`:'<div class="empty">尚未標記股東。</div>'}
+    ${anyOwe?'':'<div class="sub" style="margin-top:6px">目前沒有欠任何人獎金。</div>'}
+  </div>
+  <div class="card">
+    <div style="font-size:14px;font-weight:600;margin-bottom:8px">明細（錢在品佑帳戶的分潤）</div>
+    ${detailRows===''?'<div class="empty">目前沒有「錢進哪個帳戶＝品佑」的分潤。建分潤時記得把「錢進哪個帳戶」選品佑。</div>':`<div class="scroll"><table><thead><tr><th>案場</th><th class="num">金額</th><th class="num">獎金</th><th class="num">公積金</th></tr></thead><tbody>${detailRows}</tbody></table></div>`}
+  </div>`;
 }
 
 // 品佑驗算匯出 PDF（依勾選的段落）
@@ -3314,22 +3230,23 @@ function viewYearEnd(){
       +vline2('− 支出',money(out),{color:'var(--danger)'})+txDetail2(outTx,'var(--danger)')
       +vline2('＝ 餘額',money(op+inn-out),{strong:true});
   }).join('');
-  const verifyYE=`<details class="card">
-    <summary>驗算明細（核對用）</summary>
-    <div class="card-body">
-      <div style="display:flex;justify-content:flex-end;margin-bottom:10px">
-        <button class="btn" id="ye-verify-pdf">匯出勾選 PDF</button>
+  const verifyYE=`<div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+      <details style="flex:1;min-width:200px"><summary style="cursor:pointer;font-size:14px;font-weight:600">驗算明細（核對用，點開）</summary>
+      <div style="margin-top:4px">
+        ${vhead2('① 帳面公積金 = 各案場逐筆相加','a')}
+        ${fundLines||'<div class="sub" style="padding:5px 0">無</div>'}
+        ${vline2('公積金合計',money(bookFund),{strong:true})}
+        ${vhead2('② 各股東獎金 = 該股東各案相加','b')}
+        ${bonusLines||'<div class="sub" style="padding:5px 0">無</div>'}
+        ${vhead2('③ 各帳戶餘額 = 期初 + 收入 − 支出','c')}
+        ${accLines||'<div class="sub" style="padding:5px 0">無</div>'}
       </div>
-      ${vhead2('① 帳面公積金 = 各案場逐筆相加','a')}
-      ${fundLines||'<div class="sub" style="padding:5px 0">無</div>'}
-      ${vline2('公積金合計',money(bookFund),{strong:true})}
-      ${vhead2('② 各股東獎金 = 該股東各案相加','b')}
-      ${bonusLines||'<div class="sub" style="padding:5px 0">無</div>'}
-      ${vhead2('③ 各帳戶餘額 = 期初 + 收入 − 支出','c')}
-      ${accLines||'<div class="sub" style="padding:5px 0">無</div>'}
-      <p class="sub" style="margin:12px 0 0">勾選①②③要匯出的段落，按「匯出勾選 PDF」。</p>
+      </details>
+      <button class="btn" id="ye-verify-pdf" style="align-self:flex-start">匯出勾選 PDF</button>
     </div>
-  </details>`;
+    <p class="sub" style="margin:6px 0 0">勾選①②③要匯出的段落，按「匯出勾選 PDF」。</p>
+  </div>`;
   return `
   <div class="card">
     <div style="font-size:14px;font-weight:600;margin-bottom:4px">年度總結</div>
@@ -3341,36 +3258,26 @@ function viewYearEnd(){
     <div class="metric"><div class="l">各帳戶實際餘額合計</div><div class="v" style="font-size:19px">${money(totalAcc)}</div></div>
   </div>
   ${verifyYE}
-  <details class="card">
-    <summary>說明</summary>
-    <div class="card-body">
-      <p class="sub" style="margin:0">「帳面公積金」是所有案場分潤後該進公積金的總和（不管錢實際在哪個帳戶）。下面「各帳戶帳面公積金」把它依「錢進哪個帳戶」分開，讓你看出每個帳戶裡有多少是公積金。年底你再看兩個公積金帳戶（東澤、廣昕）的實際餘額，決定怎麼把公積金補足、平衡兩邊。</p>
-    </div>
-  </details>
-  <details class="card">
-    <summary>各帳戶帳面公積金（依錢進的帳戶分組）</summary>
-    <div class="card-body">
-      ${accPendRows===''?'<div class="empty">尚無分潤。</div>':`<table><thead><tr><th>錢在哪個帳戶</th><th class="num">帳面公積金</th></tr></thead><tbody>${accPendRows}<tr class="total-row" style="font-weight:600"><td>合計</td><td class="num">${money(bookFund)}</td></tr></tbody></table>`}
-    </div>
-  </details>
-  <details class="card">
-    <summary>公積金明細（每筆分潤＋錢在哪個帳戶）</summary>
-    <div class="card-body">
-      ${unpostedRows===''?'<div class="empty">沒有分潤。</div>':`<div class="scroll"><table><thead><tr><th>案場</th><th class="num">應進公積金</th><th>錢在哪個帳戶</th></tr></thead><tbody>${unpostedRows}</tbody></table></div>`}
-    </div>
-  </details>
-  <details class="card">
-    <summary>各帳戶實際餘額</summary>
-    <div class="card-body">
-      ${accRows===''?'<div class="empty">尚無帳戶。</div>':`<table><thead><tr><th>帳戶</th><th class="num">目前餘額</th></tr></thead><tbody>${accRows}<tr class="total-row" style="font-weight:600"><td>合計</td><td class="num">${money(totalAcc)}</td></tr></tbody></table>`}
-    </div>
-  </details>
-  <details class="card">
-    <summary>各股東年度概覽</summary>
-    <div class="card-body">
-      ${partnerRows===''?'<div class="empty">尚未標記股東。</div>':`<table><thead><tr><th>股東</th><th class="num">年度總獎金（分潤）</th><th class="num">借支未還</th></tr></thead><tbody>${partnerRows}</tbody></table>`}
-    </div>
-  </details>`;
+  <div class="card">
+    <div style="font-size:14px;font-weight:600;margin-bottom:4px">說明</div>
+    <p class="sub">「帳面公積金」是所有案場分潤後該進公積金的總和（不管錢實際在哪個帳戶）。下面「各帳戶帳面公積金」把它依「錢進哪個帳戶」分開，讓你看出每個帳戶裡有多少是公積金。年底你再看兩個公積金帳戶（東澤、廣昕）的實際餘額，決定怎麼把公積金補足、平衡兩邊。</p>
+  </div>
+  <div class="card">
+    <div style="font-size:14px;font-weight:600;margin-bottom:8px">各帳戶帳面公積金（依錢進的帳戶分組）</div>
+    ${accPendRows===''?'<div class="empty">尚無分潤。</div>':`<table><thead><tr><th>錢在哪個帳戶</th><th class="num">帳面公積金</th></tr></thead><tbody>${accPendRows}<tr class="total-row" style="font-weight:600"><td>合計</td><td class="num">${money(bookFund)}</td></tr></tbody></table>`}
+  </div>
+  <div class="card">
+    <div style="font-size:14px;font-weight:600;margin-bottom:8px">公積金明細（每筆分潤＋錢在哪個帳戶）</div>
+    ${unpostedRows===''?'<div class="empty">沒有分潤。</div>':`<div class="scroll"><table><thead><tr><th>案場</th><th class="num">應進公積金</th><th>錢在哪個帳戶</th></tr></thead><tbody>${unpostedRows}</tbody></table></div>`}
+  </div>
+  <div class="card">
+    <div style="font-size:14px;font-weight:600;margin-bottom:8px">各帳戶實際餘額</div>
+    ${accRows===''?'<div class="empty">尚無帳戶。</div>':`<table><thead><tr><th>帳戶</th><th class="num">目前餘額</th></tr></thead><tbody>${accRows}<tr class="total-row" style="font-weight:600"><td>合計</td><td class="num">${money(totalAcc)}</td></tr></tbody></table>`}
+  </div>
+  <div class="card">
+    <div style="font-size:14px;font-weight:600;margin-bottom:8px">各股東年度概覽</div>
+    ${partnerRows===''?'<div class="empty">尚未標記股東。</div>':`<table><thead><tr><th>股東</th><th class="num">年度總獎金（分潤）</th><th class="num">借支未還</th></tr></thead><tbody>${partnerRows}</tbody></table>`}
+  </div>`;
 }
 
 function exportYearVerify(){
@@ -3410,7 +3317,7 @@ function exportYearVerify(){
   printHTML('年度總結·驗算明細', `<h1>年度總結·驗算明細</h1><div class="meta">期間：${period}　|　列印日：${new Date().toISOString().slice(0,10)}</div>${secs}`);
 }
 
-loadLocal(); render(); loadCloud();
+loadLocal(); loadPhotos(); render(); loadCloud();
 </script>
 </body>
 </html>
