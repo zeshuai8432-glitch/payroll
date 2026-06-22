@@ -111,11 +111,53 @@
   .main { flex: 1; min-width: 0; padding: 24px 28px 60px; max-width: 1080px; }
   .scrim { display: none; }
   @media (max-width: 760px) {
+    /* ── 側邊欄抽屜 ── */
     .top .burger { display: block; }
-    .sidebar { position: fixed; top: 58px; left: 0; bottom: 0; z-index: 60; transform: translateX(-100%); transition: transform .22s cubic-bezier(.4,0,.2,1); box-shadow: 4px 0 24px rgba(79,70,229,.18); }
+    .sidebar { position: fixed; top: 52px; left: 0; bottom: 0; z-index: 60; transform: translateX(-100%); transition: transform .22s cubic-bezier(.4,0,.2,1); box-shadow: 4px 0 24px rgba(79,70,229,.18); }
     .sidebar.open { transform: translateX(0); }
-    .scrim.show { display: block; position: fixed; inset: 58px 0 0 0; background: rgba(30,27,75,.35); z-index: 55; backdrop-filter: blur(2px); }
-    .main { padding: 16px; }
+    .scrim.show { display: block; position: fixed; inset: 52px 0 0 0; background: rgba(30,27,75,.35); z-index: 55; backdrop-filter: blur(2px); }
+
+    /* ── 頂列精簡 ── */
+    .top { padding: 0 12px; height: 52px; gap: 10px; }
+    .top h1 { font-size: 15px; }
+    #cloud-status { display: none; }
+    #cloud-refresh { font-size: 12px; padding: 4px 10px; }
+
+    /* ── 主內容 ── */
+    .layout { min-height: calc(100vh - 52px); }
+    .main { padding: 12px 12px 60px; }
+
+    /* ── 卡片 ── */
+    .card { padding: 14px 14px; margin-bottom: 12px; border-radius: 12px; }
+
+    /* ── 指標卡片 ── */
+    .metrics { grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; margin-bottom: 14px; }
+    .metric { padding: 13px 14px; border-radius: 12px; }
+    .metric .v { font-size: 21px; }
+    .metric .l { font-size: 10.5px; }
+
+    /* ── 表單：欄位全寬堆疊 ── */
+    .row { gap: 10px; }
+    .field { width: 100%; }
+    .field input, .field select { width: 100% !important; min-width: 0 !important; box-sizing: border-box; }
+    /* 主要提交按鈕全寬 */
+    .row > .btn { width: 100%; }
+
+    /* ── 按鈕：加大觸控面積 ── */
+    .act { padding: 7px 10px; font-size: 13.5px; }
+    .btn { font-size: 15px; }
+
+    /* ── 表格 ── */
+    th { padding: 8px 7px; font-size: 10.5px; }
+    td { padding: 9px 7px; font-size: 13px; }
+
+    /* ── 側邊欄項目加高（觸控友善） ── */
+    .nav-item { padding: 12px 20px 12px 22px; font-size: 14px; }
+    /* ── 頂列按鈕文字切換 ── */
+    .mob-hide { display: none; }
+    .mob-show { display: inline !important; }
+    /* ── 照片列縮圖自動填滿 ── */
+    .photo-thumb { width: calc(33vw - 24px) !important; height: calc(25vw - 18px) !important; }
   }
 
   /* ── 卡片 ── */
@@ -293,7 +335,7 @@
   <h1>點工薪資管理系統</h1>
   <div style="margin-left:auto;display:flex;align-items:center;gap:10px">
     <span id="cloud-status" style="font-size:12px;opacity:.85;letter-spacing:.2px">連線中…</span>
-    <button id="cloud-refresh" style="background:rgba(255,255,255,.22);color:#fff;border:1px solid rgba(255,255,255,.3);border-radius:8px;padding:5px 12px;cursor:pointer;font-size:13px;font-weight:600;backdrop-filter:blur(4px);transition:background .15s">↻ 重新整理</button>
+    <button id="cloud-refresh" style="background:rgba(255,255,255,.22);color:#fff;border:1px solid rgba(255,255,255,.3);border-radius:8px;padding:5px 12px;cursor:pointer;font-size:13px;font-weight:600;backdrop-filter:blur(4px);transition:background .15s"><span class="mob-hide">↻ 重新整理</span><span class="mob-show" style="display:none">↻</span></button>
   </div>
 </div>
 <div class="layout">
@@ -2653,7 +2695,7 @@ function viewBilling(){
       }
       const typeStyle=docType==='追加單'?'background:#fde9d4;color:#9a5b1a':'background:#e3efe9;color:var(--accent)';
       const photos=billingPhotos[b.id]||[];
-      const thumbs=photos.map((url,i)=>`<div style="position:relative;display:inline-block;vertical-align:top"><img src="${url}" style="width:80px;height:60px;object-fit:cover;border-radius:5px;border:1px solid var(--line)"><button data-photodel="${b.id}" data-photoidx="${i}" style="position:absolute;top:-5px;right:-5px;width:18px;height:18px;border-radius:50%;border:none;background:var(--danger);color:#fff;font-size:11px;cursor:pointer;padding:0;line-height:18px;text-align:center">✕</button></div>`).join('');
+      const thumbs=photos.map((url,i)=>`<div style="position:relative;display:inline-block;vertical-align:top"><img src="${url}" class="photo-thumb" style="width:80px;height:60px;object-fit:cover;border-radius:5px;border:1px solid var(--line)"><button data-photodel="${b.id}" data-photoidx="${i}" style="position:absolute;top:-5px;right:-5px;width:20px;height:20px;border-radius:50%;border:none;background:var(--danger);color:#fff;font-size:12px;cursor:pointer;padding:0;line-height:20px;text-align:center">✕</button></div>`).join('');
       return `<tr>
       <td><span class="tag" style="${typeStyle}">${esc(docType)}</span> ${esc(b.date||'')}</td>
       <td class="num">${money(b.amount)}</td>
