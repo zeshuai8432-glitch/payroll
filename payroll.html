@@ -1681,12 +1681,11 @@ function bind(){
   document.querySelectorAll('[data-billeditcancel]').forEach(b=>b.onclick=()=>{ billEditId=null; render(); });
 document.querySelectorAll('[data-billeditok]').forEach(b=>b.onclick=()=>{
     const bill=state.billings.find(x=>x.id===b.dataset.billeditok); if(!bill) return;
-    const items=parseBillingItems(document.getElementById('be-items')?.value||'');
-    const typedAmt=parseFloat(document.getElementById('be-amount').value);
-    const amt=!isNaN(typedAmt)&&typedAmt>0?typedAmt:billingItemsTotal(items);
+    const items=readBillingItems('be');
+    const amt=billingItemsTotal(items);
     if(isNaN(amt)||amt<=0){ alert('金額請填正數'); return; }
     bill.type=document.getElementById('be-type').value;
-    bill.no=document.getElementById('be-no').value.trim()||makeBillingNo(bill.type);
+    delete bill.no; delete bill.docNo;
     bill.date=document.getElementById('be-date').value;
     bill.amount=amt;
     bill.method=document.getElementById('be-method').value.trim();
@@ -1700,38 +1699,34 @@ document.querySelectorAll('[data-billeditok]').forEach(b=>b.onclick=()=>{
   const bAdd=document.getElementById('b-add');
   if(bAdd) bAdd.onclick=()=>{
     const type=document.getElementById('b-type').value;
-    const no=document.getElementById('b-no').value.trim()||makeBillingNo(type);
     const date=document.getElementById('b-date').value;
     const site=document.getElementById('b-site').value.trim();
-    const items=parseBillingItems(document.getElementById('b-items').value);
-    const typedAmount=parseFloat(document.getElementById('b-amount').value);
-    const amount=!isNaN(typedAmount)&&typedAmount>0?typedAmount:billingItemsTotal(items);
+    const items=readBillingItems('b');
+    const amount=billingItemsTotal(items);
     const method=document.getElementById('b-method').value.trim();
     const client=document.getElementById('b-client').value.trim();
     const title=document.getElementById('b-title').value.trim();
     const note=document.getElementById('b-note').value.trim();
     const settled=document.getElementById('b-settled').value==='1';
     if(!date||!site||isNaN(amount)||amount<=0){ alert('請填請款日、案場、金額'); return; }
-    state.billings.push({id:uid(),type,no,date,site,amount,method,client,title,items,note,settled});
+    state.billings.push({id:uid(),type,date,site,amount,method,client,title,items,note,settled});
     const so=state.sites.find(x=>x.name===site); if(so) resyncSiteDeal(so);
     saveData(); render();
   };
   const bdAdd=document.getElementById('bd-add');
   if(bdAdd) bdAdd.onclick=()=>{
     const type=bdAdd.dataset.bdtype;
-    const no=document.getElementById('bd-no').value.trim()||makeBillingNo(type);
     const date=document.getElementById('bd-date').value;
     const site=document.getElementById('bd-site').value.trim();
-    const items=parseBillingItems(document.getElementById('bd-items').value);
-    const typedAmount=parseFloat(document.getElementById('bd-amount').value);
-    const amount=!isNaN(typedAmount)&&typedAmount>0?typedAmount:billingItemsTotal(items);
+    const items=readBillingItems('bd');
+    const amount=billingItemsTotal(items);
     const method=document.getElementById('bd-method').value.trim();
     const client=document.getElementById('bd-client').value.trim();
     const title=document.getElementById('bd-title').value.trim();
     const note=document.getElementById('bd-note').value.trim();
     const settled=document.getElementById('bd-settled').value==='1';
     if(!date||!site||isNaN(amount)||amount<=0){ alert('請填日期、案場、金額或明細金額'); return; }
-    const rec={id:uid(),type,no,date,site,amount,method,client,title,items,note,settled};
+    const rec={id:uid(),type,date,site,amount,method,client,title,items,note,settled};
     state.billings.push(rec);
     const so=state.sites.find(x=>x.name===site); if(so) resyncSiteDeal(so);
     saveData(); render();
@@ -1945,25 +1940,25 @@ function printBillingDoc(id){
   const b=state.billings.find(x=>x.id===id);
   if(!b) return;
   const type=billingType(b);
-  const items=Array.isArray(b.items)&&b.items.length?b.items:[{name:billingTitle(b)||type, amount:Number(b.amount)||0}];
+  const items=normalizeBillingItems(Array.isArray(b.items)&&b.items.length?b.items:[{name:billingTitle(b)||type, qty:1, price:Number(b.amount)||0}]);
   let total=0;
   const rows=items.map((it,i)=>{
-    const amt=Number(it.amount)||0; total+=amt;
-    return `<tr><td class="num">${i+1}</td><td>${esc(it.name||'工程款')}</td><td>${esc(it.note||'')}</td><td class="num">${amt?money(amt):'-'}</td></tr>`;
+    const qty=Number(it.qty)||0, price=Number(it.price)||0, subtotal=qty*price; total+=subtotal;
+    return `<tr><td class="num">${i+1}</td><td>${esc(it.name||'工程款')}</td><td>${esc(it.unit||'')}</td><td class="num">${qty||'-'}</td><td class="num">${price?money(price):'-'}</td><td class="num">${subtotal?money(subtotal):'-'}</td></tr>`;
   }).join('');
   const displayTotal=total>0?total:(Number(b.amount)||0);
   const inner=`<h1>${esc(type)}</h1>
-    <div class="meta">單號：${esc(billingNo(b)||'-')}　|　日期：${esc(b.date||'')}　|　案場：${esc(b.site||'')}</div>
+    <div class="meta">日期：${esc(b.date||'')}　|　案場：${esc(b.site||'')}</div>
     <table><tbody>
       <tr><th style="width:90px">業主</th><td>${esc(b.client||'')}</td><th style="width:90px">付款方式</th><td>${esc(b.method||'')}</td></tr>
       <tr><th>主旨</th><td colspan="3">${esc(billingTitle(b)||type)}</td></tr>
     </tbody></table>
     <div class="sec">明細</div>
-    <table><thead><tr><th class="num" style="width:48px">#</th><th>項目</th><th>備註</th><th class="num">金額</th></tr></thead>
-      <tbody>${rows}<tr class="total-row"><td colspan="3">合計</td><td class="num">${money(displayTotal)}</td></tr></tbody></table>
+    <table><thead><tr><th class="num" style="width:48px">#</th><th>項目</th><th>單位</th><th class="num">數量</th><th class="num">金額</th><th class="num">小計</th></tr></thead>
+      <tbody>${rows}<tr class="total-row"><td colspan="5">總金額</td><td class="num">${money(displayTotal)}</td></tr></tbody></table>
     ${b.note?`<div class="sec">備註</div><p>${esc(b.note)}</p>`:''}
     <div class="sign"><div>申請人</div><div>審核</div><div>業主簽收</div></div>`;
-  printHTML(`${type} ${billingNo(b)||''}`, inner);
+  printHTML(`${type} ${esc(b.site||'')}`, inner);
 }
 
 // 請款追蹤明細 PDF
@@ -1983,9 +1978,9 @@ function exportBillingPDF(filterNames){
     GB+=billed; GS+=settled;
     const contract=Number(state.contracts[name])||0;
     const cline=contract>0?`　合約總額 ${money(contract)}　未請款 ${money(contract-billed)}`:'';
-    const rows=list.map(b=>`<tr><td>${esc(billingType(b))}</td><td>${esc(billingNo(b)||'-')}</td><td>${esc(b.date||'')}</td><td>${esc(billingTitle(b)||'-')}</td><td class="num">${money(b.amount)}</td><td>${esc(b.method||'')}</td><td>${esc(b.client||'')}</td><td>${b.settled?'已結算':'未結算'}</td></tr>`).join('');
+    const rows=list.map(b=>`<tr><td>${esc(billingType(b))}</td><td>${esc(b.date||'')}</td><td>${esc(billingTitle(b)||'-')}</td><td class="num">${money(b.amount)}</td><td>${esc(b.method||'')}</td><td>${esc(b.client||'')}</td><td>${b.settled?'已結算':'未結算'}</td></tr>`).join('');
     secs+=`<div class="sec">${esc(name)}　已請款 ${money(billed)}・已結算 ${money(settled)}・未結算 ${money(billed-settled)}${cline}</div>
-      <table><thead><tr><th>單據</th><th>單號</th><th>日期</th><th>主旨</th><th class="num">金額</th><th>方式</th><th>業主</th><th>結算</th></tr></thead><tbody>${rows}</tbody></table>`;
+      <table><thead><tr><th>單據</th><th>日期</th><th>主旨</th><th class="num">總金額</th><th>方式</th><th>業主</th><th>結算</th></tr></thead><tbody>${rows}</tbody></table>`;
   });
   const inner=`<h1>案場請款追蹤明細</h1>
     <div class="meta">列印日：${new Date().toISOString().slice(0,10)}　|　累計請款 ${money(GB)}・已結算 ${money(GS)}・未結算 ${money(GB-GS)}</div>
@@ -2741,27 +2736,41 @@ function viewDeals(){
 
 // ---- 案場請款追蹤 ----
 function billingType(b){ return b.type||'請款單'; }
-function billingNo(b){ return b.no||b.docNo||''; }
 function billingTitle(b){ return b.title||b.note||''; }
-function billingItemsText(b){
-  const items=Array.isArray(b.items)?b.items:[];
-  if(items.length) return items.map(i=>`${i.name||''}${i.amount?`，${i.amount}`:''}${i.note?`，${i.note}`:''}`).join('\n');
-  return '';
+function normalizeBillingItems(items){
+  return (Array.isArray(items)?items:[]).map(i=>{
+    const qty=Number(i.qty!==undefined?i.qty:1)||0;
+    const price=Number(i.price!==undefined?i.price:i.amount)||0;
+    return {name:i.name||'', unit:i.unit||'', qty, price, note:i.note||''};
+  }).filter(i=>i.name||i.unit||i.qty||i.price);
 }
-function parseBillingItems(text){
-  return String(text||'').split(/\n+/).map(line=>line.trim()).filter(Boolean).map(line=>{
-    const parts=line.split(/[,\uFF0C\t]/).map(x=>x.trim()).filter(Boolean);
-    const nums=parts.map(p=>Number(String(p).replace(/[$,\s]/g,'')));
-    const idx=nums.findIndex(n=>!isNaN(n)&&n>0);
-    if(idx>=0) return {name:parts.filter((_,i)=>i!==idx).join(' ')||'工程款', amount:nums[idx]};
-    return {name:line, amount:0};
+function billingItemsTotal(items){ return normalizeBillingItems(items).reduce((s,i)=>s+(Number(i.qty)||0)*(Number(i.price)||0),0); }
+function billingItemInputs(prefix, items=[]){
+  const rows=normalizeBillingItems(items);
+  while(rows.length<6) rows.push({name:'',unit:'',qty:'',price:''});
+  return `<div class="scroll" style="flex-basis:100%"><table>
+    <thead><tr><th>項目</th><th>單位</th><th class="num">數量</th><th class="num">金額</th><th class="num">小計</th></tr></thead>
+    <tbody>${rows.slice(0,8).map((it,i)=>`<tr>
+      <td><input data-${prefix}-item="${i}" value="${esc(it.name||'')}" style="width:100%;min-width:150px"></td>
+      <td><input data-${prefix}-unit="${i}" value="${esc(it.unit||'')}" style="width:80px" placeholder="式"></td>
+      <td><input type="number" data-${prefix}-qty="${i}" value="${it.qty||''}" min="0" step="0.01" style="width:90px;text-align:right"></td>
+      <td><input type="number" data-${prefix}-price="${i}" value="${it.price||''}" min="0" step="1" style="width:120px;text-align:right"></td>
+      <td class="num">${money((Number(it.qty)||0)*(Number(it.price)||0))}</td>
+    </tr>`).join('')}</tbody></table></div>`;
+}
+function readBillingItems(prefix){
+  const rows=[];
+  document.querySelectorAll(`[data-${prefix}-item]`).forEach(inp=>{
+    const i=inp.dataset[`${prefix}Item`];
+    const name=inp.value.trim();
+    const unit=(document.querySelector(`[data-${prefix}-unit="${i}"]`)?.value||'').trim();
+    const qty=parseFloat(document.querySelector(`[data-${prefix}-qty="${i}"]`)?.value||'');
+    const price=parseFloat(document.querySelector(`[data-${prefix}-price="${i}"]`)?.value||'');
+    if(name||unit||(!isNaN(qty)&&qty>0)||(!isNaN(price)&&price>0)){
+      rows.push({name:name||'工程款',unit,qty:isNaN(qty)?0:qty,price:isNaN(price)?0:price});
+    }
   });
-}
-function billingItemsTotal(items){ return (items||[]).reduce((s,i)=>s+(Number(i.amount)||0),0); }
-function makeBillingNo(type){
-  const prefix=type==='追加單'?'ADD':'REQ';
-  const day=new Date().toISOString().slice(0,10).replaceAll('-','');
-  return `${prefix}-${day}-${String(state.billings.length+1).padStart(3,'0')}`;
+  return rows;
 }
 
 function viewBillingDocPage(type){
@@ -2772,10 +2781,8 @@ function viewBillingDocPage(type){
     const tag=(s.coop||s.type==='合作案')?'（合作案）':(s.type?`（${s.type}）`:'');
     return `<option value="${esc(s.name)}">${esc(s.name)}${tag}</option>`;
   }).join('');
-  const titleHint=type==='追加單'?'例：追加防水工程、追加材料費':'例：第一期工程款、尾款請款';
-  const itemHint=type==='追加單'?'追加防水工程，30000&#10;追加材料費，12000':'第一期工程款，50000&#10;材料款，12000';
   const rows=list.map(b=>`<tr>
-    <td>${esc(billingNo(b)||'-')}</td><td>${esc(b.date||'')}</td><td>${esc(b.site||'')}</td><td>${esc(billingTitle(b)||'-')}</td>
+    <td>${esc(b.date||'')}</td><td>${esc(b.site||'')}</td><td>${esc(billingTitle(b)||'-')}</td>
     <td class="num">${money(b.amount)}</td><td>${esc(b.client||'')}</td>
     <td>${b.settled?'已結算':'未結算'}</td>
     <td><button class="act" data-billprint="${b.id}">列印</button> <button class="act danger" data-delbill="${b.id}">刪</button></td>
@@ -2788,24 +2795,22 @@ function viewBillingDocPage(type){
   </div>
   <div class="card">
     <div style="font-size:14px;font-weight:600;margin-bottom:4px">建立${type}</div>
-    <p class="sub">填完後按新增，系統會保存單據並可直接列印。金額可手填；若金額留空，會用明細裡的金額加總。</p>
+    <p class="sub">填項目、單位、數量、金額，系統會用「數量 × 金額」自動加總成單據總金額。</p>
     <div class="row">
-      <div class="field"><label>單號</label><input id="bd-no" placeholder="自動產生" style="width:140px"></div>
       <div class="field"><label>日期</label><input type="date" id="bd-date" value="${new Date().toISOString().slice(0,10)}"></div>
       <div class="field" style="flex:1;min-width:150px"><label>案場</label><select id="bd-site">${siteSelOpts}</select></div>
-      <div class="field"><label>金額</label><input type="number" id="bd-amount" min="0" step="1000" style="width:130px"></div>
       <div class="field"><label>業主</label><input id="bd-client" placeholder="公司/業主" style="width:130px"></div>
       <div class="field"><label>付款方式</label><input id="bd-method" placeholder="匯款" style="width:110px"></div>
       <div class="field"><label>結算</label><select id="bd-settled"><option value="">未結算</option><option value="1">已結算</option></select></div>
-      <div class="field" style="flex:1;min-width:220px"><label>主旨</label><input id="bd-title" placeholder="${titleHint}"></div>
-      <div class="field" style="flex-basis:100%"><label>明細（一行一項，可寫：項目，金額）</label><textarea id="bd-items" placeholder="${itemHint}"></textarea></div>
+      <div class="field" style="flex:1;min-width:220px"><label>主旨</label><input id="bd-title" placeholder="${type==='追加單'?'例：追加防水工程':'例：第一期工程款'}"></div>
+      <div class="field" style="flex-basis:100%"><label>明細</label>${billingItemInputs('bd')}</div>
       <div class="field" style="flex:1;min-width:220px"><label>備註</label><input id="bd-note" placeholder="付款條件、發票或其他說明"></div>
       <button class="btn" id="bd-add" data-bdtype="${type}">＋ 新增並保存</button>
     </div>
   </div>
   <div class="card">
     <div style="font-size:14px;font-weight:600;margin-bottom:8px">${type}紀錄</div>
-    ${rows?`<div class="scroll"><table><thead><tr><th>單號</th><th>日期</th><th>案場</th><th>主旨</th><th class="num">金額</th><th>業主</th><th>狀態</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`:'<div class="empty">尚無單據。</div>'}
+    ${rows?`<div class="scroll"><table><thead><tr><th>日期</th><th>案場</th><th>主旨</th><th class="num">總金額</th><th>業主</th><th>狀態</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`:'<div class="empty">尚無單據。</div>'}
   </div>`;
 }
 
@@ -2842,13 +2847,11 @@ function viewBilling(){
         return `<tr><td colspan="9" style="background:var(--bg)">
           <div class="row" style="margin:6px 0">
             <div class="field"><label>單據</label><select id="be-type"><option value="請款單" ${billingType(b)==='請款單'?'selected':''}>請款單</option><option value="追加單" ${billingType(b)==='追加單'?'selected':''}>追加單</option></select></div>
-            <div class="field"><label>單號</label><input id="be-no" value="${esc(billingNo(b))}" style="width:130px"></div>
             <div class="field"><label>請款日</label><input type="date" id="be-date" value="${b.date||''}"></div>
-            <div class="field"><label>金額</label><input type="number" id="be-amount" value="${b.amount||0}" step="1000" style="width:120px"></div>
             <div class="field"><label>方式</label><input id="be-method" value="${esc(b.method||'')}" style="width:100px"></div>
             <div class="field"><label>業主</label><input id="be-client" value="${esc(b.client||'')}" style="width:110px"></div>
             <div class="field" style="flex:1;min-width:150px"><label>主旨</label><input id="be-title" value="${esc(billingTitle(b))}"></div>
-            <div class="field" style="flex-basis:100%"><label>明細（一行一項，可寫：項目，金額）</label><textarea id="be-items">${esc(billingItemsText(b))}</textarea></div>
+            <div class="field" style="flex-basis:100%"><label>明細</label>${billingItemInputs('be', b.items)}</div>
             <div class="field" style="flex:1;min-width:160px"><label>備註</label><input id="be-note" value="${esc(b.note||'')}"></div>
             <button class="btn" data-billeditok="${b.id}">儲存</button>
             <button class="act muted" data-billeditcancel="1" style="cursor:pointer;height:36px">取消</button>
@@ -2857,7 +2860,6 @@ function viewBilling(){
       }
       return `<tr>
       <td><span class="tag" style="${billingType(b)==='追加單'?'background:#fde9d4;color:#9a5b1a':'background:#e3efe9;color:var(--accent)'}">${esc(billingType(b))}</span></td>
-      <td>${esc(billingNo(b)||'-')}</td>
       <td>${esc(b.date||'')}</td><td>${esc(billingTitle(b)||'-')}</td><td class="num">${money(b.amount)}</td>
       <td>${esc(b.method||'')}</td><td>${esc(b.client||'')}</td>
       <td><button class="act ${b.settled?'':'muted'}" data-togglesettle="${b.id}" style="${b.settled?'color:var(--accent)':''}">${b.settled?'✓ 已結算':'未結算'}</button></td>
@@ -2870,7 +2872,7 @@ function viewBilling(){
       <div class="card-body">
         ${progress}
         <div class="scroll"><table>
-          <thead><tr><th>單據</th><th>單號</th><th>日期</th><th>主旨</th><th class="num">金額</th><th>方式</th><th>業主</th><th>結算</th><th></th></tr></thead>
+          <thead><tr><th>單據</th><th>日期</th><th>主旨</th><th class="num">總金額</th><th>方式</th><th>業主</th><th>結算</th><th></th></tr></thead>
           <tbody>${rows}</tbody></table></div>
       </div>
     </details>`;
@@ -2907,15 +2909,13 @@ function viewBilling(){
     <p class="sub">可建立請款單或追加單，單據會按案場彙總，並可單張列印。追加單金額也會併入案場請款總額，方便分潤與合約進度一起追。</p>
     <div class="row">
       <div class="field"><label>單據類型</label><select id="b-type"><option value="請款單">請款單</option><option value="追加單">追加單</option></select></div>
-      <div class="field"><label>單號</label><input id="b-no" placeholder="自動產生" style="width:130px"></div>
       <div class="field"><label>請款日</label><input type="date" id="b-date" value="${new Date().toISOString().slice(0,10)}"></div>
       <div class="field" style="flex:1;min-width:140px"><label>案場名稱</label><select id="b-site">${siteSelOpts}</select></div>
-      <div class="field"><label>金額（本期請款）</label><input type="number" id="b-amount" min="0" step="1000" style="width:140px"></div>
       <div class="field"><label>請款方式</label><input id="b-method" placeholder="匯款" style="width:100px"></div>
       <div class="field"><label>業主</label><input id="b-client" placeholder="品佑、廣昕" style="width:110px"></div>
       <div class="field"><label>結算</label><select id="b-settled"><option value="">未結算</option><option value="1">已結算</option></select></div>
       <div class="field" style="flex:1;min-width:180px"><label>主旨</label><input id="b-title" placeholder="例：第一期工程款、追加防水工程"></div>
-      <div class="field" style="flex-basis:100%"><label>明細（一行一項，可寫：項目，金額）</label><textarea id="b-items" placeholder="例：第一期工程款，50000&#10;例：追加材料費，12000"></textarea></div>
+      <div class="field" style="flex-basis:100%"><label>明細</label>${billingItemInputs('b')}</div>
       <div class="field" style="flex:1;min-width:180px"><label>備註</label><input id="b-note" placeholder="付款條件、發票或其他說明"></div>
     </div>
     <div class="row" style="margin-top:8px"><button class="btn" id="b-add">＋ 新增單據</button></div>
