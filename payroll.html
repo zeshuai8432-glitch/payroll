@@ -304,6 +304,7 @@
 
 <script>
 const LS = 'pm_data_v2';
+const LS_PHOTOS = 'pm_billing_photos_v1';
 const CLOUD_URL = 'https://script.google.com/macros/s/AKfycbyMPs38UNzAwX3bcD2n9nQBz0HofUW9qFweSOnmoySs8VW2bJYHn47RdyZLQ8bD8SNWTg/exec';
 let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], tools:[], locations:[], assets:[], advances:[], accounts:[], ledger:[], deals:[], billings:[], contracts:{}, costs:[], parkAccId:'', oweBonus:{}, minFund:'', tab:'entry' };
 let cloudStatus='連線中…';
@@ -385,6 +386,8 @@ function setCloud(s){ cloudStatus=s; const el=document.getElementById('cloud-sta
 
 // 保留舊名稱相容
 function loadData(){ loadLocal(); }
+function loadPhotos(){ try{ const raw=localStorage.getItem(LS_PHOTOS); if(raw) billingPhotos=JSON.parse(raw); }catch(e){} }
+function savePhotos(){ try{ localStorage.setItem(LS_PHOTOS,JSON.stringify(billingPhotos)); }catch(e){} }
 
 function computeRecords(records){
   const byKey={};
@@ -1602,6 +1605,7 @@ function bind(){
     const bill=state.billings.find(x=>x.id===b.dataset.billeditok); if(!bill) return;
     const amt=parseFloat(document.getElementById('be-amount').value);
     if(isNaN(amt)||amt<=0){ alert('金額請填正數'); return; }
+    const beType=document.getElementById('be-type'); if(beType) bill.docType=beType.value;
     bill.date=document.getElementById('be-date').value;
     bill.amount=amt;
     bill.method=document.getElementById('be-method').value.trim();
@@ -1612,19 +1616,39 @@ function bind(){
   });
   const bAdd=document.getElementById('b-add');
   if(bAdd) bAdd.onclick=()=>{
+    const docType=(document.getElementById('b-type')||{}).value||'請款單';
     const date=document.getElementById('b-date').value;
     const site=document.getElementById('b-site').value.trim();
     const amount=parseFloat(document.getElementById('b-amount').value);
     const method=document.getElementById('b-method').value.trim();
     const client=document.getElementById('b-client').value.trim();
+    const note=(document.getElementById('b-note')||{}).value||'';
     const settled=document.getElementById('b-settled').value==='1';
     if(!date||!site||isNaN(amount)||amount<=0){ alert('請填請款日、案場、金額'); return; }
-    state.billings.push({id:uid(),date,site,amount,method,client,settled});
+    state.billings.push({id:uid(),docType,date,site,amount,method,client,note,settled});
     const so=state.sites.find(x=>x.name===site); if(so) resyncSiteDeal(so);
     saveData(); render();
   };
+  document.querySelectorAll('[data-billprint]').forEach(b=>b.onclick=()=>printBillingDoc(b.dataset.billprint));
   document.querySelectorAll('[data-togglesettle]').forEach(b=>b.onclick=()=>{
     const bill=state.billings.find(x=>x.id===b.dataset.togglesettle); if(bill){ bill.settled=!bill.settled; saveData(); render(); }
+  });
+  document.querySelectorAll('[data-photoadd]').forEach(inp=>inp.onchange=()=>{
+    const id=inp.dataset.photoadd;
+    const files=Array.from(inp.files); if(!files.length) return;
+    const arr=(billingPhotos[id]||[]).slice();
+    let done=0;
+    files.forEach(file=>compressImage(file,1200,0.75,dataUrl=>{
+      arr.push(dataUrl); done++;
+      if(done===files.length){ billingPhotos[id]=arr; savePhotos(); render(); }
+    }));
+  });
+  document.querySelectorAll('[data-photodel]').forEach(b=>b.onclick=()=>{
+    const id=b.dataset.photodel; const idx=parseInt(b.dataset.photoidx);
+    if(!billingPhotos[id]) return;
+    billingPhotos[id].splice(idx,1);
+    if(billingPhotos[id].length===0) delete billingPhotos[id];
+    savePhotos(); render();
   });
   document.querySelectorAll('[data-delbill]').forEach(b=>b.onclick=()=>{
     const bill=state.billings.find(x=>x.id===b.dataset.delbill);
@@ -1825,6 +1849,48 @@ function exportDealsPDF(selectedOnly){
     </tbody></table>
     <p class="sub">淨利＝金額−成本−稅金。獎金與公積金依各案制度拆分；虧損時獎金為0、虧損全由公積金吸收。金額四捨五入至整數。合作案場請見另頁。</p>`;
   printHTML('分潤結算明細', inner);
+}
+
+// 壓縮圖片為 base64 JPEG
+function compressImage(file, maxW, quality, cb){
+  const reader=new FileReader();
+  reader.onload=e=>{
+    const img=new Image();
+    img.onload=()=>{
+      const scale=Math.min(1,maxW/img.width);
+      const w=Math.round(img.width*scale), h=Math.round(img.height*scale);
+      const c=document.createElement('canvas'); c.width=w; c.height=h;
+      c.getContext('2d').drawImage(img,0,0,w,h);
+      cb(c.toDataURL('image/jpeg',quality));
+    };
+    img.src=e.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+// 列印單張追加單 / 請款單
+function printBillingDoc(id){
+  const b=state.billings.find(x=>x.id===id); if(!b) return;
+  const type=(b.docType||'請款單');
+  const photos=billingPhotos[id]||[];
+  const photoSec=photos.length?`<div class="sec">施作照片</div>
+    <div style="display:flex;flex-wrap:wrap;gap:10px;margin:8px 0 16px">
+      ${photos.map(url=>`<img src="${url}" style="width:180px;height:135px;object-fit:cover;border:1px solid #ddd;border-radius:4px">`).join('')}
+    </div>`:'';
+  const inner=`<h1>${esc(type)}</h1>
+    <div class="meta">日期：${esc(b.date||'')}　|　案場：${esc(b.site||'')}</div>
+    <table><tbody>
+      <tr><th style="width:90px">業主</th><td>${esc(b.client||'')}</td><th style="width:90px">付款方式</th><td>${esc(b.method||'')}</td></tr>
+      ${b.note?`<tr><th>備註</th><td colspan="3">${esc(b.note)}</td></tr>`:''}
+    </tbody></table>
+    <div class="sec">金額</div>
+    <table><thead><tr><th>項目</th><th class="num">金額</th></tr></thead>
+      <tbody><tr><td>${esc(b.note||type)}</td><td class="num">${money(b.amount)}</td></tr>
+        <tr class="total-row"><td>總金額</td><td class="num">${money(b.amount)}</td></tr>
+      </tbody></table>
+    ${photoSec}
+    <div class="sign"><div>申請人</div><div>審核</div><div>業主簽收</div></div>`;
+  printHTML(`${type} ${esc(b.site||'')}`, inner);
 }
 
 // 請款追蹤明細 PDF
@@ -2286,6 +2352,7 @@ function dealCalc(d){
   return {profit,bonus,fund,tax,isDeal:false};
 }
 let dealPosting=null, dealEditId=null, dealCarry=null, coopCarry=null, billEditId=null, dealAccPick=null; // 入帳/編輯/帶去/請款編輯/選帳戶中
+let billingPhotos={}; // { [billingId]: [dataUrl, ...] }
 
 // 一筆分潤進帳戶的金額：代工/公司分潤＝金額−稅；（合作案在卡片另算，這裡不處理）
 function dealIncomeAmount(d){
@@ -2569,9 +2636,11 @@ function viewBilling(){
         <div style="height:6px;background:var(--line);border-radius:3px;margin-top:6px;overflow:hidden"><div style="height:100%;width:${pct}%;background:var(--accent)"></div></div></div>`;
     }
     const rows=list.map(b=>{
+      const docType=b.docType||'請款單';
       if(billEditId===b.id){
-        return `<tr><td colspan="7" style="background:var(--bg)">
+        return `<tr><td colspan="8" style="background:var(--bg)">
           <div class="row" style="margin:6px 0">
+            <div class="field"><label>類型</label><select id="be-type"><option value="請款單" ${docType==='請款單'?'selected':''}>請款單</option><option value="追加單" ${docType==='追加單'?'selected':''}>追加單</option></select></div>
             <div class="field"><label>請款日</label><input type="date" id="be-date" value="${b.date||''}"></div>
             <div class="field"><label>金額</label><input type="number" id="be-amount" value="${b.amount||0}" step="1000" style="width:120px"></div>
             <div class="field"><label>方式</label><input id="be-method" value="${esc(b.method||'')}" style="width:100px"></div>
@@ -2582,12 +2651,24 @@ function viewBilling(){
           </div>
         </td></tr>`;
       }
+      const typeStyle=docType==='追加單'?'background:#fde9d4;color:#9a5b1a':'background:#e3efe9;color:var(--accent)';
+      const photos=billingPhotos[b.id]||[];
+      const thumbs=photos.map((url,i)=>`<div style="position:relative;display:inline-block;vertical-align:top"><img src="${url}" style="width:80px;height:60px;object-fit:cover;border-radius:5px;border:1px solid var(--line)"><button data-photodel="${b.id}" data-photoidx="${i}" style="position:absolute;top:-5px;right:-5px;width:18px;height:18px;border-radius:50%;border:none;background:var(--danger);color:#fff;font-size:11px;cursor:pointer;padding:0;line-height:18px;text-align:center">✕</button></div>`).join('');
       return `<tr>
-      <td>${esc(b.date||'')}</td><td class="num">${money(b.amount)}</td>
+      <td><span class="tag" style="${typeStyle}">${esc(docType)}</span> ${esc(b.date||'')}</td>
+      <td class="num">${money(b.amount)}</td>
       <td>${esc(b.method||'')}</td><td>${esc(b.client||'')}</td>
       <td><button class="act ${b.settled?'':'muted'}" data-togglesettle="${b.id}" style="${b.settled?'color:var(--accent)':''}">${b.settled?'✓ 已結算':'未結算'}</button></td>
       <td>${esc(b.note||'')}</td>
-      <td><button class="act" data-billedit="${b.id}">改</button> <button class="act danger" data-delbill="${b.id}">刪</button></td>
+      <td><button class="act" data-billprint="${b.id}">列印</button> <button class="act" data-billedit="${b.id}">改</button> <button class="act danger" data-delbill="${b.id}">刪</button></td>
+    </tr>
+    <tr style="background:var(--bg)">
+      <td colspan="8" style="padding:5px 10px 8px">
+        <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center">
+          ${thumbs}
+          <label style="cursor:pointer;display:flex;align-items:center;gap:4px;padding:5px 10px;background:var(--surface);border:1px dashed var(--line2);border-radius:8px;font-size:12px;color:var(--muted)">📷 上傳施作照片<input type="file" accept="image/*" multiple data-photoadd="${b.id}" style="display:none"></label>
+        </div>
+      </td>
     </tr>`;}).join('');
     return `<div class="card">
       <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px;flex-wrap:wrap;gap:8px">
@@ -2596,7 +2677,7 @@ function viewBilling(){
       </div>
       ${progress}
       <div class="scroll"><table>
-        <thead><tr><th>請款日</th><th class="num">金額</th><th>方式</th><th>業主</th><th>結算</th><th>備註</th><th></th></tr></thead>
+        <thead><tr><th>日期</th><th class="num">金額</th><th>方式</th><th>業主</th><th>結算</th><th>備註</th><th></th></tr></thead>
         <tbody>${rows}</tbody></table></div>
     </div>`;
   };
@@ -2619,19 +2700,21 @@ function viewBilling(){
   </div>
   <div class="card">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;flex-wrap:wrap;gap:8px">
-      <div style="font-size:14px;font-weight:600">新增請款</div>
+      <div style="font-size:14px;font-weight:600">新增單據</div>
       <button class="btn" id="export-billing" ${state.billings.length===0?'disabled style="opacity:.5"':''}>匯出 PDF</button>
     </div>
-    <p class="sub">記一筆請款：何時、哪個案場、請了多少。同一案場可多次請款，下方自動按案場彙總。合約總額、稅率請到「員工/案場」設定。合作案場的分潤在「分潤結算」自動算（總請款−總成本）。</p>
+    <p class="sub">記一筆請款單或追加單。同一案場可多次登記，下方自動按案場彙總。追加單可在記錄後上傳施作照片，列印時會一併嵌入縮圖。</p>
     <div class="row">
+      <div class="field"><label>類型</label><select id="b-type"><option value="請款單">請款單</option><option value="追加單">追加單</option></select></div>
       <div class="field"><label>請款日</label><input type="date" id="b-date" value="${new Date().toISOString().slice(0,10)}"></div>
       <div class="field" style="flex:1;min-width:140px"><label>案場名稱</label><select id="b-site">${siteSelOpts}</select></div>
-      <div class="field"><label>金額（本期請款）</label><input type="number" id="b-amount" min="0" step="1000" style="width:140px"></div>
-      <div class="field"><label>請款方式</label><input id="b-method" placeholder="匯款" style="width:100px"></div>
+      <div class="field"><label>金額</label><input type="number" id="b-amount" min="0" step="1000" style="width:140px"></div>
+      <div class="field"><label>方式</label><input id="b-method" placeholder="匯款" style="width:100px"></div>
       <div class="field"><label>業主</label><input id="b-client" placeholder="品佑、廣昕" style="width:110px"></div>
+      <div class="field"><label>備註</label><input id="b-note" placeholder="工程項目說明" style="width:160px"></div>
       <div class="field"><label>結算</label><select id="b-settled"><option value="">未結算</option><option value="1">已結算</option></select></div>
     </div>
-    <div class="row" style="margin-top:8px"><button class="btn" id="b-add">＋ 新增請款</button></div>
+    <div class="row" style="margin-top:8px"><button class="btn" id="b-add">＋ 新增</button></div>
   </div>
   ${cards===''&&pausedCards===''?'<div class="card"><div class="empty">尚無請款紀錄。</div></div>':cards}${pausedCards}`;
 }
@@ -3109,7 +3192,7 @@ function exportYearVerify(){
   printHTML('年度總結·驗算明細', `<h1>年度總結·驗算明細</h1><div class="meta">期間：${period}　|　列印日：${new Date().toISOString().slice(0,10)}</div>${secs}`);
 }
 
-loadLocal(); render(); loadCloud();
+loadLocal(); loadPhotos(); render(); loadCloud();
 </script>
 </body>
 </html>
