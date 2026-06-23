@@ -798,7 +798,7 @@ function viewManage(){
         <div class="field"><label>日薪</label><input id="e-daily" type="number" min="0" step="100" value="3000" style="width:120px"></div>
         <button class="btn" id="e-add">＋ 新增員工</button>
       </div>
-      ${state.employees.length===0?'<div class="empty">尚無員工。</div>':`<table><thead><tr><th>姓名</th><th class="num">目前日薪</th><th></th><th></th><th></th><th></th><th></th></tr></thead><tbody>${empRows}</tbody></table>`}
+      ${state.employees.length===0?'<div class="empty">尚無員工。</div>':`<div class="scroll"><table><thead><tr><th>姓名</th><th class="num">目前日薪</th><th></th><th></th><th></th><th></th><th></th></tr></thead><tbody>${empRows}</tbody></table></div>`}
     </div>
   </details>
   <details class="card">
