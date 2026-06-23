@@ -675,7 +675,7 @@ function viewPayroll(){
 
   // 本期借支扣款提示：尚未還清、且本期還沒扣過的借支
   const loanReminders=state.loans.filter(l=>loanBalance(l)>0 && !loanDeductedInRange(l.id,state.payFrom,state.payTo)).map(l=>{
-    const bal=loanBalance(l), suggest=Math.min(l.perPeriod,bal);
+    const bal=loanBalance(l), suggest=Math.min(l.perPeriod||bal,bal);
     return `<tr>
       <td>${esc(empName(l.empId))}</td>
       <td class="num">${money(bal)}</td>
@@ -1268,9 +1268,9 @@ function bind(){
     const date=document.getElementById('loan-date').value;
     const empId=document.getElementById('loan-emp').value;
     const amount=parseFloat(document.getElementById('loan-amount').value);
-    const perPeriod=parseFloat(document.getElementById('loan-per').value);
+    const perPeriod=parseFloat(document.getElementById('loan-per').value)||0;
     const note=document.getElementById('loan-note').value.trim();
-    if(!date||!empId||isNaN(amount)||amount<=0||isNaN(perPeriod)||perPeriod<=0) return;
+    if(!date||!empId||isNaN(amount)||amount<=0) return;
     state.loans.push({id:uid(),date,empId,amount,perPeriod,note});
     saveData(); render();
   };
@@ -1281,7 +1281,7 @@ function bind(){
   document.querySelectorAll('[data-repay]').forEach(b=>b.onclick=()=>{
     const loan=state.loans.find(l=>l.id===b.dataset.repay); if(!loan) return;
     const bal=loanBalance(loan);
-    const amt=Math.min(loan.perPeriod, bal);
+    const amt=Math.min(loan.perPeriod||bal, bal);
     if(amt<=0) return;
     state.adjustments.push({id:uid(),date:state.payTo||new Date().toISOString().slice(0,10),empId:loan.empId,kind:'ded',label:'借支扣還',amount:amt,note:(loan.note?loan.note+' ':'')+'借支分期',loanId:loan.id});
     saveData(); render();
@@ -2059,7 +2059,7 @@ function viewLoans(){
     return `<tr>
       <td>${esc(l.date)}</td><td>${esc(empName(l.empId))}</td>
       <td class="num">${money(l.amount)}</td>
-      <td class="num">${money(l.perPeriod)}</td>
+      <td class="num">${l.perPeriod>0?money(l.perPeriod):'—'}</td>
       <td class="num">${money(repaid)}（${pct}%）</td>
       <td class="num" style="font-weight:600;color:${done?'var(--accent)':'var(--danger)'}">${done?'已還清':money(bal)}</td>
       <td>${esc(l.note||'')}</td>
@@ -2078,7 +2078,7 @@ function viewLoans(){
       <div class="field"><label>借款日</label><input type="date" id="loan-date" value="${new Date().toISOString().slice(0,10)}"></div>
       <div class="field"><label>員工</label><select id="loan-emp">${empOpts}</select></div>
       <div class="field"><label>借款總額</label><input type="number" id="loan-amount" min="0" step="500" style="width:120px"></div>
-      <div class="field"><label>每期扣款</label><input type="number" id="loan-per" min="0" step="500" style="width:120px"></div>
+      <div class="field"><label>每期扣款（選填）</label><input type="number" id="loan-per" min="0" step="500" style="width:120px"></div>
       <div class="field" style="flex:1;min-width:140px"><label>備註（選填）</label><input id="loan-note" placeholder="例：預支生活費"></div>
       <button class="btn" id="loan-add">＋ 新增借支</button>
     </div>
