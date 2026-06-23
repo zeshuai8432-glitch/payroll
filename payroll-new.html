@@ -761,12 +761,16 @@ function viewSites(){
 }
 
 function viewManage(){
+  const todayStr=new Date().toISOString().slice(0,10);
   const empRows=state.employees.map(e=>{
     const hasRecords=state.attendance.some(r=>r.empId===e.id);
     const delBtn=hasRecords?'<span class="act muted" title="已有出工紀錄，無法刪除">🔒</span>':`<button class="act danger" data-delemp="${e.id}">刪</button>`;
     const toggle=e.active?`<button class="act" data-toggle="${e.id}">停用</button>`:`<button class="act" data-toggle="${e.id}">復用</button>`;
+    const curRate=effectiveDaily(e,todayStr);
+    const upcoming=(e.rateHistory||[]).filter(h=>h.date>todayStr).sort((a,b)=>a.date.localeCompare(b.date));
+    const pendingTag=upcoming.length?`<span class="tag" style="background:#fef3c7;color:#92400e" title="生效日 ${upcoming[0].date}">↑${upcoming[0].date.slice(5).replace('-','/')} ${money(upcoming[0].daily)}</span>`:'';
     return `<tr><td>${esc(e.name)}${e.partner?'<span class="tag" style="background:#e3efe9;color:var(--accent)">股東</span>':''}${!e.active?'<span class="tag">已停用</span>':''}</td>
-      <td class="num">${money(e.daily)}</td>
+      <td class="num">${money(curRate)}${pendingTag}</td>
       <td><button class="act" data-renemp="${e.id}">改名</button></td>
       <td><button class="act" data-raise="${e.id}">調薪</button></td>
       <td><button class="act" data-partner="${e.id}">${e.partner?'取消股東':'設為股東'}</button></td>
@@ -888,7 +892,7 @@ function bind(){
       }
       if(!confirm(msg)) return;
     }
-    state.attendance.push({id:uid(),date,empId,siteId,hours,night,dailyRate:emp.daily});
+    state.attendance.push({id:uid(),date,empId,siteId,hours,night,dailyRate:effectiveDaily(emp,date)});
     entryDate=date; entrySite=siteId; entryEmp='';
     entryNight=night; // 保留過夜外宿狀態
     saveData(); render();
@@ -934,9 +938,20 @@ function bind(){
   document.querySelectorAll('[data-raise]').forEach(b=>b.onclick=()=>{
     const e=state.employees.find(x=>x.id===b.dataset.raise); if(!e)return;
     const cell=b.closest('td');
-    cell.innerHTML=`<span class="inline"><input type="number" min="0" step="100" value="${e.daily}" id="raise-in"><button class="act" id="raise-ok">✓</button><button class="act muted" id="raise-cancel" style="cursor:pointer">✕</button></span>`;
+    const today=new Date().toISOString().slice(0,10);
+    cell.innerHTML=`<span class="inline" style="flex-wrap:wrap;gap:4px"><input type="date" id="raise-date" value="${today}" style="width:130px"><input type="number" min="0" step="100" value="${effectiveDaily(e,today)}" id="raise-in" style="width:90px"><button class="act" id="raise-ok">✓</button><button class="act muted" id="raise-cancel" style="cursor:pointer">✕</button></span>`;
     const inp=cell.querySelector('#raise-in'); inp.focus();
-    cell.querySelector('#raise-ok').onclick=()=>{ const v=parseFloat(inp.value); if(!isNaN(v)){ e.daily=v; saveData(); } render(); };
+    cell.querySelector('#raise-ok').onclick=()=>{
+      const v=parseFloat(inp.value), d=cell.querySelector('#raise-date').value;
+      if(!isNaN(v)&&d){
+        if(!e.rateHistory) e.rateHistory=[];
+        e.rateHistory=e.rateHistory.filter(h=>h.date!==d);
+        e.rateHistory.push({date:d,daily:v});
+        e.daily=effectiveDaily(e,new Date().toISOString().slice(0,10));
+        saveData();
+      }
+      render();
+    };
     cell.querySelector('#raise-cancel').onclick=()=>render();
   });
   document.querySelectorAll('[data-toggle]').forEach(b=>b.onclick=()=>{ const e=state.employees.find(x=>x.id===b.dataset.toggle); if(e){ e.active=!e.active; saveData(); render(); } });
@@ -1139,6 +1154,13 @@ function loanRepaid(loanId){
   return state.adjustments.filter(a=>a.loanId===loanId && a.kind==='ded').reduce((s,a)=>s+(Number(a.amount)||0),0);
 }
 function loanBalance(loan){ return Math.max(0, (Number(loan.amount)||0) - loanRepaid(loan.id)); }
+function effectiveDaily(emp, date){
+  if(emp.rateHistory&&emp.rateHistory.length){
+    const hit=emp.rateHistory.filter(h=>h.date<=date).sort((a,b)=>b.date.localeCompare(a.date));
+    if(hit.length) return Number(hit[0].daily)||0;
+  }
+  return Number(emp.daily)||0;
+}
 function loanDeductedInRange(loanId,from,to){
   const inRange=d=>(!from||d>=from)&&(!to||d<=to);
   return state.adjustments.some(a=>a.loanId===loanId && a.kind==='ded' && inRange(a.date));
