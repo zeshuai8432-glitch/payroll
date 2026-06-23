@@ -395,6 +395,7 @@ async function loadCloud(){
 }
 
 let saveTimer=null, saving=false, pendingSave=false;
+let raiseEmpId=null;
 function saveData(){
   // 本機立即存（不怕當掉）
   try{ localStorage.setItem(LS, JSON.stringify(packData())); }catch(e){}
@@ -798,6 +799,7 @@ function viewManage(){
         <div class="field"><label>日薪</label><input id="e-daily" type="number" min="0" step="100" value="3000" style="width:120px"></div>
         <button class="btn" id="e-add">＋ 新增員工</button>
       </div>
+      ${(()=>{ const re=raiseEmpId?state.employees.find(x=>x.id===raiseEmpId):null; if(!re) return ''; const hist=[...(re.rateHistory||[])].sort((a,b)=>a.date.localeCompare(b.date)); return `<div class="card" style="border:2px solid var(--accent);margin:0 0 12px"><div style="font-size:14px;font-weight:700;margin-bottom:10px">調薪：${esc(re.name)}</div><div class="row"><div class="field"><label>生效日</label><input type="date" id="raise-date" value="${todayStr}"></div><div class="field"><label>新日薪</label><input type="number" id="raise-in" min="0" step="100" value="${effectiveDaily(re,todayStr)}" style="width:120px"></div><button class="btn" id="raise-ok">確認</button><button class="btn" id="raise-cancel" style="background:var(--line2);color:var(--text)">取消</button></div>${hist.length?`<div style="margin-top:10px;font-size:12px;color:var(--muted)">調薪紀錄：${hist.map(h=>`${h.date} ${money(h.daily)}`).join(' → ')}</div>`:''}</div>`; })()}
       ${state.employees.length===0?'<div class="empty">尚無員工。</div>':`<div class="scroll"><table><thead><tr><th>姓名</th><th class="num">目前日薪</th><th></th><th></th><th></th><th></th><th></th></tr></thead><tbody>${empRows}</tbody></table></div>`}
     </div>
   </details>
@@ -935,14 +937,13 @@ function bind(){
     if(!name||isNaN(daily)) return;
     state.employees.push({id:uid(),name,daily,active:true}); saveData(); render();
   };
-  document.querySelectorAll('[data-raise]').forEach(b=>b.onclick=()=>{
-    const e=state.employees.find(x=>x.id===b.dataset.raise); if(!e)return;
-    const cell=b.closest('td');
-    const today=new Date().toISOString().slice(0,10);
-    cell.innerHTML=`<span class="inline" style="flex-wrap:wrap;gap:4px"><input type="date" id="raise-date" value="${today}" style="width:130px"><input type="number" min="0" step="100" value="${effectiveDaily(e,today)}" id="raise-in" style="width:90px"><button class="act" id="raise-ok">✓</button><button class="act muted" id="raise-cancel" style="cursor:pointer">✕</button></span>`;
-    const inp=cell.querySelector('#raise-in'); inp.focus();
-    cell.querySelector('#raise-ok').onclick=()=>{
-      const v=parseFloat(inp.value), d=cell.querySelector('#raise-date').value;
+  document.querySelectorAll('[data-raise]').forEach(b=>b.onclick=()=>{ raiseEmpId=b.dataset.raise; render(); });
+  const raiseOk=document.getElementById('raise-ok');
+  if(raiseOk) raiseOk.onclick=()=>{
+    const e=state.employees.find(x=>x.id===raiseEmpId);
+    if(e){
+      const v=parseFloat(document.getElementById('raise-in').value);
+      const d=document.getElementById('raise-date').value;
       if(!isNaN(v)&&d){
         if(!e.rateHistory) e.rateHistory=[];
         e.rateHistory=e.rateHistory.filter(h=>h.date!==d);
@@ -950,10 +951,11 @@ function bind(){
         e.daily=effectiveDaily(e,new Date().toISOString().slice(0,10));
         saveData();
       }
-      render();
-    };
-    cell.querySelector('#raise-cancel').onclick=()=>render();
-  });
+    }
+    raiseEmpId=null; render();
+  };
+  const raiseCancel=document.getElementById('raise-cancel');
+  if(raiseCancel) raiseCancel.onclick=()=>{ raiseEmpId=null; render(); };
   document.querySelectorAll('[data-toggle]').forEach(b=>b.onclick=()=>{ const e=state.employees.find(x=>x.id===b.dataset.toggle); if(e){ e.active=!e.active; saveData(); render(); } });
   document.querySelectorAll('[data-partner]').forEach(b=>b.onclick=()=>{ const e=state.employees.find(x=>x.id===b.dataset.partner); if(e){ e.partner=!e.partner; saveData(); render(); } });
   document.querySelectorAll('[data-delemp]').forEach(b=>b.onclick=()=>{ const e=state.employees.find(x=>x.id===b.dataset.delemp); if(!confirm(`確定刪除員工「${e?esc(e.name):''}」？`)) return; state.employees=state.employees.filter(e=>e.id!==b.dataset.delemp); saveData(); render(); });
