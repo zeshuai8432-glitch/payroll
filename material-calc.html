@@ -1,0 +1,1866 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>材料計算系統</title>
+<style>
+  :root {
+    --bg: #F2F0EB;
+    --surface: #FFFFFF;
+    --surface2: #F8F7F4;
+    --border: #DDDAD3;
+    --border-strong: #B8B4AC;
+    --text: #1A1916;
+    --text-2: #5C5A55;
+    --text-3: #9C9A95;
+    --accent: #2B5F8E;
+    --accent-light: #E8F0F8;
+    --accent-dark: #1E4468;
+    --green: #2D7A4F;
+    --green-light: #E6F4EC;
+    --orange: #C4621A;
+    --orange-light: #FDF0E8;
+    --red: #B83232;
+    --red-light: #FDEAEA;
+    --shadow: 0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04);
+    --shadow-md: 0 4px 12px rgba(0,0,0,0.1);
+    --radius: 6px;
+    --radius-lg: 10px;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: -apple-system, 'PingFang TC', 'Microsoft JhengHei', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    font-size: 14px;
+    line-height: 1.5;
+    min-height: 100vh;
+  }
+
+  /* ─── LOGIN ─── */
+  #login-screen {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    padding: 24px;
+  }
+
+  .login-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 40px 36px;
+    width: 100%;
+    max-width: 360px;
+    box-shadow: var(--shadow-md);
+  }
+
+  .login-card h1 {
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--text);
+    margin-bottom: 4px;
+    letter-spacing: -0.3px;
+  }
+
+  .login-card p {
+    color: var(--text-2);
+    font-size: 13px;
+    margin-bottom: 28px;
+  }
+
+  .login-divider {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 20px 0;
+  }
+
+  .login-divider hr {
+    flex: 1;
+    border: none;
+    border-top: 1px solid var(--border);
+  }
+
+  .login-divider span {
+    font-size: 11px;
+    color: var(--text-3);
+  }
+
+  /* ─── FORM ELEMENTS ─── */
+  .field { margin-bottom: 14px; }
+
+  label {
+    display: block;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-2);
+    margin-bottom: 5px;
+    letter-spacing: 0.3px;
+    text-transform: uppercase;
+  }
+
+  input[type="text"],
+  input[type="password"],
+  input[type="number"],
+  select,
+  textarea {
+    width: 100%;
+    padding: 9px 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--surface);
+    color: var(--text);
+    font-size: 14px;
+    font-family: inherit;
+    transition: border-color 0.15s, box-shadow 0.15s;
+    outline: none;
+  }
+
+  input:focus, select:focus, textarea:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(43,95,142,0.12);
+  }
+
+  input[type="number"] { -moz-appearance: textfield; }
+  input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 9px 16px;
+    border-radius: var(--radius);
+    border: none;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+    font-family: inherit;
+    text-decoration: none;
+  }
+
+  .btn-primary {
+    background: var(--accent);
+    color: #fff;
+  }
+  .btn-primary:hover { background: var(--accent-dark); }
+
+  .btn-secondary {
+    background: var(--surface);
+    color: var(--text);
+    border: 1px solid var(--border);
+  }
+  .btn-secondary:hover { background: var(--surface2); }
+
+  .btn-ghost {
+    background: transparent;
+    color: var(--text-2);
+    border: 1px solid transparent;
+  }
+  .btn-ghost:hover { background: var(--surface2); color: var(--text); }
+
+  .btn-danger {
+    background: var(--red-light);
+    color: var(--red);
+    border: 1px solid #F0C0C0;
+  }
+  .btn-danger:hover { background: #F8D5D5; }
+
+  .btn-sm { padding: 6px 10px; font-size: 12px; }
+  .btn-full { width: 100%; }
+
+  .btn-icon {
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    padding: 4px;
+    border-radius: 4px;
+    color: var(--text-3);
+    display: inline-flex;
+    align-items: center;
+    transition: all 0.15s;
+  }
+  .btn-icon:hover { background: var(--surface2); color: var(--text); }
+
+  /* ─── MAIN LAYOUT ─── */
+  #app { display: none; flex-direction: column; min-height: 100vh; }
+
+  .topbar {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 0 20px;
+    height: 52px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+
+  .topbar-left {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+
+  .topbar h1 {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--accent);
+    letter-spacing: -0.3px;
+  }
+
+  .topbar-user {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 13px;
+    color: var(--text-2);
+  }
+
+  .user-badge {
+    background: var(--accent-light);
+    color: var(--accent);
+    font-weight: 700;
+    font-size: 12px;
+    padding: 3px 10px;
+    border-radius: 20px;
+  }
+
+  /* ─── TABS ─── */
+  .tabs {
+    display: flex;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    padding: 0 20px;
+  }
+
+  .tab {
+    padding: 10px 16px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-3);
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    transition: all 0.15s;
+    white-space: nowrap;
+  }
+
+  .tab:hover { color: var(--text); }
+  .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+  /* ─── MAIN CONTENT ─── */
+  .main { flex: 1; padding: 20px; max-width: 1100px; margin: 0 auto; width: 100%; }
+
+  .tab-content { display: none; }
+  .tab-content.active { display: block; }
+
+  /* ─── CARDS ─── */
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 20px;
+    margin-bottom: 16px;
+    box-shadow: var(--shadow);
+  }
+
+  .card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 16px;
+    gap: 12px;
+  }
+
+  .card-title {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--text);
+  }
+
+  .card-sub {
+    font-size: 12px;
+    color: var(--text-3);
+    margin-top: 2px;
+  }
+
+  /* ─── PROJECT LIST ─── */
+  .project-list { display: flex; flex-direction: column; gap: 8px; }
+
+  .project-item {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 14px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .project-item:hover {
+    border-color: var(--accent);
+    background: var(--accent-light);
+  }
+
+  .project-item.active {
+    border-color: var(--accent);
+    background: var(--accent-light);
+  }
+
+  .project-name {
+    font-weight: 600;
+    font-size: 14px;
+  }
+
+  .project-meta {
+    font-size: 12px;
+    color: var(--text-2);
+    margin-top: 2px;
+  }
+
+  .project-actions { display: flex; gap: 4px; }
+
+  /* ─── SPACE LIST ─── */
+  .space-list { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+
+  .space-item {
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+
+  .space-header {
+    background: var(--surface2);
+    padding: 12px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    cursor: pointer;
+  }
+
+  .space-header:hover { background: #EEECEA; }
+
+  .space-name { font-weight: 600; font-size: 14px; }
+  .space-badge {
+    font-size: 11px;
+    background: var(--border);
+    color: var(--text-2);
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-weight: 600;
+  }
+
+  .space-body { padding: 12px 16px; display: none; }
+  .space-body.open { display: block; }
+
+  /* ─── ZONE ITEMS ─── */
+  .zone-list { display: flex; flex-direction: column; gap: 8px; }
+
+  .zone-item {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 12px 14px;
+  }
+
+  .zone-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+  }
+
+  .zone-type-badge {
+    font-size: 11px;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 10px;
+  }
+
+  .badge-partition {
+    background: #E8F0F8;
+    color: #2B5F8E;
+  }
+
+  .badge-ceiling {
+    background: #E6F4EC;
+    color: #2D7A4F;
+  }
+
+  /* ─── FORM GRID ─── */
+  .form-grid {
+    display: grid;
+    gap: 12px;
+  }
+
+  .form-grid-2 { grid-template-columns: 1fr 1fr; }
+  .form-grid-3 { grid-template-columns: 1fr 1fr 1fr; }
+  .form-grid-4 { grid-template-columns: 1fr 1fr 1fr 1fr; }
+
+  .form-row {
+    display: flex;
+    gap: 10px;
+    align-items: flex-end;
+  }
+
+  .form-row .field { margin-bottom: 0; flex: 1; }
+
+  .input-unit {
+    display: flex;
+    align-items: center;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    background: var(--surface);
+    transition: border-color 0.15s, box-shadow 0.15s;
+  }
+
+  .input-unit:focus-within {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(43,95,142,0.12);
+  }
+
+  .input-unit input {
+    border: none;
+    box-shadow: none;
+    flex: 1;
+  }
+
+  .input-unit input:focus {
+    border: none;
+    box-shadow: none;
+  }
+
+  .unit-label {
+    padding: 0 10px;
+    font-size: 12px;
+    color: var(--text-3);
+    white-space: nowrap;
+    border-left: 1px solid var(--border);
+    background: var(--surface2);
+    height: 100%;
+    display: flex;
+    align-items: center;
+  }
+
+  /* ─── SECTION TITLES ─── */
+  .section-title {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.8px;
+    text-transform: uppercase;
+    color: var(--text-3);
+    margin-bottom: 10px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  /* ─── RESULT TABLE ─── */
+  .result-section {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+  }
+
+  .result-header {
+    background: var(--accent);
+    color: #fff;
+    padding: 12px 16px;
+    font-weight: 700;
+    font-size: 13px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .result-table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  .result-table th {
+    background: var(--surface2);
+    padding: 8px 14px;
+    text-align: left;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-2);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .result-table td {
+    padding: 9px 14px;
+    border-bottom: 1px solid var(--border);
+    font-size: 13px;
+  }
+
+  .result-table tr:last-child td { border-bottom: none; }
+  .result-table tr:hover td { background: var(--surface2); }
+
+  .qty { font-weight: 700; color: var(--accent); }
+  .unit-cell { font-size: 12px; color: var(--text-3); }
+  .price-cell { font-weight: 600; color: var(--green); }
+
+  .result-total {
+    background: var(--accent-light);
+    border-top: 2px solid var(--accent);
+    padding: 12px 14px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 14px;
+    font-weight: 700;
+  }
+
+  .total-price { color: var(--accent); font-size: 18px; }
+
+  /* ─── MATERIAL DB ─── */
+  .material-category {
+    margin-bottom: 20px;
+  }
+
+  .material-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+
+  .material-table th {
+    background: var(--surface2);
+    padding: 8px 12px;
+    text-align: left;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-2);
+    border: 1px solid var(--border);
+  }
+
+  .material-table td {
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    vertical-align: middle;
+  }
+
+  .material-table input[type="number"],
+  .material-table input[type="text"] {
+    padding: 5px 8px;
+    font-size: 13px;
+  }
+
+  /* ─── TOGGLE ─── */
+  .toggle-group {
+    display: flex;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    background: var(--surface2);
+  }
+
+  .toggle-btn {
+    flex: 1;
+    padding: 7px 12px;
+    border: none;
+    background: transparent;
+    font-size: 13px;
+    font-family: inherit;
+    color: var(--text-2);
+    cursor: pointer;
+    font-weight: 500;
+    transition: all 0.15s;
+    text-align: center;
+  }
+
+  .toggle-btn.active {
+    background: var(--accent);
+    color: #fff;
+    font-weight: 700;
+  }
+
+  /* ─── ALERTS ─── */
+  .alert {
+    padding: 10px 14px;
+    border-radius: var(--radius);
+    font-size: 13px;
+    margin-bottom: 12px;
+    border-left: 3px solid;
+  }
+
+  .alert-info {
+    background: var(--accent-light);
+    border-color: var(--accent);
+    color: var(--accent-dark);
+  }
+
+  .alert-warning {
+    background: var(--orange-light);
+    border-color: var(--orange);
+    color: var(--orange);
+  }
+
+  /* ─── EMPTY STATE ─── */
+  .empty-state {
+    text-align: center;
+    padding: 40px 20px;
+    color: var(--text-3);
+  }
+
+  .empty-state .icon { font-size: 32px; margin-bottom: 10px; }
+  .empty-state h3 { font-size: 14px; font-weight: 600; color: var(--text-2); margin-bottom: 6px; }
+  .empty-state p { font-size: 13px; }
+
+  /* ─── MODAL ─── */
+  .modal-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.4);
+    z-index: 200;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+  }
+
+  .modal-overlay.open { display: flex; }
+
+  .modal {
+    background: var(--surface);
+    border-radius: var(--radius-lg);
+    width: 100%;
+    max-width: 560px;
+    max-height: 90vh;
+    overflow-y: auto;
+    box-shadow: var(--shadow-md);
+  }
+
+  .modal-header {
+    padding: 20px 20px 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 16px;
+  }
+
+  .modal-title { font-size: 16px; font-weight: 700; }
+
+  .modal-body { padding: 0 20px; }
+  .modal-footer { padding: 16px 20px; display: flex; gap: 8px; justify-content: flex-end; border-top: 1px solid var(--border); margin-top: 16px; }
+
+  /* ─── CHECKBOX ─── */
+  .checkbox-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    padding: 6px 0;
+  }
+
+  .checkbox-row input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+    cursor: pointer;
+  }
+
+  .checkbox-row span { font-size: 13px; }
+
+  /* ─── DIVIDER ─── */
+  .divider {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 16px 0;
+  }
+
+  /* ─── LOADER ─── */
+  .loader {
+    display: inline-block;
+    width: 16px;
+    height: 16px;
+    border: 2px solid rgba(255,255,255,0.3);
+    border-top-color: #fff;
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+  }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ─── ERROR ─── */
+  .error-msg {
+    color: var(--red);
+    font-size: 12px;
+    margin-top: 5px;
+  }
+
+  /* ─── RESPONSIVE ─── */
+  @media (max-width: 600px) {
+    .form-grid-2, .form-grid-3, .form-grid-4 { grid-template-columns: 1fr; }
+    .main { padding: 12px; }
+    .topbar { padding: 0 12px; }
+    .tabs { padding: 0 12px; overflow-x: auto; }
+    .modal { max-height: 95vh; }
+  }
+
+  /* ─── CHEVRON ─── */
+  .chevron {
+    display: inline-block;
+    transition: transform 0.2s;
+    font-size: 12px;
+    color: var(--text-3);
+  }
+  .chevron.open { transform: rotate(90deg); }
+
+  /* ─── TAG ─── */
+  .tag {
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 10px;
+  }
+
+  .tag-blue { background: var(--accent-light); color: var(--accent); }
+  .tag-green { background: var(--green-light); color: var(--green); }
+  .tag-orange { background: var(--orange-light); color: var(--orange); }
+</style>
+</head>
+<body>
+
+<!-- ═══════════════ LOGIN ═══════════════ -->
+<div id="login-screen">
+  <div class="login-card">
+    <h1>材料計算系統</h1>
+    <p>隔間 · 天花板 · 材料估算</p>
+    <div class="field">
+      <label>使用者名稱</label>
+      <input type="text" id="login-name" placeholder="輸入名字" autocomplete="username">
+    </div>
+    <div class="field">
+      <label>密碼</label>
+      <input type="password" id="login-pwd" placeholder="輸入密碼" autocomplete="current-password">
+    </div>
+    <div id="login-error" class="error-msg" style="display:none;margin-bottom:10px;"></div>
+    <button class="btn btn-primary btn-full" onclick="doLogin()">
+      <span id="login-btn-text">登入</span>
+    </button>
+    <div class="login-divider"><hr><span>首次使用？直接登入即自動建立帳號</span><hr></div>
+    <p style="font-size:12px;color:var(--text-3);text-align:center;">資料各自獨立，僅限本人查看</p>
+  </div>
+</div>
+
+<!-- ═══════════════ APP ═══════════════ -->
+<div id="app">
+  <div class="topbar">
+    <div class="topbar-left">
+      <h1>材料計算系統</h1>
+    </div>
+    <div class="topbar-user">
+      <span class="user-badge" id="user-badge">—</span>
+      <button class="btn btn-ghost btn-sm" onclick="doLogout()">登出</button>
+    </div>
+  </div>
+
+  <div class="tabs">
+    <div class="tab active" onclick="switchTab('projects')">📋 案場管理</div>
+    <div class="tab" onclick="switchTab('calc')">🔢 材料計算</div>
+    <div class="tab" onclick="switchTab('results')">📊 用量結果</div>
+    <div class="tab" onclick="switchTab('materials')">🗄️ 材料資料庫</div>
+  </div>
+
+  <div class="main">
+
+    <!-- ── 案場管理 ── -->
+    <div id="tab-projects" class="tab-content active">
+      <div style="display:flex;gap:12px;margin-bottom:16px;align-items:flex-start;flex-wrap:wrap;">
+        <div style="flex:1;min-width:200px;">
+          <h2 style="font-size:16px;font-weight:700;margin-bottom:4px;">我的案場</h2>
+          <p style="font-size:13px;color:var(--text-2);">管理所有工程案場及空間</p>
+        </div>
+        <button class="btn btn-primary" onclick="openProjectModal()">＋ 新增案場</button>
+      </div>
+
+      <div id="project-list" class="project-list">
+        <div class="empty-state">
+          <div class="icon">🏗️</div>
+          <h3>尚無案場</h3>
+          <p>點擊「新增案場」開始建立</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── 材料計算 ── -->
+    <div id="tab-calc" class="tab-content">
+      <div id="calc-no-project" class="empty-state" style="padding:60px 20px;">
+        <div class="icon">📋</div>
+        <h3>請先選擇案場</h3>
+        <p>到「案場管理」選擇案場後，再進行計算</p>
+      </div>
+
+      <div id="calc-main" style="display:none;">
+        <div style="display:flex;gap:12px;margin-bottom:16px;align-items:flex-start;flex-wrap:wrap;">
+          <div style="flex:1;">
+            <h2 style="font-size:16px;font-weight:700;margin-bottom:4px;" id="calc-project-title">—</h2>
+            <p style="font-size:13px;color:var(--text-2);" id="calc-project-sub">選擇空間或新增空間</p>
+          </div>
+          <button class="btn btn-primary" onclick="openSpaceModal()">＋ 新增空間</button>
+        </div>
+
+        <div id="space-list" class="space-list"></div>
+      </div>
+    </div>
+
+    <!-- ── 用量結果 ── -->
+    <div id="tab-results" class="tab-content">
+      <div id="results-no-project" class="empty-state" style="padding:60px 20px;">
+        <div class="icon">📊</div>
+        <h3>尚無計算結果</h3>
+        <p>完成材料計算後，結果將顯示於此</p>
+      </div>
+      <div id="results-main" style="display:none;"></div>
+    </div>
+
+    <!-- ── 材料資料庫 ── -->
+    <div id="tab-materials" class="tab-content">
+      <div style="display:flex;gap:12px;margin-bottom:16px;align-items:flex-start;flex-wrap:wrap;">
+        <div style="flex:1;">
+          <h2 style="font-size:16px;font-weight:700;margin-bottom:4px;">材料資料庫</h2>
+          <p style="font-size:13px;color:var(--text-2);">設定材料規格與單價，計算時自動帶入</p>
+        </div>
+        <button class="btn btn-secondary" onclick="saveMaterials()">💾 儲存單價</button>
+      </div>
+
+      <div id="materials-content"></div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ═══════════════ MODALS ═══════════════ -->
+
+<!-- 新增/編輯案場 -->
+<div class="modal-overlay" id="modal-project">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title" id="modal-project-title">新增案場</span>
+      <button class="btn-icon" onclick="closeModal('modal-project')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="field">
+        <label>案場名稱</label>
+        <input type="text" id="project-name-input" placeholder="例：信義路三樓隔間工程">
+      </div>
+      <div class="field">
+        <label>備註</label>
+        <input type="text" id="project-note-input" placeholder="選填">
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('modal-project')">取消</button>
+      <button class="btn btn-primary" onclick="saveProject()">確認</button>
+    </div>
+  </div>
+</div>
+
+<!-- 新增/編輯空間 -->
+<div class="modal-overlay" id="modal-space">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title" id="modal-space-title">新增空間</span>
+      <button class="btn-icon" onclick="closeModal('modal-space')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="field">
+        <label>空間名稱</label>
+        <input type="text" id="space-name-input" placeholder="例：主臥室、客廳、走廊">
+      </div>
+      <div class="field">
+        <label>備註</label>
+        <input type="text" id="space-note-input" placeholder="選填">
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('modal-space')">取消</button>
+      <button class="btn btn-primary" onclick="saveSpace()">確認</button>
+    </div>
+  </div>
+</div>
+
+<!-- 新增區塊（牆/天花板） -->
+<div class="modal-overlay" id="modal-zone">
+  <div class="modal" style="max-width:640px;">
+    <div class="modal-header">
+      <span class="modal-title" id="modal-zone-title">新增計算區塊</span>
+      <button class="btn-icon" onclick="closeModal('modal-zone')">✕</button>
+    </div>
+    <div class="modal-body">
+
+      <!-- 類型選擇 -->
+      <div class="field">
+        <label>區塊類型</label>
+        <div class="toggle-group">
+          <button class="toggle-btn active" id="zone-type-partition" onclick="setZoneType('partition')">🧱 隔間系統</button>
+          <button class="toggle-btn" id="zone-type-ceiling" onclick="setZoneType('ceiling')">⬜ 天花板系統</button>
+        </div>
+      </div>
+
+      <div class="field">
+        <label>區塊名稱</label>
+        <input type="text" id="zone-name-input" placeholder="例：北側牆面、主臥天花">
+      </div>
+
+      <!-- ── 隔間系統 ── -->
+      <div id="zone-partition-fields">
+        <hr class="divider">
+        <div class="section-title">尺寸</div>
+        <div class="form-grid form-grid-2">
+          <div class="field">
+            <label>牆寬</label>
+            <div class="input-unit">
+              <input type="number" id="p-width" placeholder="0" step="0.01" min="0">
+              <span class="unit-label">cm</span>
+            </div>
+          </div>
+          <div class="field">
+            <label>牆高</label>
+            <div class="input-unit">
+              <input type="number" id="p-height" placeholder="0" step="0.01" min="0">
+              <span class="unit-label">cm</span>
+            </div>
+          </div>
+        </div>
+
+        <hr class="divider">
+        <div class="section-title">骨架設定</div>
+        <div class="form-grid form-grid-2">
+          <div class="field">
+            <label>C型骨架間距</label>
+            <select id="p-stud-spacing">
+              <option value="30.5">30.5 cm</option>
+              <option value="40.7">40.7 cm</option>
+              <option value="61" selected>61 cm</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>C型骨架規格</label>
+            <select id="p-stud-type">
+              <option value="C41">C41</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-grid form-grid-2">
+          <div class="field">
+            <label>U槽鐵規格</label>
+            <select id="p-track-type">
+              <option value="U43">U43</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>加強橫枝</label>
+            <select id="p-brace-type">
+              <option value="none">不加</option>
+              <option value="N38">N38</option>
+              <option value="N19">N19</option>
+            </select>
+          </div>
+        </div>
+
+        <hr class="divider">
+        <div class="section-title">板材設定</div>
+        <div class="form-grid form-grid-2">
+          <div class="field">
+            <label>板材類型</label>
+            <select id="p-board-type">
+              <option value="calcium">矽酸鈣板／水泥板</option>
+              <option value="gypsum">石膏板</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>板材厚度</label>
+            <select id="p-board-thickness">
+              <option value="6">6 mm</option>
+              <option value="9" selected>9 mm</option>
+              <option value="12">12 mm</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-grid form-grid-2">
+          <div class="field">
+            <label>板材尺寸</label>
+            <select id="p-board-size">
+              <option value="4x8">4x8 尺（122×244 cm）</option>
+              <option value="4x6" selected>4x6 尺（122×183 cm）</option>
+              <option value="3x6">3x6 尺（91×183 cm）</option>
+              <option value="4x4">4x4 尺（122×122 cm）</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>貼板方式</label>
+            <div class="toggle-group">
+              <button class="toggle-btn active" id="side-single" onclick="setSides('single')">單面</button>
+              <button class="toggle-btn" id="side-double" onclick="setSides('double')">雙面</button>
+            </div>
+          </div>
+        </div>
+
+        <hr class="divider">
+        <div class="section-title">填塞物設定</div>
+        <div class="form-grid form-grid-3">
+          <div class="field">
+            <label>填塞物種類</label>
+            <select id="p-fill-type">
+              <option value="none">不填塞</option>
+              <option value="rockwool">岩棉</option>
+              <option value="glasswool">玻璃棉</option>
+            </select>
+          </div>
+          <div class="field" id="fill-spec-field" style="display:none;">
+            <label>規格</label>
+            <select id="p-fill-spec"></select>
+          </div>
+          <div class="field" id="fill-thick-field" style="display:none;">
+            <label>厚度</label>
+            <select id="p-fill-thick">
+              <option value="25">25 mm</option>
+              <option value="50">50 mm</option>
+              <option value="75">75 mm</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── 天花板系統（第二階段）── -->
+      <div id="zone-ceiling-fields" style="display:none;">
+        <hr class="divider">
+        <div class="alert alert-info">⚙️ 天花板系統計算功能開發中，即將推出</div>
+      </div>
+
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('modal-zone')">取消</button>
+      <button class="btn btn-primary" onclick="saveZone()">計算並儲存</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ════════════════════════════════════
+// GAS BACKEND
+// ════════════════════════════════════
+const GAS_URL = ''; // ← 之後填入 GAS 網址
+
+// ════════════════════════════════════
+// STATE
+// ════════════════════════════════════
+let state = {
+  user: null,
+  token: null,
+  projects: [],
+  activeProjectId: null,
+  spaces: {},     // projectId -> []
+  zones: {},      // spaceId -> []
+  editingProject: null,
+  editingSpace: null,
+  editingZone: null,
+  zoneType: 'partition',
+  sides: 'single',
+  materials: null,
+};
+
+// ════════════════════════════════════
+// MATERIAL DEFAULTS
+// ════════════════════════════════════
+const DEFAULT_MATERIALS = {
+  studs: [
+    { id: 'C41', name: 'C41 骨架', length: 300, unit: '支', price: 0, custom: false },
+    { id: 'C64', name: 'C64 骨架', length: 300, unit: '支', price: 0, custom: false },
+    { id: 'C92', name: 'C92 骨架', length: 300, unit: '支', price: 0, custom: false },
+  ],
+  tracks: [
+    { id: 'U43', name: 'U43 槽鐵', length: 300, unit: '支', price: 0, custom: false },
+    { id: 'U64', name: 'U64 槽鐵', length: 300, unit: '支', price: 0, custom: false },
+    { id: 'U92', name: 'U92 槽鐵', length: 300, unit: '支', price: 0, custom: false },
+  ],
+  braces: [
+    { id: 'N38', name: 'N38 加強橫枝', length: 300, unit: '支', price: 0 },
+    { id: 'N19', name: 'N19 加強橫枝', length: 300, unit: '支', price: 0 },
+  ],
+  boards: [
+    { id: 'calcium-6-4x6', name: '矽酸鈣板 6mm 4x6尺', unit: '片', price: 0 },
+    { id: 'calcium-9-4x6', name: '矽酸鈣板 9mm 4x6尺', unit: '片', price: 0 },
+    { id: 'calcium-12-4x6', name: '矽酸鈣板 12mm 4x6尺', unit: '片', price: 0 },
+    { id: 'calcium-6-3x6', name: '矽酸鈣板 6mm 3x6尺', unit: '片', price: 0 },
+    { id: 'calcium-9-3x6', name: '矽酸鈣板 9mm 3x6尺', unit: '片', price: 0 },
+    { id: 'calcium-12-3x6', name: '矽酸鈣板 12mm 3x6尺', unit: '片', price: 0 },
+    { id: 'calcium-6-4x8', name: '矽酸鈣板 6mm 4x8尺', unit: '片', price: 0 },
+    { id: 'calcium-9-4x8', name: '矽酸鈣板 9mm 4x8尺', unit: '片', price: 0 },
+    { id: 'calcium-12-4x8', name: '矽酸鈣板 12mm 4x8尺', unit: '片', price: 0 },
+    { id: 'calcium-6-4x4', name: '矽酸鈣板 6mm 4x4尺', unit: '片', price: 0 },
+    { id: 'calcium-9-4x4', name: '矽酸鈣板 9mm 4x4尺', unit: '片', price: 0 },
+    { id: 'calcium-12-4x4', name: '矽酸鈣板 12mm 4x4尺', unit: '片', price: 0 },
+    { id: 'gypsum-9-4x6', name: '石膏板 9mm 4x6尺', unit: '片', price: 0 },
+    { id: 'gypsum-12-4x6', name: '石膏板 12mm 4x6尺', unit: '片', price: 0 },
+    { id: 'gypsum-15-4x6', name: '石膏板 15mm 4x6尺', unit: '片', price: 0 },
+    { id: 'gypsum-19-4x6', name: '石膏板 19mm 4x6尺', unit: '片', price: 0 },
+    { id: 'gypsum-9-4x8', name: '石膏板 9mm 4x8尺', unit: '片', price: 0 },
+    { id: 'gypsum-12-4x8', name: '石膏板 12mm 4x8尺', unit: '片', price: 0 },
+    { id: 'gypsum-15-4x8', name: '石膏板 15mm 4x8尺', unit: '片', price: 0 },
+    { id: 'gypsum-19-4x8', name: '石膏板 19mm 4x8尺', unit: '片', price: 0 },
+  ],
+  rockwool: [
+    { id: 'rw-60k-30x120', name: '岩棉 60K 30x120cm', unit: '包', piecesPerPack: 4, price: 0 },
+    { id: 'rw-60k-40x120', name: '岩棉 60K 40x120cm', unit: '包', piecesPerPack: 4, price: 0 },
+    { id: 'rw-60k-60x120', name: '岩棉 60K 60x120cm', unit: '包', piecesPerPack: 4, price: 0 },
+  ],
+  glasswool: [
+    { id: 'gw-24k-25', name: '玻璃棉 24K 厚25mm', rollSize: 1.2*20, unit: '捲', price: 0 },
+    { id: 'gw-24k-50', name: '玻璃棉 24K 厚50mm', rollSize: 1.2*10, unit: '捲', price: 0 },
+    { id: 'gw-24k-75', name: '玻璃棉 24K 厚75mm', rollSize: 1.2*6.67, unit: '捲', price: 0 },
+  ],
+};
+
+// board size lookup (cm)
+const BOARD_SIZES = {
+  '4x8': { w: 122, h: 244 },
+  '4x6': { w: 122, h: 183 },
+  '3x6': { w: 91, h: 183 },
+  '4x4': { w: 122, h: 122 },
+};
+
+// ════════════════════════════════════
+// LOGIN
+// ════════════════════════════════════
+function doLogin() {
+  const name = document.getElementById('login-name').value.trim();
+  const pwd = document.getElementById('login-pwd').value.trim();
+  if (!name || !pwd) {
+    showLoginError('請輸入名字和密碼');
+    return;
+  }
+  // 本地端：以 name+pwd 為識別，資料存 localStorage
+  const key = btoa(name + ':' + pwd);
+  const existing = localStorage.getItem('mc_user_' + key);
+  let userData;
+  if (existing) {
+    userData = JSON.parse(existing);
+  } else {
+    userData = { name, key, projects: [], spaces: {}, zones: {}, materials: JSON.parse(JSON.stringify(DEFAULT_MATERIALS)) };
+    localStorage.setItem('mc_user_' + key, JSON.stringify(userData));
+  }
+  state.user = userData.name;
+  state.token = key;
+  loadUserData(userData);
+  document.getElementById('login-screen').style.display = 'none';
+  document.getElementById('app').style.display = 'flex';
+  document.getElementById('user-badge').textContent = state.user;
+}
+
+function showLoginError(msg) {
+  const el = document.getElementById('login-error');
+  el.textContent = msg;
+  el.style.display = 'block';
+}
+
+function doLogout() {
+  state = { user: null, token: null, projects: [], activeProjectId: null, spaces: {}, zones: {}, editingProject: null, editingSpace: null, editingZone: null, zoneType: 'partition', sides: 'single', materials: null };
+  document.getElementById('login-screen').style.display = 'flex';
+  document.getElementById('app').style.display = 'none';
+  document.getElementById('login-name').value = '';
+  document.getElementById('login-pwd').value = '';
+}
+
+function loadUserData(data) {
+  state.projects = data.projects || [];
+  state.spaces = data.spaces || {};
+  state.zones = data.zones || {};
+  state.materials = data.materials || JSON.parse(JSON.stringify(DEFAULT_MATERIALS));
+  renderProjects();
+  renderMaterials();
+}
+
+function saveUserData() {
+  if (!state.token) return;
+  const data = { name: state.user, key: state.token, projects: state.projects, spaces: state.spaces, zones: state.zones, materials: state.materials };
+  localStorage.setItem('mc_user_' + state.token, JSON.stringify(data));
+}
+
+// ════════════════════════════════════
+// TABS
+// ════════════════════════════════════
+function switchTab(tab) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+  event.target.classList.add('active');
+  document.getElementById('tab-' + tab).classList.add('active');
+  if (tab === 'calc') renderCalcTab();
+  if (tab === 'results') renderResults();
+}
+
+// ════════════════════════════════════
+// PROJECTS
+// ════════════════════════════════════
+function openProjectModal(id) {
+  state.editingProject = id || null;
+  document.getElementById('modal-project-title').textContent = id ? '編輯案場' : '新增案場';
+  if (id) {
+    const p = state.projects.find(x => x.id === id);
+    document.getElementById('project-name-input').value = p.name;
+    document.getElementById('project-note-input').value = p.note || '';
+  } else {
+    document.getElementById('project-name-input').value = '';
+    document.getElementById('project-note-input').value = '';
+  }
+  openModal('modal-project');
+}
+
+function saveProject() {
+  const name = document.getElementById('project-name-input').value.trim();
+  if (!name) return;
+  if (state.editingProject) {
+    const p = state.projects.find(x => x.id === state.editingProject);
+    p.name = name;
+    p.note = document.getElementById('project-note-input').value.trim();
+  } else {
+    const id = 'proj_' + Date.now();
+    state.projects.push({ id, name, note: document.getElementById('project-note-input').value.trim(), createdAt: new Date().toLocaleDateString('zh-TW') });
+    state.spaces[id] = [];
+  }
+  saveUserData();
+  renderProjects();
+  closeModal('modal-project');
+}
+
+function deleteProject(id) {
+  if (!confirm('確定刪除此案場？所有空間與計算資料也會一併刪除。')) return;
+  state.projects = state.projects.filter(p => p.id !== id);
+  delete state.spaces[id];
+  if (state.activeProjectId === id) state.activeProjectId = null;
+  saveUserData();
+  renderProjects();
+}
+
+function selectProject(id) {
+  state.activeProjectId = id;
+  renderProjects();
+  // 切到計算頁
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tab')[1].classList.add('active');
+  document.getElementById('tab-calc').classList.add('active');
+  renderCalcTab();
+}
+
+function renderProjects() {
+  const el = document.getElementById('project-list');
+  if (!state.projects.length) {
+    el.innerHTML = '<div class="empty-state"><div class="icon">🏗️</div><h3>尚無案場</h3><p>點擊「新增案場」開始建立</p></div>';
+    return;
+  }
+  el.innerHTML = state.projects.map(p => {
+    const spaceCount = (state.spaces[p.id] || []).length;
+    const active = state.activeProjectId === p.id ? ' active' : '';
+    return `
+      <div class="project-item${active}" onclick="selectProject('${p.id}')">
+        <div>
+          <div class="project-name">${esc(p.name)}</div>
+          <div class="project-meta">${p.createdAt} · ${spaceCount} 個空間${p.note ? ' · ' + esc(p.note) : ''}</div>
+        </div>
+        <div class="project-actions" onclick="event.stopPropagation()">
+          <button class="btn btn-ghost btn-sm" onclick="openProjectModal('${p.id}')">✏️</button>
+          <button class="btn btn-ghost btn-sm" onclick="deleteProject('${p.id}')">🗑️</button>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+// ════════════════════════════════════
+// CALC TAB
+// ════════════════════════════════════
+function renderCalcTab() {
+  if (!state.activeProjectId) {
+    document.getElementById('calc-no-project').style.display = 'block';
+    document.getElementById('calc-main').style.display = 'none';
+    return;
+  }
+  document.getElementById('calc-no-project').style.display = 'none';
+  document.getElementById('calc-main').style.display = 'block';
+  const p = state.projects.find(x => x.id === state.activeProjectId);
+  document.getElementById('calc-project-title').textContent = p.name;
+  document.getElementById('calc-project-sub').textContent = p.note || '';
+  renderSpaces();
+}
+
+// ════════════════════════════════════
+// SPACES
+// ════════════════════════════════════
+function openSpaceModal(id) {
+  state.editingSpace = id || null;
+  document.getElementById('modal-space-title').textContent = id ? '編輯空間' : '新增空間';
+  if (id) {
+    const spaces = state.spaces[state.activeProjectId] || [];
+    const s = spaces.find(x => x.id === id);
+    document.getElementById('space-name-input').value = s.name;
+    document.getElementById('space-note-input').value = s.note || '';
+  } else {
+    document.getElementById('space-name-input').value = '';
+    document.getElementById('space-note-input').value = '';
+  }
+  openModal('modal-space');
+}
+
+function saveSpace() {
+  const name = document.getElementById('space-name-input').value.trim();
+  if (!name) return;
+  const pid = state.activeProjectId;
+  if (!state.spaces[pid]) state.spaces[pid] = [];
+  if (state.editingSpace) {
+    const s = state.spaces[pid].find(x => x.id === state.editingSpace);
+    s.name = name;
+    s.note = document.getElementById('space-note-input').value.trim();
+  } else {
+    const id = 'sp_' + Date.now();
+    state.spaces[pid].push({ id, name, note: document.getElementById('space-note-input').value.trim() });
+    state.zones[id] = [];
+  }
+  saveUserData();
+  renderSpaces();
+  closeModal('modal-space');
+}
+
+function deleteSpace(id) {
+  if (!confirm('確定刪除此空間？')) return;
+  const pid = state.activeProjectId;
+  state.spaces[pid] = (state.spaces[pid] || []).filter(s => s.id !== id);
+  delete state.zones[id];
+  saveUserData();
+  renderSpaces();
+}
+
+function toggleSpaceBody(id) {
+  const body = document.getElementById('space-body-' + id);
+  const chevron = document.getElementById('chevron-' + id);
+  body.classList.toggle('open');
+  chevron.classList.toggle('open');
+}
+
+function renderSpaces() {
+  const el = document.getElementById('space-list');
+  const spaces = state.spaces[state.activeProjectId] || [];
+  if (!spaces.length) {
+    el.innerHTML = '<div class="empty-state"><div class="icon">🏠</div><h3>尚無空間</h3><p>點擊「新增空間」開始建立</p></div>';
+    return;
+  }
+  el.innerHTML = spaces.map(s => {
+    const zones = state.zones[s.id] || [];
+    const zoneCount = zones.length;
+    return `
+      <div class="space-item">
+        <div class="space-header" onclick="toggleSpaceBody('${s.id}')">
+          <div style="display:flex;align-items:center;gap:10px;">
+            <span class="chevron" id="chevron-${s.id}">▶</span>
+            <div>
+              <div class="space-name">${esc(s.name)}</div>
+              ${s.note ? `<div style="font-size:12px;color:var(--text-3)">${esc(s.note)}</div>` : ''}
+            </div>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;" onclick="event.stopPropagation()">
+            <span class="space-badge">${zoneCount} 個區塊</span>
+            <button class="btn btn-primary btn-sm" onclick="openZoneModal(null,'${s.id}')">＋ 新增區塊</button>
+            <button class="btn-icon" onclick="openSpaceModal('${s.id}')">✏️</button>
+            <button class="btn-icon" onclick="deleteSpace('${s.id}')">🗑️</button>
+          </div>
+        </div>
+        <div class="space-body" id="space-body-${s.id}">
+          ${renderZonesHTML(s.id)}
+        </div>
+      </div>`;
+  }).join('');
+}
+
+// ════════════════════════════════════
+// ZONES
+// ════════════════════════════════════
+function openZoneModal(zoneId, spaceId) {
+  state.editingZone = zoneId || null;
+  state.editingZoneSpace = spaceId;
+  document.getElementById('modal-zone-title').textContent = zoneId ? '編輯計算區塊' : '新增計算區塊';
+
+  // reset
+  setZoneType('partition');
+  setSides('single');
+  document.getElementById('p-fill-type').value = 'none';
+  updateFillFields();
+
+  if (zoneId) {
+    const zone = (state.zones[spaceId] || []).find(z => z.id === zoneId);
+    if (zone) {
+      document.getElementById('zone-name-input').value = zone.name;
+      setZoneType(zone.type);
+      if (zone.type === 'partition') {
+        document.getElementById('p-width').value = zone.params.width;
+        document.getElementById('p-height').value = zone.params.height;
+        document.getElementById('p-stud-spacing').value = zone.params.studSpacing;
+        document.getElementById('p-stud-type').value = zone.params.studType;
+        document.getElementById('p-track-type').value = zone.params.trackType;
+        document.getElementById('p-brace-type').value = zone.params.braceType;
+        document.getElementById('p-board-type').value = zone.params.boardType;
+        document.getElementById('p-board-thickness').value = zone.params.boardThickness;
+        document.getElementById('p-board-size').value = zone.params.boardSize;
+        setSides(zone.params.sides);
+        document.getElementById('p-fill-type').value = zone.params.fillType;
+        updateFillFields();
+        if (zone.params.fillSpec) document.getElementById('p-fill-spec').value = zone.params.fillSpec;
+        if (zone.params.fillThick) document.getElementById('p-fill-thick').value = zone.params.fillThick;
+      }
+    }
+  } else {
+    document.getElementById('zone-name-input').value = '';
+    document.getElementById('p-width').value = '';
+    document.getElementById('p-height').value = '';
+  }
+
+  updateBoardThicknessOptions();
+  document.getElementById('p-board-type').onchange = updateBoardThicknessOptions;
+  document.getElementById('p-fill-type').onchange = updateFillFields;
+  openModal('modal-zone');
+}
+
+function setZoneType(type) {
+  state.zoneType = type;
+  document.getElementById('zone-type-partition').classList.toggle('active', type === 'partition');
+  document.getElementById('zone-type-ceiling').classList.toggle('active', type === 'ceiling');
+  document.getElementById('zone-partition-fields').style.display = type === 'partition' ? '' : 'none';
+  document.getElementById('zone-ceiling-fields').style.display = type === 'ceiling' ? '' : 'none';
+}
+
+function setSides(v) {
+  state.sides = v;
+  document.getElementById('side-single').classList.toggle('active', v === 'single');
+  document.getElementById('side-double').classList.toggle('active', v === 'double');
+}
+
+function updateBoardThicknessOptions() {
+  const type = document.getElementById('p-board-type').value;
+  const sel = document.getElementById('p-board-thickness');
+  const current = sel.value;
+  if (type === 'calcium') {
+    sel.innerHTML = [6, 9, 12].map(v => `<option value="${v}">${v} mm</option>`).join('');
+  } else {
+    sel.innerHTML = [9, 12, 15, 19].map(v => `<option value="${v}">${v} mm</option>`).join('');
+  }
+  if ([...sel.options].some(o => o.value === current)) sel.value = current;
+}
+
+function updateFillFields() {
+  const type = document.getElementById('p-fill-type').value;
+  const specField = document.getElementById('fill-spec-field');
+  const thickField = document.getElementById('fill-thick-field');
+  specField.style.display = type !== 'none' ? '' : 'none';
+  thickField.style.display = type === 'glasswool' ? '' : 'none';
+
+  const sel = document.getElementById('p-fill-spec');
+  if (type === 'rockwool') {
+    sel.innerHTML = state.materials.rockwool.map(r => `<option value="${r.id}">${r.name}</option>`).join('');
+  } else if (type === 'glasswool') {
+    sel.innerHTML = state.materials.glasswool.map(g => `<option value="${g.id}">${g.name}</option>`).join('');
+  }
+}
+
+function saveZone() {
+  const name = document.getElementById('zone-name-input').value.trim() || '未命名區塊';
+  const spaceId = state.editingZoneSpace;
+  if (!state.zones[spaceId]) state.zones[spaceId] = [];
+
+  let zoneData = { id: state.editingZone || 'zone_' + Date.now(), name, type: state.zoneType, params: {}, result: null };
+
+  if (state.zoneType === 'partition') {
+    const width = parseFloat(document.getElementById('p-width').value) || 0;
+    const height = parseFloat(document.getElementById('p-height').value) || 0;
+    if (!width || !height) { alert('請輸入牆寬和牆高'); return; }
+    zoneData.params = {
+      width, height,
+      studSpacing: parseFloat(document.getElementById('p-stud-spacing').value),
+      studType: document.getElementById('p-stud-type').value,
+      trackType: document.getElementById('p-track-type').value,
+      braceType: document.getElementById('p-brace-type').value,
+      boardType: document.getElementById('p-board-type').value,
+      boardThickness: parseInt(document.getElementById('p-board-thickness').value),
+      boardSize: document.getElementById('p-board-size').value,
+      sides: state.sides,
+      fillType: document.getElementById('p-fill-type').value,
+      fillSpec: document.getElementById('p-fill-spec').value,
+      fillThick: document.getElementById('p-fill-thick').value,
+    };
+    zoneData.result = calcPartition(zoneData.params);
+  }
+
+  if (state.editingZone) {
+    const idx = state.zones[spaceId].findIndex(z => z.id === state.editingZone);
+    state.zones[spaceId][idx] = zoneData;
+  } else {
+    state.zones[spaceId].push(zoneData);
+  }
+
+  saveUserData();
+  renderSpaces();
+  // reopen the space body
+  setTimeout(() => {
+    const body = document.getElementById('space-body-' + spaceId);
+    const chevron = document.getElementById('chevron-' + spaceId);
+    if (body) { body.classList.add('open'); chevron.classList.add('open'); }
+  }, 50);
+  closeModal('modal-zone');
+}
+
+function deleteZone(spaceId, zoneId) {
+  if (!confirm('確定刪除此區塊？')) return;
+  state.zones[spaceId] = (state.zones[spaceId] || []).filter(z => z.id !== zoneId);
+  saveUserData();
+  renderSpaces();
+}
+
+function renderZonesHTML(spaceId) {
+  const zones = state.zones[spaceId] || [];
+  if (!zones.length) {
+    return '<div style="text-align:center;padding:20px;color:var(--text-3);font-size:13px;">尚無計算區塊，點擊「新增區塊」開始計算</div>';
+  }
+  return `<div class="zone-list">${zones.map(z => {
+    const typeLabel = z.type === 'partition' ? '隔間系統' : '天花板系統';
+    const typeBadge = z.type === 'partition' ? 'badge-partition' : 'badge-ceiling';
+    const r = z.result;
+    let summary = '';
+    if (r && z.type === 'partition') {
+      summary = `<div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:8px;font-size:12px;color:var(--text-2);">
+        <span>骨架 <strong>${r.studs}</strong> 支</span>
+        <span>槽鐵 <strong>${r.tracks}</strong> 支</span>
+        <span>板材 <strong>${r.boards}</strong> 片</span>
+        ${r.fill ? `<span>填塞物 <strong>${r.fill.qty}</strong> ${r.fill.unit}</span>` : ''}
+        ${r.totalPrice ? `<span style="color:var(--green)">估價 <strong>$${r.totalPrice.toLocaleString()}</strong></span>` : ''}
+      </div>`;
+    }
+    const pStr = z.type === 'partition' ? `${z.params.width}×${z.params.height} cm｜${z.params.studSpacing}cm 間距｜${z.params.sides === 'single' ? '單面' : '雙面'}` : '';
+    return `
+      <div class="zone-item">
+        <div class="zone-header">
+          <div>
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
+              <span class="zone-type-badge ${typeBadge}">${typeLabel}</span>
+              <strong style="font-size:14px;">${esc(z.name)}</strong>
+            </div>
+            <div style="font-size:12px;color:var(--text-3);">${pStr}</div>
+            ${summary}
+          </div>
+          <div style="display:flex;gap:4px;">
+            <button class="btn btn-secondary btn-sm" onclick="openZoneModal('${z.id}','${spaceId}')">✏️ 編輯</button>
+            <button class="btn btn-danger btn-sm" onclick="deleteZone('${spaceId}','${z.id}')">🗑️</button>
+          </div>
+        </div>
+      </div>`;
+  }).join('')}</div>`;
+}
+
+// ════════════════════════════════════
+// CALCULATION — PARTITION
+// ════════════════════════════════════
+function calcPartition(p) {
+  const W = p.width;    // cm
+  const H = p.height;   // cm
+  const spacing = p.studSpacing;
+
+  // C型骨架：兩端各一支，中間每 spacing 間距一支
+  // 公式：floor((W - 1) / spacing) + 1（含兩端頭尾各一）
+  const studs = Math.floor((W - 1) / spacing) + 2;
+
+  // U槽鐵：上下兩條，各 = 牆寬
+  // 支數 = ceil(W / 300) * 2（以 300cm 一支計）
+  const trackUnit = 300; // 常規品長度 cm，未來可從材料庫取
+  const trackPerRow = Math.ceil(W / trackUnit);
+  const tracks = trackPerRow * 2; // 上下各一排
+
+  // U槽鐵損耗（由使用者判斷，這裡標示原始數量）
+  const trackRaw = (W / 100 * 2).toFixed(2); // 實際需要幾公尺
+
+  // 板材
+  const bs = BOARD_SIZES[p.boardSize];
+  const boardW = bs.w;
+  const boardH = bs.h;
+  const sides = p.sides === 'double' ? 2 : 1;
+  const wallArea = W * H;
+  const boardArea = boardW * boardH;
+  const boardsRaw = (wallArea * sides) / boardArea;
+  const boards = Math.ceil(boardsRaw * 1.05); // +5% 損耗
+
+  // 填塞物
+  let fill = null;
+  if (p.fillType === 'rockwool') {
+    const rw = state.materials.rockwool.find(r => r.id === p.fillSpec);
+    if (rw) {
+      // 岩棉：以面積換算片數，再換算包數
+      const rwSize = rw.name.match(/(\d+)x(\d+)cm/);
+      if (rwSize) {
+        const rwW = parseInt(rwSize[1]);
+        const rwH = parseInt(rwSize[2]);
+        const piecesNeeded = Math.ceil(wallArea / (rwW * rwH));
+        const packs = Math.ceil(piecesNeeded / (rw.piecesPerPack || 4));
+        fill = { label: rw.name, qty: packs, unit: '包', piecesNeeded };
+      }
+    }
+  } else if (p.fillType === 'glasswool') {
+    const gw = state.materials.glasswool.find(g => g.id === p.fillSpec);
+    if (gw) {
+      const rollArea = gw.rollSize; // m²
+      const wallAreaM2 = wallArea / 10000;
+      const rolls = Math.ceil(wallAreaM2 / rollArea);
+      fill = { label: gw.name, qty: rolls, unit: '捲' };
+    }
+  }
+
+  // 估價
+  let totalPrice = 0;
+  const priceDetail = [];
+
+  const studMat = state.materials.studs.find(s => s.id === p.studType);
+  if (studMat && studMat.price > 0) {
+    const cost = studs * studMat.price;
+    totalPrice += cost;
+    priceDetail.push({ name: studMat.name, qty: studs, unit: '支', unitPrice: studMat.price, cost });
+  }
+
+  const trackMat = state.materials.tracks.find(t => t.id === p.trackType);
+  if (trackMat && trackMat.price > 0) {
+    const cost = tracks * trackMat.price;
+    totalPrice += cost;
+    priceDetail.push({ name: trackMat.name, qty: tracks, unit: '支', unitPrice: trackMat.price, cost });
+  }
+
+  const boardKey = `${p.boardType}-${p.boardThickness}-${p.boardSize}`;
+  const boardMat = state.materials.boards.find(b => b.id === boardKey);
+  if (boardMat && boardMat.price > 0) {
+    const cost = boards * boardMat.price;
+    totalPrice += cost;
+    priceDetail.push({ name: boardMat.name, qty: boards, unit: '片', unitPrice: boardMat.price, cost });
+  }
+
+  if (fill) {
+    let fillMat = null;
+    if (p.fillType === 'rockwool') fillMat = state.materials.rockwool.find(r => r.id === p.fillSpec);
+    if (p.fillType === 'glasswool') fillMat = state.materials.glasswool.find(g => g.id === p.fillSpec);
+    if (fillMat && fillMat.price > 0) {
+      const cost = fill.qty * fillMat.price;
+      totalPrice += cost;
+      priceDetail.push({ name: fillMat.name, qty: fill.qty, unit: fill.unit, unitPrice: fillMat.price, cost });
+    }
+  }
+
+  return { studs, tracks, trackRaw, boards, boardsRaw: boardsRaw.toFixed(2), fill, totalPrice: totalPrice || 0, priceDetail };
+}
+
+// ════════════════════════════════════
+// RESULTS
+// ════════════════════════════════════
+function renderResults() {
+  const el = document.getElementById('results-main');
+  if (!state.activeProjectId) {
+    document.getElementById('results-no-project').style.display = 'block';
+    el.style.display = 'none';
+    return;
+  }
+  document.getElementById('results-no-project').style.display = 'none';
+  el.style.display = 'block';
+
+  const p = state.projects.find(x => x.id === state.activeProjectId);
+  const spaces = state.spaces[state.activeProjectId] || [];
+
+  // 彙總所有材料
+  const totals = {};
+  const addTotal = (key, label, qty, unit) => {
+    if (!totals[key]) totals[key] = { label, qty: 0, unit };
+    totals[key].qty += qty;
+  };
+
+  let html = `<h2 style="font-size:16px;font-weight:700;margin-bottom:16px;">${esc(p.name)} — 用量彙總</h2>`;
+
+  // 按空間分列
+  html += '<div style="margin-bottom:24px;">';
+  spaces.forEach(s => {
+    const zones = (state.zones[s.id] || []).filter(z => z.result);
+    if (!zones.length) return;
+    html += `<div class="card" style="margin-bottom:12px;">
+      <div class="card-header"><div class="card-title">📦 ${esc(s.name)}</div></div>`;
+
+    zones.forEach(z => {
+      if (z.type !== 'partition') return;
+      const r = z.result;
+      const params = z.params;
+      const bs = BOARD_SIZES[params.boardSize];
+      html += `
+        <div style="margin-bottom:12px;">
+          <div style="font-size:13px;font-weight:600;margin-bottom:6px;color:var(--text-2);">🧱 ${esc(z.name)}</div>
+          <table class="result-table">
+            <thead><tr><th>材料</th><th>數量</th><th>備註</th></tr></thead>
+            <tbody>
+              <tr><td>${params.studType} 骨架</td><td class="qty">${r.studs} 支</td><td class="unit-cell">${params.studSpacing}cm 間距</td></tr>
+              <tr><td>${params.trackType} 槽鐵</td><td class="qty">${r.tracks} 支</td><td class="unit-cell">實際用量 ${r.trackRaw} m（上下各一排）</td></tr>
+              <tr><td>${params.boardType === 'calcium' ? '矽酸鈣板' : '石膏板'} ${params.boardThickness}mm ${params.boardSize}尺</td><td class="qty">${r.boards} 片</td><td class="unit-cell">含5%損耗（淨算 ${r.boardsRaw} 片）</td></tr>
+              ${r.fill ? `<tr><td>${r.fill.label}</td><td class="qty">${r.fill.qty} ${r.fill.unit}</td><td class="unit-cell">${r.fill.piecesNeeded ? `需要 ${r.fill.piecesNeeded} 片` : ''}</td></tr>` : ''}
+            </tbody>
+          </table>
+          ${r.totalPrice > 0 ? `<div style="text-align:right;margin-top:6px;font-size:13px;color:var(--green);font-weight:600;">小計：$${r.totalPrice.toLocaleString()}</div>` : ''}
+        </div>`;
+
+      // 加到全案彙總
+      addTotal(params.studType, params.studType + ' 骨架', r.studs, '支');
+      addTotal(params.trackType, params.trackType + ' 槽鐵', r.tracks, '支');
+      const boardKey = `${params.boardType}-${params.boardThickness}-${params.boardSize}`;
+      addTotal(boardKey, `${params.boardType === 'calcium' ? '矽酸鈣板' : '石膏板'} ${params.boardThickness}mm ${params.boardSize}尺`, r.boards, '片');
+      if (r.fill) addTotal(params.fillSpec || params.fillType, r.fill.label, r.fill.qty, r.fill.unit);
+    });
+
+    html += '</div></div>';
+  });
+  html += '</div>';
+
+  // 全案彙總
+  if (Object.keys(totals).length) {
+    html += `
+      <div class="result-section">
+        <div class="result-header">📊 全案材料彙總</div>
+        <table class="result-table">
+          <thead><tr><th>材料</th><th>總數量</th><th>單位</th></tr></thead>
+          <tbody>
+            ${Object.values(totals).map(t => `
+              <tr><td>${t.label}</td><td class="qty">${t.qty.toLocaleString()}</td><td class="unit-cell">${t.unit}</td></tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>`;
+  }
+
+  el.innerHTML = html || '<div class="empty-state"><div class="icon">📊</div><h3>尚無計算資料</h3><p>請先在「材料計算」頁面新增區塊</p></div>';
+}
+
+// ════════════════════════════════════
+// MATERIALS
+// ════════════════════════════════════
+function renderMaterials() {
+  const el = document.getElementById('materials-content');
+  el.innerHTML = `
+    ${materialSection('C型骨架', 'studs', ['規格', '長度(cm)', '單價(元/支)'])}
+    ${materialSection('U槽鐵', 'tracks', ['規格', '長度(cm)', '單價(元/支)'])}
+    ${materialSection('加強橫枝', 'braces', ['規格', '長度(cm)', '單價(元/支)'])}
+    ${materialSection('板材', 'boards', ['品名', '單價(元/片)'])}
+    ${materialSection('岩棉', 'rockwool', ['規格', '幾片/包', '單價(元/包)'])}
+    ${materialSection('玻璃棉', 'glasswool', ['規格', '單價(元/捲)'])}
+  `;
+}
+
+function materialSection(title, key, headers) {
+  const items = state.materials[key] || [];
+  let rows = '';
+
+  items.forEach((item, i) => {
+    if (key === 'studs' || key === 'tracks' || key === 'braces') {
+      rows += `<tr>
+        <td>${esc(item.name)}</td>
+        <td><input type="number" value="${item.length}" onchange="state.materials['${key}'][${i}].length=+this.value" style="width:80px;"></td>
+        <td><input type="number" value="${item.price}" onchange="state.materials['${key}'][${i}].price=+this.value" style="width:80px;"></td>
+        ${item.custom ? `<td><button class="btn btn-danger btn-sm" onclick="removeMaterial('${key}',${i})">刪除</button></td>` : '<td></td>'}
+      </tr>`;
+    } else if (key === 'boards') {
+      rows += `<tr>
+        <td>${esc(item.name)}</td>
+        <td><input type="number" value="${item.price}" onchange="state.materials['${key}'][${i}].price=+this.value" style="width:80px;"></td>
+        <td></td>
+      </tr>`;
+    } else if (key === 'rockwool') {
+      rows += `<tr>
+        <td>${esc(item.name)}</td>
+        <td><input type="number" value="${item.piecesPerPack || 4}" onchange="state.materials['${key}'][${i}].piecesPerPack=+this.value" style="width:60px;"></td>
+        <td><input type="number" value="${item.price}" onchange="state.materials['${key}'][${i}].price=+this.value" style="width:80px;"></td>
+        <td></td>
+      </tr>`;
+    } else if (key === 'glasswool') {
+      rows += `<tr>
+        <td>${esc(item.name)}</td>
+        <td><input type="number" value="${item.price}" onchange="state.materials['${key}'][${i}].price=+this.value" style="width:80px;"></td>
+        <td></td>
+      </tr>`;
+    }
+  });
+
+  const addBtn = (key === 'studs' || key === 'tracks') ?
+    `<button class="btn btn-secondary btn-sm" onclick="addCustomMaterial('${key}')">＋ 新增規格</button>` : '';
+
+  return `
+    <div class="material-category">
+      <div class="card-header">
+        <div>
+          <div class="card-title">${title}</div>
+        </div>
+        ${addBtn}
+      </div>
+      <table class="material-table">
+        <thead><tr>${headers.map(h => `<th>${h}</th>`).join('')}<th></th></tr></thead>
+        <tbody id="mat-tbody-${key}">${rows}</tbody>
+      </table>
+    </div>`;
+}
+
+function addCustomMaterial(key) {
+  const name = prompt('請輸入規格名稱（例：C64 骨架）');
+  if (!name) return;
+  state.materials[key].push({ id: 'custom_' + Date.now(), name, length: 300, unit: '支', price: 0, custom: true });
+  renderMaterials();
+}
+
+function removeMaterial(key, idx) {
+  state.materials[key].splice(idx, 1);
+  renderMaterials();
+}
+
+function saveMaterials() {
+  saveUserData();
+  // 簡單視覺回饋
+  const btn = event.target;
+  btn.textContent = '✅ 已儲存';
+  setTimeout(() => btn.textContent = '💾 儲存單價', 1500);
+}
+
+// ════════════════════════════════════
+// MODAL HELPERS
+// ════════════════════════════════════
+function openModal(id) { document.getElementById(id).classList.add('open'); }
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+
+document.querySelectorAll('.modal-overlay').forEach(el => {
+  el.addEventListener('click', e => { if (e.target === el) el.classList.remove('open'); });
+});
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') document.querySelectorAll('.modal-overlay.open').forEach(el => el.classList.remove('open'));
+});
+
+document.getElementById('login-pwd').addEventListener('keydown', e => {
+  if (e.key === 'Enter') doLogin();
+});
+
+// ════════════════════════════════════
+// UTILS
+// ════════════════════════════════════
+function esc(str) {
+  return String(str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+</script>
+</body>
+</html>
