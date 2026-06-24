@@ -765,15 +765,15 @@ function viewPayroll(){
     <p class="sub" style="margin:10px 0 0">實發總額與員工數只計一般員工。股東工資計入案場成本，但從「代墊款」分頁發放，不在此重複發。出工薪資＝工資＋津貼。實發＝出工薪資＋加項−扣項。</p>`}
   </div>
   ${loanReminders===''?'':`<div class="card" style="border-color:var(--accent)">
-    <div style="font-size:14px;font-weight:600;margin-bottom:4px">💡 本期借支扣款提示</div>
-    <p class="sub">以下員工有未還清借支、且本期尚未扣款。點「扣這期」即把該筆金額加入本期扣項（可在下方加扣項清單微調或刪除）。</p>
+    ${foldBtn('loan-remind','💡 本期借支扣款提示')}
+    ${formOpen['loan-remind']!==false?`<p class="sub" style="margin-top:6px">以下員工有未還清借支、且本期尚未扣款。點「扣這期」即把該筆金額加入本期扣項（可在下方加扣項清單微調或刪除）。</p>
     <div class="scroll"><table>
       <thead><tr><th>員工</th><th class="num">尚欠</th><th class="num">本期建議扣</th><th></th></tr></thead>
-      <tbody>${loanReminders}</tbody></table></div>
+      <tbody>${loanReminders}</tbody></table></div>`:''}
   </div>`}
   <div class="card">
-    <div style="font-size:14px;font-weight:600;margin-bottom:4px">本期加項／扣項</div>
-    <p class="sub">獎金、全勤為加項；借支扣還、勞健保自負額、工具遺失賠償等為扣項。日期請填在本計薪區間內，才會算進本期。</p>
+    ${foldBtn('adj','新增加項／扣項')}
+    ${formOpen.adj?`<p class="sub" style="margin-top:6px">獎金、全勤為加項；借支扣還、勞健保自負額、工具遺失賠償等為扣項。日期請填在本計薪區間內，才會算進本期。</p>
     <div class="row" style="margin-bottom:10px">
       <div class="field"><label>日期</label><input type="date" id="adj-date" value="${state.payTo||''}"></div>
       <div class="field"><label>員工</label><select id="adj-emp">${empOpts}</select></div>
@@ -782,7 +782,7 @@ function viewPayroll(){
       <div class="field"><label>金額</label><input type="number" id="adj-amount" min="0" step="100" style="width:120px"></div>
       <div class="field" style="flex:1;min-width:140px"><label>備註（選填）</label><input id="adj-note" placeholder="例：6月借支"></div>
       <button class="btn" id="adj-add">＋ 新增</button>
-    </div>
+    </div>`:''}
     ${adjRows===''?'<div class="empty">本期尚無加扣項。</div>':`<div class="scroll"><table>
       <thead><tr><th>日期</th><th>員工</th><th>項目</th><th class="num">金額</th><th>備註</th><th></th></tr></thead>
       <tbody>${adjRows}</tbody></table></div>`}
@@ -2790,7 +2790,7 @@ function viewDeals(){
     <div class="metric" style="background:var(--accent);color:#fff"><div class="l" style="color:#fff;opacity:.85">帳面公積金累計</div><div class="v">${money(totFund)}</div></div>
     ${bonusCards}
   </div>
-  ${coopSites.length?`<details open class="card" style="background:#fdf6ee"><summary style="cursor:pointer;font-size:14px;font-weight:600">合作案場（自動匯總）・${activeCoop.length} 進行中</summary><p class="sub" style="margin:6px 0 8px">每個合作案場一筆，金額=該案場總請款、成本=該案場總成本，隨請款/成本變動。管理人那半可「帶去公司分潤」再算30/70。</p>${coopActiveHtml}${coopPausedHtml}${coopClosedHtml}</details>`:''}
+  ${coopSites.length?`<details class="card" style="background:#fdf6ee"><summary style="cursor:pointer;font-size:14px;font-weight:600">合作案場（自動匯總）・${activeCoop.length} 進行中</summary><p class="sub" style="margin:6px 0 8px">每個合作案場一筆，金額=該案場總請款、成本=該案場總成本，隨請款/成本變動。管理人那半可「帶去公司分潤」再算30/70。</p>${coopActiveHtml}${coopPausedHtml}${coopClosedHtml}</details>`:''}
   <div class="card">
     <details><summary style="cursor:pointer;font-size:14px;font-weight:600">進階：手動補一筆分潤（一般不用）</summary>
     <p class="sub" style="margin-top:8px">正常流程是<b>到「員工/案場」建案場（設好類型/稅率/負責人/帳戶）→ 在「請款追蹤」記請款</b>，分潤就自動生出來、自動進帳戶，不用在這裡建。這裡只給「不屬於任何案場的一次性損益」臨時補用。手動建的不會自動跟請款連動。</p>
@@ -3100,12 +3100,14 @@ function viewBilling(){
     <div class="metric"><div class="l">未結算（在外面的錢）</div><div class="v" style="font-size:20px;color:var(--danger)">${money(totalUnsettled)}</div></div>
   </div>
   <div class="card">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;flex-wrap:wrap;gap:8px">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:${formOpen.billing?'8px':'0'}">
       <div style="font-size:14px;font-weight:600">新增單據</div>
-      <button class="btn" id="export-billing" ${state.billings.length===0?'disabled style="opacity:.5"':''}>匯出 PDF</button>
+      <div style="display:flex;gap:8px">
+        <button class="btn" id="export-billing" ${state.billings.length===0?'disabled style="opacity:.5"':''}>匯出 PDF</button>
+        <button data-toggle-form="billing" style="font-size:12px;border:1px solid var(--line2);border-radius:8px;padding:0 10px;height:28px;background:transparent;cursor:pointer;color:var(--muted)">${formOpen.billing?'▲ 收合':'＋ 展開'}</button>
+      </div>
     </div>
-    <p class="sub">記一筆請款單或追加單。同一案場可多次登記，下方自動按案場彙總。追加單可在記錄後上傳施作照片，列印時會一併嵌入縮圖。</p>
-    <div class="row">
+    ${formOpen.billing?`<div class="row">
       <div class="field"><label>類型</label><select id="b-type"><option value="請款單">請款單</option><option value="追加單">追加單</option></select></div>
       <div class="field"><label>請款日</label><input type="date" id="b-date" value="${new Date().toISOString().slice(0,10)}"></div>
       <div class="field" style="flex:1;min-width:140px"><label>案場名稱</label><select id="b-site">${siteSelOpts}</select></div>
@@ -3115,7 +3117,7 @@ function viewBilling(){
       <div class="field"><label>備註</label><input id="b-note" placeholder="工程項目說明" style="width:160px"></div>
       <div class="field"><label>結算</label><select id="b-settled"><option value="">未結算</option><option value="1">已結算</option></select></div>
     </div>
-    <div class="row" style="margin-top:8px"><button class="btn" id="b-add">＋ 新增</button></div>
+    <div class="row" style="margin-top:8px"><button class="btn" id="b-add">＋ 新增</button></div>`:''}
   </div>
   ${cards===''&&pausedCards===''?'<div class="card"><div class="empty">尚無請款紀錄。</div></div>':cards}${pausedCards}`;
 }
