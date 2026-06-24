@@ -1372,6 +1372,9 @@ async function doLogin() {
     }
 
     loadUserData(userData);
+    // 記住登入狀態
+    localStorage.setItem('mc_session', JSON.stringify({ user: name, password: pwd }));
+
     document.getElementById('login-screen').style.display = 'none';
     document.getElementById('app').style.display = 'flex';
     document.getElementById('user-badge').textContent = state.user;
@@ -1400,6 +1403,7 @@ function showLoginError(msg) {
 
 function doLogout() {
   state = { user: null, password: null, projects: [], activeProjectId: null, spaces: {}, zones: {}, editingProject: null, editingSpace: null, editingZone: null, zoneType: 'partition', sides: 'single', materials: null };
+  localStorage.removeItem('mc_session');
   document.getElementById('login-screen').style.display = 'flex';
   document.getElementById('app').style.display = 'none';
   document.getElementById('login-name').value = '';
@@ -2622,6 +2626,21 @@ document.addEventListener('keydown', e => {
 document.getElementById('login-pwd').addEventListener('keydown', e => {
   if (e.key === 'Enter') doLogin();
 });
+
+// 自動登入
+(async function autoLogin() {
+  const session = localStorage.getItem('mc_session');
+  if (!session) return;
+  try {
+    const { user, password } = JSON.parse(session);
+    if (!user || !password) return;
+    document.getElementById('login-name').value = user;
+    document.getElementById('login-pwd').value = password;
+    await doLogin();
+  } catch(e) {
+    localStorage.removeItem('mc_session');
+  }
+})();
 
 // ════════════════════════════════════
 // UTILS
