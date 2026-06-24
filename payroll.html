@@ -1755,12 +1755,11 @@ function bind(){
     const date=document.getElementById('bna-date').value;
     const site=document.getElementById('bna-site').value.trim();
     const line=readBillingLine('bna');
-    const method=document.getElementById('bna-method').value.trim();
     const client=document.getElementById('bna-client').value.trim();
     const note=document.getElementById('bna-note').value.trim();
     const settled=document.getElementById('bna-settled').value==='1';
     if(!date||!site||isNaN(line.amount)||line.amount<=0){ alert('請填日期、案場、數量與單價'); return; }
-    state.billings.push({id:uid(),docType:'追加單',date,site,unit:line.unit,qty:line.qty,unitPrice:line.unitPrice,amount:line.amount,method,client,note,settled});
+    state.billings.push({id:uid(),docType:'追加單',date,site,unit:line.unit,qty:line.qty,unitPrice:line.unitPrice,amount:line.amount,client,note,settled});
     const so=state.sites.find(x=>x.name===site); if(so) resyncSiteDeal(so);
     saveData(); render();
   };
@@ -2790,7 +2789,7 @@ function viewBillingReq(){
       <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap">
         <div>
           <div style="font-size:15px;font-weight:700">${esc(b.site||'（未填案場）')}</div>
-          <div style="font-size:12px;color:var(--muted);margin-top:2px">${esc(b.date||'')}${b.client?'　'+esc(b.client):''}${b.method?'　'+esc(b.method):''}${b.note?'　'+esc(b.note):''}</div>
+          <div style="font-size:12px;color:var(--muted);margin-top:2px">${esc(b.date||'')}${b.client?'　'+esc(b.client):''}${b.note?'　'+esc(b.note):''}</div>
         </div>
         <div style="text-align:right;flex-shrink:0">
           <div style="font-size:18px;font-weight:800;color:var(--accent)">${money(billingAmount(b))}</div>
@@ -2883,9 +2882,8 @@ function viewBillingAdd(){
       <div class="field"><label>數量</label><input type="number" id="bna-qty" min="0" step="0.01" value="1" style="width:90px"></div>
       <div class="field"><label>單價</label><input type="number" id="bna-unit-price" min="0" step="1" style="width:120px"></div>
       <div class="field"><label>小計</label><div id="bna-subtotal" class="num" style="height:36px;display:flex;align-items:center;font-weight:700">$0</div></div>
-      <div class="field"><label>方式</label><input id="bna-method" placeholder="匯款" style="width:100px"></div>
       <div class="field"><label>業主</label><input id="bna-client" placeholder="業主名稱" style="width:110px"></div>
-      <div class="field" style="flex:1;min-width:180px"><label>說明（追加項目）</label><input id="bna-note" placeholder="例：追加防水工程"></div>
+      <div class="field" style="flex:1;min-width:180px"><label>備注</label><input id="bna-note" placeholder="例：追加防水工程"></div>
       <div class="field"><label>結算</label><select id="bna-settled"><option value="">未結算</option><option value="1">已結算</option></select></div>
     </div>
     <div class="row" style="margin-top:10px"><button class="btn" id="bna-add">＋ 新增追加單</button></div>
