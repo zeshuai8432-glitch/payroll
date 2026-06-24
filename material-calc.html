@@ -1040,10 +1040,165 @@
         </div>
       </div>
 
-      <!-- ── 天花板系統（第二階段）── -->
+      <!-- ── 天花板系統 ── -->
       <div id="zone-ceiling-fields" style="display:none;">
         <hr class="divider">
-        <div class="alert alert-info">⚙️ 天花板系統計算功能開發中，即將推出</div>
+        <div class="section-title">天花板尺寸</div>
+        <div class="form-grid form-grid-2">
+          <div class="field"><label>長度</label><div class="input-unit"><input type="number" id="c-length" placeholder="0" step="0.01" min="0"><span class="unit-label">cm</span></div></div>
+          <div class="field"><label>寬度</label><div class="input-unit"><input type="number" id="c-width" placeholder="0" step="0.01" min="0"><span class="unit-label">cm</span></div></div>
+        </div>
+        <hr class="divider">
+        <div class="section-title">主架系統</div>
+        <div class="form-grid form-grid-2">
+          <div class="field">
+            <label>主架系統</label>
+            <div class="toggle-group">
+              <button class="toggle-btn active" id="sys-centipede" onclick="setCeilingSys('centipede')">蜈蚣腳</button>
+              <button class="toggle-btn" id="sys-n38" onclick="setCeilingSys('n38')">N38</button>
+            </div>
+          </div>
+          <div class="field">
+            <label>主架方向</label>
+            <div class="toggle-group">
+              <button class="toggle-btn active" id="dir-length" onclick="setCeilingDir('length')">沿長邊</button>
+              <button class="toggle-btn" id="dir-width" onclick="setCeilingDir('width')">沿寬邊</button>
+            </div>
+          </div>
+        </div>
+        <div class="form-grid form-grid-2">
+          <div class="field">
+            <label>主架長度規格</label>
+            <select id="c-main-length" onchange="document.getElementById('c-main-custom-field').style.display=this.value==='custom'?'':'none'">
+              <option value="243">8尺（243cm）</option>
+              <option value="305">10尺（305cm）</option>
+              <option value="365">12尺（365cm）</option>
+              <option value="custom">訂做</option>
+            </select>
+          </div>
+          <div class="field" id="c-main-custom-field" style="display:none;">
+            <label>訂做長度</label>
+            <div class="input-unit"><input type="number" id="c-main-custom-len" placeholder="0" step="1" min="0"><span class="unit-label">cm</span></div>
+          </div>
+        </div>
+        <hr class="divider">
+        <div class="section-title">螺桿設定</div>
+        <div class="form-grid form-grid-2">
+          <div class="field">
+            <label>螺桿類型</label>
+            <div class="toggle-group">
+              <button class="toggle-btn active" id="rod-std" onclick="setRodType('standard')">標準品（3M截段）</button>
+              <button class="toggle-btn" id="rod-custom" onclick="setRodType('custom')">訂做長度</button>
+            </div>
+          </div>
+          <div class="field">
+            <label>螺桿規格</label>
+            <select id="c-rod-spec"><option value="2fen">兩分螺桿</option><option value="3fen">三分螺桿</option></select>
+          </div>
+        </div>
+        <div class="form-grid form-grid-2" id="rod-std-fields">
+          <div class="field">
+            <label>每吊點螺桿長度</label>
+            <div class="input-unit"><input type="number" id="c-rod-point-len" placeholder="例：50" step="1" min="0"><span class="unit-label">cm</span></div>
+          </div>
+          <div class="field" style="display:flex;align-items:flex-end;"><div style="font-size:12px;color:var(--text-3);padding-bottom:10px;">系統自動計算每根3M可截幾個吊點需要幾根</div></div>
+        </div>
+        <div class="form-grid form-grid-2" id="rod-custom-fields" style="display:none;">
+          <div class="field">
+            <label>訂做每支長度</label>
+            <div class="input-unit"><input type="number" id="c-rod-custom-len" placeholder="例：120" step="1" min="0"><span class="unit-label">cm</span></div>
+          </div>
+          <div class="field" style="display:flex;align-items:flex-end;"><div style="font-size:12px;color:var(--text-3);padding-bottom:10px;">訂做螺桿不需要擊釘片</div></div>
+        </div>
+        <hr class="divider">
+        <div class="section-title">副架（大百葉）設定</div>
+        <div class="form-grid form-grid-2">
+          <div class="field">
+            <label>副架長度規格</label>
+            <select id="c-sub-length" onchange="document.getElementById('c-sub-custom-field').style.display=this.value==='custom'?'':'none'">
+              <option value="243">8尺（243cm）</option>
+              <option value="365">12尺（365cm）</option>
+              <option value="custom">訂做</option>
+            </select>
+          </div>
+          <div class="field" id="c-sub-custom-field" style="display:none;">
+            <label>訂做長度</label>
+            <div class="input-unit"><input type="number" id="c-sub-custom-len" placeholder="0" step="1" min="0"><span class="unit-label">cm</span></div>
+          </div>
+        </div>
+        <hr class="divider">
+        <div class="section-title">板材設定</div>
+        <div class="form-grid form-grid-2">
+          <div class="field">
+            <label>板材類型</label>
+            <select id="c-board-type" onchange="updateCeilBoardThickness()">
+              <option value="calcium">矽酸鈣板／水泥板</option>
+              <option value="gypsum">石膏板</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>板材厚度</label>
+            <select id="c-board-thickness">
+              <option value="6">6 mm</option><option value="9" selected>9 mm</option><option value="12">12 mm</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-grid form-grid-2">
+          <div class="field">
+            <label>板材尺寸</label>
+            <select id="c-board-size">
+              <option value="4x8">4x8 尺（122×244 cm）</option>
+              <option value="4x6" selected>4x6 尺（122×183 cm）</option>
+              <option value="3x6">3x6 尺（91×183 cm）</option>
+              <option value="4x4">4x4 尺（122×122 cm）</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>收邊料</label>
+            <select id="c-trim-type">
+              <option value="L8">L收邊 8尺（243cm）</option>
+              <option value="L10">L收邊 10尺（305cm）</option>
+              <option value="7word">七字收邊 8尺（243cm）</option>
+            </select>
+          </div>
+        </div>
+        <hr class="divider">
+        <div class="section-title">天花立板（選填）</div>
+        <div class="field">
+          <label style="display:flex;align-items:center;gap:8px;text-transform:none;font-size:13px;font-weight:500;cursor:pointer;">
+            <input type="checkbox" id="c-fascia-enable" onchange="toggleFasciaFields()">
+            <span>此天花板有立板施作</span>
+          </label>
+        </div>
+        <div id="fascia-fields" style="display:none;">
+          <div class="form-grid form-grid-2">
+            <div class="field"><label>立板總周長</label><div class="input-unit"><input type="number" id="c-fascia-perimeter" placeholder="0" step="0.01" min="0"><span class="unit-label">cm</span></div></div>
+            <div class="field"><label>立板高度</label><div class="input-unit"><input type="number" id="c-fascia-height" placeholder="0" step="0.01" min="0"><span class="unit-label">cm</span></div></div>
+          </div>
+          <div class="field">
+            <label>立板施作方式</label>
+            <select id="c-fascia-method" onchange="updateFasciaMethod()">
+              <option value="partition">隔間骨架做法（高度≥60cm）</option>
+              <option value="trim">收邊條做法（高度＜60cm）</option>
+            </select>
+          </div>
+          <div id="fascia-partition-fields">
+            <div class="form-grid form-grid-2">
+              <div class="field"><label>骨架間距</label><select id="c-fascia-spacing"><option value="30.5">30.5 cm</option><option value="40.7">40.7 cm</option><option value="61" selected>61 cm</option></select></div>
+              <div class="field"><label>C型骨架規格</label><select id="c-fascia-stud-type"><option value="C41">C41</option></select></div>
+            </div>
+            <div class="form-grid form-grid-2">
+              <div class="field"><label>U槽鐵規格</label><select id="c-fascia-track-type"><option value="U43">U43</option></select></div>
+              <div class="field"><label>立板板材尺寸</label><select id="c-fascia-board-size"><option value="4x8">4x8 尺</option><option value="4x6" selected>4x6 尺</option><option value="3x6">3x6 尺</option></select></div>
+            </div>
+          </div>
+          <div id="fascia-trim-fields" style="display:none;">
+            <div class="form-grid form-grid-2">
+              <div class="field"><label>收邊條規格</label><select id="c-fascia-trim"><option value="L8">L收邊 8尺（243cm）</option><option value="L10">L收邊 10尺（305cm）</option><option value="7word">七字收邊 8尺（243cm）</option></select></div>
+              <div class="field"><label>百葉接縫間距</label><select id="c-fascia-louver-spacing"><option value="122">1.22 M</option><option value="183">1.83 M</option></select></div>
+            </div>
+          </div>
+        </div>
       </div>
 
     </div>
@@ -1128,6 +1283,31 @@ const DEFAULT_MATERIALS = {
     { id: 'gw-24k-50', name: '玻璃棉 24K 厚50mm', rollSize: 1.2*10, unit: '捲', price: 0 },
     { id: 'gw-24k-75', name: '玻璃棉 24K 厚75mm', rollSize: 1.2*6.67, unit: '捲', price: 0 },
   ],
+  trims: [
+    { id: 'L8', name: 'L收邊 8尺（243cm）', length: 243, unit: '支', price: 0 },
+    { id: 'L10', name: 'L收邊 10尺（305cm）', length: 305, unit: '支', price: 0 },
+    { id: '7word', name: '七字收邊 8尺（243cm）', length: 243, unit: '支', price: 0 },
+  ],
+  rods: [
+    { id: '2fen', name: '兩分螺桿 3M', length: 300, unit: '支', price: 0 },
+    { id: '3fen', name: '三分螺桿 3M', length: 300, unit: '支', price: 0 },
+  ],
+  mainFrames: [
+    { id: 'centipede_8', name: '蜈蚣腳 8尺（243cm）', length: 243, unit: '支', price: 0 },
+    { id: 'centipede_10', name: '蜈蚣腳 10尺（305cm）', length: 305, unit: '支', price: 0 },
+    { id: 'n38_8', name: 'N38主架 8尺（243cm）', length: 243, unit: '支', price: 0 },
+    { id: 'n38_12', name: 'N38主架 12尺（365cm）', length: 365, unit: '支', price: 0 },
+  ],
+  subFrames: [
+    { id: 'louver_8', name: '大百葉 8尺（243cm）', length: 243, unit: '支', price: 0 },
+    { id: 'louver_12', name: '大百葉 12尺（365cm）', length: 365, unit: '支', price: 0 },
+  ],
+  hardware: [
+    { id: 'nut', name: '螺母', unit: '個', price: 0 },
+    { id: 'hitnail', name: '擊釘片', unit: '個', price: 0 },
+    { id: 'clip4', name: '四齒夾', unit: '個', price: 0 },
+    { id: 'hook', name: '吊勾具', unit: '個', price: 0 },
+  ],
 };
 
 // board size lookup (cm)
@@ -1148,8 +1328,13 @@ function doLogin() {
     showLoginError('請輸入名字和密碼');
     return;
   }
-  // 本地端：以 name+pwd 為識別，資料存 localStorage
-  const key = btoa(name + ':' + pwd);
+  // 支援中文名字：用 encodeURIComponent 再 btoa
+  let key;
+  try {
+    key = btoa(encodeURIComponent(name + ':' + pwd));
+  } catch(e) {
+    key = encodeURIComponent(name + ':' + pwd).replace(/[^a-zA-Z0-9]/g, '_');
+  }
   const existing = localStorage.getItem('mc_user_' + key);
   let userData;
   if (existing) {
@@ -1399,8 +1584,20 @@ function openZoneModal(zoneId, spaceId) {
   // reset
   setZoneType('partition');
   setSides('single');
+  ceilingSys = 'centipede';
+  ceilingDir = 'length';
+  rodType = 'standard';
   document.getElementById('p-fill-type').value = 'none';
+  document.getElementById('c-fascia-enable').checked = false;
+  document.getElementById('fascia-fields').style.display = 'none';
+  document.getElementById('rod-std-fields').style.display = '';
+  document.getElementById('rod-custom-fields').style.display = 'none';
+  document.getElementById('c-main-custom-field').style.display = 'none';
+  document.getElementById('c-sub-custom-field').style.display = 'none';
   updateFillFields();
+
+  // 動態帶入骨架/槽鐵選單（隔間）
+  populateStudSelects();
 
   if (zoneId) {
     const zone = (state.zones[spaceId] || []).find(z => z.id === zoneId);
@@ -1423,11 +1620,54 @@ function openZoneModal(zoneId, spaceId) {
         if (zone.params.fillSpec) document.getElementById('p-fill-spec').value = zone.params.fillSpec;
         if (zone.params.fillThick) document.getElementById('p-fill-thick').value = zone.params.fillThick;
       }
+      if (zone.type === 'ceiling') {
+        const cp = zone.params;
+        document.getElementById('c-length').value = cp.cLength;
+        document.getElementById('c-width').value = cp.cWidth;
+        setCeilingSys(cp.sys);
+        setCeilingDir(cp.mainDir);
+        document.getElementById('c-main-length').value = cp.mainLen;
+        if (cp.mainLen === 'custom') {
+          document.getElementById('c-main-custom-field').style.display = '';
+          document.getElementById('c-main-custom-len').value = cp.mainLenCustom || '';
+        }
+        setRodType(cp.rodType);
+        document.getElementById('c-rod-spec').value = cp.rodSpec;
+        document.getElementById('c-rod-point-len').value = cp.rodPointLen || '';
+        document.getElementById('c-rod-custom-len').value = cp.rodCustomLen || '';
+        document.getElementById('c-sub-length').value = cp.subLen;
+        if (cp.subLen === 'custom') {
+          document.getElementById('c-sub-custom-field').style.display = '';
+          document.getElementById('c-sub-custom-len').value = cp.subLenCustom || '';
+        }
+        document.getElementById('c-board-type').value = cp.boardType;
+        updateCeilBoardThickness();
+        document.getElementById('c-board-thickness').value = cp.boardThickness;
+        document.getElementById('c-board-size').value = cp.boardSize;
+        document.getElementById('c-trim-type').value = cp.trimType;
+        if (cp.fasciaEnable) {
+          document.getElementById('c-fascia-enable').checked = true;
+          document.getElementById('fascia-fields').style.display = '';
+          document.getElementById('c-fascia-perimeter').value = cp.fasciaPerimeter || '';
+          document.getElementById('c-fascia-height').value = cp.fasciaHeight || '';
+          document.getElementById('c-fascia-method').value = cp.fasciaMethod;
+          updateFasciaMethod();
+          document.getElementById('c-fascia-spacing').value = cp.fasciaSpacing;
+          document.getElementById('c-fascia-stud-type').value = cp.fasciaStudType;
+          document.getElementById('c-fascia-track-type').value = cp.fasciaTrackType;
+          document.getElementById('c-fascia-board-size').value = cp.fasciaBoardSize;
+          document.getElementById('c-fascia-trim').value = cp.fasciaTrim;
+          document.getElementById('c-fascia-louver-spacing').value = cp.fasciaLouverSpacing;
+        }
+      }
     }
   } else {
     document.getElementById('zone-name-input').value = '';
     document.getElementById('p-width').value = '';
     document.getElementById('p-height').value = '';
+    document.getElementById('c-length').value = '';
+    document.getElementById('c-width').value = '';
+    document.getElementById('c-rod-point-len').value = '';
   }
 
   updateBoardThicknessOptions();
@@ -1505,6 +1745,44 @@ function saveZone() {
     zoneData.result = calcPartition(zoneData.params);
   }
 
+  if (state.zoneType === 'ceiling') {
+    const cL = parseFloat(document.getElementById('c-length').value) || 0;
+    const cW = parseFloat(document.getElementById('c-width').value) || 0;
+    if (!cL || !cW) { alert('請輸入天花板長度和寬度'); return; }
+    const mainLenVal = document.getElementById('c-main-length').value;
+    const subLenVal = document.getElementById('c-sub-length').value;
+    const fasciaEnable = document.getElementById('c-fascia-enable').checked;
+    const fasciaMethod = document.getElementById('c-fascia-method').value;
+    zoneData.params = {
+      cLength: cL, cWidth: cW,
+      sys: ceilingSys,
+      mainDir: ceilingDir,
+      mainLen: mainLenVal,
+      mainLenCustom: mainLenVal === 'custom' ? (parseFloat(document.getElementById('c-main-custom-len').value)||0) : null,
+      rodType,
+      rodSpec: document.getElementById('c-rod-spec').value,
+      rodPointLen: parseFloat(document.getElementById('c-rod-point-len').value)||0,
+      rodCustomLen: parseFloat(document.getElementById('c-rod-custom-len').value)||0,
+      subLen: subLenVal,
+      subLenCustom: subLenVal === 'custom' ? (parseFloat(document.getElementById('c-sub-custom-len').value)||0) : null,
+      boardType: document.getElementById('c-board-type').value,
+      boardThickness: parseInt(document.getElementById('c-board-thickness').value),
+      boardSize: document.getElementById('c-board-size').value,
+      trimType: document.getElementById('c-trim-type').value,
+      fasciaEnable,
+      fasciaPerimeter: fasciaEnable ? (parseFloat(document.getElementById('c-fascia-perimeter').value)||0) : 0,
+      fasciaHeight: fasciaEnable ? (parseFloat(document.getElementById('c-fascia-height').value)||0) : 0,
+      fasciaMethod,
+      fasciaSpacing: parseFloat(document.getElementById('c-fascia-spacing').value)||61,
+      fasciaStudType: document.getElementById('c-fascia-stud-type').value,
+      fasciaTrackType: document.getElementById('c-fascia-track-type').value,
+      fasciaBoardSize: document.getElementById('c-fascia-board-size').value,
+      fasciaTrim: document.getElementById('c-fascia-trim').value,
+      fasciaLouverSpacing: parseFloat(document.getElementById('c-fascia-louver-spacing').value)||122,
+    };
+    zoneData.result = calcCeiling(zoneData.params);
+  }
+
   if (state.editingZone) {
     const idx = state.zones[spaceId].findIndex(z => z.id === state.editingZone);
     state.zones[spaceId][idx] = zoneData;
@@ -1549,7 +1827,21 @@ function renderZonesHTML(spaceId) {
         ${r.totalPrice ? `<span style="color:var(--green)">估價 <strong>$${r.totalPrice.toLocaleString()}</strong></span>` : ''}
       </div>`;
     }
-    const pStr = z.type === 'partition' ? `${z.params.width}×${z.params.height} cm｜${z.params.studSpacing}cm 間距｜${z.params.sides === 'single' ? '單面' : '雙面'}` : '';
+    if (r && z.type === 'ceiling') {
+      const sysLabel = z.params.sys === 'centipede' ? '蜈蚣腳' : 'N38';
+      summary = `<div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:8px;font-size:12px;color:var(--text-2);">
+        <span>${sysLabel}主架 <strong>${r.mainTotal}</strong> 支</span>
+        <span>百葉 <strong>${r.subTotal}</strong> 支</span>
+        <span>螺桿 <strong>${r.rodResult.rods}</strong> 支</span>
+        <span>板材 <strong>${r.boards}</strong> 片</span>
+        ${r.totalPrice ? `<span style="color:var(--green)">估價 <strong>$${r.totalPrice.toLocaleString()}</strong></span>` : ''}
+      </div>`;
+    }
+    const pStr = z.type === 'partition'
+      ? `${z.params.width}×${z.params.height} cm｜${z.params.studSpacing}cm 間距｜${z.params.sides === 'single' ? '單面' : '雙面'}`
+      : z.type === 'ceiling'
+      ? `${z.params.cLength}×${z.params.cWidth} cm｜${z.params.sys==='centipede'?'蜈蚣腳':'N38'}｜${z.params.mainDir==='length'?'沿長邊':'沿寬邊'}`
+      : '';
     return `
       <div class="zone-item">
         <div class="zone-header">
@@ -1571,8 +1863,240 @@ function renderZonesHTML(spaceId) {
 }
 
 // ════════════════════════════════════
-// CALCULATION — PARTITION
+// DYNAMIC SELECTS
 // ════════════════════════════════════
+function populateStudSelects() {
+  const studs = state.materials.studs || [];
+  const tracks = state.materials.tracks || [];
+  const braces = state.materials.braces || [];
+
+  // 隔間骨架選單
+  const pStud = document.getElementById('p-stud-type');
+  const pTrack = document.getElementById('p-track-type');
+  const pBrace = document.getElementById('p-brace-type');
+  const cFasciaStud = document.getElementById('c-fascia-stud-type');
+  const cFasciaTrack = document.getElementById('c-fascia-track-type');
+
+  if (pStud) pStud.innerHTML = studs.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
+  if (pTrack) pTrack.innerHTML = tracks.map(t => `<option value="${t.id}">${t.name}</option>`).join('');
+  if (pBrace) pBrace.innerHTML = '<option value="none">不加</option>' + braces.map(b => `<option value="${b.id}">${b.name}</option>`).join('');
+  if (cFasciaStud) cFasciaStud.innerHTML = studs.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
+  if (cFasciaTrack) cFasciaTrack.innerHTML = tracks.map(t => `<option value="${t.id}">${t.name}</option>`).join('');
+}
+
+// ════════════════════════════════════
+// CEILING UI CONTROLS
+// ════════════════════════════════════
+let ceilingSys = 'centipede';
+let ceilingDir = 'length';
+let rodType = 'standard';
+
+function setCeilingSys(sys) {
+  ceilingSys = sys;
+  document.getElementById('sys-centipede').classList.toggle('active', sys === 'centipede');
+  document.getElementById('sys-n38').classList.toggle('active', sys === 'n38');
+  // 預設收邊料
+  const trimSel = document.getElementById('c-trim-type');
+  if (sys === 'n38') trimSel.value = '7word';
+  else trimSel.value = 'L8';
+}
+
+function setCeilingDir(dir) {
+  ceilingDir = dir;
+  document.getElementById('dir-length').classList.toggle('active', dir === 'length');
+  document.getElementById('dir-width').classList.toggle('active', dir === 'width');
+}
+
+function setRodType(type) {
+  rodType = type;
+  document.getElementById('rod-std').classList.toggle('active', type === 'standard');
+  document.getElementById('rod-custom').classList.toggle('active', type === 'custom');
+  document.getElementById('rod-std-fields').style.display = type === 'standard' ? '' : 'none';
+  document.getElementById('rod-custom-fields').style.display = type === 'custom' ? '' : 'none';
+}
+
+function toggleFasciaFields() {
+  const en = document.getElementById('c-fascia-enable').checked;
+  document.getElementById('fascia-fields').style.display = en ? '' : 'none';
+}
+
+function updateFasciaMethod() {
+  const m = document.getElementById('c-fascia-method').value;
+  document.getElementById('fascia-partition-fields').style.display = m === 'partition' ? '' : 'none';
+  document.getElementById('fascia-trim-fields').style.display = m === 'trim' ? '' : 'none';
+}
+
+function updateCeilBoardThickness() {
+  const type = document.getElementById('c-board-type').value;
+  const sel = document.getElementById('c-board-thickness');
+  const cur = sel.value;
+  if (type === 'calcium') sel.innerHTML = [6,9,12].map(v=>`<option value="${v}">${v} mm</option>`).join('');
+  else sel.innerHTML = [9,12,15,19].map(v=>`<option value="${v}">${v} mm</option>`).join('');
+  if ([...sel.options].some(o=>o.value===cur)) sel.value=cur;
+}
+
+// 同步骨架選單到立板
+function syncFasciaStudSelects() {
+  const studs = state.materials.studs;
+  const tracks = state.materials.tracks;
+  const sEl = document.getElementById('c-fascia-stud-type');
+  const tEl = document.getElementById('c-fascia-track-type');
+  if (sEl) sEl.innerHTML = studs.map(s=>`<option value="${s.id}">${s.name}</option>`).join('');
+  if (tEl) tEl.innerHTML = tracks.map(t=>`<option value="${t.id}">${t.name}</option>`).join('');
+}
+
+// ════════════════════════════════════
+// CALCULATION — CEILING
+// ════════════════════════════════════
+const TRIM_LENGTHS = { L8: 243, L10: 305, '7word': 243 };
+
+function calcCeiling(p) {
+  const L = p.cLength;   // cm 長
+  const W = p.cWidth;    // cm 寬
+  const area = L * W;    // cm²
+  const perimeter = 2 * (L + W);
+
+  // 主架方向跨距（主架沿哪個方向排）
+  const mainSpan = p.mainDir === 'length' ? L : W;  // 主架長度方向
+  const mainCount_dim = p.mainDir === 'length' ? W : L; // 垂直方向（決定幾排主架）
+
+  // 主架排數：從牆出30cm一排，之後每90cm一排
+  const mainRows = 1 + Math.ceil((mainCount_dim - 30) / 90);
+
+  // 主架長度
+  const mainLen = p.mainLenCustom ? p.mainLenCustom : parseInt(p.mainLen);
+
+  // 每排主架需幾支（搭接30cm）
+  let mainPerRow;
+  if (p.sys === 'centipede') {
+    mainPerRow = Math.ceil(mainSpan / mainLen);
+  } else {
+    // N38 搭接30cm，有效長度 = mainLen - 30，第一支全長
+    const overlap = 30;
+    mainPerRow = mainSpan <= mainLen ? 1 : 1 + Math.ceil((mainSpan - mainLen) / (mainLen - overlap));
+  }
+  const mainTotal = mainRows * mainPerRow;
+
+  // 螺桿與吊點（每排主架：牆出30一個，每90一個）
+  const hangPoints_per_row = 1 + Math.ceil((mainSpan - 30) / 90);
+  const hangPointsTotal = hangPoints_per_row * mainRows;
+
+  let rodResult = {};
+  if (p.rodType === 'standard') {
+    const rodFullLen = 300; // 3M
+    const pointLen = p.rodPointLen || 0;
+    const pointsPerRod = pointLen > 0 ? Math.floor(rodFullLen / pointLen) : 1;
+    const rodsNeeded = Math.ceil(hangPointsTotal / pointsPerRod);
+    rodResult = { isStandard: true, hangPoints: hangPointsTotal, pointLen, pointsPerRod, rods: rodsNeeded, needHitNail: true };
+  } else {
+    rodResult = { isStandard: false, hangPoints: hangPointsTotal, customLen: p.rodCustomLen, rods: hangPointsTotal, needHitNail: false };
+  }
+
+  // 螺母：每吊點2個
+  const nuts = hangPointsTotal * 2;
+  // 擊釘片：標準品才需要，數量 = 吊點數
+  const hitNails = rodResult.needHitNail ? hangPointsTotal : 0;
+  // 四齒夾：N38才需要（百葉與N38的結合點）
+  // 副架（百葉）從牆出30.5cm，間距30.5cm，副架沿垂直於主架方向排
+  const subSpan = p.mainDir === 'length' ? W : L;
+  const subCount = 1 + Math.ceil((subSpan - 30.5) / 30.5);
+  // 每支副架長度
+  const subLen = p.subLenCustom ? p.subLenCustom : parseInt(p.subLen);
+  const subPerRow = Math.ceil(mainSpan / subLen);
+  const subTotal = subCount * subPerRow;
+  // 四齒夾 = 副架條數 × 每條跟幾支主架交叉
+  const clipsTotal = p.sys === 'n38' ? subCount * mainRows : 0;
+  // 吊勾具 = N38 吊點數
+  const hooksTotal = p.sys === 'n38' ? hangPointsTotal : 0;
+
+  // 板材
+  const bs = BOARD_SIZES[p.boardSize];
+  const boardArea = bs.w * bs.h;
+  const boardsRaw = area / boardArea;
+  const boards = Math.ceil(boardsRaw * 1.05);
+
+  // 收邊料
+  const trimLen = TRIM_LENGTHS[p.trimType] || 243;
+  const trims = Math.ceil(perimeter / trimLen);
+
+  // 立板
+  let fascia = null;
+  if (p.fasciaEnable) {
+    fascia = calcFascia(p);
+  }
+
+  // 估價
+  let totalPrice = 0;
+  const priceDetail = [];
+  const addP = (matArr, id, qty, unit) => {
+    if (!matArr) return;
+    const m = matArr.find(x=>x.id===id);
+    if (m && m.price > 0) { const cost = qty * m.price; totalPrice += cost; priceDetail.push({name:m.name,qty,unit,unitPrice:m.price,cost}); }
+  };
+
+  // 主架（對應材料庫 mainFrames）
+  const mainFrameId = p.sys === 'centipede'
+    ? (p.mainLen === '243' || p.mainLen === 243 ? 'centipede_8' : p.mainLen === '305' || p.mainLen === 305 ? 'centipede_10' : 'centipede_8')
+    : (p.mainLen === '243' || p.mainLen === 243 ? 'n38_8' : 'n38_12');
+  addP(state.materials.mainFrames, mainFrameId, mainTotal, '支');
+  // 副架（對應材料庫 subFrames）
+  const subFrameId = (p.subLen === '243' || p.subLen === 243) ? 'louver_8' : 'louver_12';
+  addP(state.materials.subFrames, subFrameId, subTotal, '支');
+  // 板材
+  const boardKey = `${p.boardType}-${p.boardThickness}-${p.boardSize}`;
+  addP(state.materials.boards, boardKey, boards, '片');
+  // 收邊料
+  addP(state.materials.trims, p.trimType, trims, '支');
+  // 螺桿
+  addP(state.materials.rods, p.rodSpec, rodResult.rods, '支');
+  // 五金
+  addP(state.materials.hardware, 'nut', nuts, '個');
+  if (hitNails > 0) addP(state.materials.hardware, 'hitnail', hitNails, '個');
+  if (clipsTotal > 0) addP(state.materials.hardware, 'clip4', clipsTotal, '個');
+  if (hooksTotal > 0) addP(state.materials.hardware, 'hook', hooksTotal, '個');
+
+  return {
+    area: (area/10000).toFixed(2),
+    perimeter: (perimeter/100).toFixed(2),
+    mainRows, mainPerRow, mainTotal, mainLen,
+    hangPointsTotal, rodResult, nuts, hitNails,
+    subCount, subPerRow, subTotal, subLen,
+    clipsTotal, hooksTotal,
+    boards, boardsRaw: boardsRaw.toFixed(2),
+    trims, trimType: p.trimType,
+    fascia,
+    totalPrice, priceDetail,
+    sys: p.sys,
+  };
+}
+
+function calcFascia(p) {
+  const perim = p.fasciaPerimeter;
+  const h = p.fasciaHeight;
+  if (!perim || !h) return null;
+
+  if (p.fasciaMethod === 'partition') {
+    // 隔間骨架做法
+    const studs = Math.floor((perim - 1) / p.fasciaSpacing) + 2;
+    const trackUnit = 300;
+    const tracks = Math.ceil(perim / trackUnit) * 2;
+    const trackRawM = (perim / 100 * 2).toFixed(2);
+    const bs = BOARD_SIZES[p.fasciaBoardSize] || BOARD_SIZES['4x6'];
+    const fasciaArea = perim * h;
+    const boardsRaw = fasciaArea / (bs.w * bs.h);
+    const boards = Math.ceil(boardsRaw * 1.05);
+    return { method: 'partition', studs, tracks, trackRawM, boards, boardSize: p.fasciaBoardSize, studType: p.fasciaStudType, trackType: p.fasciaTrackType };
+  } else {
+    // 收邊條做法
+    const trimLen = TRIM_LENGTHS[p.fasciaTrim] || 243;
+    const trims = Math.ceil(perim / trimLen) * 2; // 上下各一排
+    const louverSpacing = p.fasciaLouverSpacing || 122;
+    const louvers = Math.ceil(perim / louverSpacing);
+    return { method: 'trim', trims, trimType: p.fasciaTrim, louvers, louverSpacing };
+  }
+}
+
+
 function calcPartition(p) {
   const W = p.width;    // cm
   const H = p.height;   // cm
@@ -1689,7 +2213,11 @@ function renderResults() {
     totals[key].qty += qty;
   };
 
-  let html = `<h2 style="font-size:16px;font-weight:700;margin-bottom:16px;">${esc(p.name)} — 用量彙總</h2>`;
+  let html = `
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px;">
+      <h2 style="font-size:16px;font-weight:700;">${esc(p.name)} — 用量彙總</h2>
+      <button class="btn btn-secondary" onclick="printResults()">🖨️ 列印報表</button>
+    </div>`;
 
   // 按空間分列
   html += '<div style="margin-bottom:24px;">';
@@ -1700,31 +2228,89 @@ function renderResults() {
       <div class="card-header"><div class="card-title">📦 ${esc(s.name)}</div></div>`;
 
     zones.forEach(z => {
-      if (z.type !== 'partition') return;
       const r = z.result;
       const params = z.params;
-      const bs = BOARD_SIZES[params.boardSize];
-      html += `
-        <div style="margin-bottom:12px;">
-          <div style="font-size:13px;font-weight:600;margin-bottom:6px;color:var(--text-2);">🧱 ${esc(z.name)}</div>
-          <table class="result-table">
-            <thead><tr><th>材料</th><th>數量</th><th>備註</th></tr></thead>
-            <tbody>
-              <tr><td>${params.studType} 骨架</td><td class="qty">${r.studs} 支</td><td class="unit-cell">${params.studSpacing}cm 間距</td></tr>
-              <tr><td>${params.trackType} 槽鐵</td><td class="qty">${r.tracks} 支</td><td class="unit-cell">實際用量 ${r.trackRaw} m（上下各一排）</td></tr>
-              <tr><td>${params.boardType === 'calcium' ? '矽酸鈣板' : '石膏板'} ${params.boardThickness}mm ${params.boardSize}尺</td><td class="qty">${r.boards} 片</td><td class="unit-cell">含5%損耗（淨算 ${r.boardsRaw} 片）</td></tr>
-              ${r.fill ? `<tr><td>${r.fill.label}</td><td class="qty">${r.fill.qty} ${r.fill.unit}</td><td class="unit-cell">${r.fill.piecesNeeded ? `需要 ${r.fill.piecesNeeded} 片` : ''}</td></tr>` : ''}
-            </tbody>
-          </table>
-          ${r.totalPrice > 0 ? `<div style="text-align:right;margin-top:6px;font-size:13px;color:var(--green);font-weight:600;">小計：$${r.totalPrice.toLocaleString()}</div>` : ''}
-        </div>`;
+      if (!r) return;
 
-      // 加到全案彙總
-      addTotal(params.studType, params.studType + ' 骨架', r.studs, '支');
-      addTotal(params.trackType, params.trackType + ' 槽鐵', r.tracks, '支');
-      const boardKey = `${params.boardType}-${params.boardThickness}-${params.boardSize}`;
-      addTotal(boardKey, `${params.boardType === 'calcium' ? '矽酸鈣板' : '石膏板'} ${params.boardThickness}mm ${params.boardSize}尺`, r.boards, '片');
-      if (r.fill) addTotal(params.fillSpec || params.fillType, r.fill.label, r.fill.qty, r.fill.unit);
+      if (z.type === 'partition') {
+        html += `
+          <div style="margin-bottom:12px;">
+            <div style="font-size:13px;font-weight:600;margin-bottom:6px;color:var(--text-2);">🧱 ${esc(z.name)}</div>
+            <table class="result-table">
+              <thead><tr><th>材料</th><th>數量</th><th>備註</th></tr></thead>
+              <tbody>
+                <tr><td>${params.studType} 骨架</td><td class="qty">${r.studs} 支</td><td class="unit-cell">${params.studSpacing}cm 間距</td></tr>
+                <tr><td>${params.trackType} 槽鐵</td><td class="qty">${r.tracks} 支</td><td class="unit-cell">實際用量 ${r.trackRaw} m（上下各一排）</td></tr>
+                <tr><td>${params.boardType === 'calcium' ? '矽酸鈣板' : '石膏板'} ${params.boardThickness}mm ${params.boardSize}尺</td><td class="qty">${r.boards} 片</td><td class="unit-cell">含5%損耗（淨算 ${r.boardsRaw} 片）</td></tr>
+                ${r.fill ? `<tr><td>${r.fill.label}</td><td class="qty">${r.fill.qty} ${r.fill.unit}</td><td class="unit-cell">${r.fill.piecesNeeded ? '需要 '+r.fill.piecesNeeded+' 片' : ''}</td></tr>` : ''}
+              </tbody>
+            </table>
+            ${r.totalPrice > 0 ? `<div style="text-align:right;margin-top:6px;font-size:13px;color:var(--green);font-weight:600;">小計：$${r.totalPrice.toLocaleString()}</div>` : ''}
+          </div>`;
+        addTotal(params.studType, params.studType + ' 骨架', r.studs, '支');
+        addTotal(params.trackType, params.trackType + ' 槽鐵', r.tracks, '支');
+        const boardKey = `${params.boardType}-${params.boardThickness}-${params.boardSize}`;
+        addTotal(boardKey, `${params.boardType === 'calcium' ? '矽酸鈣板' : '石膏板'} ${params.boardThickness}mm ${params.boardSize}尺`, r.boards, '片');
+        if (r.fill) addTotal(params.fillSpec || params.fillType, r.fill.label, r.fill.qty, r.fill.unit);
+      }
+
+      if (z.type === 'ceiling') {
+        const sysLabel = params.sys === 'centipede' ? '蜈蚣腳' : 'N38';
+        const rodLabel = params.rodSpec === '2fen' ? '兩分螺桿' : '三分螺桿';
+        const trimNames = { L8:'L收邊 8尺', L10:'L收邊 10尺', '7word':'七字收邊 8尺' };
+        const fasciaR = r.fascia;
+        html += `
+          <div style="margin-bottom:12px;">
+            <div style="font-size:13px;font-weight:600;margin-bottom:6px;color:var(--text-2);">⬜ ${esc(z.name)}（天花板 ${params.cLength}×${params.cWidth}cm，${r.area}m²）</div>
+            <table class="result-table">
+              <thead><tr><th>材料</th><th>數量</th><th>備註</th></tr></thead>
+              <tbody>
+                <tr><td>${sysLabel} 主架（${r.mainLen}cm）</td><td class="qty">${r.mainTotal} 支</td><td class="unit-cell">${r.mainRows}排 × ${r.mainPerRow}支/排</td></tr>
+                <tr><td>大百葉 副架（${r.subLen}cm）</td><td class="qty">${r.subTotal} 支</td><td class="unit-cell">${r.subCount}條 × ${r.subPerRow}支/條</td></tr>
+                <tr><td>${rodLabel}${params.rodType==='standard'?' 3M':' 訂做'+params.rodCustomLen+'cm'}</td><td class="qty">${r.rodResult.rods} 支</td><td class="unit-cell">${params.rodType==='standard'?r.rodResult.hangPoints+'個吊點，每根可截'+r.rodResult.pointsPerRod+'個':r.rodResult.hangPoints+' 個吊點'}</td></tr>
+                <tr><td>螺母</td><td class="qty">${r.nuts} 個</td><td class="unit-cell">每吊點2個</td></tr>
+                ${r.hitNails > 0 ? `<tr><td>擊釘片</td><td class="qty">${r.hitNails} 個</td><td class="unit-cell">標準品螺桿需要</td></tr>` : ''}
+                ${r.clipsTotal > 0 ? `<tr><td>四齒夾</td><td class="qty">${r.clipsTotal} 個</td><td class="unit-cell">N38與百葉結合</td></tr>` : ''}
+                ${r.hooksTotal > 0 ? `<tr><td>吊勾具</td><td class="qty">${r.hooksTotal} 個</td><td class="unit-cell">N38系統專用</td></tr>` : ''}
+                <tr><td>${params.boardType === 'calcium' ? '矽酸鈣板' : '石膏板'} ${params.boardThickness}mm ${params.boardSize}尺</td><td class="qty">${r.boards} 片</td><td class="unit-cell">含5%損耗（淨算 ${r.boardsRaw} 片）</td></tr>
+                <tr><td>${trimNames[params.trimType]||params.trimType}</td><td class="qty">${r.trims} 支</td><td class="unit-cell">周長 ${r.perimeter}m</td></tr>
+                ${fasciaR && fasciaR.method==='partition' ? `
+                <tr><td colspan="3" style="background:var(--surface2);font-weight:600;font-size:12px;">立板（骨架做法）</td></tr>
+                <tr><td>${fasciaR.studType} 骨架</td><td class="qty">${fasciaR.studs} 支</td><td class="unit-cell">立板骨架</td></tr>
+                <tr><td>${fasciaR.trackType} 槽鐵</td><td class="qty">${fasciaR.tracks} 支</td><td class="unit-cell">實際 ${fasciaR.trackRawM}m</td></tr>
+                <tr><td>立板板材 ${fasciaR.boardSize}尺</td><td class="qty">${fasciaR.boards} 片</td><td class="unit-cell">含5%損耗</td></tr>
+                ` : ''}
+                ${fasciaR && fasciaR.method==='trim' ? `
+                <tr><td colspan="3" style="background:var(--surface2);font-weight:600;font-size:12px;">立板（收邊條做法）</td></tr>
+                <tr><td>${trimNames[fasciaR.trimType]||fasciaR.trimType}</td><td class="qty">${fasciaR.trims} 支</td><td class="unit-cell">上下各一排</td></tr>
+                <tr><td>百葉補強</td><td class="qty">${fasciaR.louvers} 支</td><td class="unit-cell">接縫間距 ${fasciaR.louverSpacing}cm</td></tr>
+                ` : ''}
+              </tbody>
+            </table>
+            ${r.totalPrice > 0 ? `<div style="text-align:right;margin-top:6px;font-size:13px;color:var(--green);font-weight:600;">小計：$${r.totalPrice.toLocaleString()}</div>` : ''}
+          </div>`;
+        addTotal('main_'+params.sys, sysLabel+' 主架 '+r.mainLen+'cm', r.mainTotal, '支');
+        addTotal('sub_louver', '大百葉 '+r.subLen+'cm', r.subTotal, '支');
+        addTotal('rod_'+params.rodSpec, rodLabel, r.rodResult.rods, '支');
+        addTotal('nut', '螺母', r.nuts, '個');
+        if (r.hitNails > 0) addTotal('hitnail', '擊釘片', r.hitNails, '個');
+        if (r.clipsTotal > 0) addTotal('clip4', '四齒夾', r.clipsTotal, '個');
+        if (r.hooksTotal > 0) addTotal('hook', '吊勾具', r.hooksTotal, '個');
+        const cBoardKey = `${params.boardType}-${params.boardThickness}-${params.boardSize}`;
+        addTotal(cBoardKey, `${params.boardType === 'calcium' ? '矽酸鈣板' : '石膏板'} ${params.boardThickness}mm ${params.boardSize}尺`, r.boards, '片');
+        addTotal('trim_'+params.trimType, trimNames[params.trimType]||params.trimType, r.trims, '支');
+        if (fasciaR) {
+          if (fasciaR.method === 'partition') {
+            addTotal(fasciaR.studType+'_fascia', fasciaR.studType+' 骨架（立板）', fasciaR.studs, '支');
+            addTotal(fasciaR.trackType+'_fascia', fasciaR.trackType+' 槽鐵（立板）', fasciaR.tracks, '支');
+            const fBoardKey = `board_fascia_${fasciaR.boardSize}`;
+            addTotal(fBoardKey, '立板板材 '+fasciaR.boardSize+'尺', fasciaR.boards, '片');
+          } else {
+            addTotal('trim_fascia_'+fasciaR.trimType, (trimNames[fasciaR.trimType]||fasciaR.trimType)+'（立板）', fasciaR.trims, '支');
+            addTotal('louver_fascia', '百葉補強（立板）', fasciaR.louvers, '支');
+          }
+        }
+      }
     });
 
     html += '</div></div>';
@@ -1762,6 +2348,11 @@ function renderMaterials() {
     ${materialSection('板材', 'boards', ['品名', '單價(元/片)'])}
     ${materialSection('岩棉', 'rockwool', ['規格', '幾片/包', '單價(元/包)'])}
     ${materialSection('玻璃棉', 'glasswool', ['規格', '單價(元/捲)'])}
+    ${materialSection('收邊料', 'trims', ['規格', '長度(cm)', '單價(元/支)'])}
+    ${materialSection('螺桿', 'rods', ['規格', '長度(cm)', '單價(元/支)'])}
+    ${materialSection('天花主架', 'mainFrames', ['規格', '長度(cm)', '單價(元/支)'])}
+    ${materialSection('大百葉副架', 'subFrames', ['規格', '長度(cm)', '單價(元/支)'])}
+    ${materialSection('天花五金', 'hardware', ['品名', '單價(元/個)'])}
   `;
 }
 
@@ -1772,10 +2363,10 @@ function materialSection(title, key, headers) {
   items.forEach((item, i) => {
     if (key === 'studs' || key === 'tracks' || key === 'braces') {
       rows += `<tr>
-        <td>${esc(item.name)}</td>
+        <td><input type="text" value="${esc(item.name)}" onchange="state.materials['${key}'][${i}].name=this.value" style="width:140px;"></td>
         <td><input type="number" value="${item.length}" onchange="state.materials['${key}'][${i}].length=+this.value" style="width:80px;"></td>
         <td><input type="number" value="${item.price}" onchange="state.materials['${key}'][${i}].price=+this.value" style="width:80px;"></td>
-        ${item.custom ? `<td><button class="btn btn-danger btn-sm" onclick="removeMaterial('${key}',${i})">刪除</button></td>` : '<td></td>'}
+        <td><button class="btn btn-danger btn-sm" onclick="removeMaterial('${key}',${i})">刪除</button></td>
       </tr>`;
     } else if (key === 'boards') {
       rows += `<tr>
@@ -1791,6 +2382,19 @@ function materialSection(title, key, headers) {
         <td></td>
       </tr>`;
     } else if (key === 'glasswool') {
+      rows += `<tr>
+        <td>${esc(item.name)}</td>
+        <td><input type="number" value="${item.price}" onchange="state.materials['${key}'][${i}].price=+this.value" style="width:80px;"></td>
+        <td></td>
+      </tr>`;
+    } else if (key === 'trims' || key === 'rods' || key === 'mainFrames' || key === 'subFrames') {
+      rows += `<tr>
+        <td>${esc(item.name)}</td>
+        <td><input type="number" value="${item.length}" onchange="state.materials['${key}'][${i}].length=+this.value" style="width:80px;"></td>
+        <td><input type="number" value="${item.price}" onchange="state.materials['${key}'][${i}].price=+this.value" style="width:80px;"></td>
+        <td></td>
+      </tr>`;
+    } else if (key === 'hardware') {
       rows += `<tr>
         <td>${esc(item.name)}</td>
         <td><input type="number" value="${item.price}" onchange="state.materials['${key}'][${i}].price=+this.value" style="width:80px;"></td>
@@ -1831,10 +2435,102 @@ function removeMaterial(key, idx) {
 
 function saveMaterials() {
   saveUserData();
-  // 簡單視覺回饋
   const btn = event.target;
   btn.textContent = '✅ 已儲存';
   setTimeout(() => btn.textContent = '💾 儲存單價', 1500);
+}
+
+function printResults() {
+  if (!state.activeProjectId) return;
+  const p = state.projects.find(x => x.id === state.activeProjectId);
+  const spaces = state.spaces[state.activeProjectId] || [];
+  const now = new Date().toLocaleDateString('zh-TW');
+  const trimNames = { L8:'L收邊 8尺', L10:'L收邊 10尺', '7word':'七字收邊 8尺' };
+
+  const totals = {};
+  const addT = (key, label, qty, unit) => {
+    if (!totals[key]) totals[key] = { label, qty: 0, unit };
+    totals[key].qty += qty;
+  };
+
+  let body = '';
+  spaces.forEach(s => {
+    const zones = (state.zones[s.id] || []).filter(z => z.result);
+    if (!zones.length) return;
+    body += `<h3 style="margin:16px 0 8px;font-size:14px;border-bottom:1px solid #ccc;padding-bottom:4px;">▌ ${s.name}</h3>`;
+    zones.forEach(z => {
+      const r = z.result; const params = z.params;
+      if (z.type === 'partition') {
+        body += `<div style="margin-bottom:12px;"><div style="font-size:12px;font-weight:600;margin-bottom:4px;">🧱 ${z.name}（${params.width}×${params.height}cm）</div>
+        <table style="width:100%;border-collapse:collapse;font-size:12px;">
+          <tr style="background:#f0f0f0;"><th style="border:1px solid #ccc;padding:4px 8px;text-align:left;">材料</th><th style="border:1px solid #ccc;padding:4px 8px;">數量</th><th style="border:1px solid #ccc;padding:4px 8px;">備註</th></tr>
+          <tr><td style="border:1px solid #ccc;padding:4px 8px;">${params.studType} 骨架</td><td style="border:1px solid #ccc;padding:4px 8px;text-align:center;font-weight:700;">${r.studs} 支</td><td style="border:1px solid #ccc;padding:4px 8px;">${params.studSpacing}cm間距</td></tr>
+          <tr><td style="border:1px solid #ccc;padding:4px 8px;">${params.trackType} 槽鐵</td><td style="border:1px solid #ccc;padding:4px 8px;text-align:center;font-weight:700;">${r.tracks} 支</td><td style="border:1px solid #ccc;padding:4px 8px;">實際 ${r.trackRaw}m</td></tr>
+          <tr><td style="border:1px solid #ccc;padding:4px 8px;">${params.boardType==='calcium'?'矽酸鈣板':'石膏板'} ${params.boardThickness}mm ${params.boardSize}尺</td><td style="border:1px solid #ccc;padding:4px 8px;text-align:center;font-weight:700;">${r.boards} 片</td><td style="border:1px solid #ccc;padding:4px 8px;">含5%損耗</td></tr>
+          ${r.fill ? `<tr><td style="border:1px solid #ccc;padding:4px 8px;">${r.fill.label}</td><td style="border:1px solid #ccc;padding:4px 8px;text-align:center;font-weight:700;">${r.fill.qty} ${r.fill.unit}</td><td style="border:1px solid #ccc;padding:4px 8px;"></td></tr>` : ''}
+        </table>
+        ${r.totalPrice > 0 ? `<div style="text-align:right;font-size:11px;color:#2D7A4F;font-weight:600;margin-top:2px;">小計 $${r.totalPrice.toLocaleString()}</div>` : ''}</div>`;
+        addT(params.studType, params.studType+' 骨架', r.studs, '支');
+        addT(params.trackType, params.trackType+' 槽鐵', r.tracks, '支');
+        const bk = `${params.boardType}-${params.boardThickness}-${params.boardSize}`;
+        addT(bk, `${params.boardType==='calcium'?'矽酸鈣板':'石膏板'} ${params.boardThickness}mm ${params.boardSize}尺`, r.boards, '片');
+        if (r.fill) addT(params.fillSpec||params.fillType, r.fill.label, r.fill.qty, r.fill.unit);
+      }
+      if (z.type === 'ceiling') {
+        const sysLabel = params.sys==='centipede'?'蜈蚣腳':'N38';
+        const rodLabel = params.rodSpec==='2fen'?'兩分螺桿':'三分螺桿';
+        body += `<div style="margin-bottom:12px;"><div style="font-size:12px;font-weight:600;margin-bottom:4px;">⬜ ${z.name}（${params.cLength}×${params.cWidth}cm，${r.area}m²，${sysLabel}）</div>
+        <table style="width:100%;border-collapse:collapse;font-size:12px;">
+          <tr style="background:#f0f0f0;"><th style="border:1px solid #ccc;padding:4px 8px;text-align:left;">材料</th><th style="border:1px solid #ccc;padding:4px 8px;">數量</th><th style="border:1px solid #ccc;padding:4px 8px;">備註</th></tr>
+          <tr><td style="border:1px solid #ccc;padding:4px 8px;">${sysLabel} 主架</td><td style="border:1px solid #ccc;padding:4px 8px;text-align:center;font-weight:700;">${r.mainTotal} 支</td><td style="border:1px solid #ccc;padding:4px 8px;">${r.mainRows}排×${r.mainPerRow}支</td></tr>
+          <tr><td style="border:1px solid #ccc;padding:4px 8px;">大百葉 副架</td><td style="border:1px solid #ccc;padding:4px 8px;text-align:center;font-weight:700;">${r.subTotal} 支</td><td style="border:1px solid #ccc;padding:4px 8px;">${r.subCount}條×${r.subPerRow}支</td></tr>
+          <tr><td style="border:1px solid #ccc;padding:4px 8px;">${rodLabel}</td><td style="border:1px solid #ccc;padding:4px 8px;text-align:center;font-weight:700;">${r.rodResult.rods} 支</td><td style="border:1px solid #ccc;padding:4px 8px;">${r.hangPointsTotal}個吊點</td></tr>
+          <tr><td style="border:1px solid #ccc;padding:4px 8px;">螺母</td><td style="border:1px solid #ccc;padding:4px 8px;text-align:center;font-weight:700;">${r.nuts} 個</td><td style="border:1px solid #ccc;padding:4px 8px;"></td></tr>
+          ${r.hitNails>0?`<tr><td style="border:1px solid #ccc;padding:4px 8px;">擊釘片</td><td style="border:1px solid #ccc;padding:4px 8px;text-align:center;font-weight:700;">${r.hitNails} 個</td><td style="border:1px solid #ccc;padding:4px 8px;"></td></tr>`:''}
+          ${r.clipsTotal>0?`<tr><td style="border:1px solid #ccc;padding:4px 8px;">四齒夾</td><td style="border:1px solid #ccc;padding:4px 8px;text-align:center;font-weight:700;">${r.clipsTotal} 個</td><td style="border:1px solid #ccc;padding:4px 8px;"></td></tr>`:''}
+          ${r.hooksTotal>0?`<tr><td style="border:1px solid #ccc;padding:4px 8px;">吊勾具</td><td style="border:1px solid #ccc;padding:4px 8px;text-align:center;font-weight:700;">${r.hooksTotal} 個</td><td style="border:1px solid #ccc;padding:4px 8px;"></td></tr>`:''}
+          <tr><td style="border:1px solid #ccc;padding:4px 8px;">${params.boardType==='calcium'?'矽酸鈣板':'石膏板'} ${params.boardThickness}mm ${params.boardSize}尺</td><td style="border:1px solid #ccc;padding:4px 8px;text-align:center;font-weight:700;">${r.boards} 片</td><td style="border:1px solid #ccc;padding:4px 8px;">含5%損耗</td></tr>
+          <tr><td style="border:1px solid #ccc;padding:4px 8px;">${trimNames[params.trimType]||params.trimType}</td><td style="border:1px solid #ccc;padding:4px 8px;text-align:center;font-weight:700;">${r.trims} 支</td><td style="border:1px solid #ccc;padding:4px 8px;"></td></tr>
+        </table>
+        ${r.totalPrice>0?`<div style="text-align:right;font-size:11px;color:#2D7A4F;font-weight:600;margin-top:2px;">小計 $${r.totalPrice.toLocaleString()}</div>`:''}</div>`;
+        addT('main_'+params.sys, sysLabel+' 主架', r.mainTotal, '支');
+        addT('sub_louver', '大百葉 副架', r.subTotal, '支');
+        addT('rod_'+params.rodSpec, rodLabel, r.rodResult.rods, '支');
+        addT('nut', '螺母', r.nuts, '個');
+        if (r.hitNails>0) addT('hitnail','擊釘片',r.hitNails,'個');
+        if (r.clipsTotal>0) addT('clip4','四齒夾',r.clipsTotal,'個');
+        if (r.hooksTotal>0) addT('hook','吊勾具',r.hooksTotal,'個');
+        const ck=`${params.boardType}-${params.boardThickness}-${params.boardSize}`;
+        addT(ck,`${params.boardType==='calcium'?'矽酸鈣板':'石膏板'} ${params.boardThickness}mm ${params.boardSize}尺`,r.boards,'片');
+        addT('trim_'+params.trimType,trimNames[params.trimType]||params.trimType,r.trims,'支');
+      }
+    });
+  });
+
+  // 全案彙總表
+  let totalTable = '';
+  if (Object.keys(totals).length) {
+    totalTable = `<h3 style="margin:20px 0 8px;font-size:14px;border-bottom:1px solid #ccc;padding-bottom:4px;">📊 全案材料彙總</h3>
+    <table style="width:100%;border-collapse:collapse;font-size:12px;">
+      <tr style="background:#2B5F8E;color:#fff;"><th style="padding:6px 10px;text-align:left;">材料</th><th style="padding:6px 10px;">總數量</th><th style="padding:6px 10px;">單位</th></tr>
+      ${Object.values(totals).map((t,i)=>`<tr style="background:${i%2?'#f8f8f8':'#fff'};"><td style="border:1px solid #ddd;padding:5px 10px;">${t.label}</td><td style="border:1px solid #ddd;padding:5px 10px;text-align:center;font-weight:700;">${t.qty.toLocaleString()}</td><td style="border:1px solid #ddd;padding:5px 10px;color:#666;">${t.unit}</td></tr>`).join('')}
+    </table>`;
+  }
+
+  const win = window.open('', '_blank');
+  win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${p.name} 用量報表</title>
+  <style>body{font-family:'PingFang TC','Microsoft JhengHei',sans-serif;padding:24px;max-width:900px;margin:0 auto;color:#1a1916;}
+  @media print{body{padding:0;} button{display:none;}}</style></head><body>
+  <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px;">
+    <div><h1 style="font-size:18px;font-weight:700;margin:0 0 4px;">${p.name}</h1>
+    <div style="font-size:12px;color:#666;">製表人：${state.user}　製表日期：${now}</div></div>
+    <button onclick="window.print()" style="padding:8px 16px;background:#2B5F8E;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px;">🖨️ 列印</button>
+  </div>
+  <hr style="border:none;border-top:2px solid #2B5F8E;margin-bottom:16px;">
+  ${body}
+  ${totalTable}
+  </body></html>`);
+  win.document.close();
 }
 
 // ════════════════════════════════════
