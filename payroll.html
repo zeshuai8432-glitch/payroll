@@ -340,6 +340,9 @@
     <button id="cloud-refresh" style="background:rgba(255,255,255,.22);color:#fff;border:1px solid rgba(255,255,255,.3);border-radius:8px;padding:5px 12px;cursor:pointer;font-size:13px;font-weight:600;backdrop-filter:blur(4px);transition:background .15s"><span class="mob-hide">↻ 重新整理</span><span class="mob-show" style="display:none">↻</span></button>
   </div>
 </div>
+<div id="sync-banner" style="display:none;background:#1d6f3b;color:#fff;text-align:center;padding:9px 16px;font-size:13px;font-weight:600;cursor:pointer;letter-spacing:.2px">
+  ↻ 雲端有新資料，點此載入
+</div>
 <div class="layout">
   <nav class="sidebar" id="sidebar"></nav>
   <div class="scrim" id="scrim"></div>
@@ -427,8 +430,12 @@ async function loadCloud(){
   try {
     const res=await fetch(CLOUD_URL, {method:'GET'});
     const j=await res.json();
-    if(j&&j.ok&&j.data){ applyData(JSON.parse(j.data)); try{localStorage.setItem(LS,j.data);}catch(e){} setCloud('已同步'); }
-    else { setCloud('雲端尚無資料'); }
+    if(j&&j.ok&&j.data){
+      applyData(JSON.parse(j.data));
+      try{localStorage.setItem(LS,j.data);}catch(e){}
+      _lastCloudJson=j.data; // 記錄這次的快照，讓輪詢有基準
+      setCloud('已同步');
+    } else { setCloud('雲端尚無資料'); }
   } catch(e){ setCloud('雲端讀取失敗（顯示本機資料）'); }
   render();
 }
@@ -3596,7 +3603,26 @@ function exportYearVerify(){
   printHTML('年度總結·驗算明細', `<h1>年度總結·驗算明細</h1><div class="meta">期間：${period}　|　列印日：${new Date().toISOString().slice(0,10)}</div>${secs}`);
 }
 
-loadLocal(); loadPhotos(); render(); loadCloud();
+// 背景輪詢：每30秒悄悄比對雲端資料，有差異就顯示橫幅提示
+let _lastCloudJson=null;
+async function pollCloud(){
+  if(saving) return; // 正在儲存中，跳過這次
+  try {
+    const res=await fetch(CLOUD_URL,{method:'GET'});
+    const j=await res.json();
+    if(j&&j.ok&&j.data){
+      if(_lastCloudJson!==null && j.data!==_lastCloudJson){
+        const banner=document.getElementById('sync-banner');
+        if(banner) banner.style.display='block';
+      }
+      _lastCloudJson=j.data;
+    }
+  } catch(e){}
+}
+document.getElementById('sync-banner').onclick=()=>{ document.getElementById('sync-banner').style.display='none'; loadCloud(); };
+
+loadLocal(); loadPhotos(); render();
+loadCloud().then(()=>{ setInterval(pollCloud,30000); });
 </script>
 </body>
 </html>
