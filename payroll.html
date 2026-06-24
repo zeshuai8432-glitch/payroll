@@ -33,13 +33,18 @@
     --metric-6: linear-gradient(135deg, #7c3aed, #a855f7);
   }
   * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--ink);
+  body { margin: 0; color: var(--ink);
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", sans-serif;
-    line-height: 1.6; }
+    line-height: 1.6;
+    /* 固定漸層底景，讓毛玻璃有東西可以透 */
+    background: linear-gradient(135deg, #dde1ff 0%, #ede8ff 30%, #e8eeff 60%, #f0e8ff 100%) fixed;
+  }
 
-  /* ── 頂部漸層列 ── */
+  /* ── 頂部毛玻璃列 ── */
   .top {
-    background: var(--grad-top);
+    background: rgba(79, 70, 229, 0.78);
+    backdrop-filter: blur(24px) saturate(180%);
+    -webkit-backdrop-filter: blur(24px) saturate(180%);
     color: #fff;
     padding: 0 24px;
     height: 58px;
@@ -49,32 +54,37 @@
     position: sticky;
     top: 0;
     z-index: 50;
-    box-shadow: 0 2px 20px rgba(79,70,229,.35);
+    border-bottom: 1px solid rgba(255,255,255,.22);
+    box-shadow: 0 4px 32px rgba(79,70,229,.28), 0 1px 0 rgba(255,255,255,.15) inset;
   }
   .top::after {
     content: '';
     position: absolute;
     inset: 0;
-    background: linear-gradient(90deg, rgba(255,255,255,.08) 0%, transparent 60%);
+    background: linear-gradient(90deg, rgba(255,255,255,.1) 0%, transparent 55%);
     pointer-events: none;
+    border-radius: inherit;
   }
   .top h1 {
     margin: 0;
     font-size: 17px;
     font-weight: 700;
     letter-spacing: .3px;
-    text-shadow: 0 1px 6px rgba(0,0,0,.18);
+    text-shadow: 0 1px 8px rgba(0,0,0,.22);
   }
-  .top .burger { display: none; background: rgba(255,255,255,.2); border: none; color: #fff; font-size: 20px; cursor: pointer; padding: 4px 8px; line-height: 1; border-radius: 8px; }
+  .top .burger { display: none; background: rgba(255,255,255,.18); border: 1px solid rgba(255,255,255,.28); color: #fff; font-size: 20px; cursor: pointer; padding: 4px 9px; line-height: 1; border-radius: 10px; backdrop-filter: blur(8px); transition: background .15s; }
   .top .burger:hover { background: rgba(255,255,255,.3); }
 
-  /* ── 側邊欄 ── */
+  /* ── 側邊欄毛玻璃 ── */
   .layout { display: flex; min-height: calc(100vh - 58px); }
   .sidebar {
     width: 220px;
     flex-shrink: 0;
-    background: var(--grad-sidebar);
-    border-right: 1px solid var(--line);
+    background: rgba(255,255,255,.62);
+    backdrop-filter: blur(28px) saturate(160%);
+    -webkit-backdrop-filter: blur(28px) saturate(160%);
+    border-right: 1px solid rgba(255,255,255,.55);
+    box-shadow: 4px 0 24px rgba(79,70,229,.07);
     padding: 18px 0 14px;
     overflow-y: auto;
   }
@@ -86,13 +96,13 @@
     padding: 10px 20px 5px;
     letter-spacing: 1.2px;
     text-transform: uppercase;
-    opacity: .7;
+    opacity: .65;
   }
   .nav-item {
     display: block;
     width: 100%;
     text-align: left;
-    padding: 9px 20px 9px 22px;
+    padding: 9px 16px 9px 20px;
     font-size: 13.5px;
     cursor: pointer;
     border: none;
@@ -100,24 +110,36 @@
     color: var(--ink);
     border-left: 3px solid transparent;
     transition: all .18s;
-    border-radius: 0 10px 10px 0;
-    margin-right: 10px;
+    border-radius: 0 12px 12px 0;
+    margin-right: 12px;
   }
-  .nav-item:hover { background: rgba(79,70,229,.07); color: var(--accent); }
+  .nav-item:hover { background: rgba(79,70,229,.09); color: var(--accent); }
   .nav-item.active {
     border-left-color: var(--accent);
-    background: linear-gradient(90deg, rgba(79,70,229,.12), rgba(79,70,229,.04));
+    background: linear-gradient(90deg, rgba(79,70,229,.14), rgba(79,70,229,.04));
     color: var(--accent);
     font-weight: 700;
+    box-shadow: 0 2px 8px rgba(79,70,229,.1);
   }
   .main { flex: 1; min-width: 0; padding: 24px 28px 60px; max-width: 1080px; }
   .scrim { display: none; }
+
   @media (max-width: 760px) {
     /* ── 側邊欄抽屜 ── */
     .top .burger { display: block; }
-    .sidebar { position: fixed; top: 52px; left: 0; bottom: 0; z-index: 60; transform: translateX(-100%); transition: transform .22s cubic-bezier(.4,0,.2,1); box-shadow: 4px 0 24px rgba(79,70,229,.18); }
+    .sidebar {
+      position: fixed; top: 52px; left: 0; bottom: 0; z-index: 60;
+      width: 240px;
+      transform: translateX(-100%);
+      transition: transform .24s cubic-bezier(.4,0,.2,1);
+      box-shadow: 6px 0 32px rgba(79,70,229,.22);
+      background: rgba(255,255,255,.82);
+      backdrop-filter: blur(32px) saturate(180%);
+      -webkit-backdrop-filter: blur(32px) saturate(180%);
+      border-right: 1px solid rgba(255,255,255,.6);
+    }
     .sidebar.open { transform: translateX(0); }
-    .scrim.show { display: block; position: fixed; inset: 52px 0 0 0; background: rgba(30,27,75,.35); z-index: 55; backdrop-filter: blur(2px); }
+    .scrim.show { display: block; position: fixed; inset: 52px 0 0 0; background: rgba(30,27,75,.28); z-index: 55; backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px); }
 
     /* ── 頂列精簡 ── */
     .top { padding: 0 12px; height: 52px; gap: 10px; }
@@ -142,7 +164,6 @@
     .row { gap: 10px; }
     .field { width: 100%; }
     .field input, .field select { width: 100% !important; min-width: 0 !important; box-sizing: border-box; }
-    /* 主要提交按鈕全寬 */
     .row > .btn { width: 100%; }
 
     /* ── 按鈕：加大觸控面積 ── */
@@ -154,11 +175,9 @@
     td { padding: 9px 7px; font-size: 13px; }
 
     /* ── 側邊欄項目加高（觸控友善） ── */
-    .nav-item { padding: 12px 20px 12px 22px; font-size: 14px; }
-    /* ── 頂列按鈕文字切換 ── */
+    .nav-item { padding: 13px 20px 13px 22px; font-size: 14px; }
     .mob-hide { display: none; }
     .mob-show { display: inline !important; }
-    /* ── 照片列縮圖自動填滿 ── */
     .photo-thumb { width: calc(33vw - 24px) !important; height: calc(25vw - 18px) !important; }
   }
 
@@ -340,7 +359,7 @@
     <button id="cloud-refresh" style="background:rgba(255,255,255,.22);color:#fff;border:1px solid rgba(255,255,255,.3);border-radius:8px;padding:5px 12px;cursor:pointer;font-size:13px;font-weight:600;backdrop-filter:blur(4px);transition:background .15s"><span class="mob-hide">↻ 重新整理</span><span class="mob-show" style="display:none">↻</span></button>
   </div>
 </div>
-<div id="sync-banner" style="display:none;background:#1d6f3b;color:#fff;text-align:center;padding:9px 16px;font-size:13px;font-weight:600;cursor:pointer;letter-spacing:.2px">
+<div id="sync-banner" style="display:none;background:rgba(16,107,58,.82);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);color:#fff;text-align:center;padding:9px 16px;font-size:13px;font-weight:600;cursor:pointer;letter-spacing:.2px;border-bottom:1px solid rgba(255,255,255,.18)">
   ↻ 雲端有新資料，點此載入
 </div>
 <div class="layout">
