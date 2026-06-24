@@ -359,6 +359,32 @@ let entryNight=false;
 
 const round = n => Math.round(n);
 const money = n => '$' + round(n).toLocaleString();
+const billingAmount = b => {
+  const qty = Number(b && b.qty);
+  const unitPrice = Number(b && b.unitPrice);
+  if(b && b.qty!==undefined && b.unitPrice!==undefined && !isNaN(qty) && qty>0 && !isNaN(unitPrice) && unitPrice>=0) return qty*unitPrice;
+  return Number(b && b.amount)||0;
+};
+const billingLineMeta = b => {
+  if(!b || b.qty===undefined || b.unitPrice===undefined) return '';
+  return `${esc(b.unit||'式')} × ${Number(b.qty)||0} × ${money(Number(b.unitPrice)||0)}`;
+};
+function readBillingLine(prefix){
+  const unit=(document.getElementById(prefix+'-unit')||{}).value||'式';
+  const qty=parseFloat((document.getElementById(prefix+'-qty')||{}).value);
+  const unitPrice=parseFloat((document.getElementById(prefix+'-unit-price')||{}).value);
+  const amount=qty*unitPrice;
+  return {unit:unit.trim()||'式', qty, unitPrice, amount};
+}
+function bindBillingSubtotal(prefix){
+  const qty=document.getElementById(prefix+'-qty'), price=document.getElementById(prefix+'-unit-price'), out=document.getElementById(prefix+'-subtotal');
+  if(!qty||!price||!out) return;
+  const calc=()=>{
+    const q=parseFloat(qty.value), p=parseFloat(price.value);
+    out.textContent=(!isNaN(q)&&!isNaN(p))?money(q*p):money(0);
+  };
+  qty.oninput=calc; price.oninput=calc; calc();
+}
 // 工數顯示：工數 = 工時÷8，用分數符號。例：9h → 1⅛ 工
 const FRAC8={1:'⅛',2:'¼',3:'⅜',4:'½',5:'⅝',6:'¾',7:'⅞'};
 function gongStr(hours){
@@ -1695,21 +1721,26 @@ function bind(){
   if(bnrAdd) bnrAdd.onclick=()=>{
     const date=document.getElementById('bnr-date').value;
     const site=document.getElementById('bnr-site').value.trim();
-    const amount=parseFloat(document.getElementById('bnr-amount').value);
+    const line=readBillingLine('bnr');
     const method=document.getElementById('bnr-method').value.trim();
     const client=document.getElementById('bnr-client').value.trim();
     const note=document.getElementById('bnr-note').value.trim();
     const settled=document.getElementById('bnr-settled').value==='1';
-    if(!date||!site||isNaN(amount)||amount<=0){ alert('請填日期、案場、金額'); return; }
-    state.billings.push({id:uid(),docType:'請款單',date,site,amount,method,client,note,settled});
+    if(!date||!site||isNaN(line.amount)||line.amount<=0){ alert('請填日期、案場、數量與單價'); return; }
+    state.billings.push({id:uid(),docType:'請款單',date,site,unit:line.unit,qty:line.qty,unitPrice:line.unitPrice,amount:line.amount,method,client,note,settled});
     const so=state.sites.find(x=>x.name===site); if(so) resyncSiteDeal(so);
     saveData(); render();
   };
   // 請款單頁：改
   document.querySelectorAll('[data-billedit-req]').forEach(b=>b.onclick=()=>{
     const bill=state.billings.find(x=>x.id===b.dataset.billeditReq); if(!bill) return;
-    const amt=parseFloat(prompt('金額：',bill.amount)); if(isNaN(amt)||amt<=0) return;
-    bill.amount=amt;
+    const unit=prompt('單位：',bill.unit||'式'); if(unit===null) return;
+    const qty=parseFloat(prompt('數量：',bill.qty!==undefined?bill.qty:1)); if(isNaN(qty)||qty<=0) return;
+    const unitPrice=parseFloat(prompt('單價：',bill.unitPrice!==undefined?bill.unitPrice:billingAmount(bill))); if(isNaN(unitPrice)||unitPrice<0) return;
+    bill.unit=(unit.trim()||'式');
+    bill.qty=qty;
+    bill.unitPrice=unitPrice;
+    bill.amount=qty*unitPrice;
     const note=prompt('說明：',bill.note||''); if(note!==null) bill.note=note;
     const so=state.sites.find(x=>x.name===bill.site); if(so) resyncSiteDeal(so);
     saveData(); render();
@@ -1719,25 +1750,32 @@ function bind(){
   if(bnaAdd) bnaAdd.onclick=()=>{
     const date=document.getElementById('bna-date').value;
     const site=document.getElementById('bna-site').value.trim();
-    const amount=parseFloat(document.getElementById('bna-amount').value);
+    const line=readBillingLine('bna');
     const method=document.getElementById('bna-method').value.trim();
     const client=document.getElementById('bna-client').value.trim();
     const note=document.getElementById('bna-note').value.trim();
     const settled=document.getElementById('bna-settled').value==='1';
-    if(!date||!site||isNaN(amount)||amount<=0){ alert('請填日期、案場、金額'); return; }
-    state.billings.push({id:uid(),docType:'追加單',date,site,amount,method,client,note,settled});
+    if(!date||!site||isNaN(line.amount)||line.amount<=0){ alert('請填日期、案場、數量與單價'); return; }
+    state.billings.push({id:uid(),docType:'追加單',date,site,unit:line.unit,qty:line.qty,unitPrice:line.unitPrice,amount:line.amount,method,client,note,settled});
     const so=state.sites.find(x=>x.name===site); if(so) resyncSiteDeal(so);
     saveData(); render();
   };
   // 追加單頁：改
   document.querySelectorAll('[data-billedit-add]').forEach(b=>b.onclick=()=>{
     const bill=state.billings.find(x=>x.id===b.dataset.billeditAdd); if(!bill) return;
-    const amt=parseFloat(prompt('金額：',bill.amount)); if(isNaN(amt)||amt<=0) return;
-    bill.amount=amt;
+    const unit=prompt('單位：',bill.unit||'式'); if(unit===null) return;
+    const qty=parseFloat(prompt('數量：',bill.qty!==undefined?bill.qty:1)); if(isNaN(qty)||qty<=0) return;
+    const unitPrice=parseFloat(prompt('單價：',bill.unitPrice!==undefined?bill.unitPrice:billingAmount(bill))); if(isNaN(unitPrice)||unitPrice<0) return;
+    bill.unit=(unit.trim()||'式');
+    bill.qty=qty;
+    bill.unitPrice=unitPrice;
+    bill.amount=qty*unitPrice;
     const note=prompt('說明：',bill.note||''); if(note!==null) bill.note=note;
     const so=state.sites.find(x=>x.name===bill.site); if(so) resyncSiteDeal(so);
     saveData(); render();
   });
+  bindBillingSubtotal('bnr');
+  bindBillingSubtotal('bna');
   document.querySelectorAll('[data-billprint]').forEach(b=>b.onclick=()=>printBillingDoc(b.dataset.billprint));
   document.querySelectorAll('[data-togglesettle]').forEach(b=>b.onclick=()=>{
     const bill=state.billings.find(x=>x.id===b.dataset.togglesettle); if(bill){ bill.settled=!bill.settled; saveData(); render(); }
@@ -1982,6 +2020,7 @@ function printBillingDoc(id){
   const b=state.billings.find(x=>x.id===id); if(!b) return;
   const type=(b.docType||'請款單');
   const photos=billingPhotos[id]||[];
+  const amt=billingAmount(b);
   const photoSec=photos.length?`<div class="sec">施作照片</div>
     <div style="display:flex;flex-wrap:wrap;gap:10px;margin:8px 0 16px">
       ${photos.map(url=>`<img src="${url}" style="width:180px;height:135px;object-fit:cover;border:1px solid #ddd;border-radius:4px">`).join('')}
@@ -1993,9 +2032,9 @@ function printBillingDoc(id){
       ${b.note?`<tr><th>備註</th><td colspan="3">${esc(b.note)}</td></tr>`:''}
     </tbody></table>
     <div class="sec">金額</div>
-    <table><thead><tr><th>項目</th><th class="num">金額</th></tr></thead>
-      <tbody><tr><td>${esc(b.note||type)}</td><td class="num">${money(b.amount)}</td></tr>
-        <tr class="total-row"><td>總金額</td><td class="num">${money(b.amount)}</td></tr>
+    <table><thead><tr><th>項目</th><th>單位</th><th class="num">數量</th><th class="num">單價</th><th class="num">小計</th></tr></thead>
+      <tbody><tr><td>${esc(b.note||type)}</td><td>${esc(b.unit||'')}</td><td class="num">${b.qty!==undefined?esc(b.qty):'—'}</td><td class="num">${b.unitPrice!==undefined?money(b.unitPrice):'—'}</td><td class="num">${money(amt)}</td></tr>
+        <tr class="total-row"><td colspan="4">總金額</td><td class="num">${money(amt)}</td></tr>
       </tbody></table>
     ${photoSec}
     <div class="sign"><div>申請人</div><div>審核</div><div>業主簽收</div></div>`;
@@ -2012,14 +2051,14 @@ function exportBillingPDF(){
   let GB=0,GS=0;
   names.forEach(name=>{
     const list=groups[name].sort((a,b)=>(a.date||'').localeCompare(b.date||''));
-    const billed=list.reduce((s,b)=>s+(Number(b.amount)||0),0);
-    const settled=list.filter(b=>b.settled).reduce((s,b)=>s+(Number(b.amount)||0),0);
+    const billed=list.reduce((s,b)=>s+billingAmount(b),0);
+    const settled=list.filter(b=>b.settled).reduce((s,b)=>s+billingAmount(b),0);
     GB+=billed; GS+=settled;
     const contract=Number(state.contracts[name])||0;
     const cline=contract>0?`　合約總額 ${money(contract)}　未請款 ${money(contract-billed)}`:'';
-    const rows=list.map(b=>`<tr><td>${esc(b.date||'')}</td><td class="num">${money(b.amount)}</td><td>${esc(b.method||'')}</td><td>${esc(b.client||'')}</td><td>${b.settled?'已結算':'未結算'}</td></tr>`).join('');
+    const rows=list.map(b=>`<tr><td>${esc(b.date||'')}</td><td>${esc(b.unit||'')}</td><td class="num">${b.qty!==undefined?esc(b.qty):'—'}</td><td class="num">${b.unitPrice!==undefined?money(b.unitPrice):'—'}</td><td class="num">${money(billingAmount(b))}</td><td>${esc(b.method||'')}</td><td>${esc(b.client||'')}</td><td>${b.settled?'已結算':'未結算'}</td></tr>`).join('');
     secs+=`<div class="sec">${esc(name)}　已請款 ${money(billed)}・已結算 ${money(settled)}・未結算 ${money(billed-settled)}${cline}</div>
-      <table><thead><tr><th>請款日</th><th class="num">金額</th><th>方式</th><th>業主</th><th>結算</th></tr></thead><tbody>${rows}</tbody></table>`;
+      <table><thead><tr><th>請款日</th><th>單位</th><th class="num">數量</th><th class="num">單價</th><th class="num">小計</th><th>方式</th><th>業主</th><th>結算</th></tr></thead><tbody>${rows}</tbody></table>`;
   });
   const inner=`<h1>案場請款追蹤明細</h1>
     <div class="meta">列印日：${new Date().toISOString().slice(0,10)}　|　累計請款 ${money(GB)}・已結算 ${money(GS)}・未結算 ${money(GB-GS)}</div>
@@ -2738,8 +2777,8 @@ function _billingDocCard(b, editAttr){
 
 function viewBillingReq(){
   const list=state.billings.filter(b=>(b.docType||'請款單')==='請款單').sort((a,b)=>(b.date||'').localeCompare(a.date||''));
-  const total=list.reduce((s,b)=>s+(Number(b.amount)||0),0);
-  const settled=list.filter(b=>b.settled).reduce((s,b)=>s+(Number(b.amount)||0),0);
+  const total=list.reduce((s,b)=>s+billingAmount(b),0);
+  const settled=list.filter(b=>b.settled).reduce((s,b)=>s+billingAmount(b),0);
   const unsettled=total-settled;
   const siteSelOpts=`<option value="">（選案場）</option>`+state.sites.filter(s=>s.active!==false).map(s=>`<option value="${esc(s.name)}">${esc(s.name)}</option>`).join('');
   const cards=list.map(b=>{
@@ -2750,7 +2789,8 @@ function viewBillingReq(){
           <div style="font-size:12px;color:var(--muted);margin-top:2px">${esc(b.date||'')}${b.client?'　'+esc(b.client):''}${b.method?'　'+esc(b.method):''}${b.note?'　'+esc(b.note):''}</div>
         </div>
         <div style="text-align:right;flex-shrink:0">
-          <div style="font-size:18px;font-weight:800;color:var(--accent)">${money(b.amount)}</div>
+          <div style="font-size:18px;font-weight:800;color:var(--accent)">${money(billingAmount(b))}</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:2px">${billingLineMeta(b)||'未填單位/數量/單價'}</div>
           <div style="margin-top:5px;display:flex;gap:4px;justify-content:flex-end;flex-wrap:wrap">
             <button class="act ${b.settled?'':'muted'}" data-togglesettle="${b.id}" style="${b.settled?'color:var(--accent)':''}">${b.settled?'✓ 已結算':'未結算'}</button>
             <button class="act" data-billprint="${b.id}">列印</button>
@@ -2772,7 +2812,10 @@ function viewBillingReq(){
     <div class="row">
       <div class="field"><label>日期</label><input type="date" id="bnr-date" value="${new Date().toISOString().slice(0,10)}"></div>
       <div class="field" style="flex:1;min-width:150px"><label>案場</label><select id="bnr-site">${siteSelOpts}</select></div>
-      <div class="field"><label>金額</label><input type="number" id="bnr-amount" min="0" step="1000"></div>
+      <div class="field"><label>單位</label><input id="bnr-unit" value="式" placeholder="式、天、坪" style="width:90px"></div>
+      <div class="field"><label>數量</label><input type="number" id="bnr-qty" min="0" step="0.01" value="1" style="width:90px"></div>
+      <div class="field"><label>單價</label><input type="number" id="bnr-unit-price" min="0" step="1" style="width:120px"></div>
+      <div class="field"><label>小計</label><div id="bnr-subtotal" class="num" style="height:36px;display:flex;align-items:center;font-weight:700">$0</div></div>
       <div class="field"><label>方式</label><input id="bnr-method" placeholder="匯款" style="width:100px"></div>
       <div class="field"><label>業主</label><input id="bnr-client" placeholder="業主名稱" style="width:110px"></div>
       <div class="field" style="flex:1;min-width:180px"><label>說明</label><input id="bnr-note" placeholder="例：第一期工程款"></div>
@@ -2785,8 +2828,8 @@ function viewBillingReq(){
 
 function viewBillingAdd(){
   const list=state.billings.filter(b=>(b.docType||'請款單')==='追加單').sort((a,b)=>(b.date||'').localeCompare(a.date||''));
-  const total=list.reduce((s,b)=>s+(Number(b.amount)||0),0);
-  const settled=list.filter(b=>b.settled).reduce((s,b)=>s+(Number(b.amount)||0),0);
+  const total=list.reduce((s,b)=>s+billingAmount(b),0);
+  const settled=list.filter(b=>b.settled).reduce((s,b)=>s+billingAmount(b),0);
   const unsettled=total-settled;
   const siteSelOpts=`<option value="">（選案場）</option>`+state.sites.filter(s=>s.active!==false).map(s=>`<option value="${esc(s.name)}">${esc(s.name)}</option>`).join('');
   const cards=list.map(b=>{
@@ -2799,7 +2842,8 @@ function viewBillingAdd(){
           <div style="font-size:12px;color:var(--muted);margin-top:2px">${esc(b.date||'')}${b.note?'　'+esc(b.note):''}</div>
         </div>
         <div style="text-align:right;flex-shrink:0">
-          <div style="font-size:18px;font-weight:800;color:#9a5b1a">${money(b.amount)}</div>
+          <div style="font-size:18px;font-weight:800;color:#9a5b1a">${money(billingAmount(b))}</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:2px">${billingLineMeta(b)||'未填單位/數量/單價'}</div>
           <div style="margin-top:5px;display:flex;gap:4px;justify-content:flex-end;flex-wrap:wrap">
             <button class="act ${b.settled?'':'muted'}" data-togglesettle="${b.id}" style="${b.settled?'color:var(--accent)':''}">${b.settled?'✓ 已結算':'未結算'}</button>
             <button class="act" data-billprint="${b.id}">列印</button>
@@ -2831,7 +2875,10 @@ function viewBillingAdd(){
     <div class="row">
       <div class="field"><label>日期</label><input type="date" id="bna-date" value="${new Date().toISOString().slice(0,10)}"></div>
       <div class="field" style="flex:1;min-width:150px"><label>案場</label><select id="bna-site">${siteSelOpts}</select></div>
-      <div class="field"><label>金額</label><input type="number" id="bna-amount" min="0" step="1000"></div>
+      <div class="field"><label>單位</label><input id="bna-unit" value="式" placeholder="式、天、坪" style="width:90px"></div>
+      <div class="field"><label>數量</label><input type="number" id="bna-qty" min="0" step="0.01" value="1" style="width:90px"></div>
+      <div class="field"><label>單價</label><input type="number" id="bna-unit-price" min="0" step="1" style="width:120px"></div>
+      <div class="field"><label>小計</label><div id="bna-subtotal" class="num" style="height:36px;display:flex;align-items:center;font-weight:700">$0</div></div>
       <div class="field"><label>方式</label><input id="bna-method" placeholder="匯款" style="width:100px"></div>
       <div class="field"><label>業主</label><input id="bna-client" placeholder="業主名稱" style="width:110px"></div>
       <div class="field" style="flex:1;min-width:180px"><label>說明（追加項目）</label><input id="bna-note" placeholder="例：追加防水工程"></div>
@@ -2848,14 +2895,14 @@ function viewBilling(){
   state.billings.forEach(b=>{ const k=b.site||'（未填案場）'; (groups[k]=groups[k]||[]).push(b); });
   const siteNames=Object.keys(groups).sort((a,b)=>a.localeCompare(b));
 
-  const totalBilled=state.billings.reduce((s,b)=>s+(Number(b.amount)||0),0);
-  const totalSettled=state.billings.filter(b=>b.settled).reduce((s,b)=>s+(Number(b.amount)||0),0);
+  const totalBilled=state.billings.reduce((s,b)=>s+billingAmount(b),0);
+  const totalSettled=state.billings.filter(b=>b.settled).reduce((s,b)=>s+billingAmount(b),0);
   const totalUnsettled=totalBilled-totalSettled;
 
   const cardForName=(name)=>{
     const list=groups[name].sort((a,b)=>(a.date||'').localeCompare(b.date||''));
-    const billed=list.reduce((s,b)=>s+(Number(b.amount)||0),0);
-    const settled=list.filter(b=>b.settled).reduce((s,b)=>s+(Number(b.amount)||0),0);
+    const billed=list.reduce((s,b)=>s+billingAmount(b),0);
+    const settled=list.filter(b=>b.settled).reduce((s,b)=>s+billingAmount(b),0);
     const unsettled=billed-settled;
     const siteObj=state.sites.find(x=>x.name===name);
     const contract=Number(siteObj&&siteObj.contract!==undefined&&siteObj.contract!==''?siteObj.contract:state.contracts[name])||0;
@@ -2887,7 +2934,7 @@ function viewBilling(){
       const thumbs=photos.map((url,i)=>`<div style="position:relative;display:inline-block;vertical-align:top"><img src="${url}" class="photo-thumb" style="width:80px;height:60px;object-fit:cover;border-radius:5px;border:1px solid var(--line)"><button data-photodel="${b.id}" data-photoidx="${i}" style="position:absolute;top:-5px;right:-5px;width:20px;height:20px;border-radius:50%;border:none;background:var(--danger);color:#fff;font-size:12px;cursor:pointer;padding:0;line-height:20px;text-align:center">✕</button></div>`).join('');
       return `<tr>
       <td><span class="tag" style="${typeStyle}">${esc(docType)}</span> ${esc(b.date||'')}</td>
-      <td class="num">${money(b.amount)}</td>
+      <td class="num">${money(billingAmount(b))}</td>
       <td>${esc(b.method||'')}</td><td>${esc(b.client||'')}</td>
       <td><button class="act ${b.settled?'':'muted'}" data-togglesettle="${b.id}" style="${b.settled?'color:var(--accent)':''}">${b.settled?'✓ 已結算':'未結算'}</button></td>
       <td>${esc(b.note||'')}</td>
@@ -3028,7 +3075,7 @@ function reconSection(key, from, to){
     if(state.billings.length===0) return '';
     const groups={}; state.billings.forEach(b=>{ const k=b.site||'（未填）'; (groups[k]=groups[k]||[]).push(b); });
     let GB=0,GS=0; const rows=Object.keys(groups).sort().map(name=>{
-      const list=groups[name]; const billed=list.reduce((s,b)=>s+(Number(b.amount)||0),0); const settled=list.filter(b=>b.settled).reduce((s,b)=>s+(Number(b.amount)||0),0);
+      const list=groups[name]; const billed=list.reduce((s,b)=>s+billingAmount(b),0); const settled=list.filter(b=>b.settled).reduce((s,b)=>s+billingAmount(b),0);
       GB+=billed; GS+=settled;
       return `<tr><td>${esc(name)}</td><td class="num">${money(billed)}</td><td class="num">${money(settled)}</td><td class="num">${money(billed-settled)}</td></tr>`;
     }).join('');
