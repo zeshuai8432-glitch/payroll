@@ -968,12 +968,31 @@
           </div>
           <div class="field">
             <label>加強橫枝</label>
-            <select id="p-brace-type">
+            <select id="p-brace-type" onchange="updateBraceFields()">
               <option value="none">不加</option>
               <option value="N38">N38</option>
               <option value="N19">N19</option>
             </select>
           </div>
+        </div>
+        <div id="brace-detail-fields" style="display:none;">
+          <div class="form-grid form-grid-2">
+            <div class="field">
+              <label>長度規格</label>
+              <select id="p-brace-length">
+                <option value="243">8尺（243cm）</option>
+                <option value="363">12尺（363cm）</option>
+              </select>
+            </div>
+            <div class="field">
+              <label>穿幾排</label>
+              <div class="input-unit">
+                <input type="number" id="p-brace-rows" value="1" min="1" step="1">
+                <span class="unit-label">排</span>
+              </div>
+            </div>
+          </div>
+          <div style="font-size:12px;color:var(--text-3);margin-top:-6px;margin-bottom:4px;">第1排離地120cm，之後每排間距120cm</div>
         </div>
 
         <hr class="divider">
@@ -1588,6 +1607,9 @@ function openZoneModal(zoneId, spaceId) {
   ceilingDir = 'length';
   rodType = 'standard';
   document.getElementById('p-fill-type').value = 'none';
+  document.getElementById('p-brace-type').value = 'none';
+  document.getElementById('brace-detail-fields').style.display = 'none';
+  document.getElementById('p-brace-rows').value = 1;
   document.getElementById('c-fascia-enable').checked = false;
   document.getElementById('fascia-fields').style.display = 'none';
   document.getElementById('rod-std-fields').style.display = '';
@@ -1611,6 +1633,11 @@ function openZoneModal(zoneId, spaceId) {
         document.getElementById('p-stud-type').value = zone.params.studType;
         document.getElementById('p-track-type').value = zone.params.trackType;
         document.getElementById('p-brace-type').value = zone.params.braceType;
+        updateBraceFields();
+        if (zone.params.braceType !== 'none') {
+          document.getElementById('p-brace-length').value = zone.params.braceLength || 243;
+          document.getElementById('p-brace-rows').value = zone.params.braceRows || 1;
+        }
         document.getElementById('p-board-type').value = zone.params.boardType;
         document.getElementById('p-board-thickness').value = zone.params.boardThickness;
         document.getElementById('p-board-size').value = zone.params.boardSize;
@@ -1690,6 +1717,11 @@ function setSides(v) {
   document.getElementById('side-double').classList.toggle('active', v === 'double');
 }
 
+function updateBraceFields() {
+  const type = document.getElementById('p-brace-type').value;
+  document.getElementById('brace-detail-fields').style.display = type !== 'none' ? '' : 'none';
+}
+
 function updateBoardThicknessOptions() {
   const type = document.getElementById('p-board-type').value;
   const sel = document.getElementById('p-board-thickness');
@@ -1734,6 +1766,8 @@ function saveZone() {
       studType: document.getElementById('p-stud-type').value,
       trackType: document.getElementById('p-track-type').value,
       braceType: document.getElementById('p-brace-type').value,
+      braceLength: parseInt(document.getElementById('p-brace-length').value) || 243,
+      braceRows: parseInt(document.getElementById('p-brace-rows').value) || 1,
       boardType: document.getElementById('p-board-type').value,
       boardThickness: parseInt(document.getElementById('p-board-thickness').value),
       boardSize: document.getElementById('p-board-size').value,
@@ -1822,6 +1856,7 @@ function renderZonesHTML(spaceId) {
       summary = `<div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:8px;font-size:12px;color:var(--text-2);">
         <span>骨架 <strong>${r.studs}</strong> 支</span>
         <span>槽鐵 <strong>${r.tracks}</strong> 支</span>
+        ${r.braces > 0 ? `<span>加強橫枝 <strong>${r.braces}</strong> 支</span>` : ''}
         <span>板材 <strong>${r.boards}</strong> 片</span>
         ${r.fill ? `<span>填塞物 <strong>${r.fill.qty}</strong> ${r.fill.unit}</span>` : ''}
         ${r.totalPrice ? `<span style="color:var(--green)">估價 <strong>$${r.totalPrice.toLocaleString()}</strong></span>` : ''}
@@ -2115,6 +2150,15 @@ function calcPartition(p) {
   // U槽鐵損耗（由使用者判斷，這裡標示原始數量）
   const trackRaw = (W / 100 * 2).toFixed(2); // 實際需要幾公尺
 
+  // 加強橫枝
+  let braces = 0;
+  let bracePerRow = 0;
+  if (p.braceType !== 'none' && p.braceType) {
+    const braceLen = p.braceLength || 243;
+    bracePerRow = Math.ceil(W / braceLen);
+    braces = bracePerRow * (p.braceRows || 1);
+  }
+
   // 板材
   const bs = BOARD_SIZES[p.boardSize];
   const boardW = bs.w;
@@ -2187,7 +2231,7 @@ function calcPartition(p) {
     }
   }
 
-  return { studs, tracks, trackRaw, boards, boardsRaw: boardsRaw.toFixed(2), fill, totalPrice: totalPrice || 0, priceDetail };
+  return { studs, tracks, trackRaw, boards, boardsRaw: boardsRaw.toFixed(2), fill, braces, bracePerRow, totalPrice: totalPrice || 0, priceDetail };
 }
 
 // ════════════════════════════════════
@@ -2241,6 +2285,7 @@ function renderResults() {
               <tbody>
                 <tr><td>${params.studType} 骨架</td><td class="qty">${r.studs} 支</td><td class="unit-cell">${params.studSpacing}cm 間距</td></tr>
                 <tr><td>${params.trackType} 槽鐵</td><td class="qty">${r.tracks} 支</td><td class="unit-cell">實際用量 ${r.trackRaw} m（上下各一排）</td></tr>
+                ${r.braces > 0 ? `<tr><td>${params.braceType} 加強橫枝 ${params.braceLength}cm</td><td class="qty">${r.braces} 支</td><td class="unit-cell">${params.braceRows}排 × ${r.bracePerRow}支/排</td></tr>` : ''}
                 <tr><td>${params.boardType === 'calcium' ? '矽酸鈣板' : '石膏板'} ${params.boardThickness}mm ${params.boardSize}尺</td><td class="qty">${r.boards} 片</td><td class="unit-cell">含5%損耗（淨算 ${r.boardsRaw} 片）</td></tr>
                 ${r.fill ? `<tr><td>${r.fill.label}</td><td class="qty">${r.fill.qty} ${r.fill.unit}</td><td class="unit-cell">${r.fill.piecesNeeded ? '需要 '+r.fill.piecesNeeded+' 片' : ''}</td></tr>` : ''}
               </tbody>
@@ -2249,6 +2294,7 @@ function renderResults() {
           </div>`;
         addTotal(params.studType, params.studType + ' 骨架', r.studs, '支');
         addTotal(params.trackType, params.trackType + ' 槽鐵', r.tracks, '支');
+        if (r.braces > 0) addTotal(params.braceType+'_'+params.braceLength, params.braceType+' 加強橫枝 '+params.braceLength+'cm', r.braces, '支');
         const boardKey = `${params.boardType}-${params.boardThickness}-${params.boardSize}`;
         addTotal(boardKey, `${params.boardType === 'calcium' ? '矽酸鈣板' : '石膏板'} ${params.boardThickness}mm ${params.boardSize}尺`, r.boards, '片');
         if (r.fill) addTotal(params.fillSpec || params.fillType, r.fill.label, r.fill.qty, r.fill.unit);
