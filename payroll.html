@@ -350,7 +350,7 @@
 const LS = 'pm_data_v2';
 const LS_PHOTOS = 'pm_billing_photos_v1';
 const CLOUD_URL = 'https://script.google.com/macros/s/AKfycbyMPs38UNzAwX3bcD2n9nQBz0HofUW9qFweSOnmoySs8VW2bJYHn47RdyZLQ8bD8SNWTg/exec';
-let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], tools:[], locations:[], assets:[], advances:[], accounts:[], ledger:[], deals:[], billings:[], contracts:{}, costs:[], parkAccId:'', oweBonus:{}, minFund:'', tab:'entry' };
+let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], tools:[], locations:[], assets:[], advances:[], accounts:[], ledger:[], deals:[], billings:[], contracts:{}, costs:[], measurements:[], parkAccId:'', oweBonus:{}, minFund:'', tab:'entry' };
 let cloudStatus='連線中…';
 let entryDate='', entrySite='', entryEmp=''; // 登記出工：記住上次選的日期、案場、員工
 let entryOpenDates={}, entryEditId=null; // 出工紀錄分組收合狀態與正在編輯的紀錄
@@ -411,11 +411,11 @@ const siteName = id => { const s=state.sites.find(x=>x.id===id); return s?s.name
 
 function applyData(d){
   if(!d) return;
-  state.employees=d.employees||[]; state.sites=d.sites||[]; state.attendance=d.attendance||[]; state.adjustments=d.adjustments||[]; state.loans=d.loans||[]; state.tools=d.tools||[]; state.locations=d.locations||[]; state.assets=d.assets||[]; state.advances=d.advances||[]; state.accounts=d.accounts||[]; state.ledger=d.ledger||[]; state.deals=d.deals||[]; state.billings=d.billings||[]; state.contracts=d.contracts||{}; state.costs=d.costs||[]; state.parkAccId=d.parkAccId||''; state.oweBonus=d.oweBonus||{}; state.minFund=(d.minFund!==undefined?d.minFund:'');
+  state.employees=d.employees||[]; state.sites=d.sites||[]; state.attendance=d.attendance||[]; state.adjustments=d.adjustments||[]; state.loans=d.loans||[]; state.tools=d.tools||[]; state.locations=d.locations||[]; state.assets=d.assets||[]; state.advances=d.advances||[]; state.accounts=d.accounts||[]; state.ledger=d.ledger||[]; state.deals=d.deals||[]; state.billings=d.billings||[]; state.contracts=d.contracts||{}; state.costs=d.costs||[]; state.measurements=d.measurements||[]; state.parkAccId=d.parkAccId||''; state.oweBonus=d.oweBonus||{}; state.minFund=(d.minFund!==undefined?d.minFund:'');
   state.employees.forEach(e=>{ if(e.active===undefined) e.active=true; });
 }
 function packData(){
-  return {employees:state.employees,sites:state.sites,attendance:state.attendance,adjustments:state.adjustments,loans:state.loans,tools:state.tools,locations:state.locations,assets:state.assets,advances:state.advances,accounts:state.accounts,ledger:state.ledger,deals:state.deals,billings:state.billings,contracts:state.contracts,costs:state.costs,parkAccId:state.parkAccId,oweBonus:state.oweBonus,minFund:state.minFund};
+  return {employees:state.employees,sites:state.sites,attendance:state.attendance,adjustments:state.adjustments,loans:state.loans,tools:state.tools,locations:state.locations,assets:state.assets,advances:state.advances,accounts:state.accounts,ledger:state.ledger,deals:state.deals,billings:state.billings,contracts:state.contracts,costs:state.costs,measurements:state.measurements,parkAccId:state.parkAccId,oweBonus:state.oweBonus,minFund:state.minFund};
 }
 
 // 先讀本機快取（讓畫面秒開），再從雲端拉最新
@@ -481,7 +481,7 @@ function tabsBar(){
   const groups=[
     ['薪資作業',[['entry','登記出工'],['payroll','員工薪資']]],
     ['財務管理',[['loans','借支管理'],['tools','工具管理'],['advances','代墊款'],['accounts','公積金帳戶'],['deals','分潤結算'],['billing','請款追蹤'],['yearend','年度總結'],['parkacc','品佑帳戶結算'],['recon','對帳匯出']]],
-    ['單據',[['billingReq','請款單'],['billingAdd','追加單']]],
+    ['單據',[['billingReq','請款單'],['billingAdd','追加單'],['meas','計量明細']]],
     ['設定',[['sites','案場成本'],['manage','員工/案場']]],
   ];
   return groups.map(([label,items])=>`
@@ -493,7 +493,7 @@ function tabsBar(){
 function render(){
   document.getElementById('sidebar').innerHTML=tabsBar();
   const body=document.getElementById('body');
-  body.innerHTML = state.tab==='entry'?viewEntry():state.tab==='payroll'?viewPayroll():state.tab==='sites'?viewSites():state.tab==='loans'?viewLoans():state.tab==='tools'?viewTools():state.tab==='advances'?viewAdvances():state.tab==='accounts'?viewAccounts():state.tab==='deals'?viewDeals():state.tab==='billing'?viewBilling():state.tab==='billingReq'?viewBillingReq():state.tab==='billingAdd'?viewBillingAdd():state.tab==='yearend'?viewYearEnd():state.tab==='parkacc'?viewParkAcc():state.tab==='recon'?viewRecon():viewManage();
+  body.innerHTML = state.tab==='entry'?viewEntry():state.tab==='payroll'?viewPayroll():state.tab==='sites'?viewSites():state.tab==='loans'?viewLoans():state.tab==='tools'?viewTools():state.tab==='advances'?viewAdvances():state.tab==='accounts'?viewAccounts():state.tab==='deals'?viewDeals():state.tab==='billing'?viewBilling():state.tab==='billingReq'?viewBillingReq():state.tab==='billingAdd'?viewBillingAdd():state.tab==='meas'?viewMeasurements():state.tab==='yearend'?viewYearEnd():state.tab==='parkacc'?viewParkAcc():state.tab==='recon'?viewRecon():viewManage();
   bind();
 }
 
@@ -1874,6 +1874,32 @@ function bind(){
     state.oweBonus[pid]=Math.max(0, cur-Math.round(v));
     saveData(); render();
   });
+
+  // 計量明細
+  const measQty=document.getElementById('meas-qty');
+  const measPrice=document.getElementById('meas-price');
+  const measSub=document.getElementById('meas-subtotal');
+  function updateMeasSub(){ if(measSub) measSub.textContent=money((parseFloat(measQty&&measQty.value)||0)*(parseFloat(measPrice&&measPrice.value)||0)); }
+  if(measQty) measQty.oninput=updateMeasSub;
+  if(measPrice) measPrice.oninput=updateMeasSub;
+  const measAdd=document.getElementById('meas-add');
+  if(measAdd) measAdd.onclick=()=>{
+    const date=document.getElementById('meas-date').value;
+    const site=document.getElementById('meas-site').value.trim();
+    const item=document.getElementById('meas-item').value.trim();
+    const unit=document.getElementById('meas-unit').value.trim()||'才';
+    const qty=parseFloat(document.getElementById('meas-qty').value);
+    const price=parseFloat(document.getElementById('meas-price').value);
+    const note=document.getElementById('meas-note').value.trim();
+    if(!date||!site||!item||isNaN(qty)||qty<=0||isNaN(price)||price<0){ alert('請填日期、案場、項目、數量與單價'); return; }
+    state.measurements.push({id:uid(),date,site,item,unit,qty,unitPrice:price,note});
+    saveData(); render();
+  };
+  document.querySelectorAll('[data-del-meas]').forEach(b=>b.onclick=()=>{
+    if(!confirm('確定刪除這筆計量明細？')) return;
+    state.measurements=state.measurements.filter(m=>m.id!==b.dataset.delMeas);
+    saveData(); render();
+  });
 }
 
 // ---- PDF 匯出（以列印視窗產生，可存成 PDF 或直接列印）----
@@ -2891,6 +2917,78 @@ function viewBillingAdd(){
     <div class="row" style="margin-top:10px"><button class="btn" id="bna-add">＋ 新增追加單</button></div>
   </div>
   ${list.length===0?'<div class="card"><div class="empty">尚無追加單。點上方「新增追加單」開始登記，新增後可在每張卡片上傳施作照片。</div></div>':cards}`;
+}
+
+function viewMeasurements(){
+  const siteSelOpts=`<option value="">（選案場）</option>`+state.sites.filter(s=>s.active!==false).map(s=>`<option value="${esc(s.name)}">${esc(s.name)}</option>`).join('');
+  const list=[...state.measurements].sort((a,b)=>(b.date||'').localeCompare(a.date||'')||(a.site||'').localeCompare(b.site||''));
+  const grandTotal=list.reduce((s,m)=>s+(Number(m.qty)||0)*(Number(m.unitPrice)||0),0);
+
+  // group by site
+  const bysite={};
+  list.forEach(m=>{ const k=m.site||'（未填案場）'; (bysite[k]=bysite[k]||[]).push(m); });
+  const siteNames=Object.keys(bysite).sort((a,b)=>a.localeCompare(b));
+
+  const siteCards=siteNames.map(name=>{
+    const rows=bysite[name];
+    const siteTotal=rows.reduce((s,m)=>s+(Number(m.qty)||0)*(Number(m.unitPrice)||0),0);
+    const trs=rows.map(m=>{
+      const amt=(Number(m.qty)||0)*(Number(m.unitPrice)||0);
+      return `<tr>
+        <td>${esc(m.date||'')}</td>
+        <td style="max-width:160px">${esc(m.item||'')}</td>
+        <td style="text-align:center">${esc(m.unit||'')}</td>
+        <td style="text-align:right">${(Number(m.qty)||0).toLocaleString()}</td>
+        <td style="text-align:right">${money(Number(m.unitPrice)||0)}</td>
+        <td style="text-align:right;font-weight:700">${money(amt)}</td>
+        <td style="max-width:140px;color:var(--muted);font-size:12px">${esc(m.note||'')}</td>
+        <td style="text-align:center"><button class="act danger" data-del-meas="${m.id}" style="padding:2px 10px;font-size:12px">刪</button></td>
+      </tr>`;
+    }).join('');
+    return `<div class="card" style="padding:0;overflow:hidden">
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px;background:var(--card);border-bottom:1px solid var(--line)">
+        <div style="font-size:15px;font-weight:700">${esc(name)}</div>
+        <div style="font-size:15px;font-weight:800;color:var(--accent)">${money(siteTotal)}</div>
+      </div>
+      <div class="scroll">
+        <table style="width:100%;border-collapse:collapse;font-size:13px">
+          <thead><tr style="background:var(--bg);color:var(--muted);font-size:12px">
+            <th style="padding:6px 10px;text-align:left;white-space:nowrap">日期</th>
+            <th style="padding:6px 10px;text-align:left">項目</th>
+            <th style="padding:6px 10px;text-align:center">單位</th>
+            <th style="padding:6px 10px;text-align:right">數量</th>
+            <th style="padding:6px 10px;text-align:right">單價</th>
+            <th style="padding:6px 10px;text-align:right">小計</th>
+            <th style="padding:6px 10px;text-align:left">備注</th>
+            <th style="padding:6px 10px"></th>
+          </tr></thead>
+          <tbody>${trs}</tbody>
+        </table>
+      </div>
+    </div>`;
+  }).join('');
+
+  return `
+  <div class="metrics">
+    <div class="metric"><div class="l">筆數</div><div class="v">${list.length}</div></div>
+    <div class="metric"><div class="l">案場數</div><div class="v">${siteNames.length}</div></div>
+    <div class="metric"><div class="l">累計金額</div><div class="v" style="font-size:21px">${money(grandTotal)}</div></div>
+  </div>
+  <div class="card">
+    <div style="font-size:14px;font-weight:600;margin-bottom:8px">新增計量明細</div>
+    <div class="row">
+      <div class="field"><label>日期</label><input type="date" id="meas-date" value="${new Date().toISOString().slice(0,10)}"></div>
+      <div class="field" style="flex:1;min-width:150px"><label>案場</label><select id="meas-site">${siteSelOpts}</select></div>
+      <div class="field" style="flex:1;min-width:160px"><label>項目</label><input id="meas-item" placeholder="例：貼磁磚"></div>
+      <div class="field"><label>單位</label><input id="meas-unit" value="才" placeholder="才、坪、m…" style="width:80px"></div>
+      <div class="field"><label>數量</label><input type="number" id="meas-qty" min="0" step="0.01" value="" style="width:90px"></div>
+      <div class="field"><label>單價</label><input type="number" id="meas-price" min="0" step="1" style="width:120px"></div>
+      <div class="field"><label>小計</label><div id="meas-subtotal" class="num" style="height:36px;display:flex;align-items:center;font-weight:700">$0</div></div>
+      <div class="field" style="flex:1;min-width:150px"><label>備注</label><input id="meas-note" placeholder="（選填）"></div>
+    </div>
+    <div class="row" style="margin-top:10px"><button class="btn" id="meas-add">＋ 新增</button></div>
+  </div>
+  ${list.length===0?'<div class="card"><div class="empty">尚無計量明細。點上方「新增」開始登記。</div></div>':siteCards}`;
 }
 
 function viewBilling(){
