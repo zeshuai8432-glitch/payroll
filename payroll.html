@@ -497,6 +497,14 @@ function render(){
   bind();
 }
 
+function foldBtn(key, label){
+  const open=!!formOpen[key];
+  return `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:${open?'8px':'0'}">
+    <div style="font-size:14px;font-weight:600">${label}</div>
+    <button data-toggle-form="${key}" style="font-size:12px;border:1px solid var(--line2);border-radius:8px;padding:0 10px;height:28px;background:transparent;cursor:pointer;color:var(--muted)">${open?'▲ 收合':'＋ 展開'}</button>
+  </div>`;
+}
+
 function viewEntry(){
   const activeEmps=state.employees.filter(e=>e.active);
   const empOpts=activeEmps.map(e=>`<option value="${e.id}">${esc(e.name)}（日薪 ${e.daily}）</option>`).join('');
@@ -580,7 +588,9 @@ function viewEntry(){
   const siteOptsSel=activeSites.map(s=>`<option value="${s.id}" ${s.id===curSite?'selected':''}>${esc(s.name)}</option>`).join('');
   return `
   <div class="card">
-    <p class="sub">登記一筆出工。日期與案場會保留，方便連續登記同案場多人。同一人同一天跑多案場就分開登記多筆。</p>
+    ${foldBtn('entry','登記出工')}
+    ${formOpen.entry?`
+    <p class="sub" style="margin-top:6px">登記一筆出工。日期與案場會保留，方便連續登記同案場多人。同一人同一天跑多案場就分開登記多筆。</p>
     ${noSetup?setupMsg:`
     <div class="row">
       <div class="field"><label>日期</label><input type="date" id="f-date" value="${curDate}"></div>
@@ -599,6 +609,7 @@ function viewEntry(){
       <button class="btn" id="f-allvac" style="background:var(--muted)">全員休假</button>
     </div>
     ${todayNote}`}
+    `:''}
   </div>
   <div class="card">
     <div style="font-size:14px;font-weight:600;margin-bottom:8px">出工紀錄（依日期分組，點日期可收合）</div>
@@ -931,19 +942,26 @@ function viewManage(){
   const pausedSiteTable=pausedSitesList.length?`<details style="margin-top:10px"><summary style="cursor:pointer;font-weight:600;padding:8px 0">已暫停案場（${pausedSitesList.length}）</summary><table><tbody>${pausedSitesList.map(siteRowFor).join('')}</tbody></table></details>`:'';
   return `
   <div class="card">
-    <div style="font-size:14px;font-weight:600;margin-bottom:4px">員工</div>
-    <p class="sub">調薪只影響之後登記的出工，舊紀錄維持當時日薪。離職請用「停用」保留歷史；只有從沒登記過出工的員工才能真正刪除。標記為「股東」的人會出現在代墊款分頁。</p>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+      <div style="font-size:14px;font-weight:600">員工</div>
+      <button data-toggle-form="emp" style="font-size:12px;border:1px solid var(--line2);border-radius:8px;padding:0 10px;height:28px;background:transparent;cursor:pointer;color:var(--muted)">${formOpen.emp?'▲ 收合':'＋ 新增'}</button>
+    </div>
+    ${formOpen.emp?`<p class="sub">調薪只影響之後登記的出工，舊紀錄維持當時日薪。離職請用「停用」保留歷史；只有從沒登記過出工的員工才能真正刪除。標記為「股東」的人會出現在代墊款分頁。</p>
     <div class="row" style="margin-bottom:10px">
       <div class="field"><label>姓名</label><input id="e-name" placeholder="例：潘東澤"></div>
       <div class="field"><label>日薪</label><input id="e-daily" type="number" min="0" step="100" value="3000" style="width:120px"></div>
       <button class="btn" id="e-add">＋ 新增員工</button>
-    </div>
+    </div>`:''}
+
     ${(()=>{ const re=raiseEmpId?state.employees.find(x=>x.id===raiseEmpId):null; if(!re) return ''; const hist=[...(re.rateHistory||[])].sort((a,b)=>a.date.localeCompare(b.date)); return `<div class="card" style="border:2px solid var(--accent);margin:0 0 12px"><div style="font-size:14px;font-weight:700;margin-bottom:10px">調薪：${esc(re.name)}</div><div class="row"><div class="field"><label>生效日</label><input type="date" id="raise-date" value="${todayStr}"></div><div class="field"><label>新日薪</label><input type="number" id="raise-in" min="0" step="100" value="${effectiveDaily(re,todayStr)}" style="width:120px"></div><button class="btn" id="raise-ok">確認</button><button class="btn" id="raise-cancel" style="background:var(--line2);color:var(--text)">取消</button></div>${hist.length?`<div style="margin-top:10px;font-size:12px;color:var(--muted)">調薪紀錄：${hist.map(h=>`${h.date} ${money(h.daily)}`).join(' → ')}</div>`:''}</div>`; })()}
     ${state.employees.length===0?'<div class="empty">尚無員工。</div>':`<div class="scroll"><table><thead><tr><th>姓名</th><th class="num">目前日薪</th><th></th><th></th><th></th><th></th><th></th></tr></thead><tbody>${empRows}</tbody></table></div>`}
   </div>
   <div class="card">
-    <div style="font-size:14px;font-weight:600;margin-bottom:4px">案場</div>
-    <p class="sub">建案場時設好<b>類型、稅率、負責人、錢進哪個帳戶</b>，之後請款追蹤一輸入，系統就自動算分潤、自動進帳戶，不用再去分潤頁手動建。<b>代工／公司分潤</b>＝（總請款−稅）做30/70；<b>合作案</b>＝（總請款−案場成本）對拆、不出現在出工登記、成本記「案場成本」頁。改名會套用到所有相關紀錄。</p>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+      <div style="font-size:14px;font-weight:600">案場</div>
+      <button data-toggle-form="site" style="font-size:12px;border:1px solid var(--line2);border-radius:8px;padding:0 10px;height:28px;background:transparent;cursor:pointer;color:var(--muted)">${formOpen.site?'▲ 收合':'＋ 新增'}</button>
+    </div>
+    ${formOpen.site?`<p class="sub">建案場時設好<b>類型、稅率、負責人、錢進哪個帳戶</b>，之後請款追蹤一輸入，系統就自動算分潤、自動進帳戶，不用再去分潤頁手動建。<b>代工／公司分潤</b>＝（總請款−稅）做30/70；<b>合作案</b>＝（總請款−案場成本）對拆、不出現在出工登記、成本記「案場成本」頁。改名會套用到所有相關紀錄。</p>
     <div class="row" style="margin-bottom:8px">
       <div class="field" style="flex:1;min-width:180px"><label>案場名稱</label><input id="s-name" placeholder="例：台北富邦"></div>
       <div class="field"><label>類型</label><select id="s-type">${['代工','連工代料','業主分潤','合作案','舊制'].map(t=>`<option value="${t}">${t}${t==='合作案'?'（50/50）':t==='舊制'?'（全進公積金）':'（30/70）'}</option>`).join('')}</select></div>
@@ -954,13 +972,14 @@ function viewManage(){
       <div class="field"><label>錢進哪個帳戶</label><select id="s-acc"><option value="">（未指定）</option>${state.accounts.map(a=>`<option value="${a.id}">${esc(a.name)}</option>`).join('')}</select></div>
       <div class="field" id="s-mgr-wrap" style="display:none"><label>管理人(你們)佔 %</label><input type="number" id="s-mgrpct" min="0" max="100" step="5" value="50" style="width:120px"></div>
       <button class="btn" id="s-add">＋ 新增案場</button>
-    </div>
+    </div>`:''}
     ${state.sites.length===0?'<div class="empty">尚無案場。</div>':`${activeSitesList.length?`<table><thead><tr><th>名稱</th><th></th><th></th><th></th></tr></thead><tbody>${siteRows}</tbody></table>`:'<div class="empty">沒有啟用中的案場。</div>'}${pausedSiteTable}`}
   </div>`;
 }
 
 function bind(){
   document.querySelectorAll('.nav-item').forEach(b=>b.onclick=()=>{ state.tab=b.dataset.tab; closeSidebar(); render(); });
+  document.querySelectorAll('[data-toggle-form]').forEach(b=>b.onclick=()=>{ const k=b.dataset.toggleForm; formOpen[k]=!formOpen[k]; render(); });
 
   const pf=document.getElementById('pay-from'); if(pf) pf.onchange=()=>{ state.payFrom=pf.value; render(); };
   const pt=document.getElementById('pay-to'); if(pt) pt.onchange=()=>{ state.payTo=pt.value; render(); };
@@ -2166,16 +2185,18 @@ function viewLoans(){
     <div class="metric"><div class="l">尚未還清總額</div><div class="v">${money(outstanding)}</div></div>
   </div>
   <div class="card">
-    <div style="font-size:14px;font-weight:600;margin-bottom:4px">新增借支</div>
-    <p class="sub">登記一筆借款：借出日、總額、每期固定扣款額。系統會追蹤已扣與剩餘，發薪時在薪資分頁提示應扣金額，由你確認後帶入該期扣項。</p>
-    <div class="row" style="margin-bottom:10px">
+    ${foldBtn('loans','新增借支')}
+    ${formOpen.loans?`<p class="sub" style="margin-top:6px">登記一筆借款：借出日、總額、每期固定扣款額。系統會追蹤已扣與剩餘，發薪時在薪資分頁提示應扣金額，由你確認後帶入該期扣項。</p>
+    <div class="row">
       <div class="field"><label>借款日</label><input type="date" id="loan-date" value="${new Date().toISOString().slice(0,10)}"></div>
       <div class="field"><label>員工</label><select id="loan-emp">${empOpts}</select></div>
       <div class="field"><label>借款總額</label><input type="number" id="loan-amount" min="0" step="500" style="width:120px"></div>
       <div class="field"><label>每期扣款（選填）</label><input type="number" id="loan-per" min="0" step="500" style="width:120px"></div>
       <div class="field" style="flex:1;min-width:140px"><label>備註（選填）</label><input id="loan-note" placeholder="例：預支生活費"></div>
       <button class="btn" id="loan-add">＋ 新增借支</button>
-    </div>
+    </div>`:''}
+  </div>
+  <div class="card">
     ${rows===''?'<div class="empty">尚無借支紀錄。</div>':`<div class="scroll"><table>
       <thead><tr><th>借款日</th><th>員工</th><th class="num">總額</th><th class="num">每期扣</th><th class="num">已扣</th><th class="num">剩餘</th><th>備註</th><th></th></tr></thead>
       <tbody>${rows}</tbody></table></div>`}
@@ -2199,6 +2220,7 @@ function locLabel(key){
 // 分攤草稿：使用者勾選分攤人、調整金額時暫存於此
 let toolDraft=null; // {date,brand,model,amount,picks:{empId:amount}}
 let raiseEmpId=null;
+let formOpen={}; // which add-forms are expanded; keyed by form id
 
 function viewTools(){
   const activeEmps=state.employees.filter(e=>e.active);
@@ -2247,15 +2269,15 @@ function viewTools(){
   ${assetSection()}
   ${locationSection()}
   <div class="card">
-    <div style="font-size:14px;font-weight:600;margin-bottom:4px">工具遺失賠償</div>
-    <p class="sub">填好一筆遺失工具，按「設定分攤」後勾選要分攤的員工。金額會在分攤確認後一次帶入各人當期扣項（全額均攤、不分期）。</p>
+    ${foldBtn('tools-add','新增工具遺失賠償')}
+    ${formOpen['tools-add']?`<p class="sub" style="margin-top:6px">填好一筆遺失工具，按「設定分攤」後勾選要分攤的員工。金額會在分攤確認後一次帶入各人當期扣項（全額均攤、不分期）。</p>
     <div class="row">
       <div class="field"><label>遺失日</label><input type="date" id="tool-date" value="${new Date().toISOString().slice(0,10)}"></div>
       <div class="field"><label>廠牌</label><input id="tool-brand" placeholder="例：HILTI" style="width:120px"></div>
       <div class="field"><label>型號</label><input id="tool-model" placeholder="例：PM30" style="width:140px"></div>
       <div class="field"><label>金額</label><input type="number" id="tool-amount" min="0" step="100" style="width:120px"></div>
       <button class="btn" id="tool-setup">設定分攤 →</button>
-    </div>
+    </div>`:''}
   </div>
   ${draftBlock}
   <div class="card">
@@ -2290,8 +2312,8 @@ function assetSection(){
   }).join('');
   return `
   <div class="card">
-    <div style="font-size:14px;font-weight:600;margin-bottom:4px">工具資產</div>
-    <p class="sub">登記你現有的工具，並標記目前所在位置。下方依位置分組，方便反查某地點（工地／倉庫／貨車）有哪些工具。改位置直接在該列下拉選即可。</p>
+    ${foldBtn('asset','新增工具資產')}
+    ${formOpen.asset?`<p class="sub" style="margin-top:6px">登記你現有的工具，並標記目前所在位置。下方依位置分組，方便反查某地點（工地／倉庫／貨車）有哪些工具。改位置直接在該列下拉選即可。</p>
     ${noLoc?'<div class="empty">請先在下方「地點管理」建立至少一個地點（或先到設定建立案場）。</div>':`
     <div class="row">
       <div class="field"><label>名稱</label><input id="as-name" placeholder="例：電鑽" style="width:140px"></div>
@@ -2301,8 +2323,10 @@ function assetSection(){
       <div class="field"><label>價格</label><input type="number" id="as-price" min="0" step="100" style="width:110px"></div>
       <div class="field"><label>目前位置</label><select id="as-loc">${locOpts}</select></div>
       <button class="btn" id="as-add">＋ 新增工具</button>
-    </div>`}
-    ${state.assets.length===0?'<div class="empty" style="margin-top:8px">尚無工具資產。</div>':grouped}
+    </div>`}`:''}
+    <div style="${formOpen.asset&&state.assets.length>0?'margin-top:10px':''}">
+      ${state.assets.length===0?'<div class="empty" style="margin-top:8px">尚無工具資產。</div>':grouped}
+    </div>
   </div>`;
 }
 
@@ -2314,13 +2338,13 @@ function locationSection(){
   }).join('');
   return `
   <div class="card">
-    <div style="font-size:14px;font-weight:600;margin-bottom:4px">地點管理</div>
-    <p class="sub">案場會自動成為可選位置。這裡額外新增非案場的地點，例如倉庫、貨車。</p>
+    ${foldBtn('loc','新增地點')}
+    ${formOpen.loc?`<p class="sub" style="margin-top:6px">案場會自動成為可選位置。這裡額外新增非案場的地點，例如倉庫、貨車。</p>
     <div class="row" style="margin-bottom:10px">
       <div class="field"><label>地點名稱</label><input id="loc-name" placeholder="例：高雄倉庫、貨車BYG" style="width:180px"></div>
       <div class="field"><label>類型</label><select id="loc-kind"><option>倉庫</option><option>貨車</option><option>其他</option></select></div>
       <button class="btn" id="loc-add">＋ 新增地點</button>
-    </div>
+    </div>`:''}
     ${state.locations.length===0?'<div class="empty">尚無自訂地點。案場已可直接當位置選用。</div>':`<table><thead><tr><th>名稱</th><th>類型</th><th></th></tr></thead><tbody>${rows}</tbody></table>`}
   </div>`;
 }
@@ -2388,14 +2412,14 @@ function viewAdvances(){
   </div>
   ${partners.length===0?'<div class="card"><div class="empty">尚未標記股東。請到「員工/案場」分頁把股東（潘東澤、潘建龍）設為股東。</div></div>':`
   <div class="card">
-    <div style="font-size:14px;font-weight:600;margin-bottom:4px">新增代墊款</div>
-    <div class="row">
+    ${foldBtn('adv','新增代墊款')}
+    ${formOpen.adv?`<div class="row" style="margin-top:8px">
       <div class="field"><label>日期</label><input type="date" id="adv-date" value="${new Date().toISOString().slice(0,10)}"></div>
       <div class="field"><label>股東</label><select id="adv-emp">${partnerOpts}</select></div>
       <div class="field"><label>金額</label><input type="number" id="adv-amount" min="0" step="100" style="width:120px"></div>
       <div class="field" style="flex:1;min-width:200px"><label>用途說明</label><input id="adv-purpose" placeholder="例：酷擊五金材料、Hilti租金、台北住宿"></div>
       <button class="btn" id="adv-add">＋ 新增</button>
-    </div>
+    </div>`:''}
   </div>
   <div class="metric" style="margin-bottom:16px"><div class="l">本期應領總額（全體股東）</div><div class="v">${money(grandDue)}</div></div>
   ${cards}`}`;
@@ -2457,13 +2481,13 @@ function viewAccounts(){
   </div>
 
   <div class="card">
-    <div style="font-size:14px;font-weight:600;margin-bottom:4px">帳戶管理</div>
-    <p class="sub">建立帳戶並設定「期初餘額」（承接上期的金額）。餘額＝期初＋所有收入−所有支出，系統自動計算。</p>
+    ${foldBtn('acc','新增帳戶')}
+    ${formOpen.acc?`<p class="sub" style="margin-top:6px">建立帳戶並設定「期初餘額」（承接上期的金額）。餘額＝期初＋所有收入−所有支出，系統自動計算。</p>
     <div class="row" style="margin-bottom:10px">
       <div class="field"><label>帳戶名稱</label><input id="acc-name" placeholder="例：東澤工程帳戶" style="width:180px"></div>
       <div class="field"><label>期初餘額</label><input type="number" id="acc-opening" min="0" step="1000" value="0" style="width:130px"></div>
       <button class="btn" id="acc-add">＋ 新增帳戶</button>
-    </div>
+    </div>`:''}
     ${accs.length===0?'<div class="empty">尚無帳戶，請先新增。</div>':`<table><thead><tr><th>帳戶</th><th class="num">期初</th><th class="num">目前餘額</th><th></th></tr></thead>
       <tbody>${accs.map(a=>{
         const inUse=state.ledger.some(t=>t.accId===a.id);
@@ -2474,15 +2498,15 @@ function viewAccounts(){
 
   ${accs.length===0?'':`
   <div class="card">
-    <div style="font-size:14px;font-weight:600;margin-bottom:4px">記一筆收支</div>
-    <div class="row">
+    ${foldBtn('led','記一筆收支')}
+    ${formOpen.led?`<div class="row" style="margin-top:8px">
       <div class="field"><label>日期</label><input type="date" id="led-date" value="${new Date().toISOString().slice(0,10)}"></div>
       <div class="field"><label>帳戶</label><select id="led-acc">${accOpts}</select></div>
       <div class="field"><label>性質</label><select id="led-kind"><option value="out">支出（−）</option><option value="in">收入（+）</option></select></div>
       <div class="field"><label>金額</label><input type="number" id="led-amount" min="0" step="100" style="width:120px"></div>
       <div class="field" style="flex:1;min-width:200px"><label>項目/來源說明</label><input id="led-note" placeholder="例：酷擊五金材料、Hilti租金、台北住宿"></div>
       <button class="btn" id="led-add">＋ 記帳</button>
-    </div>
+    </div>`:''}
   </div>
   <div class="card">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:8px">
@@ -2838,8 +2862,8 @@ function viewBillingReq(){
     <div class="metric"><div class="l">未結算</div><div class="v" style="font-size:21px">${money(unsettled)}</div></div>
   </div>
   <div class="card">
-    <div style="font-size:14px;font-weight:600;margin-bottom:8px">新增請款單</div>
-    <div class="row">
+    ${foldBtn('bnr','新增請款單')}
+    ${formOpen.bnr?`<div class="row" style="margin-top:8px">
       <div class="field"><label>日期</label><input type="date" id="bnr-date" value="${new Date().toISOString().slice(0,10)}"></div>
       <div class="field" style="flex:1;min-width:150px"><label>案場</label><select id="bnr-site">${siteSelOpts}</select></div>
       <div class="field"><label>單位</label><input id="bnr-unit" value="式" placeholder="式、天、坪" style="width:90px"></div>
@@ -2851,7 +2875,7 @@ function viewBillingReq(){
       <div class="field" style="flex:1;min-width:180px"><label>說明</label><input id="bnr-note" placeholder="例：第一期工程款"></div>
       <div class="field"><label>結算</label><select id="bnr-settled"><option value="">未結算</option><option value="1">已結算</option></select></div>
     </div>
-    <div class="row" style="margin-top:10px"><button class="btn" id="bnr-add">＋ 新增請款單</button></div>
+    <div class="row" style="margin-top:10px"><button class="btn" id="bnr-add">＋ 新增請款單</button></div>`:''}
   </div>
   ${list.length===0?'<div class="card"><div class="empty">尚無請款單。點上方「新增請款單」開始登記。</div></div>':cards}`;
 }
@@ -2901,8 +2925,8 @@ function viewBillingAdd(){
     <div class="metric"><div class="l">未結算</div><div class="v" style="font-size:21px">${money(unsettled)}</div></div>
   </div>
   <div class="card">
-    <div style="font-size:14px;font-weight:600;margin-bottom:8px">新增追加單</div>
-    <div class="row">
+    ${foldBtn('bna','新增追加單')}
+    ${formOpen.bna?`<div class="row" style="margin-top:8px">
       <div class="field"><label>日期</label><input type="date" id="bna-date" value="${new Date().toISOString().slice(0,10)}"></div>
       <div class="field" style="flex:1;min-width:150px"><label>案場</label><select id="bna-site">${siteSelOpts}</select></div>
       <div class="field"><label>單位</label><input id="bna-unit" value="式" placeholder="式、天、坪" style="width:90px"></div>
@@ -2914,7 +2938,7 @@ function viewBillingAdd(){
       <div class="field" style="flex:1;min-width:150px"><label>備注</label><input id="bna-remark" placeholder="其他備注"></div>
       <div class="field"><label>結算</label><select id="bna-settled"><option value="">未結算</option><option value="1">已結算</option></select></div>
     </div>
-    <div class="row" style="margin-top:10px"><button class="btn" id="bna-add">＋ 新增追加單</button></div>
+    <div class="row" style="margin-top:10px"><button class="btn" id="bna-add">＋ 新增追加單</button></div>`:''}
   </div>
   ${list.length===0?'<div class="card"><div class="empty">尚無追加單。點上方「新增追加單」開始登記，新增後可在每張卡片上傳施作照片。</div></div>':cards}`;
 }
@@ -2975,8 +2999,8 @@ function viewMeasurements(){
     <div class="metric"><div class="l">累計金額</div><div class="v" style="font-size:21px">${money(grandTotal)}</div></div>
   </div>
   <div class="card">
-    <div style="font-size:14px;font-weight:600;margin-bottom:8px">新增計量明細</div>
-    <div class="row">
+    ${foldBtn('meas','新增計量明細')}
+    ${formOpen.meas?`<div class="row" style="margin-top:8px">
       <div class="field"><label>日期</label><input type="date" id="meas-date" value="${new Date().toISOString().slice(0,10)}"></div>
       <div class="field" style="flex:1;min-width:150px"><label>案場</label><select id="meas-site">${siteSelOpts}</select></div>
       <div class="field" style="flex:1;min-width:160px"><label>項目</label><input id="meas-item" placeholder="例：貼磁磚"></div>
@@ -2986,7 +3010,7 @@ function viewMeasurements(){
       <div class="field"><label>小計</label><div id="meas-subtotal" class="num" style="height:36px;display:flex;align-items:center;font-weight:700">$0</div></div>
       <div class="field" style="flex:1;min-width:150px"><label>備注</label><input id="meas-note" placeholder="（選填）"></div>
     </div>
-    <div class="row" style="margin-top:10px"><button class="btn" id="meas-add">＋ 新增</button></div>
+    <div class="row" style="margin-top:10px"><button class="btn" id="meas-add">＋ 新增</button></div>`:''}
   </div>
   ${list.length===0?'<div class="card"><div class="empty">尚無計量明細。點上方「新增」開始登記。</div></div>':siteCards}`;
 }
