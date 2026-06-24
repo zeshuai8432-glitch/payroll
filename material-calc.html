@@ -1232,7 +1232,7 @@
 // ════════════════════════════════════
 // GAS BACKEND
 // ════════════════════════════════════
-const GAS_URL = ''; // ← 之後填入 GAS 網址
+const GAS_URL = 'https://script.google.com/macros/s/AKfycbwNB5-TufVOyK6tOf39aYfJeoQeAkKwxVVN6R-X3rwziiH7vZrRJb0JmruhQ80nIv-o/exec';
 
 // ════════════════════════════════════
 // STATE
@@ -1340,34 +1340,56 @@ const BOARD_SIZES = {
 // ════════════════════════════════════
 // LOGIN
 // ════════════════════════════════════
-function doLogin() {
+async function doLogin() {
   const name = document.getElementById('login-name').value.trim();
   const pwd = document.getElementById('login-pwd').value.trim();
-  if (!name || !pwd) {
-    showLoginError('請輸入名字和密碼');
-    return;
-  }
-  // 支援中文名字：用 encodeURIComponent 再 btoa
-  let key;
+  if (!name || !pwd) { showLoginError('請輸入名字和密碼'); return; }
+
+  const btn = document.getElementById('login-btn-text');
+  btn.innerHTML = '<span class="loader"></span>';
+
   try {
-    key = btoa(encodeURIComponent(name + ':' + pwd));
+    // 1. 登入/註冊
+    const loginRes = await gasCall('login', { username: name, password: pwd });
+    if (!loginRes.ok) { showLoginError(loginRes.error || '登入失敗'); btn.textContent = '登入'; return; }
+
+    state.user = name;
+    state.password = pwd; // 保存用於後續 API 呼叫
+
+    // 2. 載入雲端資料
+    const dataRes = await gasCall('loadData', { username: name, password: pwd });
+    let userData;
+    if (dataRes.ok && dataRes.data) {
+      userData = dataRes.data;
+      // 確保新欄位存在
+      if (!userData.materials.mainFrames) userData.materials.mainFrames = JSON.parse(JSON.stringify(DEFAULT_MATERIALS.mainFrames));
+      if (!userData.materials.subFrames) userData.materials.subFrames = JSON.parse(JSON.stringify(DEFAULT_MATERIALS.subFrames));
+      if (!userData.materials.trims) userData.materials.trims = JSON.parse(JSON.stringify(DEFAULT_MATERIALS.trims));
+      if (!userData.materials.rods) userData.materials.rods = JSON.parse(JSON.stringify(DEFAULT_MATERIALS.rods));
+      if (!userData.materials.hardware) userData.materials.hardware = JSON.parse(JSON.stringify(DEFAULT_MATERIALS.hardware));
+    } else {
+      userData = { projects: [], spaces: {}, zones: {}, materials: JSON.parse(JSON.stringify(DEFAULT_MATERIALS)) };
+    }
+
+    loadUserData(userData);
+    document.getElementById('login-screen').style.display = 'none';
+    document.getElementById('app').style.display = 'flex';
+    document.getElementById('user-badge').textContent = state.user;
+    if (loginRes.isNew) {
+      setTimeout(() => alert('歡迎！帳號已自動建立，資料將儲存在雲端。'), 300);
+    }
   } catch(e) {
-    key = encodeURIComponent(name + ':' + pwd).replace(/[^a-zA-Z0-9]/g, '_');
+    showLoginError('連線失敗，請稍後再試');
   }
-  const existing = localStorage.getItem('mc_user_' + key);
-  let userData;
-  if (existing) {
-    userData = JSON.parse(existing);
-  } else {
-    userData = { name, key, projects: [], spaces: {}, zones: {}, materials: JSON.parse(JSON.stringify(DEFAULT_MATERIALS)) };
-    localStorage.setItem('mc_user_' + key, JSON.stringify(userData));
-  }
-  state.user = userData.name;
-  state.token = key;
-  loadUserData(userData);
-  document.getElementById('login-screen').style.display = 'none';
-  document.getElementById('app').style.display = 'flex';
-  document.getElementById('user-badge').textContent = state.user;
+  btn.textContent = '登入';
+}
+
+async function gasCall(action, payload) {
+  const res = await fetch(GAS_URL, {
+    method: 'POST',
+    body: JSON.stringify({ action, payload }),
+  });
+  return await res.json();
 }
 
 function showLoginError(msg) {
@@ -1377,7 +1399,7 @@ function showLoginError(msg) {
 }
 
 function doLogout() {
-  state = { user: null, token: null, projects: [], activeProjectId: null, spaces: {}, zones: {}, editingProject: null, editingSpace: null, editingZone: null, zoneType: 'partition', sides: 'single', materials: null };
+  state = { user: null, password: null, projects: [], activeProjectId: null, spaces: {}, zones: {}, editingProject: null, editingSpace: null, editingZone: null, zoneType: 'partition', sides: 'single', materials: null };
   document.getElementById('login-screen').style.display = 'flex';
   document.getElementById('app').style.display = 'none';
   document.getElementById('login-name').value = '';
@@ -1393,10 +1415,14 @@ function loadUserData(data) {
   renderMaterials();
 }
 
-function saveUserData() {
-  if (!state.token) return;
-  const data = { name: state.user, key: state.token, projects: state.projects, spaces: state.spaces, zones: state.zones, materials: state.materials };
-  localStorage.setItem('mc_user_' + state.token, JSON.stringify(data));
+async function saveUserData() {
+  if (!state.user || !state.password) return;
+  const data = { projects: state.projects, spaces: state.spaces, zones: state.zones, materials: state.materials };
+  try {
+    await gasCall('saveData', { username: state.user, password: state.password, data });
+  } catch(e) {
+    console.error('雲端儲存失敗', e);
+  }
 }
 
 // ════════════════════════════════════
