@@ -2105,13 +2105,14 @@ function printBillingDoc(id){
   const sigSection=`
     <div id="sig-section" style="max-width:800px;margin:24px auto 0;padding:0 0 32px">
       <div style="font-size:14px;font-weight:700;margin-bottom:10px;color:var(--accent)">業主簽名</div>
-      <canvas id="sig-canvas" width="640" height="180"
+      <canvas id="sig-canvas" width="640" height="200"
         style="border:2px dashed #aaa;border-radius:10px;background:#f8f9f8;touch-action:none;display:block;width:100%;max-width:640px;cursor:crosshair"></canvas>
       <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-        <button id="sig-clear" style="height:40px;padding:0 16px;border:1px solid var(--line2);border-radius:8px;background:transparent;cursor:pointer;font-size:13px;color:var(--text)">清除</button>
+        <button id="sig-erase" style="height:40px;padding:0 16px;border:1px solid var(--line2);border-radius:8px;background:transparent;cursor:pointer;font-size:13px;color:var(--text)">橡皮擦</button>
+        <button id="sig-clear" style="height:40px;padding:0 16px;border:1px solid var(--line2);border-radius:8px;background:transparent;cursor:pointer;font-size:13px;color:var(--text)">全部清除</button>
         <button id="sig-save" class="btn" style="height:40px;padding:0 20px;font-size:14px">確認簽名並儲存</button>
       </div>
-      <div style="font-size:12px;color:var(--muted);margin-top:8px">簽名完成後點「確認簽名並儲存」，再按「列印 / 存成 PDF」即可產生含簽名的 PDF。</div>
+      <div style="font-size:12px;color:var(--muted);margin-top:8px">用手指或 Apple Pencil 簽名。簽錯可點「橡皮擦」局部修改，或「全部清除」重來。簽好後點「確認簽名並儲存」。</div>
     </div>`;
 
   ov.innerHTML=`
@@ -2128,13 +2129,27 @@ function printBillingDoc(id){
   document.getElementById('po-close').onclick=()=>ov.remove();
 
   const resignBtn=document.getElementById('sig-resign');
-  if(resignBtn) resignBtn.onclick=()=>{ delete b.signedPhoto; saveData(); printBillingDoc(id); };
+  if(resignBtn) resignBtn.onclick=()=>{ delete b.signedPhoto; saveData(); render(); printBillingDoc(id); };
 
   const canvas=document.getElementById('sig-canvas');
   if(canvas){
     const ctx=canvas.getContext('2d');
-    ctx.lineWidth=2.5; ctx.lineCap='round'; ctx.lineJoin='round'; ctx.strokeStyle='#111';
-    let drawing=false, lx=0, ly=0;
+    ctx.lineCap='round'; ctx.lineJoin='round';
+    let drawing=false, lx=0, ly=0, eraserMode=false;
+
+    function applyMode(){
+      if(eraserMode){
+        ctx.globalCompositeOperation='destination-out';
+        ctx.lineWidth=24;
+        canvas.style.cursor='cell';
+      } else {
+        ctx.globalCompositeOperation='source-over';
+        ctx.lineWidth=2.5;
+        ctx.strokeStyle='#111';
+        canvas.style.cursor='crosshair';
+      }
+    }
+    applyMode();
 
     function getPos(e){
       const r=canvas.getBoundingClientRect();
@@ -2142,25 +2157,38 @@ function printBillingDoc(id){
       if(e.touches) return [(e.touches[0].clientX-r.left)*sx,(e.touches[0].clientY-r.top)*sy];
       return [(e.clientX-r.left)*sx,(e.clientY-r.top)*sy];
     }
+    function startDraw(e){ applyMode(); drawing=true; [lx,ly]=getPos(e); }
     function draw(e){
       if(!drawing) return;
       const[x,y]=getPos(e); ctx.beginPath(); ctx.moveTo(lx,ly); ctx.lineTo(x,y); ctx.stroke(); lx=x; ly=y;
     }
-    canvas.addEventListener('mousedown',e=>{drawing=true;[lx,ly]=getPos(e);});
+    canvas.addEventListener('mousedown',startDraw);
     canvas.addEventListener('mousemove',draw);
     canvas.addEventListener('mouseup',()=>drawing=false);
     canvas.addEventListener('mouseleave',()=>drawing=false);
-    canvas.addEventListener('touchstart',e=>{e.preventDefault();drawing=true;[lx,ly]=getPos(e);},{passive:false});
+    canvas.addEventListener('touchstart',e=>{e.preventDefault();startDraw(e);},{passive:false});
     canvas.addEventListener('touchmove',e=>{e.preventDefault();draw(e);},{passive:false});
     canvas.addEventListener('touchend',()=>drawing=false);
 
-    document.getElementById('sig-clear').onclick=()=>ctx.clearRect(0,0,canvas.width,canvas.height);
+    const eraseBtn=document.getElementById('sig-erase');
+    eraseBtn.onclick=()=>{
+      eraserMode=!eraserMode;
+      eraseBtn.textContent=eraserMode?'✏ 切回筆':'橡皮擦';
+      eraseBtn.style.background=eraserMode?'#fde9d4':'transparent';
+      eraseBtn.style.color=eraserMode?'#9a5b1a':'var(--text)';
+      applyMode();
+    };
+    document.getElementById('sig-clear').onclick=()=>{ ctx.globalCompositeOperation='source-over'; ctx.clearRect(0,0,canvas.width,canvas.height); applyMode(); };
 
     document.getElementById('sig-save').onclick=()=>{
       const d=ctx.getImageData(0,0,canvas.width,canvas.height).data;
       if(!d.some((v,i)=>i%4===3&&v>10)){ alert('請先在上方欄位簽名'); return; }
-      b.signedPhoto=canvas.toDataURL('image/png');
+      // 把透明背景填白再轉存，確保 PDF 顯示正確
+      const tmp=document.createElement('canvas'); tmp.width=canvas.width; tmp.height=canvas.height;
+      const tc=tmp.getContext('2d'); tc.fillStyle='#fff'; tc.fillRect(0,0,tmp.width,tmp.height); tc.drawImage(canvas,0,0);
+      b.signedPhoto=tmp.toDataURL('image/jpeg',0.9);
       saveData();
+      render();
       printBillingDoc(id);
     };
   }
