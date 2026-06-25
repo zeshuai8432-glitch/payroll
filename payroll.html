@@ -2336,27 +2336,27 @@ function printBillingDocs(ids){
 
 // 請款追蹤明細 PDF
 function exportBillingPDF(){
-  if(state.billings.length===0) return;
+  const settled=state.billings.filter(b=>b.settled);
+  if(settled.length===0){ alert('目前沒有已結算的請款單或追加單'); return; }
   const groups={};
-  state.billings.forEach(b=>{ const k=b.site||'（未填案場）'; (groups[k]=groups[k]||[]).push(b); });
+  settled.forEach(b=>{ const k=b.site||'（未填案場）'; (groups[k]=groups[k]||[]).push(b); });
   const names=Object.keys(groups).sort((a,b)=>a.localeCompare(b));
   let secs='';
   let GB=0,GS=0;
   names.forEach(name=>{
     const list=groups[name].sort((a,b)=>(a.date||'').localeCompare(b.date||''));
-    const billed=list.reduce((s,b)=>s+(Number(b.amount)||0),0);
-    const settled=list.filter(b=>b.settled).reduce((s,b)=>s+(Number(b.amount)||0),0);
-    GB+=billed; GS+=settled;
+    const total=list.reduce((s,b)=>s+(Number(b.amount)||0),0);
+    GB+=total;
     const contract=Number(state.contracts[name])||0;
-    const cline=contract>0?`　合約總額 ${money(contract)}　未請款 ${money(contract-billed)}`:'';
-    const rows=list.map(b=>`<tr><td>${esc(b.date||'')}</td><td class="num">${money(b.amount)}</td><td>${esc(b.method||'')}</td><td>${esc(b.client||'')}</td><td>${b.settled?'已結算':'未結算'}</td></tr>`).join('');
-    secs+=`<div class="sec">${esc(name)}　已請款 ${money(billed)}・已結算 ${money(settled)}・未結算 ${money(billed-settled)}${cline}</div>
-      <table><thead><tr><th>請款日</th><th class="num">金額</th><th>方式</th><th>業主</th><th>結算</th></tr></thead><tbody>${rows}</tbody></table>`;
+    const cline=contract>0?`　合約總額 ${money(contract)}　未請款 ${money(contract-total)}`:'';
+    const rows=list.map(b=>`<tr><td>${esc(b.date||'')}</td><td class="num">${money(b.amount)}</td><td>${esc(b.method||'')}</td><td>${esc(b.client||'')}</td><td>${esc(b.note||b.docType||'')}</td></tr>`).join('');
+    secs+=`<div class="sec">${esc(name)}　已結算 ${money(total)}${cline}</div>
+      <table><thead><tr><th>日期</th><th class="num">金額</th><th>方式</th><th>業主</th><th>說明</th></tr></thead><tbody>${rows}</tbody></table>`;
   });
-  const inner=`<h1>案場請款追蹤明細</h1>
-    <div class="meta">列印日：${new Date().toISOString().slice(0,10)}　|　累計請款 ${money(GB)}・已結算 ${money(GS)}・未結算 ${money(GB-GS)}</div>
+  const inner=`<h1>案場請款追蹤明細（已結算）</h1>
+    <div class="meta">列印日：${new Date().toISOString().slice(0,10)}　|　已結算合計 ${money(GB)}</div>
     ${secs}
-    <p class="sub">金額四捨五入至整數。</p>`;
+    <p class="sub">僅列入已結算筆數。未結算請款單、追加單不計入。金額四捨五入至整數。</p>`;
   printHTML('請款追蹤明細', inner);
 }
 
