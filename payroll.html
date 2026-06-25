@@ -446,9 +446,10 @@ function applyData(d){
   if(!d) return;
   state.employees=d.employees||[]; state.sites=d.sites||[]; state.attendance=d.attendance||[]; state.adjustments=d.adjustments||[]; state.loans=d.loans||[]; state.tools=d.tools||[]; state.locations=d.locations||[]; state.assets=d.assets||[]; state.advances=d.advances||[]; state.accounts=d.accounts||[]; state.ledger=d.ledger||[]; state.deals=d.deals||[]; state.billings=d.billings||[]; state.measurements=d.measurements||[]; state.contracts=d.contracts||{}; state.costs=d.costs||[]; state.parkAccId=d.parkAccId||''; state.oweBonus=d.oweBonus||{}; state.minFund=(d.minFund!==undefined?d.minFund:'');
   state.employees.forEach(e=>{ if(e.active===undefined) e.active=true; });
+  if(d.billingSigs) billingSigs=d.billingSigs;
 }
 function packData(){
-  return {employees:state.employees,sites:state.sites,attendance:state.attendance,adjustments:state.adjustments,loans:state.loans,tools:state.tools,locations:state.locations,assets:state.assets,advances:state.advances,accounts:state.accounts,ledger:state.ledger,deals:state.deals,billings:state.billings,measurements:state.measurements,contracts:state.contracts,costs:state.costs,parkAccId:state.parkAccId,oweBonus:state.oweBonus,minFund:state.minFund,savedAt:Date.now()};
+  return {employees:state.employees,sites:state.sites,attendance:state.attendance,adjustments:state.adjustments,loans:state.loans,tools:state.tools,locations:state.locations,assets:state.assets,advances:state.advances,accounts:state.accounts,ledger:state.ledger,deals:state.deals,billings:state.billings,measurements:state.measurements,contracts:state.contracts,costs:state.costs,parkAccId:state.parkAccId,oweBonus:state.oweBonus,minFund:state.minFund,billingSigs:billingSigs,savedAt:Date.now()};
 }
 
 // 先讀本機快取（讓畫面秒開），再從雲端拉最新
@@ -2124,10 +2125,15 @@ function openFullscreenSign(onSaved){
   document.getElementById('fs-done').onclick=()=>{
     const d=ctx.getImageData(0,0,cv.width,cv.height).data;
     if(!d.some((v,i)=>i%4===3&&v>10)){ alert('請先簽名或寫上補充說明'); return; }
-    const tmp=document.createElement('canvas'); tmp.width=cv.width; tmp.height=cv.height;
-    const tc=tmp.getContext('2d'); tc.fillStyle='#fff'; tc.fillRect(0,0,tmp.width,tmp.height); tc.drawImage(cv,0,0);
+    // 縮小到最大 800×500 再存，控制檔案大小讓雲端同步正常
+    const MAX_W=800, MAX_H=500;
+    const scale=Math.min(MAX_W/cv.width, MAX_H/cv.height, 1);
+    const tmp=document.createElement('canvas');
+    tmp.width=Math.round(cv.width*scale); tmp.height=Math.round(cv.height*scale);
+    const tc=tmp.getContext('2d'); tc.fillStyle='#fff'; tc.fillRect(0,0,tmp.width,tmp.height);
+    tc.drawImage(cv,0,0,tmp.width,tmp.height);
     fs.remove();
-    onSaved(tmp.toDataURL('image/jpeg',0.92));
+    onSaved(tmp.toDataURL('image/jpeg',0.85));
   };
 }
 
@@ -2207,7 +2213,7 @@ function printBillingDoc(id){
   if(resignBtn) resignBtn.onclick=()=>{ deleteSig(id); render(); printBillingDoc(id); };
 
   const fsBtn=document.getElementById('sig-fullscreen-btn');
-  if(fsBtn) fsBtn.onclick=()=>openFullscreenSign(dataUrl=>{ saveSig(id,dataUrl); render(); printBillingDoc(id); });
+  if(fsBtn) fsBtn.onclick=()=>openFullscreenSign(dataUrl=>{ saveSig(id,dataUrl); saveData(); render(); printBillingDoc(id); });
 
   const canvas=document.getElementById('sig-canvas');
   if(canvas){
@@ -2264,7 +2270,8 @@ function printBillingDoc(id){
       // 把透明背景填白再轉存，確保 PDF 顯示正確
       const tmp=document.createElement('canvas'); tmp.width=canvas.width; tmp.height=canvas.height;
       const tc=tmp.getContext('2d'); tc.fillStyle='#fff'; tc.fillRect(0,0,tmp.width,tmp.height); tc.drawImage(canvas,0,0);
-      saveSig(id, tmp.toDataURL('image/jpeg',0.9));
+      saveSig(id, tmp.toDataURL('image/jpeg',0.85));
+      saveData();
       render();
       printBillingDoc(id);
     };
