@@ -446,7 +446,7 @@ function applyData(d){
   state.employees.forEach(e=>{ if(e.active===undefined) e.active=true; });
 }
 function packData(){
-  return {employees:state.employees,sites:state.sites,attendance:state.attendance,adjustments:state.adjustments,loans:state.loans,tools:state.tools,locations:state.locations,assets:state.assets,advances:state.advances,accounts:state.accounts,ledger:state.ledger,deals:state.deals,billings:state.billings,measurements:state.measurements,contracts:state.contracts,costs:state.costs,parkAccId:state.parkAccId,oweBonus:state.oweBonus,minFund:state.minFund};
+  return {employees:state.employees,sites:state.sites,attendance:state.attendance,adjustments:state.adjustments,loans:state.loans,tools:state.tools,locations:state.locations,assets:state.assets,advances:state.advances,accounts:state.accounts,ledger:state.ledger,deals:state.deals,billings:state.billings,measurements:state.measurements,contracts:state.contracts,costs:state.costs,parkAccId:state.parkAccId,oweBonus:state.oweBonus,minFund:state.minFund,savedAt:Date.now()};
 }
 
 // 先讀本機快取（讓畫面秒開），再從雲端拉最新
@@ -458,20 +458,32 @@ async function loadCloud(){
   try {
     const res=await fetch(CLOUD_URL, {method:'GET'});
     const j=await res.json();
-    if(j&&j.ok&&j.data){ applyData(JSON.parse(j.data)); try{localStorage.setItem(LS,j.data);}catch(e){} setCloud('已同步'); }
-    else { setCloud('雲端尚無資料'); }
+    if(j&&j.ok&&j.data){
+      const cloudData=JSON.parse(j.data);
+      const localRaw=localStorage.getItem(LS);
+      const localTs=localRaw?((JSON.parse(localRaw)||{}).savedAt||0):0;
+      const cloudTs=cloudData.savedAt||0;
+      if(cloudTs>=localTs){
+        // 雲端較新，套用
+        applyData(cloudData); try{localStorage.setItem(LS,j.data);}catch(e){} setCloud('已同步');
+      } else {
+        // 本機較新，主動推上雲端
+        setCloud('本機資料較新，同步中…'); pushCloud();
+      }
+      _lastCloudJson=j.data;
+    } else { setCloud('雲端尚無資料'); }
   } catch(e){ setCloud('雲端讀取失敗（顯示本機資料）'); }
   render();
 }
 
 let saveTimer=null, saving=false, pendingSave=false;
 function saveData(){
-  // 本機立即存（不怕當掉）
+  // 本機立即存
   try{ localStorage.setItem(LS, JSON.stringify(packData())); }catch(e){}
-  // 雲端防抖動：1秒內多次變更只送一次
+  // 雲端防抖動：300ms 內多次變更只送一次
   if(saveTimer) clearTimeout(saveTimer);
   setCloud('儲存中…');
-  saveTimer=setTimeout(pushCloud, 800);
+  saveTimer=setTimeout(pushCloud, 300);
 }
 async function pushCloud(){
   if(saving){ pendingSave=true; return; }
@@ -3640,6 +3652,12 @@ function exportYearVerify(){
   const period=(yearFrom||yearTo)?`${yearFrom||'起'} ~ ${yearTo||'今'}`:'全部期間';
   printHTML('年度總結·驗算明細', `<h1>年度總結·驗算明細</h1><div class="meta">期間：${period}　|　列印日：${new Date().toISOString().slice(0,10)}</div>${secs}`);
 }
+
+// 關閉頁面前強制送出（sendBeacon 在 beforeunload 裡仍可執行）
+window.addEventListener('beforeunload', ()=>{
+  if(saveTimer){ clearTimeout(saveTimer); saveTimer=null; }
+  try{ navigator.sendBeacon(CLOUD_URL, JSON.stringify(packData())); }catch(e){}
+});
 
 loadLocal(); loadPhotos(); render(); loadCloud();
 </script>
