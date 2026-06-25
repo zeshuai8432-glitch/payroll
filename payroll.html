@@ -2196,33 +2196,17 @@ function printBillingDoc(id){
   const ov=document.createElement('div');
   ov.id='print-overlay';
 
-  const sigSection=`
-    <div id="sig-section" style="max-width:800px;margin:24px auto 0;padding:0 0 32px">
-      <div style="font-size:14px;font-weight:700;margin-bottom:12px;color:var(--accent)">業主簽名</div>
-      <button id="sig-fullscreen-btn" class="btn" style="height:52px;padding:0 28px;font-size:16px;width:100%;max-width:640px;display:block;margin-bottom:14px">✍ 全版面簽名（業主補充用）</button>
-      <div style="font-size:12px;color:var(--muted);margin-bottom:14px">點上方按鈕開啟全版面畫布，業主可用 Apple Pencil 簽名或補充說明。</div>
-      <details style="max-width:640px">
-        <summary style="font-size:12px;color:var(--muted);cursor:pointer;user-select:none">或直接在此快速簽名 ▸</summary>
-        <div style="margin-top:10px">
-          <canvas id="sig-canvas" width="640" height="160"
-            style="border:2px dashed #aaa;border-radius:10px;background:#f8f9f8;touch-action:none;display:block;width:100%;cursor:crosshair"></canvas>
-          <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-            <button id="sig-erase" style="height:38px;padding:0 14px;border:1px solid var(--line2);border-radius:8px;background:transparent;cursor:pointer;font-size:13px;color:var(--text)">橡皮擦</button>
-            <button id="sig-clear" style="height:38px;padding:0 14px;border:1px solid var(--line2);border-radius:8px;background:transparent;cursor:pointer;font-size:13px;color:var(--text)">全部清除</button>
-            <button id="sig-save" class="btn" style="height:38px;padding:0 18px;font-size:13px">確認並儲存</button>
-          </div>
-        </div>
-      </details>
-    </div>`;
-
   ov.innerHTML=`
     <div class="pbar">
-      ${sig?`<span style="color:#16a34a;font-size:13px;font-weight:600">✓ 已取得簽名</span><button id="sig-resign" class="act muted" style="font-size:12px;border:1px solid var(--line2);border-radius:8px;padding:0 10px">重新簽名</button>`:''}
-      <button class="btn" id="po-print">列印 / 存成 PDF</button>
+      ${sig
+        ?`<span style="color:#16a34a;font-size:13px;font-weight:600">✓ 已簽核</span>
+          <button id="sig-resign" class="act muted" style="font-size:12px;border:1px solid var(--line2);border-radius:8px;padding:0 10px">重新簽名</button>`
+        :`<button id="sig-fullscreen-btn" class="btn" style="background:#f59e0b;border-color:#f59e0b;padding:0 16px;font-size:14px">✍ 請業主簽名</button>`
+      }
+      <button class="btn" id="po-print" style="margin-left:auto">列印 / 存成 PDF</button>
       <button class="act" id="po-close" style="border:1px solid var(--line2);border-radius:8px;padding:0 14px">關閉</button>
     </div>
-    <div class="pdoc">${inner}</div>
-    ${sig?'':sigSection}`;
+    <div class="pdoc">${inner}</div>`;
 
   document.body.appendChild(ov);
   document.getElementById('po-print').onclick=()=>window.print();
@@ -2234,67 +2218,6 @@ function printBillingDoc(id){
   const fsBtn=document.getElementById('sig-fullscreen-btn');
   if(fsBtn) fsBtn.onclick=()=>openFullscreenSign(dataUrl=>{ saveSig(id,dataUrl); saveData(); render(); printBillingDoc(id); });
 
-  const canvas=document.getElementById('sig-canvas');
-  if(canvas){
-    const ctx=canvas.getContext('2d');
-    ctx.lineCap='round'; ctx.lineJoin='round';
-    let drawing=false, lx=0, ly=0, eraserMode=false;
-
-    function applyMode(){
-      if(eraserMode){
-        ctx.globalCompositeOperation='destination-out';
-        ctx.lineWidth=24;
-        canvas.style.cursor='cell';
-      } else {
-        ctx.globalCompositeOperation='source-over';
-        ctx.lineWidth=2.5;
-        ctx.strokeStyle='#111';
-        canvas.style.cursor='crosshair';
-      }
-    }
-    applyMode();
-
-    function getPos(e){
-      const r=canvas.getBoundingClientRect();
-      const sx=canvas.width/r.width, sy=canvas.height/r.height;
-      if(e.touches) return [(e.touches[0].clientX-r.left)*sx,(e.touches[0].clientY-r.top)*sy];
-      return [(e.clientX-r.left)*sx,(e.clientY-r.top)*sy];
-    }
-    function startDraw(e){ applyMode(); drawing=true; [lx,ly]=getPos(e); }
-    function draw(e){
-      if(!drawing) return;
-      const[x,y]=getPos(e); ctx.beginPath(); ctx.moveTo(lx,ly); ctx.lineTo(x,y); ctx.stroke(); lx=x; ly=y;
-    }
-    canvas.addEventListener('mousedown',startDraw);
-    canvas.addEventListener('mousemove',draw);
-    canvas.addEventListener('mouseup',()=>drawing=false);
-    canvas.addEventListener('mouseleave',()=>drawing=false);
-    canvas.addEventListener('touchstart',e=>{e.preventDefault();startDraw(e);},{passive:false});
-    canvas.addEventListener('touchmove',e=>{e.preventDefault();draw(e);},{passive:false});
-    canvas.addEventListener('touchend',()=>drawing=false);
-
-    const eraseBtn=document.getElementById('sig-erase');
-    eraseBtn.onclick=()=>{
-      eraserMode=!eraserMode;
-      eraseBtn.textContent=eraserMode?'✏ 切回筆':'橡皮擦';
-      eraseBtn.style.background=eraserMode?'#fde9d4':'transparent';
-      eraseBtn.style.color=eraserMode?'#9a5b1a':'var(--text)';
-      applyMode();
-    };
-    document.getElementById('sig-clear').onclick=()=>{ ctx.globalCompositeOperation='source-over'; ctx.clearRect(0,0,canvas.width,canvas.height); applyMode(); };
-
-    document.getElementById('sig-save').onclick=()=>{
-      const d=ctx.getImageData(0,0,canvas.width,canvas.height).data;
-      if(!d.some((v,i)=>i%4===3&&v>10)){ alert('請先在上方欄位簽名'); return; }
-      // 把透明背景填白再轉存，確保 PDF 顯示正確
-      const tmp=document.createElement('canvas'); tmp.width=canvas.width; tmp.height=canvas.height;
-      const tc=tmp.getContext('2d'); tc.fillStyle='#fff'; tc.fillRect(0,0,tmp.width,tmp.height); tc.drawImage(canvas,0,0);
-      saveSig(id, tmp.toDataURL('image/jpeg',0.85));
-      saveData();
-      render();
-      printBillingDoc(id);
-    };
-  }
 
   ov.scrollTop=0;
 }
