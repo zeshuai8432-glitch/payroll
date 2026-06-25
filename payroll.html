@@ -379,6 +379,7 @@
 <script>
 const LS = 'pm_data_v2';
 const LS_PHOTOS = 'pm_billing_photos_v1';
+const LS_SIGS   = 'pm_billing_sigs_v1';
 const CLOUD_URL = 'https://script.google.com/macros/s/AKfycbyMPs38UNzAwX3bcD2n9nQBz0HofUW9qFweSOnmoySs8VW2bJYHn47RdyZLQ8bD8SNWTg/exec';
 let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], tools:[], locations:[], assets:[], advances:[], accounts:[], ledger:[], deals:[], billings:[], measurements:[], contracts:{}, costs:[], parkAccId:'', oweBonus:{}, minFund:'', tab:'entry' };
 let cloudStatus='連線中…';
@@ -502,6 +503,14 @@ function setCloud(s){ cloudStatus=s; const el=document.getElementById('cloud-sta
 function loadData(){ loadLocal(); }
 function loadPhotos(){ try{ const raw=localStorage.getItem(LS_PHOTOS); if(raw) billingPhotos=JSON.parse(raw); }catch(e){} }
 function savePhotos(){ try{ localStorage.setItem(LS_PHOTOS,JSON.stringify(billingPhotos)); }catch(e){} }
+function loadSigs(){
+  try{ const raw=localStorage.getItem(LS_SIGS); if(raw) billingSigs=JSON.parse(raw); }catch(e){}
+  // 遷移：把舊版存在 state.billings 裡的 signedPhoto 搬出來
+  state.billings.forEach(b=>{ if(b.signedPhoto){ billingSigs[b.id]=b.signedPhoto; delete b.signedPhoto; } });
+  try{ localStorage.setItem(LS_SIGS,JSON.stringify(billingSigs)); }catch(e){}
+}
+function saveSig(id,url){ billingSigs[id]=url; try{ localStorage.setItem(LS_SIGS,JSON.stringify(billingSigs)); }catch(e){} }
+function deleteSig(id){ delete billingSigs[id]; try{ localStorage.setItem(LS_SIGS,JSON.stringify(billingSigs)); }catch(e){} }
 
 function computeRecords(records){
   const byKey={};
@@ -2134,8 +2143,9 @@ function printBillingDoc(id){
       ${photos.map(url=>`<img src="${url}" style="width:180px;height:135px;object-fit:cover;border:1px solid #ddd;border-radius:4px">`).join('')}
     </div>`:'';
 
-  const signImgHtml=b.signedPhoto
-    ?`<img src="${b.signedPhoto}" style="display:block;height:72px;max-width:220px;margin-top:6px">`
+  const sig=billingSigs[id]||null;
+  const signImgHtml=sig
+    ?`<img src="${sig}" style="display:block;height:72px;max-width:220px;margin-top:6px">`
     :'';
 
   const inner=`<h1>${esc(type)}</h1>
@@ -2182,22 +2192,22 @@ function printBillingDoc(id){
 
   ov.innerHTML=`
     <div class="pbar">
-      ${b.signedPhoto?`<span style="color:#16a34a;font-size:13px;font-weight:600">✓ 已取得簽名</span><button id="sig-resign" class="act muted" style="font-size:12px;border:1px solid var(--line2);border-radius:8px;padding:0 10px">重新簽名</button>`:''}
+      ${sig?`<span style="color:#16a34a;font-size:13px;font-weight:600">✓ 已取得簽名</span><button id="sig-resign" class="act muted" style="font-size:12px;border:1px solid var(--line2);border-radius:8px;padding:0 10px">重新簽名</button>`:''}
       <button class="btn" id="po-print">列印 / 存成 PDF</button>
       <button class="act" id="po-close" style="border:1px solid var(--line2);border-radius:8px;padding:0 14px">關閉</button>
     </div>
     <div class="pdoc">${inner}</div>
-    ${b.signedPhoto?'':sigSection}`;
+    ${sig?'':sigSection}`;
 
   document.body.appendChild(ov);
   document.getElementById('po-print').onclick=()=>window.print();
   document.getElementById('po-close').onclick=()=>ov.remove();
 
   const resignBtn=document.getElementById('sig-resign');
-  if(resignBtn) resignBtn.onclick=()=>{ delete b.signedPhoto; saveData(); render(); printBillingDoc(id); };
+  if(resignBtn) resignBtn.onclick=()=>{ deleteSig(id); render(); printBillingDoc(id); };
 
   const fsBtn=document.getElementById('sig-fullscreen-btn');
-  if(fsBtn) fsBtn.onclick=()=>openFullscreenSign(dataUrl=>{ b.signedPhoto=dataUrl; saveData(); render(); printBillingDoc(id); });
+  if(fsBtn) fsBtn.onclick=()=>openFullscreenSign(dataUrl=>{ saveSig(id,dataUrl); render(); printBillingDoc(id); });
 
   const canvas=document.getElementById('sig-canvas');
   if(canvas){
@@ -2254,8 +2264,7 @@ function printBillingDoc(id){
       // 把透明背景填白再轉存，確保 PDF 顯示正確
       const tmp=document.createElement('canvas'); tmp.width=canvas.width; tmp.height=canvas.height;
       const tc=tmp.getContext('2d'); tc.fillStyle='#fff'; tc.fillRect(0,0,tmp.width,tmp.height); tc.drawImage(canvas,0,0);
-      b.signedPhoto=tmp.toDataURL('image/jpeg',0.9);
-      saveData();
+      saveSig(id, tmp.toDataURL('image/jpeg',0.9));
       render();
       printBillingDoc(id);
     };
@@ -2726,6 +2735,7 @@ function dealCalc(d){
 }
 let dealPosting=null, dealEditId=null, dealCarry=null, coopCarry=null, billEditId=null, dealAccPick=null, billingAddEditId=null; // 入帳/編輯/帶去/請款編輯/選帳戶中
 let billingPhotos={}; // { [billingId]: [dataUrl, ...] }
+let billingSigs={}; // { [billingId]: dataUrl } — 本機存，不上雲端
 
 // 一筆分潤進帳戶的金額：代工/公司分潤＝金額−稅；（合作案在卡片另算，這裡不處理）
 function dealIncomeAmount(d){
@@ -3114,7 +3124,7 @@ function viewBillingAdd(){
               <span style="font-size:18px;font-weight:800;color:#9a5b1a">${money(billingAmount(b))}</span>
               <span style="font-size:12px;color:var(--muted)">${esc(b.date||'')}</span>
               ${b.client?`<span style="font-size:12px;color:var(--muted)">${esc(b.client)}</span>`:''}
-              ${b.signedPhoto?`<span style="font-size:11px;background:#dcfce7;color:#16a34a;border-radius:6px;padding:2px 8px;font-weight:700">✓ 已簽核</span>`:''}
+              ${billingSigs[b.id]?`<span style="font-size:11px;background:#dcfce7;color:#16a34a;border-radius:6px;padding:2px 8px;font-weight:700">✓ 已簽核</span>`:''}
             </div>
             ${billingLineMeta(b)?`<div style="font-size:12px;color:var(--muted);margin-top:2px">${billingLineMeta(b)}</div>`:''}
             ${b.note?`<div style="font-size:13px;color:var(--text);margin-top:4px;font-weight:500">${esc(b.note)}</div>`:''}
@@ -3837,7 +3847,7 @@ window.addEventListener('beforeunload', ()=>{
   try{ navigator.sendBeacon(CLOUD_URL, JSON.stringify(packData())); }catch(e){}
 });
 
-loadLocal(); loadPhotos(); render(); loadCloud();
+loadLocal(); loadPhotos(); loadSigs(); render(); loadCloud();
 </script>
 </body>
 </html>
