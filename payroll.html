@@ -2124,21 +2124,33 @@ function openFullscreenSign(onSaved){
   }
   applyMode();
 
-  function pos(e){
-    const r=cv.getBoundingClientRect();
-    if(e.touches) return [e.touches[0].clientX-r.left, e.touches[0].clientY-r.top];
-    return [e.clientX-r.left, e.clientY-r.top];
-  }
-  function start(e){ applyMode(); drawing=true; [lx,ly]=pos(e); }
-  function move(e){ if(!drawing) return; const[x,y]=pos(e); ctx.beginPath(); ctx.moveTo(lx,ly); ctx.lineTo(x,y); ctx.stroke(); lx=x; ly=y; }
+  // 包一層 wrapper 讓提示文字可以絕對定位在畫布正中央
+  const cvWrap=document.createElement('div');
+  cvWrap.style='position:relative;flex:1;overflow:hidden';
+  cv.style.cssText='width:100%;height:100%;background:#fff;touch-action:none;cursor:crosshair;display:block';
+  cv.parentNode.insertBefore(cvWrap,cv);
+  cvWrap.appendChild(cv);
+  const hint=document.createElement('div');
+  hint.textContent='請使用 Apple Pencil 簽名';
+  hint.style='position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:20px;color:#bbb;pointer-events:none;user-select:none;text-align:center;white-space:nowrap';
+  cvWrap.appendChild(hint);
 
-  cv.addEventListener('mousedown',start);
-  cv.addEventListener('mousemove',move);
-  cv.addEventListener('mouseup',()=>drawing=false);
-  cv.addEventListener('mouseleave',()=>drawing=false);
-  cv.addEventListener('touchstart',e=>{e.preventDefault();start(e);},{passive:false});
-  cv.addEventListener('touchmove',e=>{e.preventDefault();move(e);},{passive:false});
-  cv.addEventListener('touchend',()=>drawing=false);
+  cv.addEventListener('pointerdown', e=>{
+    if(e.pointerType!=='pen'&&e.pointerType!=='mouse') return;
+    e.preventDefault();
+    hint.style.display='none';
+    applyMode(); drawing=true;
+    lx=e.offsetX; ly=e.offsetY;
+    cv.setPointerCapture(e.pointerId);
+  });
+  cv.addEventListener('pointermove', e=>{
+    if(!drawing||(e.pointerType!=='pen'&&e.pointerType!=='mouse')) return;
+    const x=e.offsetX, y=e.offsetY;
+    ctx.beginPath(); ctx.moveTo(lx,ly); ctx.lineTo(x,y); ctx.stroke();
+    lx=x; ly=y;
+  });
+  cv.addEventListener('pointerup', ()=>drawing=false);
+  cv.addEventListener('pointercancel', ()=>drawing=false);
 
   const eb=document.getElementById('fs-erase');
   eb.onclick=()=>{ eraser=!eraser; eb.textContent=eraser?'✏ 切回筆':'橡皮擦'; eb.style.background=eraser?'#fde9d4':'transparent'; eb.style.color=eraser?'#9a5b1a':''; applyMode(); };
