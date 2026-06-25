@@ -2715,64 +2715,87 @@ function viewDeals(){
   </div>`;
 }
 
-// ---- 案場請款追蹤 ----
+// ---- 追加單 ----
 function viewBillingAdd(){
   const list=state.billings.filter(b=>(b.docType||'請款單')==='追加單').sort((a,b)=>(b.date||'').localeCompare(a.date||''));
   const total=list.reduce((s,b)=>s+(Number(b.amount)||0),0);
-  const settled=list.filter(b=>b.settled).reduce((s,b)=>s+(Number(b.amount)||0),0);
-  const unsettled=total-settled;
+  const totalSettled=list.filter(b=>b.settled).reduce((s,b)=>s+(Number(b.amount)||0),0);
+  const unsettled=total-totalSettled;
   const siteSelOpts=`<option value="">（選案場）</option>`+state.sites.filter(s=>s.active!==false).map(s=>`<option value="${esc(s.name)}">${esc(s.name)}</option>`).join('');
-  const siteSelOptsEdit=state.sites.filter(s=>s.active!==false).map(s=>`<option value="${esc(s.name)}">${esc(s.name)}</option>`).join('');
-  const cards=list.map(b=>{
-    const photos=billingPhotos[b.id]||[];
-    const thumbs=photos.map((url,i)=>`<div style="position:relative;display:inline-block;vertical-align:top;margin:3px"><img src="${url}" class="photo-thumb" style="width:90px;height:68px;object-fit:cover;border-radius:8px;border:1px solid var(--line)"><button data-photodel="${b.id}" data-photoidx="${i}" style="position:absolute;top:-5px;right:-5px;width:22px;height:22px;border-radius:50%;border:none;background:var(--danger);color:#fff;font-size:13px;cursor:pointer;padding:0;line-height:22px;text-align:center">✕</button></div>`).join('');
-    if(billingAddEditId===b.id){
-      const siteOpts=`<option value="">（選案場）</option>`+state.sites.filter(s=>s.active!==false).map(s=>`<option value="${esc(s.name)}" ${b.site===s.name?'selected':''}>${esc(s.name)}</option>`).join('');
-      return `<div class="card" style="border-left:3px solid #6366f1">
-        <div style="font-size:13px;font-weight:700;color:#6366f1;margin-bottom:12px">編輯追加單</div>
-        <div class="row">
-          <div class="field"><label>日期</label><input type="date" id="bae-date" value="${b.date||''}"></div>
-          <div class="field" style="flex:1;min-width:150px"><label>案場</label><select id="bae-site">${siteOpts}</select></div>
-          <div class="field"><label>金額</label><input type="number" id="bae-amount" value="${b.amount||0}" min="0" step="1000"></div>
-          <div class="field"><label>方式</label><input id="bae-method" value="${esc(b.method||'')}" placeholder="匯款" style="width:100px"></div>
-          <div class="field"><label>業主</label><input id="bae-client" value="${esc(b.client||'')}" placeholder="業主名稱" style="width:110px"></div>
-          <div class="field" style="flex:1;min-width:180px"><label>說明（追加項目）</label><input id="bae-note" value="${esc(b.note||'')}" placeholder="例：追加防水工程"></div>
-          <div class="field"><label>結算</label><select id="bae-settled"><option value="">未結算</option><option value="1" ${b.settled?'selected':''}>已結算</option></select></div>
-        </div>
-        <div class="row" style="margin-top:10px;gap:8px">
-          <button class="btn" data-bae-ok="${b.id}">儲存</button>
-          <button class="act muted" data-bae-cancel="1" style="cursor:pointer;height:40px">取消</button>
-        </div>
-      </div>`;
-    }
-    return `<div class="card" style="border-left:3px solid ${b.settled?'var(--accent)':'#d97706'}">
-      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap;margin-bottom:10px">
-        <div>
-          <div style="font-size:15px;font-weight:700">${esc(b.site||'（未填案場）')}</div>
-          <div style="font-size:12px;color:var(--muted);margin-top:2px">${esc(b.date||'')}${b.note?'　'+esc(b.note):''}</div>
-        </div>
-        <div style="text-align:right;flex-shrink:0">
-          <div style="font-size:18px;font-weight:800;color:#9a5b1a">${money(b.amount)}</div>
-          <div style="margin-top:5px;display:flex;gap:4px;justify-content:flex-end;flex-wrap:wrap">
+
+  // 依案場分組
+  const groups={};
+  list.forEach(b=>{ const k=b.site||'（未填案場）'; (groups[k]=groups[k]||[]).push(b); });
+  const siteNames=Object.keys(groups).sort((a,b)=>a.localeCompare(b));
+
+  const siteCards=siteNames.map(siteName=>{
+    const siteList=groups[siteName];
+    const siteTot=siteList.reduce((s,b)=>s+(Number(b.amount)||0),0);
+    const siteSettled=siteList.filter(b=>b.settled).reduce((s,b)=>s+(Number(b.amount)||0),0);
+    const siteUnsettled=siteTot-siteSettled;
+
+    const entries=siteList.map((b,idx)=>{
+      const photos=billingPhotos[b.id]||[];
+      const thumbs=photos.map((url,i)=>`<div style="position:relative;display:inline-block;vertical-align:top;margin:3px"><img src="${url}" class="photo-thumb" style="width:80px;height:60px;object-fit:cover;border-radius:8px;border:1px solid var(--line)"><button data-photodel="${b.id}" data-photoidx="${i}" style="position:absolute;top:-5px;right:-5px;width:20px;height:20px;border-radius:50%;border:none;background:var(--danger);color:#fff;font-size:11px;cursor:pointer;padding:0;line-height:20px;text-align:center">✕</button></div>`).join('');
+      const sep=idx>0?'border-top:1px solid var(--line);':'';
+
+      if(billingAddEditId===b.id){
+        const siteOpts=`<option value="">（選案場）</option>`+state.sites.filter(s=>s.active!==false).map(s=>`<option value="${esc(s.name)}" ${b.site===s.name?'selected':''}>${esc(s.name)}</option>`).join('');
+        return `<div style="${sep}padding:14px 0 10px">
+          <div style="font-size:12px;font-weight:700;color:#6366f1;margin-bottom:10px">編輯此筆</div>
+          <div class="row">
+            <div class="field"><label>日期</label><input type="date" id="bae-date" value="${b.date||''}"></div>
+            <div class="field" style="flex:1;min-width:140px"><label>案場</label><select id="bae-site">${siteOpts}</select></div>
+            <div class="field"><label>金額</label><input type="number" id="bae-amount" value="${b.amount||0}" min="0" step="1000"></div>
+            <div class="field"><label>方式</label><input id="bae-method" value="${esc(b.method||'')}" placeholder="匯款" style="width:90px"></div>
+            <div class="field"><label>業主</label><input id="bae-client" value="${esc(b.client||'')}" placeholder="業主名稱" style="width:100px"></div>
+            <div class="field" style="flex:1;min-width:180px"><label>備註說明</label><input id="bae-note" value="${esc(b.note||'')}" placeholder="例：追加防水工程"></div>
+            <div class="field"><label>結算</label><select id="bae-settled"><option value="">未結算</option><option value="1" ${b.settled?'selected':''}>已結算</option></select></div>
+          </div>
+          <div style="display:flex;gap:8px;margin-top:8px">
+            <button class="btn" data-bae-ok="${b.id}">儲存</button>
+            <button class="act muted" data-bae-cancel="1" style="cursor:pointer;height:40px">取消</button>
+          </div>
+        </div>`;
+      }
+
+      return `<div style="${sep}padding:${idx>0?'14px':'4px'} 0 10px">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap">
+          <div style="flex:1;min-width:0">
+            <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap">
+              <span style="font-size:18px;font-weight:800;color:#9a5b1a">${money(b.amount)}</span>
+              <span style="font-size:12px;color:var(--muted)">${esc(b.date||'')}</span>
+              ${b.method?`<span style="font-size:12px;color:var(--muted)">${esc(b.method)}</span>`:''}
+              ${b.client?`<span style="font-size:12px;color:var(--muted)">${esc(b.client)}</span>`:''}
+            </div>
+            ${b.note?`<div style="font-size:13px;color:var(--text);margin-top:4px;font-weight:500">${esc(b.note)}</div>`:'<div style="font-size:12px;color:var(--line2);margin-top:3px">（無備註）</div>'}
+          </div>
+          <div style="display:flex;gap:4px;flex-wrap:wrap;flex-shrink:0">
             <button class="act ${b.settled?'':'muted'}" data-togglesettle="${b.id}" style="${b.settled?'color:var(--accent)':''}">${b.settled?'✓ 已結算':'未結算'}</button>
             <button class="act" data-billprint="${b.id}">列印</button>
             <button class="act" data-billedit-add="${b.id}">改</button>
             <button class="act danger" data-delbill="${b.id}">刪</button>
           </div>
         </div>
-      </div>
-      <div>
-        <div style="font-size:11px;font-weight:600;color:var(--muted);letter-spacing:.4px;text-transform:uppercase;margin-bottom:8px">施作照片${photos.length?` (${photos.length})`:''}</div>
-        <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
+        ${photos.length||true?`<div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px;align-items:center">
           ${thumbs}
-          <label style="cursor:pointer;display:flex;align-items:center;gap:6px;padding:10px 16px;background:var(--bg);border:1.5px dashed var(--line2);border-radius:12px;font-size:13px;color:var(--muted);min-height:48px;touch-action:manipulation">
-            📷 ${photos.length?'繼續上傳':'上傳施作照片'}
+          <label style="cursor:pointer;display:flex;align-items:center;gap:5px;padding:7px 12px;background:var(--bg);border:1.5px dashed var(--line2);border-radius:10px;font-size:12px;color:var(--muted);touch-action:manipulation">
+            📷 ${photos.length?`繼續上傳 (${photos.length})`:'上傳施作照片'}
             <input type="file" accept="image/*" multiple data-photoadd="${b.id}" style="display:none">
           </label>
-        </div>
+        </div>`:''}
+      </div>`;
+    }).join('');
+
+    return `<div class="card" style="border-left:3px solid #d97706">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px;margin-bottom:10px">
+        <div style="font-size:15px;font-weight:700">${esc(siteName)}</div>
+        <div style="font-size:13px;color:var(--muted)">合計 <b style="color:#9a5b1a">${money(siteTot)}</b>　已結算 <span style="color:var(--accent)">${money(siteSettled)}</span>　未結算 <span style="color:var(--danger)">${money(siteUnsettled)}</span></div>
       </div>
+      ${entries}
     </div>`;
   }).join('');
+
   return `
   <div class="metrics">
     <div class="metric"><div class="l">追加單數</div><div class="v">${list.length}</div></div>
@@ -2787,12 +2810,12 @@ function viewBillingAdd(){
       <div class="field"><label>金額</label><input type="number" id="bna-amount" min="0" step="1000"></div>
       <div class="field"><label>方式</label><input id="bna-method" placeholder="匯款" style="width:100px"></div>
       <div class="field"><label>業主</label><input id="bna-client" placeholder="業主名稱" style="width:110px"></div>
-      <div class="field" style="flex:1;min-width:180px"><label>說明（追加項目）</label><input id="bna-note" placeholder="例：追加防水工程"></div>
+      <div class="field" style="flex:1;min-width:180px"><label>備註說明</label><input id="bna-note" placeholder="例：追加防水工程"></div>
       <div class="field"><label>結算</label><select id="bna-settled"><option value="">未結算</option><option value="1">已結算</option></select></div>
     </div>
     <div class="row" style="margin-top:10px"><button class="btn" id="bna-add">＋ 新增追加單</button></div>
   </div>
-  ${list.length===0?'<div class="card"><div class="empty">尚無追加單。點上方「新增追加單」開始登記，新增後可在每張卡片上傳施作照片。</div></div>':cards}`;
+  ${list.length===0?'<div class="card"><div class="empty">尚無追加單。點上方「新增追加單」開始登記，新增後可在每張卡片上傳施作照片。</div></div>':siteCards}`;
 }
 
 function viewBilling(){
