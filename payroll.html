@@ -987,6 +987,7 @@ function viewManage(){
 
 function bind(){
   document.querySelectorAll('.nav-item').forEach(b=>b.onclick=()=>{ state.tab=b.dataset.tab; closeSidebar(); render(); });
+  document.querySelectorAll('[data-toggle-form]').forEach(b=>b.onclick=()=>{ const k=b.dataset.toggleForm; formOpen[k]=!formOpen[k]; render(); });
 
   const pf=document.getElementById('pay-from'); if(pf) pf.onchange=()=>{ state.payFrom=pf.value; render(); };
   const pt=document.getElementById('pay-to'); if(pt) pt.onchange=()=>{ state.payTo=pt.value; render(); };
@@ -2186,6 +2187,8 @@ function locLabel(key){
 // ---- 工具遺失 ----
 // 分攤草稿：使用者勾選分攤人、調整金額時暫存於此
 let toolDraft=null; // {date,brand,model,amount,picks:{empId:amount}}
+let formOpen={}; // 哪些新增表單 / 分組是展開的（keyed by form id）
+let raiseEmpId=null;
 
 function viewTools(){
   const activeEmps=state.employees.filter(e=>e.active);
