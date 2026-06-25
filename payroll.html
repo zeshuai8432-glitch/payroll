@@ -474,8 +474,8 @@ async function loadCloud(){
         setCloud('本機資料較新，同步中…'); pushCloud();
       }
       _lastCloudJson=j.data;
-    } else { setCloud('GAS回傳：'+JSON.stringify(j).slice(0,120)); }
-  } catch(e){ setCloud('錯誤：'+String(e).slice(0,100)); }
+    } else { setCloud('雲端尚無資料'); }
+  } catch(e){ setCloud('雲端讀取失敗（顯示本機資料）'); }
   render();
 }
 
