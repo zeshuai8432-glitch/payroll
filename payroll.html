@@ -508,6 +508,14 @@ function computeRecords(records){
   return out;
 }
 
+function foldBtn(key, label){
+  const open=!!formOpen[key];
+  return `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:${open?'8px':'0'}">
+    <div style="font-size:14px;font-weight:600">${label}</div>
+    <button data-toggle-form="${key}" style="font-size:12px;border:1px solid var(--line2);border-radius:8px;padding:0 10px;height:28px;background:transparent;cursor:pointer;color:var(--muted)">${open?'▲ 收合':'＋ 展開'}</button>
+  </div>`;
+}
+
 function tabsBar(){
   const groups=[
     ['薪資作業',[['entry','登記出工'],['payroll','員工薪資']]],
