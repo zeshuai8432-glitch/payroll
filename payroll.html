@@ -499,7 +499,8 @@ function computeRecords(records){
     const totalAllowance=group.filter(r=>r.night).length*400;
     group.forEach(r=>{
       const daily=Number(r.dailyRate)||0, hourly=daily/8, h=Number(r.hours)||0;
-      const wage=hourly*h;  // 每小時同時薪，各案場各自算
+      const ot=Number(r.overtime)||0;
+      const wage=hourly*h + hourly*1.33*ot;  // 加班以1.33倍時薪計
       const allow=(attended.length>0&&h>0)?totalAllowance/attended.length:0;
       out[r.id]={wage,allow,total:wage+allow};
     });
@@ -582,8 +583,8 @@ function viewEntry(){
       const c=comp[r.id]||{wage:0,allow:0,total:0};
       const editing=(entryEditId===r.id);
       const hoursCell=editing
-        ? `<span class="inline"><input type="number" id="edit-hours" value="${r.hours}" min="0" max="24" step="1" style="width:80px;height:30px"><span style="font-size:11px;color:var(--muted)">時</span><button class="act" id="edit-ok" data-editok="${r.id}">✓</button><button class="act muted" id="edit-cancel" style="cursor:pointer">✕</button></span>`
-        : `${gongH(r.hours)} <button class="act" data-edithours="${r.id}" style="font-size:12px">改</button>`;
+        ? `<span class="inline" style="flex-wrap:wrap;gap:4px"><input type="number" id="edit-hours" value="${r.hours}" min="0" max="24" step="1" style="width:65px;height:30px"><span style="font-size:11px;color:var(--muted)">h +</span><input type="number" id="edit-ot" value="${r.overtime||0}" min="0" max="12" step="1" style="width:55px;height:30px"><span style="font-size:11px;color:var(--muted)">h加班</span><button class="act" id="edit-ok" data-editok="${r.id}">✓</button><button class="act muted" id="edit-cancel" style="cursor:pointer">✕</button></span>`
+        : `${gongH(r.hours)}${r.overtime?`<span style="font-size:11px;color:#d97706;margin-left:3px">+${r.overtime}h加班</span>`:''} <button class="act" data-edithours="${r.id}" style="font-size:12px">改</button>`;
       return `<tr>
         <td>${esc(siteName(r.siteId))}</td>
         <td>${esc(empName(r.empId))}</td>
@@ -622,6 +623,7 @@ function viewEntry(){
       <div class="field f-leave-only" style="display:${entryKind==='leave'?'':'none'}"><label>請假長度</label><select id="f-half"><option value="full">整天</option><option value="half">半天</option></select></div>
       <div class="field f-work-only" style="display:${entryKind==='work'?'':'none'}"><label>案場</label><select id="f-site">${siteOptsSel}</select></div>
       <div class="field f-work-only" style="display:${entryKind==='work'?'':'none'}"><label>工時（小時，整數）</label><input type="number" id="f-hours" min="0" max="24" step="1" value="8" style="width:110px"></div>
+      <div class="field f-work-only" style="display:${entryKind==='work'?'':'none'}"><label>加班（小時）</label><input type="number" id="f-overtime" min="0" max="12" step="1" value="0" style="width:90px"></div>
       <div class="field f-work-only" style="display:${entryKind==='work'?'':'none'}"><label>過夜外宿</label><div style="height:36px;display:flex;align-items:center"><input type="checkbox" id="f-night" ${entryNight?'checked':''}></div></div>
       <button class="btn" id="f-add">＋ 新增</button>
       <button class="btn" id="f-allvac" style="background:var(--muted)">全員休假</button>
@@ -1103,6 +1105,7 @@ function bind(){
 
     const siteId=document.getElementById('f-site').value;
     const hours=parseFloat(document.getElementById('f-hours').value);
+    const overtime=parseFloat(document.getElementById('f-overtime').value)||0;
     const night=document.getElementById('f-night').checked;
     if(!siteId||isNaN(hours)) return;
     if(!Number.isInteger(hours)){ alert('工時請輸入整數小時（例如 8、9），不接受小數。'); return; }
@@ -1118,7 +1121,7 @@ function bind(){
       }
       if(!confirm(msg)) return;
     }
-    state.attendance.push({id:uid(),date,empId,siteId,hours,night,dailyRate:emp.daily,kind:'work'});
+    state.attendance.push({id:uid(),date,empId,siteId,hours,overtime,night,dailyRate:emp.daily,kind:'work'});
     entryDate=date; entrySite=siteId; entryEmp=empId; entryNight=night;
     resyncAllSiteDeals();
     saveData(); render();
@@ -1151,7 +1154,8 @@ function bind(){
   document.querySelectorAll('[data-editok]').forEach(b=>b.onclick=()=>{
     const r=state.attendance.find(x=>x.id===b.dataset.editok); if(!r) return;
     const v=parseFloat(document.getElementById('edit-hours').value);
-    if(!isNaN(v)&&v>=0){ r.hours=v; saveData(); }
+    const otv=parseFloat(document.getElementById('edit-ot').value)||0;
+    if(!isNaN(v)&&v>=0){ r.hours=v; r.overtime=otv; saveData(); }
     entryEditId=null; render();
   });
   const ecancel=document.getElementById('edit-cancel'); if(ecancel) ecancel.onclick=()=>{ entryEditId=null; render(); };
