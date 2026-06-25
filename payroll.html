@@ -380,7 +380,8 @@
 <script>
 const LS = 'pm_data_v2';
 const LS_PHOTOS = 'pm_billing_photos_v1';
-const LS_SIGS   = 'pm_billing_sigs_v1';
+const LS_SIGS        = 'pm_billing_sigs_v1';
+const LS_SIGS_LOCKED = 'pm_billing_sigs_locked_v1';
 const CLOUD_URL = 'https://script.google.com/macros/s/AKfycbyMPs38UNzAwX3bcD2n9nQBz0HofUW9qFweSOnmoySs8VW2bJYHn47RdyZLQ8bD8SNWTg/exec';
 let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], tools:[], locations:[], assets:[], advances:[], accounts:[], ledger:[], deals:[], billings:[], measurements:[], contracts:{}, costs:[], parkAccId:'', oweBonus:{}, minFund:'', tab:'entry' };
 let cloudStatus='連線中…';
@@ -448,9 +449,10 @@ function applyData(d){
   state.employees=d.employees||[]; state.sites=d.sites||[]; state.attendance=d.attendance||[]; state.adjustments=d.adjustments||[]; state.loans=d.loans||[]; state.tools=d.tools||[]; state.locations=d.locations||[]; state.assets=d.assets||[]; state.advances=d.advances||[]; state.accounts=d.accounts||[]; state.ledger=d.ledger||[]; state.deals=d.deals||[]; state.billings=d.billings||[]; state.measurements=d.measurements||[]; state.contracts=d.contracts||{}; state.costs=d.costs||[]; state.parkAccId=d.parkAccId||''; state.oweBonus=d.oweBonus||{}; state.minFund=(d.minFund!==undefined?d.minFund:'');
   state.employees.forEach(e=>{ if(e.active===undefined) e.active=true; });
   if(d.billingSigs) Object.assign(billingSigs, d.billingSigs);
+  if(d.billingSigsLocked) Object.assign(billingSigsLocked, d.billingSigsLocked);
 }
 function packData(){
-  return {employees:state.employees,sites:state.sites,attendance:state.attendance,adjustments:state.adjustments,loans:state.loans,tools:state.tools,locations:state.locations,assets:state.assets,advances:state.advances,accounts:state.accounts,ledger:state.ledger,deals:state.deals,billings:state.billings,measurements:state.measurements,contracts:state.contracts,costs:state.costs,parkAccId:state.parkAccId,oweBonus:state.oweBonus,minFund:state.minFund,billingSigs:billingSigs,savedAt:Date.now()};
+  return {employees:state.employees,sites:state.sites,attendance:state.attendance,adjustments:state.adjustments,loans:state.loans,tools:state.tools,locations:state.locations,assets:state.assets,advances:state.advances,accounts:state.accounts,ledger:state.ledger,deals:state.deals,billings:state.billings,measurements:state.measurements,contracts:state.contracts,costs:state.costs,parkAccId:state.parkAccId,oweBonus:state.oweBonus,minFund:state.minFund,billingSigs:billingSigs,billingSigsLocked:billingSigsLocked,savedAt:Date.now()};
 }
 
 // 先讀本機快取（讓畫面秒開），再從雲端拉最新
@@ -467,8 +469,16 @@ async function loadCloud(){
       const localRaw=localStorage.getItem(LS);
       const localTs=localRaw?((JSON.parse(localRaw)||{}).savedAt||0):0;
       const cloudTs=cloudData.savedAt||0;
-      // 簽名永遠合併（不管哪邊資料較新），避免跨裝置互蓋
-      if(cloudData.billingSigs){ Object.assign(billingSigs,cloudData.billingSigs); try{localStorage.setItem(LS_SIGS,JSON.stringify(billingSigs));}catch(e){} }
+      // 簽名永遠合併；但本機已鎖定的簽名不被雲端蓋掉
+      if(cloudData.billingSigsLocked) Object.assign(billingSigsLocked, cloudData.billingSigsLocked);
+      if(cloudData.billingSigs){
+        Object.keys(cloudData.billingSigs).forEach(id=>{
+          if(billingSigsLocked[id] && billingSigs[id]) return; // 本機已鎖，保留本機
+          billingSigs[id]=cloudData.billingSigs[id];
+        });
+        try{localStorage.setItem(LS_SIGS,JSON.stringify(billingSigs));}catch(e){}
+        try{localStorage.setItem(LS_SIGS_LOCKED,JSON.stringify(billingSigsLocked));}catch(e){}
+      }
       if(cloudTs>=localTs){
         // 雲端較新，套用
         applyData(cloudData); try{localStorage.setItem(LS,j.data);}catch(e){} setCloud('已同步');
@@ -525,12 +535,25 @@ function loadPhotos(){ try{ const raw=localStorage.getItem(LS_PHOTOS); if(raw) b
 function savePhotos(){ try{ localStorage.setItem(LS_PHOTOS,JSON.stringify(billingPhotos)); }catch(e){} }
 function loadSigs(){
   try{ const raw=localStorage.getItem(LS_SIGS); if(raw) Object.assign(billingSigs,JSON.parse(raw)); }catch(e){}
+  try{ const raw=localStorage.getItem(LS_SIGS_LOCKED); if(raw) Object.assign(billingSigsLocked,JSON.parse(raw)); }catch(e){}
   // 遷移：把舊版存在 state.billings 裡的 signedPhoto 搬出來
   state.billings.forEach(b=>{ if(b.signedPhoto){ billingSigs[b.id]=b.signedPhoto; delete b.signedPhoto; } });
   try{ localStorage.setItem(LS_SIGS,JSON.stringify(billingSigs)); }catch(e){}
 }
-function saveSig(id,url){ billingSigs[id]=url; try{ localStorage.setItem(LS_SIGS,JSON.stringify(billingSigs)); }catch(e){} }
-function deleteSig(id){ delete billingSigs[id]; try{ localStorage.setItem(LS_SIGS,JSON.stringify(billingSigs)); }catch(e){} }
+function saveSig(id,url){
+  billingSigs[id]=url;
+  billingSigsLocked[id]=true; // 簽完自動鎖定
+  try{ localStorage.setItem(LS_SIGS,JSON.stringify(billingSigs)); }catch(e){}
+  try{ localStorage.setItem(LS_SIGS_LOCKED,JSON.stringify(billingSigsLocked)); }catch(e){}
+}
+function deleteSig(id){
+  delete billingSigs[id];
+  try{ localStorage.setItem(LS_SIGS,JSON.stringify(billingSigs)); }catch(e){}
+}
+function unlockSig(id){
+  delete billingSigsLocked[id];
+  try{ localStorage.setItem(LS_SIGS_LOCKED,JSON.stringify(billingSigsLocked)); }catch(e){}
+}
 
 function computeRecords(records){
   const byKey={};
@@ -1854,7 +1877,14 @@ function bind(){
   });
   bindBillingSubtotal('bnr'); bindBillingSubtotal('bna'); bindBillingSubtotal('bae'); bindMeasSubtotal();
   document.querySelectorAll('[data-billprint]').forEach(b=>b.onclick=()=>printBillingDoc(b.dataset.billprint));
-  document.querySelectorAll('[data-billsign]').forEach(b=>b.onclick=()=>{ const id=b.dataset.billsign; openFullscreenSign(url=>{ saveSig(id,url); saveData(); render(); }); });
+  document.querySelectorAll('[data-billsign]').forEach(b=>b.onclick=()=>{
+    const id=b.dataset.billsign;
+    if(billingSigsLocked[id]){
+      if(!confirm('此簽名已鎖定。\n確定要解鎖並重新簽名？')) return;
+      unlockSig(id);
+    }
+    openFullscreenSign(url=>{ saveSig(id,url); saveData(); render(); });
+  });
   document.querySelectorAll('[data-site-printall]').forEach(b=>b.onclick=e=>{
     e.stopPropagation();
     const site=b.dataset.sitePrintall;
@@ -2261,7 +2291,13 @@ function printBillingDoc(id){
   document.getElementById('po-print').onclick=()=>window.print();
   document.getElementById('po-close').onclick=()=>ov.remove();
   const resignBtn=document.getElementById('sig-resign');
-  if(resignBtn) resignBtn.onclick=()=>{ deleteSig(id); render(); printBillingDoc(id); };
+  if(resignBtn) resignBtn.onclick=()=>{
+    if(billingSigsLocked[id]){
+      if(!confirm('此簽名已鎖定。\n確定要解鎖並重新簽名？')) return;
+      unlockSig(id);
+    }
+    deleteSig(id); render(); printBillingDoc(id);
+  };
   const fsBtn=document.getElementById('sig-fullscreen-btn');
   if(fsBtn) fsBtn.onclick=()=>openFullscreenSign(dataUrl=>{ saveSig(id,dataUrl); saveData(); render(); printBillingDoc(id); });
   ov.scrollTop=0;
@@ -2752,7 +2788,8 @@ function dealCalc(d){
 }
 let dealPosting=null, dealEditId=null, dealCarry=null, coopCarry=null, billEditId=null, dealAccPick=null, billingAddEditId=null; // 入帳/編輯/帶去/請款編輯/選帳戶中
 let billingPhotos={}; // { [billingId]: [dataUrl, ...] }
-let billingSigs={}; // { [billingId]: dataUrl } — 本機存，不上雲端
+let billingSigs={}; // { [billingId]: dataUrl }
+let billingSigsLocked={}; // { [billingId]: true } — 已鎖定不可覆寫
 
 // 一筆分潤進帳戶的金額：代工/公司分潤＝金額−稅；（合作案在卡片另算，這裡不處理）
 function dealIncomeAmount(d){
@@ -3142,7 +3179,7 @@ function viewBillingAdd(){
               <span style="font-size:18px;font-weight:800;color:#9a5b1a">${money(billingAmount(b))}</span>
               <span style="font-size:12px;color:var(--muted)">${esc(b.date||'')}</span>
               ${b.client?`<span style="font-size:12px;color:var(--muted)">${esc(b.client)}</span>`:''}
-              ${billingSigs[b.id]?`<span style="font-size:11px;background:#dcfce7;color:#16a34a;border-radius:6px;padding:2px 8px;font-weight:700">✓ 已簽核</span>`:''}
+              ${billingSigs[b.id]?`<span style="font-size:11px;background:#dcfce7;color:#16a34a;border-radius:6px;padding:2px 8px;font-weight:700">${billingSigsLocked[b.id]?'🔒':'✓'} 已簽核</span>`:''}
             </div>
             ${billingLineMeta(b)?`<div style="font-size:12px;color:var(--muted);margin-top:2px">${billingLineMeta(b)}</div>`:''}
             ${b.note?`<div style="font-size:13px;color:var(--text);margin-top:4px;font-weight:500">${esc(b.note)}</div>`:''}
@@ -3152,7 +3189,7 @@ function viewBillingAdd(){
             <button class="act ${b.settled?'':'muted'}" data-togglesettle="${b.id}" style="${b.settled?'color:var(--accent)':''}">${b.settled?'✓ 已結算':'未結算'}</button>
             <button class="act" data-billedit-add="${b.id}">改</button>
             <button class="act" data-billprint="${b.id}">列印</button>
-            <button class="act" data-billsign="${b.id}" style="${billingSigs[b.id]?'color:var(--accent)':''}">✍${billingSigs[b.id]?'已簽':'簽名'}</button>
+            <button class="act" data-billsign="${b.id}" style="${billingSigs[b.id]?'color:var(--accent)':''}">${billingSigs[b.id]?(billingSigsLocked[b.id]?'🔒 已簽':'✍ 已簽'):'✍ 簽名'}</button>
             <button class="act danger" data-delbill="${b.id}">刪</button>
           </div>
         </div>
