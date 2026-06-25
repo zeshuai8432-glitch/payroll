@@ -466,11 +466,13 @@ async function loadCloud(){
       const localRaw=localStorage.getItem(LS);
       const localTs=localRaw?((JSON.parse(localRaw)||{}).savedAt||0):0;
       const cloudTs=cloudData.savedAt||0;
+      // 簽名永遠合併（不管哪邊資料較新），避免跨裝置互蓋
+      if(cloudData.billingSigs){ Object.assign(billingSigs,cloudData.billingSigs); try{localStorage.setItem(LS_SIGS,JSON.stringify(billingSigs));}catch(e){} }
       if(cloudTs>=localTs){
         // 雲端較新，套用
         applyData(cloudData); try{localStorage.setItem(LS,j.data);}catch(e){} setCloud('已同步');
       } else {
-        // 本機較新，主動推上雲端
+        // 本機較新，推上雲端（此時 billingSigs 已含雲端簽名，不會漏掉）
         setCloud('本機資料較新，同步中…'); pushCloud();
       }
       _lastCloudJson=j.data;
@@ -505,7 +507,7 @@ function loadData(){ loadLocal(); }
 function loadPhotos(){ try{ const raw=localStorage.getItem(LS_PHOTOS); if(raw) billingPhotos=JSON.parse(raw); }catch(e){} }
 function savePhotos(){ try{ localStorage.setItem(LS_PHOTOS,JSON.stringify(billingPhotos)); }catch(e){} }
 function loadSigs(){
-  try{ const raw=localStorage.getItem(LS_SIGS); if(raw) billingSigs=JSON.parse(raw); }catch(e){}
+  try{ const raw=localStorage.getItem(LS_SIGS); if(raw) Object.assign(billingSigs,JSON.parse(raw)); }catch(e){}
   // 遷移：把舊版存在 state.billings 裡的 signedPhoto 搬出來
   state.billings.forEach(b=>{ if(b.signedPhoto){ billingSigs[b.id]=b.signedPhoto; delete b.signedPhoto; } });
   try{ localStorage.setItem(LS_SIGS,JSON.stringify(billingSigs)); }catch(e){}
