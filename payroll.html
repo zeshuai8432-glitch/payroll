@@ -2097,17 +2097,19 @@ function openFullscreenSign(onSaved){
   const fs=document.createElement('div');
   fs.id='sig-fs';
   fs.style='position:fixed;inset:0;z-index:10001;background:#fff;display:flex;flex-direction:column';
-  const W=window.innerWidth, H=window.innerHeight-60;
+  const W=window.innerWidth, H=window.innerHeight-56-72;
   fs.innerHTML=`
-    <div style="height:60px;display:flex;align-items:center;padding:0 14px;gap:8px;border-bottom:1px solid #e0e0e0;flex-shrink:0;background:#fff">
-      <div style="font-size:15px;font-weight:700;flex:1;color:#1f2421">業主簽名 / 補充說明</div>
-      <button id="fs-erase" style="height:38px;padding:0 14px;border:1px solid #ccc;border-radius:8px;background:transparent;font-size:14px;cursor:pointer">橡皮擦</button>
-      <button id="fs-clear" style="height:38px;padding:0 14px;border:1px solid #ccc;border-radius:8px;background:transparent;font-size:14px;cursor:pointer">清除</button>
-      <button id="fs-done" class="btn" style="height:38px;padding:0 20px;font-size:14px">完成</button>
-      <button id="fs-cancel" style="height:38px;padding:0 14px;border:1px solid #ccc;border-radius:8px;background:transparent;font-size:14px;cursor:pointer">取消</button>
+    <div style="height:56px;display:flex;align-items:center;padding:0 14px;gap:8px;border-bottom:1px solid #e0e0e0;flex-shrink:0;background:#fff">
+      <div style="font-size:15px;font-weight:700;flex:1;color:#1f2421">業主簽名</div>
+      <button id="fs-erase" style="height:36px;padding:0 14px;border:1px solid #ccc;border-radius:8px;background:transparent;font-size:14px;cursor:pointer">橡皮擦</button>
+      <button id="fs-clear" style="height:36px;padding:0 14px;border:1px solid #ccc;border-radius:8px;background:transparent;font-size:14px;cursor:pointer">清除</button>
+      <button id="fs-cancel" style="height:36px;padding:0 14px;border:1px solid #ccc;border-radius:8px;background:transparent;font-size:14px;cursor:pointer">取消</button>
     </div>
     <canvas id="fs-canvas" width="${W}" height="${H}"
-      style="flex:1;width:100%;background:#fff;touch-action:none;cursor:crosshair;display:block"></canvas>`;
+      style="flex:1;width:100%;background:#fff;touch-action:none;cursor:crosshair;display:block"></canvas>
+    <div style="height:72px;display:flex;align-items:center;justify-content:center;padding:0 16px;border-top:1px solid #e0e0e0;flex-shrink:0;background:#fff">
+      <button id="fs-done" style="width:100%;max-width:480px;height:52px;background:var(--accent);color:#fff;border:none;border-radius:14px;font-size:18px;font-weight:700;cursor:pointer;letter-spacing:.5px">✓ 儲存簽名</button>
+    </div>`;
   document.body.appendChild(fs);
 
   const cv=document.getElementById('fs-canvas');
