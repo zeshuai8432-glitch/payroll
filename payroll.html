@@ -1717,14 +1717,22 @@ function bind(){
     const so=state.sites.find(x=>x.name===site); if(so) resyncSiteDeal(so);
     saveData(); render();
   };
-  // 追加單頁：改（簡易 inline prompt）
-  document.querySelectorAll('[data-billedit-add]').forEach(b=>b.onclick=()=>{
-    const bill=state.billings.find(x=>x.id===b.dataset.billeditAdd); if(!bill) return;
-    const amt=parseFloat(prompt('金額：',bill.amount)); if(isNaN(amt)||amt<=0) return;
-    bill.amount=amt;
-    const note=prompt('說明：',bill.note||''); if(note!==null) bill.note=note;
-    const so=state.sites.find(x=>x.name===bill.site); if(so) resyncSiteDeal(so);
-    saveData(); render();
+  // 追加單頁：改（inline 展開）
+  document.querySelectorAll('[data-billedit-add]').forEach(b=>b.onclick=()=>{ billingAddEditId=b.dataset.billeditAdd; render(); });
+  document.querySelectorAll('[data-bae-cancel]').forEach(b=>b.onclick=()=>{ billingAddEditId=null; render(); });
+  document.querySelectorAll('[data-bae-ok]').forEach(b=>b.onclick=()=>{
+    const bill=state.billings.find(x=>x.id===b.dataset.baeOk); if(!bill) return;
+    const date=document.getElementById('bae-date').value;
+    const site=document.getElementById('bae-site').value.trim();
+    const amount=parseFloat(document.getElementById('bae-amount').value);
+    const method=document.getElementById('bae-method').value.trim();
+    const client=document.getElementById('bae-client').value.trim();
+    const note=document.getElementById('bae-note').value.trim();
+    const settled=document.getElementById('bae-settled').value==='1';
+    if(!date||!site||isNaN(amount)||amount<=0){ alert('請填日期、案場、金額'); return; }
+    bill.date=date; bill.site=site; bill.amount=amount; bill.method=method; bill.client=client; bill.note=note; bill.settled=settled;
+    const so=state.sites.find(x=>x.name===site); if(so) resyncSiteDeal(so);
+    billingAddEditId=null; saveData(); render();
   });
   document.querySelectorAll('[data-billprint]').forEach(b=>b.onclick=()=>printBillingDoc(b.dataset.billprint));
   document.querySelectorAll('[data-togglesettle]').forEach(b=>b.onclick=()=>{
@@ -2448,7 +2456,7 @@ function dealCalc(d){
   const fund=profit-bonus;
   return {profit,bonus,fund,tax,isDeal:false};
 }
-let dealPosting=null, dealEditId=null, dealCarry=null, coopCarry=null, billEditId=null, dealAccPick=null; // 入帳/編輯/帶去/請款編輯/選帳戶中
+let dealPosting=null, dealEditId=null, dealCarry=null, coopCarry=null, billEditId=null, dealAccPick=null, billingAddEditId=null; // 入帳/編輯/帶去/請款編輯/選帳戶中
 let billingPhotos={}; // { [billingId]: [dataUrl, ...] }
 
 // 一筆分潤進帳戶的金額：代工/公司分潤＝金額−稅；（合作案在卡片另算，這裡不處理）
@@ -2714,9 +2722,29 @@ function viewBillingAdd(){
   const settled=list.filter(b=>b.settled).reduce((s,b)=>s+(Number(b.amount)||0),0);
   const unsettled=total-settled;
   const siteSelOpts=`<option value="">（選案場）</option>`+state.sites.filter(s=>s.active!==false).map(s=>`<option value="${esc(s.name)}">${esc(s.name)}</option>`).join('');
+  const siteSelOptsEdit=state.sites.filter(s=>s.active!==false).map(s=>`<option value="${esc(s.name)}">${esc(s.name)}</option>`).join('');
   const cards=list.map(b=>{
     const photos=billingPhotos[b.id]||[];
     const thumbs=photos.map((url,i)=>`<div style="position:relative;display:inline-block;vertical-align:top;margin:3px"><img src="${url}" class="photo-thumb" style="width:90px;height:68px;object-fit:cover;border-radius:8px;border:1px solid var(--line)"><button data-photodel="${b.id}" data-photoidx="${i}" style="position:absolute;top:-5px;right:-5px;width:22px;height:22px;border-radius:50%;border:none;background:var(--danger);color:#fff;font-size:13px;cursor:pointer;padding:0;line-height:22px;text-align:center">✕</button></div>`).join('');
+    if(billingAddEditId===b.id){
+      const siteOpts=`<option value="">（選案場）</option>`+state.sites.filter(s=>s.active!==false).map(s=>`<option value="${esc(s.name)}" ${b.site===s.name?'selected':''}>${esc(s.name)}</option>`).join('');
+      return `<div class="card" style="border-left:3px solid #6366f1">
+        <div style="font-size:13px;font-weight:700;color:#6366f1;margin-bottom:12px">編輯追加單</div>
+        <div class="row">
+          <div class="field"><label>日期</label><input type="date" id="bae-date" value="${b.date||''}"></div>
+          <div class="field" style="flex:1;min-width:150px"><label>案場</label><select id="bae-site">${siteOpts}</select></div>
+          <div class="field"><label>金額</label><input type="number" id="bae-amount" value="${b.amount||0}" min="0" step="1000"></div>
+          <div class="field"><label>方式</label><input id="bae-method" value="${esc(b.method||'')}" placeholder="匯款" style="width:100px"></div>
+          <div class="field"><label>業主</label><input id="bae-client" value="${esc(b.client||'')}" placeholder="業主名稱" style="width:110px"></div>
+          <div class="field" style="flex:1;min-width:180px"><label>說明（追加項目）</label><input id="bae-note" value="${esc(b.note||'')}" placeholder="例：追加防水工程"></div>
+          <div class="field"><label>結算</label><select id="bae-settled"><option value="">未結算</option><option value="1" ${b.settled?'selected':''}>已結算</option></select></div>
+        </div>
+        <div class="row" style="margin-top:10px;gap:8px">
+          <button class="btn" data-bae-ok="${b.id}">儲存</button>
+          <button class="act muted" data-bae-cancel="1" style="cursor:pointer;height:40px">取消</button>
+        </div>
+      </div>`;
+    }
     return `<div class="card" style="border-left:3px solid ${b.settled?'var(--accent)':'#d97706'}">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap;margin-bottom:10px">
         <div>
