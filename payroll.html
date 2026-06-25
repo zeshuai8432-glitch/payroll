@@ -2074,7 +2074,7 @@ function printBillingDoc(id){
   const inner=`<h1>${esc(type)}</h1>
     <div class="meta">日期：${esc(b.date||'')}　|　案場：${esc(b.site||'')}</div>
     <table><tbody>
-      <tr><th style="width:90px">業主</th><td>${esc(b.client||'')}</td><th style="width:90px">付款方式</th><td>${esc(b.method||'')}</td></tr>
+      <tr><th style="width:90px">業主</th><td>${esc(b.client||'')}</td>${type!=='追加單'?`<th style="width:90px">付款方式</th><td>${esc(b.method||'')}</td>`:''}</tr>
       ${b.note?`<tr><th>備註</th><td colspan="3">${esc(b.note)}</td></tr>`:''}
     </tbody></table>
     <div class="sec">金額</div>
