@@ -1854,6 +1854,7 @@ function bind(){
   });
   bindBillingSubtotal('bnr'); bindBillingSubtotal('bna'); bindBillingSubtotal('bae'); bindMeasSubtotal();
   document.querySelectorAll('[data-billprint]').forEach(b=>b.onclick=()=>printBillingDoc(b.dataset.billprint));
+  document.querySelectorAll('[data-billsign]').forEach(b=>b.onclick=()=>{ const id=b.dataset.billsign; openFullscreenSign(url=>{ saveSig(id,url); saveData(); render(); }); });
   document.querySelectorAll('[data-togglesettle]').forEach(b=>b.onclick=()=>{
     const bill=state.billings.find(x=>x.id===b.dataset.togglesettle); if(bill){ bill.settled=!bill.settled; saveData(); render(); }
   });
@@ -3083,8 +3084,9 @@ function viewBillingAdd(){
           </div>
           <div style="display:flex;gap:4px;flex-wrap:wrap;flex-shrink:0">
             <button class="act ${b.settled?'':'muted'}" data-togglesettle="${b.id}" style="${b.settled?'color:var(--accent)':''}">${b.settled?'✓ 已結算':'未結算'}</button>
-            <button class="act" data-billprint="${b.id}">列印</button>
             <button class="act" data-billedit-add="${b.id}">改</button>
+            <button class="act" data-billprint="${b.id}">列印</button>
+            <button class="act" data-billsign="${b.id}" style="${billingSigs[b.id]?'color:var(--accent)':''}">✍${billingSigs[b.id]?'已簽':'簽名'}</button>
             <button class="act danger" data-delbill="${b.id}">刪</button>
           </div>
         </div>
