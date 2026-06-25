@@ -1855,6 +1855,17 @@ function bind(){
   bindBillingSubtotal('bnr'); bindBillingSubtotal('bna'); bindBillingSubtotal('bae'); bindMeasSubtotal();
   document.querySelectorAll('[data-billprint]').forEach(b=>b.onclick=()=>printBillingDoc(b.dataset.billprint));
   document.querySelectorAll('[data-billsign]').forEach(b=>b.onclick=()=>{ const id=b.dataset.billsign; openFullscreenSign(url=>{ saveSig(id,url); saveData(); render(); }); });
+  document.querySelectorAll('[data-site-printall]').forEach(b=>b.onclick=e=>{
+    e.stopPropagation();
+    const site=b.dataset.sitePrintall;
+    const ids=state.billings.filter(x=>(x.docType||'請款單')==='追加單'&&x.site===site).sort((a,c)=>(a.date||'').localeCompare(c.date||'')).map(x=>x.id);
+    printBillingDocs(ids);
+  });
+  document.querySelectorAll('[data-site-printsel]').forEach(b=>b.onclick=e=>{
+    e.stopPropagation();
+    const ids=[...document.querySelectorAll('[data-billcheck]:checked')].map(cb=>cb.dataset.billcheck);
+    printBillingDocs(ids);
+  });
   document.querySelectorAll('[data-togglesettle]').forEach(b=>b.onclick=()=>{
     const bill=state.billings.find(x=>x.id===b.dataset.togglesettle); if(bill){ bill.settled=!bill.settled; saveData(); render(); }
   });
@@ -2100,11 +2111,12 @@ function openFullscreenSign(onSaved){
   fs.style='position:fixed;inset:0;z-index:10001;background:#fff;display:flex;flex-direction:column';
   const W=window.innerWidth, H=window.innerHeight-56-72;
   fs.innerHTML=`
-    <div style="height:56px;display:flex;align-items:center;padding:0 14px;gap:8px;border-bottom:1px solid #e0e0e0;flex-shrink:0;background:#fff">
+    <div style="height:56px;display:flex;align-items:center;padding:0 10px;gap:6px;border-bottom:1px solid #e0e0e0;flex-shrink:0;background:#fff">
       <div style="font-size:15px;font-weight:700;flex:1;color:#1f2421">業主簽名</div>
-      <button id="fs-erase" style="height:36px;padding:0 14px;border:1px solid #ccc;border-radius:8px;background:transparent;font-size:14px;cursor:pointer">橡皮擦</button>
-      <button id="fs-clear" style="height:36px;padding:0 14px;border:1px solid #ccc;border-radius:8px;background:transparent;font-size:14px;cursor:pointer">清除</button>
-      <button id="fs-cancel" style="height:36px;padding:0 14px;border:1px solid #ccc;border-radius:8px;background:transparent;font-size:14px;cursor:pointer">取消</button>
+      <button id="fs-mode" style="height:36px;padding:0 12px;border:2px solid #6366f1;border-radius:8px;background:#ede9fe;color:#4338ca;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap">✏ 筆簽</button>
+      <button id="fs-erase" style="height:36px;padding:0 12px;border:1px solid #ccc;border-radius:8px;background:transparent;font-size:13px;cursor:pointer">橡皮擦</button>
+      <button id="fs-clear" style="height:36px;padding:0 12px;border:1px solid #ccc;border-radius:8px;background:transparent;font-size:13px;cursor:pointer">清除</button>
+      <button id="fs-cancel" style="height:36px;padding:0 12px;border:1px solid #ccc;border-radius:8px;background:transparent;font-size:13px;cursor:pointer">取消</button>
     </div>
     <canvas id="fs-canvas" width="${W}" height="${H}"
       style="flex:1;width:100%;background:#fff;touch-action:none;cursor:crosshair;display:block"></canvas>
@@ -2117,6 +2129,8 @@ function openFullscreenSign(onSaved){
   const ctx=cv.getContext('2d');
   ctx.lineCap='round'; ctx.lineJoin='round';
   let drawing=false, lx=0, ly=0, eraser=false;
+  // penOnly=true：只接受 Apple Pencil；false：手指/觸控也可以
+  let penOnly=true;
 
   function applyMode(){
     if(eraser){ ctx.globalCompositeOperation='destination-out'; ctx.lineWidth=28; cv.style.cursor='cell'; }
@@ -2124,19 +2138,38 @@ function openFullscreenSign(onSaved){
   }
   applyMode();
 
-  // 包一層 wrapper 讓提示文字可以絕對定位在畫布正中央
+  // 包一層 wrapper 讓提示文字可絕對定位在畫布正中央
   const cvWrap=document.createElement('div');
   cvWrap.style='position:relative;flex:1;overflow:hidden';
   cv.style.cssText='width:100%;height:100%;background:#fff;touch-action:none;cursor:crosshair;display:block';
   cv.parentNode.insertBefore(cvWrap,cv);
   cvWrap.appendChild(cv);
   const hint=document.createElement('div');
-  hint.textContent='請使用 Apple Pencil 簽名';
-  hint.style='position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:20px;color:#bbb;pointer-events:none;user-select:none;text-align:center;white-space:nowrap';
+  hint.style='position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:18px;color:#bbb;pointer-events:none;user-select:none;text-align:center;line-height:1.7';
   cvWrap.appendChild(hint);
 
+  function updateModeUI(){
+    const mb=document.getElementById('fs-mode');
+    if(penOnly){
+      mb.textContent='✏ 筆簽';
+      mb.style.cssText='height:36px;padding:0 12px;border:2px solid #6366f1;border-radius:8px;background:#ede9fe;color:#4338ca;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap';
+      hint.innerHTML='請使用 Apple Pencil 簽名<br><span style="font-size:14px">點「☝ 手簽」可改用手指</span>';
+    } else {
+      mb.textContent='☝ 手簽';
+      mb.style.cssText='height:36px;padding:0 12px;border:2px solid #f59e0b;border-radius:8px;background:#fef3c7;color:#92400e;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap';
+      hint.innerHTML='請用手指簽名<br><span style="font-size:14px">點「✏ 筆簽」可改用 Apple Pencil</span>';
+    }
+  }
+  updateModeUI();
+
+  function allowedPointer(e){
+    if(e.pointerType==='mouse') return true;
+    if(e.pointerType==='pen') return true;
+    return !penOnly; // touch 只在手簽模式允許
+  }
+
   cv.addEventListener('pointerdown', e=>{
-    if(e.pointerType!=='pen'&&e.pointerType!=='mouse') return;
+    if(!allowedPointer(e)) return;
     e.preventDefault();
     hint.style.display='none';
     applyMode(); drawing=true;
@@ -2144,7 +2177,7 @@ function openFullscreenSign(onSaved){
     cv.setPointerCapture(e.pointerId);
   });
   cv.addEventListener('pointermove', e=>{
-    if(!drawing||(e.pointerType!=='pen'&&e.pointerType!=='mouse')) return;
+    if(!drawing||!allowedPointer(e)) return;
     const x=e.offsetX, y=e.offsetY;
     ctx.beginPath(); ctx.moveTo(lx,ly); ctx.lineTo(x,y); ctx.stroke();
     lx=x; ly=y;
@@ -2152,6 +2185,7 @@ function openFullscreenSign(onSaved){
   cv.addEventListener('pointerup', ()=>drawing=false);
   cv.addEventListener('pointercancel', ()=>drawing=false);
 
+  document.getElementById('fs-mode').onclick=()=>{ penOnly=!penOnly; updateModeUI(); hint.style.display=''; };
   const eb=document.getElementById('fs-erase');
   eb.onclick=()=>{ eraser=!eraser; eb.textContent=eraser?'✏ 切回筆':'橡皮擦'; eb.style.background=eraser?'#fde9d4':'transparent'; eb.style.color=eraser?'#9a5b1a':''; applyMode(); };
   document.getElementById('fs-clear').onclick=()=>{ ctx.globalCompositeOperation='source-over'; ctx.clearRect(0,0,cv.width,cv.height); applyMode(); };
@@ -2171,24 +2205,19 @@ function openFullscreenSign(onSaved){
   };
 }
 
-// 列印單張追加單 / 請款單（含業主簽名 canvas）
-function printBillingDoc(id){
-  const b=state.billings.find(x=>x.id===id); if(!b) return;
+// 單張追加單 / 請款單的文件 HTML（供單張列印和批次列印共用）
+function billingDocInner(id){
+  const b=state.billings.find(x=>x.id===id); if(!b) return '';
   const type=(b.docType||'請款單');
   const photos=billingPhotos[id]||[];
   const amt=billingAmount(b);
-
   const photoSec=photos.length?`<div class="sec">施作照片</div>
     <div style="display:flex;flex-wrap:wrap;gap:10px;margin:8px 0 16px">
       ${photos.map(url=>`<img src="${url}" style="width:180px;height:135px;object-fit:cover;border:1px solid #ddd;border-radius:4px">`).join('')}
     </div>`:'';
-
   const sig=billingSigs[id]||null;
-  const signImgHtml=sig
-    ?`<img src="${sig}" style="display:block;height:72px;max-width:220px;margin-top:6px">`
-    :'';
-
-  const inner=`<h1>${esc(type)}</h1>
+  const signImgHtml=sig?`<img src="${sig}" style="display:block;height:72px;max-width:220px;margin-top:6px">`:'';
+  return `<h1>${esc(type)}</h1>
     <div class="meta">日期：${esc(b.date||'')}　|　案場：${esc(b.site||'')}</div>
     <table><tbody>
       <tr><th style="width:90px">業主</th><td>${esc(b.client||'')}${type!=='追加單'&&b.method?`　（${esc(b.method)}）`:''}</td></tr>
@@ -2206,11 +2235,17 @@ function printBillingDoc(id){
       <div>審核</div>
       <div>業主簽收${signImgHtml}</div>
     </div>`;
+}
+
+// 列印單張追加單 / 請款單（含業主簽名）
+function printBillingDoc(id){
+  const b=state.billings.find(x=>x.id===id); if(!b) return;
+  const sig=billingSigs[id]||null;
+  const inner=billingDocInner(id);
 
   const old=document.getElementById('print-overlay'); if(old) old.remove();
   const ov=document.createElement('div');
   ov.id='print-overlay';
-
   ov.innerHTML=`
     <div class="pbar">
       ${sig
@@ -2222,18 +2257,36 @@ function printBillingDoc(id){
       <button class="act" id="po-close" style="border:1px solid var(--line2);border-radius:8px;padding:0 14px">關閉</button>
     </div>
     <div class="pdoc">${inner}</div>`;
-
   document.body.appendChild(ov);
   document.getElementById('po-print').onclick=()=>window.print();
   document.getElementById('po-close').onclick=()=>ov.remove();
-
   const resignBtn=document.getElementById('sig-resign');
   if(resignBtn) resignBtn.onclick=()=>{ deleteSig(id); render(); printBillingDoc(id); };
-
   const fsBtn=document.getElementById('sig-fullscreen-btn');
   if(fsBtn) fsBtn.onclick=()=>openFullscreenSign(dataUrl=>{ saveSig(id,dataUrl); saveData(); render(); printBillingDoc(id); });
+  ov.scrollTop=0;
+}
 
-
+// 批次列印：ids 為要列印的 billing id 陣列
+function printBillingDocs(ids){
+  if(!ids.length){ alert('請先勾選要列印的追加單'); return; }
+  const pages=ids.map((id,i)=>{
+    const html=billingDocInner(id); if(!html) return '';
+    return `<div style="${i>0?'page-break-before:always;padding-top:24px':''}">${html}</div>`;
+  }).filter(Boolean).join('');
+  const old=document.getElementById('print-overlay'); if(old) old.remove();
+  const ov=document.createElement('div');
+  ov.id='print-overlay';
+  ov.innerHTML=`
+    <div class="pbar">
+      <span style="font-size:13px;color:var(--muted)">共 ${ids.length} 張</span>
+      <button class="btn" id="po-print" style="margin-left:auto">列印 / 存成 PDF</button>
+      <button class="act" id="po-close" style="border:1px solid var(--line2);border-radius:8px;padding:0 14px">關閉</button>
+    </div>
+    <div class="pdoc">${pages}</div>`;
+  document.body.appendChild(ov);
+  document.getElementById('po-print').onclick=()=>window.print();
+  document.getElementById('po-close').onclick=()=>ov.remove();
   ov.scrollTop=0;
 }
 
@@ -3085,6 +3138,7 @@ function viewBillingAdd(){
         <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap">
           <div style="flex:1;min-width:0">
             <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap">
+              <input type="checkbox" data-billcheck="${b.id}" style="width:18px;height:18px;flex-shrink:0;cursor:pointer;accent-color:var(--accent);margin-right:2px">
               <span style="font-size:18px;font-weight:800;color:#9a5b1a">${money(billingAmount(b))}</span>
               <span style="font-size:12px;color:var(--muted)">${esc(b.date||'')}</span>
               ${b.client?`<span style="font-size:12px;color:var(--muted)">${esc(b.client)}</span>`:''}
@@ -3113,11 +3167,15 @@ function viewBillingAdd(){
     }).join(''):'';
 
     return `<div class="card" style="border-left:3px solid #d97706">
-      <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px;cursor:pointer" data-toggle-form="add-site-${siteName}">
-        <div style="font-size:15px;font-weight:700">${esc(siteName)}</div>
-        <div style="display:flex;align-items:center;gap:12px">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+        <div style="display:flex;align-items:center;gap:10px;flex:1;min-width:0;cursor:pointer" data-toggle-form="add-site-${siteName}">
+          <div style="font-size:15px;font-weight:700">${esc(siteName)}</div>
           <div style="font-size:13px;color:var(--muted)">合計 <b style="color:#9a5b1a">${money(siteTot)}</b>　未結算 <span style="color:var(--danger)">${money(siteTot-siteSettled)}</span></div>
           <span style="font-size:12px;color:var(--muted)">${open?'▲':'▼'}</span>
+        </div>
+        <div style="display:flex;gap:6px;flex-shrink:0">
+          <button class="act" data-site-printall="${siteName}" style="font-size:12px;padding:0 10px;height:32px">全部列印</button>
+          ${open?`<button class="act" data-site-printsel="${siteName}" style="font-size:12px;padding:0 10px;height:32px">列印勾選</button>`:''}
         </div>
       </div>
       ${entries}
