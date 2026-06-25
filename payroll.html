@@ -511,7 +511,8 @@ function computeRecords(records){
 function tabsBar(){
   const groups=[
     ['薪資作業',[['entry','登記出工'],['payroll','員工薪資']]],
-    ['財務管理',[['loans','借支管理'],['tools','工具管理'],['advances','代墊款'],['accounts','公積金帳戶'],['deals','分潤結算'],['billing','請款追蹤'],['billingReq','請款單'],['billingAdd','追加單'],['meas','計量明細'],['yearend','年度總結'],['parkacc','品佑帳戶結算'],['recon','對帳匯出']]],
+    ['財務管理',[['loans','借支管理'],['tools','工具管理'],['advances','代墊款'],['accounts','公積金帳戶'],['deals','分潤結算'],['billing','請款追蹤'],['yearend','年度總結'],['parkacc','品佑帳戶結算'],['recon','對帳匯出']]],
+    ['單據',[['billingReq','請款單'],['billingAdd','追加單'],['meas','計量明細']]],
     ['設定',[['sites','案場成本'],['manage','員工/案場']]],
   ];
   return groups.map(([label,items])=>`
