@@ -356,6 +356,7 @@
     body > .top, body > .layout { display: none !important; }
     #print-overlay { position: static; padding: 0; }
     #print-overlay .pbar { display: none !important; }
+    #sig-section { display: none !important; }
     @page { size: A4; margin: 16mm; }
   }
 </style>
@@ -2062,16 +2063,22 @@ function compressImage(file, maxW, quality, cb){
   reader.readAsDataURL(file);
 }
 
-// 列印單張追加單 / 請款單
+// 列印單張追加單 / 請款單（含業主簽名 canvas）
 function printBillingDoc(id){
   const b=state.billings.find(x=>x.id===id); if(!b) return;
   const type=(b.docType||'請款單');
   const photos=billingPhotos[id]||[];
+  const amt=billingAmount(b);
+
   const photoSec=photos.length?`<div class="sec">施作照片</div>
     <div style="display:flex;flex-wrap:wrap;gap:10px;margin:8px 0 16px">
       ${photos.map(url=>`<img src="${url}" style="width:180px;height:135px;object-fit:cover;border:1px solid #ddd;border-radius:4px">`).join('')}
     </div>`:'';
-  const amt=billingAmount(b);
+
+  const signImgHtml=b.signedPhoto
+    ?`<img src="${b.signedPhoto}" style="display:block;height:72px;max-width:220px;margin-top:6px">`
+    :'';
+
   const inner=`<h1>${esc(type)}</h1>
     <div class="meta">日期：${esc(b.date||'')}　|　案場：${esc(b.site||'')}</div>
     <table><tbody>
@@ -2079,13 +2086,86 @@ function printBillingDoc(id){
     </tbody></table>
     <div class="sec">金額</div>
     <table><thead><tr><th>項目</th><th>單位</th><th class="num">數量</th><th class="num">單價</th><th class="num">小計</th></tr></thead>
-      <tbody><tr><td>${esc(b.note||type)}</td><td>${esc(b.unit||'')}</td><td class="num">${b.qty!==undefined?b.qty:'—'}</td><td class="num">${b.unitPrice!==undefined?money(b.unitPrice):'—'}</td><td class="num">${money(amt)}</td></tr>
+      <tbody>
+        <tr><td>${esc(b.note||type)}</td><td>${esc(b.unit||'')}</td><td class="num">${b.qty!==undefined?b.qty:'—'}</td><td class="num">${b.unitPrice!==undefined?money(b.unitPrice):'—'}</td><td class="num">${money(amt)}</td></tr>
         <tr class="total-row"><td colspan="4">總金額</td><td class="num">${money(amt)}</td></tr>
         ${b.remark?`<tr><td colspan="5" style="padding-top:8px;color:#555;font-size:13px">備注：${esc(b.remark)}</td></tr>`:''}
       </tbody></table>
     ${photoSec}
-    <div class="sign"><div>申請人</div><div>審核</div><div>業主簽收</div></div>`;
-  printHTML(`${type} ${esc(b.site||'')}`, inner);
+    <div class="sign">
+      <div>申請人</div>
+      <div>審核</div>
+      <div>業主簽收${signImgHtml}</div>
+    </div>`;
+
+  const old=document.getElementById('print-overlay'); if(old) old.remove();
+  const ov=document.createElement('div');
+  ov.id='print-overlay';
+
+  const sigSection=`
+    <div id="sig-section" style="max-width:800px;margin:24px auto 0;padding:0 0 32px">
+      <div style="font-size:14px;font-weight:700;margin-bottom:10px;color:var(--accent)">業主簽名</div>
+      <canvas id="sig-canvas" width="640" height="180"
+        style="border:2px dashed #aaa;border-radius:10px;background:#f8f9f8;touch-action:none;display:block;width:100%;max-width:640px;cursor:crosshair"></canvas>
+      <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <button id="sig-clear" style="height:40px;padding:0 16px;border:1px solid var(--line2);border-radius:8px;background:transparent;cursor:pointer;font-size:13px;color:var(--text)">清除</button>
+        <button id="sig-save" class="btn" style="height:40px;padding:0 20px;font-size:14px">確認簽名並儲存</button>
+      </div>
+      <div style="font-size:12px;color:var(--muted);margin-top:8px">簽名完成後點「確認簽名並儲存」，再按「列印 / 存成 PDF」即可產生含簽名的 PDF。</div>
+    </div>`;
+
+  ov.innerHTML=`
+    <div class="pbar">
+      ${b.signedPhoto?`<span style="color:#16a34a;font-size:13px;font-weight:600">✓ 已取得簽名</span><button id="sig-resign" class="act muted" style="font-size:12px;border:1px solid var(--line2);border-radius:8px;padding:0 10px">重新簽名</button>`:''}
+      <button class="btn" id="po-print">列印 / 存成 PDF</button>
+      <button class="act" id="po-close" style="border:1px solid var(--line2);border-radius:8px;padding:0 14px">關閉</button>
+    </div>
+    <div class="pdoc">${inner}</div>
+    ${b.signedPhoto?'':sigSection}`;
+
+  document.body.appendChild(ov);
+  document.getElementById('po-print').onclick=()=>window.print();
+  document.getElementById('po-close').onclick=()=>ov.remove();
+
+  const resignBtn=document.getElementById('sig-resign');
+  if(resignBtn) resignBtn.onclick=()=>{ delete b.signedPhoto; saveData(); printBillingDoc(id); };
+
+  const canvas=document.getElementById('sig-canvas');
+  if(canvas){
+    const ctx=canvas.getContext('2d');
+    ctx.lineWidth=2.5; ctx.lineCap='round'; ctx.lineJoin='round'; ctx.strokeStyle='#111';
+    let drawing=false, lx=0, ly=0;
+
+    function getPos(e){
+      const r=canvas.getBoundingClientRect();
+      const sx=canvas.width/r.width, sy=canvas.height/r.height;
+      if(e.touches) return [(e.touches[0].clientX-r.left)*sx,(e.touches[0].clientY-r.top)*sy];
+      return [(e.clientX-r.left)*sx,(e.clientY-r.top)*sy];
+    }
+    function draw(e){
+      if(!drawing) return;
+      const[x,y]=getPos(e); ctx.beginPath(); ctx.moveTo(lx,ly); ctx.lineTo(x,y); ctx.stroke(); lx=x; ly=y;
+    }
+    canvas.addEventListener('mousedown',e=>{drawing=true;[lx,ly]=getPos(e);});
+    canvas.addEventListener('mousemove',draw);
+    canvas.addEventListener('mouseup',()=>drawing=false);
+    canvas.addEventListener('mouseleave',()=>drawing=false);
+    canvas.addEventListener('touchstart',e=>{e.preventDefault();drawing=true;[lx,ly]=getPos(e);},{passive:false});
+    canvas.addEventListener('touchmove',e=>{e.preventDefault();draw(e);},{passive:false});
+    canvas.addEventListener('touchend',()=>drawing=false);
+
+    document.getElementById('sig-clear').onclick=()=>ctx.clearRect(0,0,canvas.width,canvas.height);
+
+    document.getElementById('sig-save').onclick=()=>{
+      const d=ctx.getImageData(0,0,canvas.width,canvas.height).data;
+      if(!d.some((v,i)=>i%4===3&&v>10)){ alert('請先在上方欄位簽名'); return; }
+      b.signedPhoto=canvas.toDataURL('image/png');
+      saveData();
+      printBillingDoc(id);
+    };
+  }
+
+  ov.scrollTop=0;
 }
 
 // 請款追蹤明細 PDF
@@ -2938,6 +3018,7 @@ function viewBillingAdd(){
               <span style="font-size:18px;font-weight:800;color:#9a5b1a">${money(billingAmount(b))}</span>
               <span style="font-size:12px;color:var(--muted)">${esc(b.date||'')}</span>
               ${b.client?`<span style="font-size:12px;color:var(--muted)">${esc(b.client)}</span>`:''}
+              ${b.signedPhoto?`<span style="font-size:11px;background:#dcfce7;color:#16a34a;border-radius:6px;padding:2px 8px;font-weight:700">✓ 已簽核</span>`:''}
             </div>
             ${billingLineMeta(b)?`<div style="font-size:12px;color:var(--muted);margin-top:2px">${billingLineMeta(b)}</div>`:''}
             ${b.note?`<div style="font-size:13px;color:var(--text);margin-top:4px;font-weight:500">${esc(b.note)}</div>`:''}
