@@ -368,6 +368,7 @@
   <div style="margin-left:auto;display:flex;align-items:center;gap:10px">
     <span id="cloud-status" style="font-size:12px;opacity:.85;letter-spacing:.2px">連線中…</span>
     <button id="cloud-refresh" style="background:rgba(255,255,255,.22);color:#fff;border:1px solid rgba(255,255,255,.3);border-radius:8px;padding:5px 12px;cursor:pointer;font-size:13px;font-weight:600;backdrop-filter:blur(4px);transition:background .15s"><span class="mob-hide">↻ 重新整理</span><span class="mob-show" style="display:none">↻</span></button>
+    <button id="cloud-diag" style="background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.3);border-radius:8px;padding:5px 10px;cursor:pointer;font-size:12px">診斷</button>
   </div>
 </div>
 <div class="layout">
@@ -494,11 +495,27 @@ async function pushCloud(){
   if(saving){ pendingSave=true; return; }
   saving=true;
   try {
-    await fetch(CLOUD_URL, {method:'POST', body: JSON.stringify(packData())});
-    setCloud('已同步');
-  } catch(e){ setCloud('雲端儲存失敗（已存本機）'); }
+    const res=await fetch(CLOUD_URL,{method:'POST',body:JSON.stringify(packData())});
+    const j=await res.json();
+    if(j&&j.ok){ setCloud('已同步'); } else { setCloud('推送失敗：'+(j&&j.error||'未知錯誤').slice(0,60)); }
+  } catch(e){ setCloud('雲端儲存失敗：'+String(e).slice(0,50)); }
   saving=false;
   if(pendingSave){ pendingSave=false; pushCloud(); }
+}
+async function diagCloud(){
+  setCloud('診斷中…');
+  try{
+    const res=await fetch(CLOUD_URL,{method:'GET'});
+    const j=await res.json();
+    if(!j||!j.ok){ setCloud('GET失敗：'+JSON.stringify(j).slice(0,80)); return; }
+    const cd=JSON.parse(j.data);
+    const cloudSigCount=Object.keys(cd.billingSigs||{}).length;
+    const localSigCount=Object.keys(billingSigs).length;
+    // 試推一次
+    const pr=await fetch(CLOUD_URL,{method:'POST',body:JSON.stringify(packData())});
+    const pj=await pr.json();
+    setCloud(`本機簽名:${localSigCount}筆 雲端:${cloudSigCount}筆 推送:${pj&&pj.ok?'✓':'✗'+(pj&&pj.error||'').slice(0,30)}`);
+  }catch(e){ setCloud('診斷失敗：'+String(e).slice(0,60)); }
 }
 function setCloud(s){ cloudStatus=s; const el=document.getElementById('cloud-status'); if(el) el.textContent=s; }
 
@@ -3519,6 +3536,7 @@ function exportRecon(){
 }
 
 document.getElementById('cloud-refresh').onclick=()=>loadCloud();
+document.getElementById('cloud-diag').onclick=()=>diagCloud();
 
 // ---- 品佑帳戶結算 ----
 let parkFrom='', parkTo='';
