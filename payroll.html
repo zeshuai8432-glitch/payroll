@@ -144,7 +144,7 @@
     .row > .btn { width: 100%; }
 
     /* ── 按鈕：加大觸控面積 ── */
-    .act { padding: 7px 10px; font-size: 13.5px; }
+    .act { padding: 8px 14px; font-size: 13.5px; }
     .btn { font-size: 15px; }
 
     /* ── 表格 ── */
@@ -277,41 +277,49 @@
   td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 
   /* ── 按鈕 ── */
+  /* 全域：所有 button 都是膠囊形 */
+  button { border-radius: 999px !important; font-family: inherit; }
+
+  /* 主要行動按鈕 — tonal primary (淺紫底 + 深紫字) */
   .btn {
     height: 40px;
-    background: var(--grad-top);
-    color: #fff;
-    border: none;
-    border-radius: 12px;
+    background: #ede9fe;
+    color: #4338ca;
+    border: 1.5px solid #c4b5fd;
+    border-radius: 999px;
     padding: 0 22px;
     cursor: pointer;
     font-size: 14px;
-    font-weight: 600;
+    font-weight: 700;
     font-family: inherit;
-    box-shadow: 0 2px 12px rgba(79,70,229,.3);
-    transition: transform .2s cubic-bezier(.34,1.56,.64,1), box-shadow .2s, opacity .15s;
+    transition: background .18s, transform .2s cubic-bezier(.34,1.56,.64,1), box-shadow .2s;
     will-change: transform;
   }
-  .btn:hover { transform: translateY(-2px) scale(1.02); box-shadow: 0 6px 24px rgba(79,70,229,.42); opacity: .94; }
-  .btn:active { transform: translateY(0) scale(.98); transition-duration: .07s; box-shadow: 0 2px 8px rgba(79,70,229,.25); }
+  .btn:hover { background: #ddd6fe; transform: translateY(-2px); box-shadow: 0 6px 18px rgba(99,102,241,.22); }
+  .btn:active { transform: translateY(0) scale(.98); transition-duration: .07s; }
   .btn:disabled { opacity: .45; transform: none; cursor: not-allowed; }
+
+  /* 次要行動按鈕 — tonal secondary (超淺紫底 + 深紫字) */
   .act {
     cursor: pointer;
-    background: none;
-    border: none;
+    background: rgba(99,102,241,.08);
+    border: none !important;
     font-size: 13px;
-    padding: 4px 9px;
-    color: var(--accent);
+    padding: 5px 14px;
+    color: #4338ca;
     font-family: inherit;
-    border-radius: 8px;
+    border-radius: 999px;
     transition: background .15s, transform .15s cubic-bezier(.34,1.4,.64,1), color .15s;
+    line-height: 1.5;
   }
-  .act:hover { background: rgba(79,70,229,.09); transform: translateY(-1px); }
+  .act:hover { background: rgba(99,102,241,.16); transform: translateY(-1px); }
   .act:active { transform: translateY(0); transition-duration: .06s; }
-  .act.danger { color: var(--danger); }
-  .act.danger:hover { background: rgba(214,63,63,.09); }
-  .act.muted { color: var(--muted); cursor: default; }
-  .act.muted:hover { background: none; transform: none; }
+  /* 危險 — tonal danger (淺紅底 + 深紅字) */
+  .act.danger { color: #991b1b; background: rgba(220,38,38,.08); }
+  .act.danger:hover { background: rgba(220,38,38,.16); }
+  /* 靜態 — tonal muted (淺灰底 + 灰字) */
+  .act.muted { color: #64748b; background: rgba(100,116,139,.07); cursor: default; }
+  .act.muted:hover { background: rgba(100,116,139,.07); transform: none; }
 
   /* ── 標籤、訊息 ── */
   .tag {
@@ -367,8 +375,8 @@
   <h1>點工薪資管理系統</h1>
   <div style="margin-left:auto;display:flex;align-items:center;gap:10px">
     <span id="cloud-status" style="font-size:12px;opacity:.85;letter-spacing:.2px">連線中…</span>
-    <button id="cloud-refresh" style="background:rgba(255,255,255,.22);color:#fff;border:1px solid rgba(255,255,255,.3);border-radius:8px;padding:5px 12px;cursor:pointer;font-size:13px;font-weight:600;backdrop-filter:blur(4px);transition:background .15s"><span class="mob-hide">↻ 重新整理</span><span class="mob-show" style="display:none">↻</span></button>
-    <button id="cloud-diag" style="background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.3);border-radius:8px;padding:5px 10px;cursor:pointer;font-size:12px">診斷</button>
+    <button id="cloud-refresh" style="background:rgba(255,255,255,.22);color:#fff;border:1px solid rgba(255,255,255,.3);padding:5px 14px;cursor:pointer;font-size:13px;font-weight:600;backdrop-filter:blur(4px);transition:background .15s"><span class="mob-hide">↻ 重新整理</span><span class="mob-show" style="display:none">↻</span></button>
+    <button id="cloud-diag" style="background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.3);padding:5px 12px;cursor:pointer;font-size:12px">診斷</button>
   </div>
 </div>
 <div class="layout">
@@ -577,7 +585,7 @@ function foldBtn(key, label){
   const open=!!formOpen[key];
   return `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:${open?'8px':'0'}">
     <div style="font-size:14px;font-weight:600">${label}</div>
-    <button data-toggle-form="${key}" style="font-size:12px;border:1px solid var(--line2);border-radius:8px;padding:0 10px;height:28px;background:transparent;cursor:pointer;color:var(--muted)">${open?'▲ 收合':'＋ 展開'}</button>
+    <button data-toggle-form="${key}" style="font-size:12px;padding:0 14px;height:28px;background:rgba(100,116,139,.08);border:none;cursor:pointer;color:#64748b;font-weight:600">${open?'▲ 收合':'＋ 展開'}</button>
   </div>`;
 }
 
@@ -825,9 +833,9 @@ function viewPayroll(){
     <div class="row">
       <div class="field"><label>起</label><input type="date" id="pay-from" value="${state.payFrom}"></div>
       <div class="field"><label>訖</label><input type="date" id="pay-to" value="${state.payTo}"></div>
-      <button class="act" id="pay-thismonth" style="height:36px;border:1px solid var(--line2);border-radius:8px;padding:0 12px">本期</button>
-      <button class="act" id="pay-lastmonth" style="height:36px;border:1px solid var(--line2);border-radius:8px;padding:0 12px">上期</button>
-      <button class="act" id="pay-all" style="height:36px;border:1px solid var(--line2);border-radius:8px;padding:0 12px">全部</button>
+      <button class="act" id="pay-thismonth" style="height:36px;padding:0 12px">本期</button>
+      <button class="act" id="pay-lastmonth" style="height:36px;padding:0 12px">上期</button>
+      <button class="act" id="pay-all" style="height:36px;padding:0 12px">全部</button>
     </div>
   </div>
   <div class="metrics">
@@ -840,7 +848,7 @@ function viewPayroll(){
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;gap:8px;flex-wrap:wrap">
       <div style="font-size:14px;font-weight:600">本期薪資</div>
       <div style="display:flex;gap:8px">
-        ${partnerIds.length?`<button class="act" id="toggle-partners" style="border:1px solid var(--line2);border-radius:8px;padding:0 12px;height:36px">${state.showPartners?'隱藏股東':'顯示股東'}</button>`:''}
+        ${partnerIds.length?`<button class="act" id="toggle-partners" style="padding:0 12px;height:36px">${state.showPartners?'隱藏股東':'顯示股東'}</button>`:''}
         <button class="btn" id="export-summary" ${rows===''?'disabled style="opacity:.5"':''}>匯出總表 PDF</button>
       </div>
     </div>
@@ -2000,7 +2008,7 @@ function printHTML(title, inner){
   ov.innerHTML=`
     <div class="pbar">
       <button class="btn" id="po-print">列印 / 存成 PDF</button>
-      <button class="act" id="po-close" style="border:1px solid var(--line2);border-radius:8px;padding:0 14px">關閉</button>
+      <button class="act" id="po-close" style="padding:0 14px">關閉</button>
     </div>
     <div class="pdoc">${inner}</div>`;
   document.body.appendChild(ov);
@@ -2143,15 +2151,15 @@ function openFullscreenSign(onSaved){
   fs.innerHTML=`
     <div style="height:56px;display:flex;align-items:center;padding:0 10px;gap:6px;border-bottom:1px solid #e0e0e0;flex-shrink:0;background:#fff">
       <div style="font-size:15px;font-weight:700;flex:1;color:#1f2421">業主簽名</div>
-      <button id="fs-mode" style="height:36px;padding:0 12px;border:2px solid #6366f1;border-radius:8px;background:#ede9fe;color:#4338ca;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap">✏ 筆簽</button>
-      <button id="fs-erase" style="height:36px;padding:0 12px;border:1px solid #ccc;border-radius:8px;background:transparent;font-size:13px;cursor:pointer">橡皮擦</button>
-      <button id="fs-clear" style="height:36px;padding:0 12px;border:1px solid #ccc;border-radius:8px;background:transparent;font-size:13px;cursor:pointer">清除</button>
-      <button id="fs-cancel" style="height:36px;padding:0 12px;border:1px solid #ccc;border-radius:8px;background:transparent;font-size:13px;cursor:pointer">取消</button>
+      <button id="fs-mode" style="height:36px;padding:0 14px;border:none;background:#ede9fe;color:#4338ca;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap">✏ 筆簽</button>
+      <button id="fs-erase" style="height:36px;padding:0 14px;border:none;background:rgba(100,116,139,.08);color:#475569;font-size:13px;cursor:pointer">橡皮擦</button>
+      <button id="fs-clear" style="height:36px;padding:0 14px;border:none;background:rgba(100,116,139,.08);color:#475569;font-size:13px;cursor:pointer">清除</button>
+      <button id="fs-cancel" style="height:36px;padding:0 14px;border:none;background:rgba(100,116,139,.08);color:#475569;font-size:13px;cursor:pointer">取消</button>
     </div>
     <canvas id="fs-canvas" width="${W}" height="${H}"
       style="flex:1;width:100%;background:#fff;touch-action:none;cursor:crosshair;display:block"></canvas>
     <div style="height:72px;display:flex;align-items:center;justify-content:center;padding:0 16px;border-top:1px solid #e0e0e0;flex-shrink:0;background:#fff">
-      <button id="fs-done" style="width:100%;max-width:480px;height:52px;background:var(--accent);color:#fff;border:none;border-radius:14px;font-size:18px;font-weight:700;cursor:pointer;letter-spacing:.5px">✓ 儲存簽名</button>
+      <button id="fs-done" style="width:100%;max-width:480px;height:52px;background:#ede9fe;color:#3730a3;border:2px solid #c4b5fd;font-size:18px;font-weight:800;cursor:pointer;letter-spacing:.5px">✓ 儲存簽名</button>
     </div>`;
   document.body.appendChild(fs);
 
@@ -2182,11 +2190,11 @@ function openFullscreenSign(onSaved){
     const mb=document.getElementById('fs-mode');
     if(penOnly){
       mb.textContent='✏ 筆簽';
-      mb.style.cssText='height:36px;padding:0 12px;border:2px solid #6366f1;border-radius:8px;background:#ede9fe;color:#4338ca;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap';
+      mb.style.cssText='height:36px;padding:0 14px;border:none;border-radius:999px;background:#ede9fe;color:#4338ca;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap';
       hint.innerHTML='請使用 Apple Pencil 簽名<br><span style="font-size:14px">點「☝ 手簽」可改用手指</span>';
     } else {
       mb.textContent='☝ 手簽';
-      mb.style.cssText='height:36px;padding:0 12px;border:2px solid #f59e0b;border-radius:8px;background:#fef3c7;color:#92400e;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap';
+      mb.style.cssText='height:36px;padding:0 14px;border:none;border-radius:999px;background:#fef3c7;color:#92400e;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap';
       hint.innerHTML='請用手指簽名<br><span style="font-size:14px">點「✏ 筆簽」可改用 Apple Pencil</span>';
     }
   }
@@ -2280,11 +2288,11 @@ function printBillingDoc(id){
     <div class="pbar">
       ${sig
         ?`<span style="color:#16a34a;font-size:13px;font-weight:600">✓ 已簽核</span>
-          <button id="sig-resign" class="act muted" style="font-size:12px;border:1px solid var(--line2);border-radius:8px;padding:0 10px">重新簽名</button>`
-        :`<button id="sig-fullscreen-btn" class="btn" style="background:#f59e0b;border-color:#f59e0b;padding:0 16px;font-size:14px">✍ 請業主簽名</button>`
+          <button id="sig-resign" class="act muted" style="font-size:12px;padding:0 10px">重新簽名</button>`
+        :`<button id="sig-fullscreen-btn" class="btn" style="background:#fef3c7;color:#92400e;border-color:#fde68a;padding:0 16px;font-size:14px">✍ 請業主簽名</button>`
       }
       <button class="btn" id="po-print" style="margin-left:auto">列印 / 存成 PDF</button>
-      <button class="act" id="po-close" style="border:1px solid var(--line2);border-radius:8px;padding:0 14px">關閉</button>
+      <button class="act" id="po-close" style="padding:0 14px">關閉</button>
     </div>
     <div class="pdoc">${inner}</div>`;
   document.body.appendChild(ov);
@@ -2317,7 +2325,7 @@ function printBillingDocs(ids){
     <div class="pbar">
       <span style="font-size:13px;color:var(--muted)">共 ${ids.length} 張</span>
       <button class="btn" id="po-print" style="margin-left:auto">列印 / 存成 PDF</button>
-      <button class="act" id="po-close" style="border:1px solid var(--line2);border-radius:8px;padding:0 14px">關閉</button>
+      <button class="act" id="po-close" style="padding:0 14px">關閉</button>
     </div>
     <div class="pdoc">${pages}</div>`;
   document.body.appendChild(ov);
@@ -2485,7 +2493,7 @@ function viewTools(){
       <div style="margin-bottom:8px">${empChecks}</div>
       <div class="sub" style="margin-bottom:8px">已分配 ${money(sumPicked)} / 總額 ${money(toolDraft.amount)}　${Math.abs(diff)>=1?`<span style="color:var(--danger)">尚有 ${money(diff)} 未分配</span>`:'<span style="color:var(--accent)">✓ 剛好分完</span>'}</div>
       <div class="row">
-        <button class="act" id="tool-even" style="border:1px solid var(--line2);border-radius:8px;padding:0 12px;height:36px">重新平均分</button>
+        <button class="act" id="tool-even" style="padding:0 12px;height:36px">重新平均分</button>
         <button class="btn" id="tool-confirm" ${Math.abs(diff)>=1||pickIds.length===0?'disabled style="opacity:.5"':''}>確認並帶入扣項</button>
         <button class="act muted" id="tool-cancel" style="cursor:pointer;height:36px">取消</button>
       </div>
@@ -2631,8 +2639,8 @@ function viewAdvances(){
     <div class="row">
       <div class="field"><label>起</label><input type="date" id="adv-from" value="${advFrom}"></div>
       <div class="field"><label>訖</label><input type="date" id="adv-to" value="${advTo}"></div>
-      <button class="act" id="adv-thisperiod" style="height:36px;border:1px solid var(--line2);border-radius:8px;padding:0 12px">本期</button>
-      <button class="act" id="adv-lastperiod" style="height:36px;border:1px solid var(--line2);border-radius:8px;padding:0 12px">上期</button>
+      <button class="act" id="adv-thisperiod" style="height:36px;padding:0 12px">本期</button>
+      <button class="act" id="adv-lastperiod" style="height:36px;padding:0 12px">上期</button>
     </div>
   </div>
   ${partners.length===0?'<div class="card"><div class="empty">尚未標記股東。請到「員工/案場」分頁把股東（潘東澤、潘建龍）設為股東。</div></div>':`
@@ -2742,7 +2750,7 @@ function viewAccounts(){
       <div class="field"><label>帳戶</label><select id="led-filter" style="height:36px">${filterOpts}</select></div>
       <div class="field"><label>起</label><input type="date" id="led-from" value="${ledgerFrom}"></div>
       <div class="field"><label>訖</label><input type="date" id="led-to" value="${ledgerTo}"></div>
-      <button class="act" id="led-clearrange" style="height:36px;border:1px solid var(--line2);border-radius:8px;padding:0 12px">清除日期</button>
+      <button class="act" id="led-clearrange" style="height:36px;padding:0 12px">清除日期</button>
       ${(ledgerFrom||ledgerTo)?`<div class="sub" style="margin:0;align-self:center">區間內　收入 ${money(rangeIn)}・支出 ${money(rangeOut)}</div>`:''}
     </div>
     ${txRows===''?'<div class="empty">此條件下尚無收支紀錄。</div>':`<div class="scroll"><table>
@@ -3036,11 +3044,11 @@ function viewDeals(){
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:8px">
       <div style="font-size:14px;font-weight:600">案場損益清單（代工／公司分潤）</div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
-        <button class="act" id="deals-selall" style="border:1px solid var(--line2);border-radius:8px;padding:0 12px;height:34px">全選</button>
-        <button class="act" id="deals-selnone" style="border:1px solid var(--line2);border-radius:8px;padding:0 12px;height:34px">取消全選</button>
+        <button class="act" id="deals-selall" style="padding:0 12px;height:34px">全選</button>
+        <button class="act" id="deals-selnone" style="padding:0 12px;height:34px">取消全選</button>
         <button class="btn" id="export-deals-sel" ${anyDeals===0?'disabled style="opacity:.5"':''}>匯出選取</button>
         <button class="btn" id="export-deals" ${anyDeals===0?'disabled style="opacity:.5"':''}>全部匯出</button>
-        <button class="act" id="resync-deals" style="border:1px solid var(--accent);border-radius:8px;padding:0 12px;height:34px;color:var(--accent)">重算所有案場分潤</button>
+        <button class="act" id="resync-deals" style="padding:0 12px;height:34px;background:rgba(99,102,241,.14);color:#3730a3;font-weight:600">重算所有案場分潤</button>
       </div>
     </div>
     ${anyDeals===0?'<div class="empty">尚無代工／公司分潤紀錄。（合作案場在上方橘色卡片）</div>':dealsSections}
@@ -3454,8 +3462,8 @@ function viewRecon(){
     <div class="row" style="margin-bottom:14px">
       <div class="field"><label>起（套用於可套期間的明細）</label><input type="date" id="recon-from" value="${reconFrom}"></div>
       <div class="field"><label>訖</label><input type="date" id="recon-to" value="${reconTo}"></div>
-      <button class="act" id="recon-thisperiod" style="height:36px;border:1px solid var(--line2);border-radius:8px;padding:0 12px">本期(11號)</button>
-      <button class="act" id="recon-clear" style="height:36px;border:1px solid var(--line2);border-radius:8px;padding:0 12px">清除日期</button>
+      <button class="act" id="recon-thisperiod" style="height:36px;padding:0 12px">本期(11號)</button>
+      <button class="act" id="recon-clear" style="height:36px;padding:0 12px">清除日期</button>
     </div>
     ${checks}
     <button class="btn" id="recon-export" ${anyPicked?'':'disabled style="opacity:.5"'} style="margin-top:6px">合併匯出 PDF</button>
@@ -3587,7 +3595,7 @@ function viewParkAcc(){
       <div class="field" style="min-width:200px"><label>哪個帳戶是「品佑代支出」</label><select id="park-acc">${accOpts}</select></div>
       <div class="field"><label>起（依分潤日期）</label><input type="date" id="park-from" value="${parkFrom}"></div>
       <div class="field"><label>訖</label><input type="date" id="park-to" value="${parkTo}"></div>
-      <button class="act" id="park-clear" style="height:36px;border:1px solid var(--line2);border-radius:8px;padding:0 12px;align-self:flex-end">全部期間</button>
+      <button class="act" id="park-clear" style="height:36px;padding:0 12px;align-self:flex-end">全部期間</button>
     </div>
   </div>`;
 
@@ -3791,7 +3799,7 @@ function viewYearEnd(){
   const dateInputs=`<div class="row" style="margin-bottom:12px">
     <div class="field"><label>起（依分潤日期）</label><input type="date" id="ye-from" value="${yearFrom}"></div>
     <div class="field"><label>訖</label><input type="date" id="ye-to" value="${yearTo}"></div>
-    <button class="act" id="ye-clear" style="height:36px;border:1px solid var(--line2);border-radius:8px;padding:0 12px">全部</button>
+    <button class="act" id="ye-clear" style="height:36px;padding:0 12px">全部</button>
   </div>`;
   // 驗算明細（一行一項、金額靠右）
   const vline2=(label,val,opt={})=>`<div style="display:flex;justify-content:space-between;align-items:baseline;gap:12px;padding:5px 0;border-bottom:1px solid var(--line)${opt.strong?';font-weight:700':''}${opt.sub?';color:var(--muted);font-size:12px':''}"><span>${label}</span><span class="num" style="white-space:nowrap${opt.color?';color:'+opt.color:''}">${val}</span></div>`;
