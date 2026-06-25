@@ -2071,16 +2071,17 @@ function printBillingDoc(id){
     <div style="display:flex;flex-wrap:wrap;gap:10px;margin:8px 0 16px">
       ${photos.map(url=>`<img src="${url}" style="width:180px;height:135px;object-fit:cover;border:1px solid #ddd;border-radius:4px">`).join('')}
     </div>`:'';
+  const amt=billingAmount(b);
   const inner=`<h1>${esc(type)}</h1>
     <div class="meta">日期：${esc(b.date||'')}　|　案場：${esc(b.site||'')}</div>
     <table><tbody>
-      <tr><th style="width:90px">業主</th><td>${esc(b.client||'')}</td>${type!=='追加單'?`<th style="width:90px">付款方式</th><td>${esc(b.method||'')}</td>`:''}</tr>
-      ${b.note?`<tr><th>備註</th><td colspan="3">${esc(b.note)}</td></tr>`:''}
+      <tr><th style="width:90px">業主</th><td>${esc(b.client||'')}${type!=='追加單'&&b.method?`　（${esc(b.method)}）`:''}</td></tr>
+      ${b.remark?`<tr><th>備注</th><td>${esc(b.remark)}</td></tr>`:''}
     </tbody></table>
     <div class="sec">金額</div>
-    <table><thead><tr><th>項目</th><th class="num">金額</th></tr></thead>
-      <tbody><tr><td>${esc(b.note||type)}</td><td class="num">${money(b.amount)}</td></tr>
-        <tr class="total-row"><td>總金額</td><td class="num">${money(b.amount)}</td></tr>
+    <table><thead><tr><th>項目</th><th>單位</th><th class="num">數量</th><th class="num">單價</th><th class="num">小計</th></tr></thead>
+      <tbody><tr><td>${esc(b.note||type)}</td><td>${esc(b.unit||'')}</td><td class="num">${b.qty!==undefined?b.qty:'—'}</td><td class="num">${b.unitPrice!==undefined?money(b.unitPrice):'—'}</td><td class="num">${money(amt)}</td></tr>
+        <tr class="total-row"><td colspan="4">總金額</td><td class="num">${money(amt)}</td></tr>
       </tbody></table>
     ${photoSec}
     <div class="sign"><div>申請人</div><div>審核</div><div>業主簽收</div></div>`;
