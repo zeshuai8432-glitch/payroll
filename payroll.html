@@ -2302,15 +2302,17 @@ function openFullscreenSign(onSaved){
   document.body.appendChild(fs);
   const oldBodySelect=document.body.style.userSelect;
   const oldWebkitSelect=document.body.style.webkitUserSelect;
+  const oldBodyTouchAction=document.body.style.touchAction;
   document.body.style.userSelect='none';
   document.body.style.webkitUserSelect='none';
+  document.body.style.touchAction='none';
 
   const cv=document.getElementById('fs-canvas');
   const ctx=cv.getContext('2d');
   ctx.lineCap='round'; ctx.lineJoin='round';
-  let drawing=false, eraser=false, lastPt=null, prevPt=null;
-  // 預設允許手指簽名；需要 Apple Pencil 時可再切換。
-  let penOnly=false;
+  let drawing=false, eraser=false, lastPt=null, prevPt=null, activePointerId=null;
+  // 預設 Apple Pencil 模式，手掌/手指不會干擾；需要手指簽名時可切換。
+  let penOnly=true;
 
   function applyMode(){
     if(eraser){ ctx.globalCompositeOperation='destination-out'; ctx.lineWidth=28; cv.style.cursor='cell'; }
@@ -2347,13 +2349,18 @@ function openFullscreenSign(onSaved){
     if(e.pointerType==='pen') return true;
     return !penOnly; // touch 只在手簽模式允許
   }
-  const blockTouch=e=>{ if(e.target.closest && e.target.closest('button')) return; e.preventDefault(); };
+  const blockTouch=e=>{
+    if(e.target.closest && e.target.closest('button')) return;
+    // Apple Pencil 模式下，手掌/手指只阻止預設行為，不參與簽名。
+    e.preventDefault();
+  };
   fs.addEventListener('touchstart', blockTouch, {passive:false});
   fs.addEventListener('touchmove', blockTouch, {passive:false});
   fs.addEventListener('gesturestart', e=>e.preventDefault());
   function closeSig(){
     document.body.style.userSelect=oldBodySelect;
     document.body.style.webkitUserSelect=oldWebkitSelect;
+    document.body.style.touchAction=oldBodyTouchAction;
     fs.remove();
   }
 
@@ -2382,26 +2389,29 @@ function openFullscreenSign(onSaved){
   }
 
   cv.addEventListener('pointerdown', e=>{
-    if(!allowedPointer(e)) return;
+    if(!allowedPointer(e)){ e.preventDefault(); return; }
+    if(drawing && activePointerId!==null && e.pointerId!==activePointerId){ e.preventDefault(); return; }
     e.preventDefault();
     hint.style.display='none';
     applyMode(); drawing=true;
+    activePointerId=e.pointerId;
     fs.querySelectorAll('button').forEach(btn=>btn.style.pointerEvents='none');
     lastPt=null; prevPt=null;
     drawEvent(e);
     cv.setPointerCapture(e.pointerId);
   });
   cv.addEventListener('pointermove', e=>{
-    if(!drawing||!allowedPointer(e)) return;
+    if(!allowedPointer(e)){ e.preventDefault(); return; }
+    if(!drawing||e.pointerId!==activePointerId) return;
     e.preventDefault();
     drawEvent(e);
   });
   function stopDrawing(){
-    drawing=false; lastPt=null; prevPt=null;
+    drawing=false; activePointerId=null; lastPt=null; prevPt=null;
     fs.querySelectorAll('button').forEach(btn=>btn.style.pointerEvents='');
   }
-  cv.addEventListener('pointerup', e=>{ if(drawing&&allowedPointer(e)){ e.preventDefault(); drawEvent(e); } stopDrawing(); });
-  cv.addEventListener('pointercancel', stopDrawing);
+  cv.addEventListener('pointerup', e=>{ if(!allowedPointer(e)){ e.preventDefault(); return; } if(e.pointerId!==activePointerId) return; if(drawing){ e.preventDefault(); drawEvent(e); } stopDrawing(); });
+  cv.addEventListener('pointercancel', e=>{ if(!allowedPointer(e)){ e.preventDefault(); return; } if(e.pointerId!==activePointerId) return; stopDrawing(); });
 
   document.getElementById('fs-mode').onclick=()=>{ penOnly=!penOnly; updateModeUI(); hint.style.display=''; };
   const eb=document.getElementById('fs-erase');
