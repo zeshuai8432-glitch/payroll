@@ -469,14 +469,11 @@ function applyData(d){
   if(!d) return;
   state.employees=d.employees||[]; state.sites=d.sites||[]; state.attendance=d.attendance||[]; state.adjustments=d.adjustments||[]; state.loans=d.loans||[]; state.tools=d.tools||[]; state.locations=d.locations||[]; state.assets=d.assets||[]; state.advances=d.advances||[]; state.accounts=d.accounts||[]; state.ledger=d.ledger||[]; state.deals=d.deals||[]; state.billings=d.billings||[]; state.measurements=d.measurements||[]; state.contracts=d.contracts||{}; state.costs=d.costs||[]; state.parkAccId=d.parkAccId||''; state.oweBonus=d.oweBonus||{}; state.minFund=(d.minFund!==undefined?d.minFund:'');
   state.employees.forEach(e=>{ if(e.active===undefined) e.active=true; });
-  if(d.billingSigMeta) mergeBillingSigs(d.billingSigs||{}, d.billingSigsLocked||{}, d.billingSigMeta||{});
-  else {
-    if(d.billingSigs) Object.assign(billingSigs, d.billingSigs);
-    if(d.billingSigsLocked) Object.assign(billingSigsLocked, d.billingSigsLocked);
-  }
+  mergeBillingSigs(d.billingSigs||{}, d.billingSigsLocked||{}, d.billingSigMeta||{});
   if(d.billingPhotos) mergeCloudPhotos(d.billingPhotos);
 }
 function packData(){
+  Object.keys(billingSigs).forEach(id=>{ billingSigMeta[id]=billingSigMeta[id]||{updatedAt:0}; });
   // billingPhotos 只同步 Drive URL（http 開頭），不同步 base64（太大）
   const photosSync={};
   Object.entries(billingPhotos).forEach(([id,urls])=>{
@@ -1968,7 +1965,7 @@ function bind(){
       if(!confirm('此簽名已鎖定。\n確定要解鎖並重新簽名？')) return;
       unlockSig(id);
     }
-    openFullscreenSign(url=>{ saveSig(id,url); saveData(); render(); });
+    openFullscreenSign(url=>{ saveSig(id,url); saveData(); pushCloud(); render(); });
   });
   document.querySelectorAll('[data-site-printall]').forEach(b=>b.onclick=e=>{
     e.stopPropagation();
@@ -2460,7 +2457,7 @@ function printBillingDoc(id){
     deleteSig(id); render(); printBillingDoc(id);
   };
   const fsBtn=document.getElementById('sig-fullscreen-btn');
-  if(fsBtn) fsBtn.onclick=()=>openFullscreenSign(dataUrl=>{ saveSig(id,dataUrl); saveData(); render(); printBillingDoc(id); });
+  if(fsBtn) fsBtn.onclick=()=>openFullscreenSign(dataUrl=>{ saveSig(id,dataUrl); saveData(); pushCloud(); render(); printBillingDoc(id); });
   ov.scrollTop=0;
 }
 
