@@ -2283,11 +2283,11 @@ async function uploadBillingPhoto(file){
 function openFullscreenSign(onSaved){
   const fs=document.createElement('div');
   fs.id='sig-fs';
-  fs.style='position:fixed;inset:0;z-index:10001;background:#fff;display:flex;flex-direction:column';
+  fs.style='position:fixed;inset:0;z-index:10001;background:#fff;display:flex;flex-direction:column;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;overscroll-behavior:none;touch-action:none';
   const W=window.innerWidth, H=window.innerHeight-56-72;
   const DPR=Math.min(window.devicePixelRatio||1,3);
   fs.innerHTML=`
-    <div style="height:56px;display:flex;align-items:center;padding:0 10px;gap:6px;border-bottom:1px solid #e0e0e0;flex-shrink:0;background:#fff">
+    <div style="height:56px;display:flex;align-items:center;padding:0 10px;gap:6px;border-bottom:1px solid #e0e0e0;flex-shrink:0;background:#fff;user-select:none;-webkit-user-select:none">
       <div style="font-size:15px;font-weight:700;flex:1;color:#1f2421">業主簽名</div>
       <button id="fs-mode" style="height:36px;padding:0 14px;border:none;background:#ede9fe;color:#4338ca;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap">✏ 筆簽</button>
       <button id="fs-erase" style="height:36px;padding:0 14px;border:none;background:rgba(100,116,139,.08);color:#475569;font-size:13px;cursor:pointer">橡皮擦</button>
@@ -2296,10 +2296,14 @@ function openFullscreenSign(onSaved){
     </div>
     <canvas id="fs-canvas" width="${Math.round(W*DPR)}" height="${Math.round(H*DPR)}"
       style="flex:1;width:100%;background:#fff;touch-action:none;cursor:crosshair;display:block"></canvas>
-    <div style="height:72px;display:flex;align-items:center;justify-content:center;padding:0 16px;border-top:1px solid #e0e0e0;flex-shrink:0;background:#fff">
+    <div style="height:72px;display:flex;align-items:center;justify-content:center;padding:0 16px;border-top:1px solid #e0e0e0;flex-shrink:0;background:#fff;user-select:none;-webkit-user-select:none">
       <button id="fs-done" style="width:100%;max-width:480px;height:52px;background:#ede9fe;color:#3730a3;border:2px solid #c4b5fd;font-size:18px;font-weight:800;cursor:pointer;letter-spacing:.5px">✓ 儲存簽名</button>
     </div>`;
   document.body.appendChild(fs);
+  const oldBodySelect=document.body.style.userSelect;
+  const oldWebkitSelect=document.body.style.webkitUserSelect;
+  document.body.style.userSelect='none';
+  document.body.style.webkitUserSelect='none';
 
   const cv=document.getElementById('fs-canvas');
   const ctx=cv.getContext('2d');
@@ -2316,8 +2320,8 @@ function openFullscreenSign(onSaved){
 
   // 包一層 wrapper 讓提示文字可絕對定位在畫布正中央
   const cvWrap=document.createElement('div');
-  cvWrap.style='position:relative;flex:1;overflow:hidden';
-  cv.style.cssText='width:100%;height:100%;background:#fff;touch-action:none;cursor:crosshair;display:block';
+  cvWrap.style='position:relative;flex:1;overflow:hidden;touch-action:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none';
+  cv.style.cssText='width:100%;height:100%;background:#fff;touch-action:none;cursor:crosshair;display:block;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none';
   cv.parentNode.insertBefore(cvWrap,cv);
   cvWrap.appendChild(cv);
   const hint=document.createElement('div');
@@ -2342,6 +2346,15 @@ function openFullscreenSign(onSaved){
     if(e.pointerType==='mouse') return true;
     if(e.pointerType==='pen') return true;
     return !penOnly; // touch 只在手簽模式允許
+  }
+  const blockTouch=e=>{ if(e.target.closest && e.target.closest('button')) return; e.preventDefault(); };
+  fs.addEventListener('touchstart', blockTouch, {passive:false});
+  fs.addEventListener('touchmove', blockTouch, {passive:false});
+  fs.addEventListener('gesturestart', e=>e.preventDefault());
+  function closeSig(){
+    document.body.style.userSelect=oldBodySelect;
+    document.body.style.webkitUserSelect=oldWebkitSelect;
+    fs.remove();
   }
 
   function pointerPos(e){
@@ -2373,6 +2386,7 @@ function openFullscreenSign(onSaved){
     e.preventDefault();
     hint.style.display='none';
     applyMode(); drawing=true;
+    fs.querySelectorAll('button').forEach(btn=>btn.style.pointerEvents='none');
     lastPt=null; prevPt=null;
     drawEvent(e);
     cv.setPointerCapture(e.pointerId);
@@ -2382,14 +2396,18 @@ function openFullscreenSign(onSaved){
     e.preventDefault();
     drawEvent(e);
   });
-  cv.addEventListener('pointerup', e=>{ if(drawing&&allowedPointer(e)){ e.preventDefault(); drawEvent(e); } drawing=false; lastPt=null; prevPt=null; });
-  cv.addEventListener('pointercancel', ()=>{ drawing=false; lastPt=null; prevPt=null; });
+  function stopDrawing(){
+    drawing=false; lastPt=null; prevPt=null;
+    fs.querySelectorAll('button').forEach(btn=>btn.style.pointerEvents='');
+  }
+  cv.addEventListener('pointerup', e=>{ if(drawing&&allowedPointer(e)){ e.preventDefault(); drawEvent(e); } stopDrawing(); });
+  cv.addEventListener('pointercancel', stopDrawing);
 
   document.getElementById('fs-mode').onclick=()=>{ penOnly=!penOnly; updateModeUI(); hint.style.display=''; };
   const eb=document.getElementById('fs-erase');
   eb.onclick=()=>{ eraser=!eraser; eb.textContent=eraser?'✏ 切回筆':'橡皮擦'; eb.style.background=eraser?'#fde9d4':'transparent'; eb.style.color=eraser?'#9a5b1a':''; applyMode(); };
   document.getElementById('fs-clear').onclick=()=>{ ctx.globalCompositeOperation='source-over'; ctx.clearRect(0,0,cv.width,cv.height); lastPt=null; prevPt=null; applyMode(); };
-  document.getElementById('fs-cancel').onclick=()=>fs.remove();
+  document.getElementById('fs-cancel').onclick=()=>closeSig();
   document.getElementById('fs-done').onclick=()=>{
     const d=ctx.getImageData(0,0,cv.width,cv.height).data;
     if(!d.some((v,i)=>i%4===3&&v>10)){ alert('請先簽名或寫上補充說明'); return; }
@@ -2400,7 +2418,7 @@ function openFullscreenSign(onSaved){
     tmp.width=Math.round(cv.width*scale); tmp.height=Math.round(cv.height*scale);
     const tc=tmp.getContext('2d'); tc.fillStyle='#fff'; tc.fillRect(0,0,tmp.width,tmp.height);
     tc.drawImage(cv,0,0,tmp.width,tmp.height);
-    fs.remove();
+    closeSig();
     onSaved(tmp.toDataURL('image/jpeg',0.85));
   };
 }
