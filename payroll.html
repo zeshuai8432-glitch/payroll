@@ -515,7 +515,12 @@ async function loadCloud(){
       if(cloudData.billingPhotos) mergeCloudPhotos(cloudData.billingPhotos);
       if(cloudTs>=localTs){
         // 雲端較新，套用
-        applyData(cloudData); try{localStorage.setItem(LS,j.data);}catch(e){} setCloud('已同步');
+        const keepSigs={...billingSigs}, keepLocked={...billingSigsLocked}, keepMeta={...billingSigMeta};
+        applyData(cloudData);
+        Object.assign(billingSigs, keepSigs);
+        Object.assign(billingSigsLocked, keepLocked);
+        Object.assign(billingSigMeta, keepMeta);
+        try{localStorage.setItem(LS,j.data);}catch(e){} setCloud('已同步');
       } else {
         // 本機較新，推上雲端（此時 billingSigs 已含雲端簽名，不會漏掉）
         setCloud('本機資料較新，同步中…'); pushCloud();
@@ -570,12 +575,13 @@ function savePhotos(){ try{ localStorage.setItem(LS_PHOTOS,JSON.stringify(billin
 function saveSigMeta(){ try{ localStorage.setItem(LS_SIG_META,JSON.stringify(billingSigMeta)); }catch(e){} }
 function mergeBillingSigs(inSigs={}, inLocked={}, inMeta={}){
   Object.keys(inSigs||{}).forEach(id=>{
+    if(!inMeta[id] && billingSigs[id]) return; // 舊版無時間戳簽名不可覆蓋現有簽名
     const incomingTs=Number((inMeta[id]||{}).updatedAt)||0;
     const localTs=Number((billingSigMeta[id]||{}).updatedAt)||0;
     if(!billingSigs[id] || incomingTs>localTs){
       billingSigs[id]=inSigs[id];
       billingSigsLocked[id]=!!inLocked[id];
-      billingSigMeta[id]=inMeta[id]||{updatedAt:incomingTs||Date.now()};
+      billingSigMeta[id]=inMeta[id]||{updatedAt:incomingTs||0};
     }
   });
   Object.keys(inLocked||{}).forEach(id=>{
@@ -596,6 +602,7 @@ function loadSigs(){
   saveSigMeta();
 }
 function saveSig(id,url){
+  deleteSig(id);
   billingSigs[id]=url;
   billingSigsLocked[id]=true; // 簽完自動鎖定
   billingSigMeta[id]={updatedAt:Date.now()};
@@ -606,8 +613,10 @@ function saveSig(id,url){
 }
 function deleteSig(id){
   delete billingSigs[id];
+  delete billingSigsLocked[id];
   delete billingSigMeta[id];
   try{ localStorage.setItem(LS_SIGS,JSON.stringify(billingSigs)); }catch(e){}
+  try{ localStorage.setItem(LS_SIGS_LOCKED,JSON.stringify(billingSigsLocked)); }catch(e){}
   saveSigMeta();
 }
 function unlockSig(id){
