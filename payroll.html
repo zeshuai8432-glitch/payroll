@@ -1928,47 +1928,41 @@ function bind(){
   document.querySelectorAll('[data-photoadd]').forEach(inp=>inp.addEventListener('change',async function(){
     const id=this.dataset.photoadd;
     const files=Array.from(this.files); if(!files.length) return;
-    const arr=(billingPhotos[id]||[]).slice();
-    // 用獨立 div 顯示進度（不動 label，避免銷毀 input 中斷事件）
-    let progEl=document.getElementById('photo-prog-'+id);
-    if(!progEl){
-      progEl=document.createElement('div');
-      progEl.id='photo-prog-'+id;
-      progEl.style.cssText='font-size:12px;font-weight:600;padding:4px 0;';
-      const lbl=document.getElementById('photo-label-'+id);
-      if(lbl&&lbl.parentNode) lbl.parentNode.insertBefore(progEl,lbl);
-    }
-    function setProgress(txt,color){
-      setCloud(txt);
-      progEl.style.color=color||'#4338ca';
-      progEl.textContent=txt;
-    }
-    setProgress(`⏳ 壓縮中… (0/${files.length})`);
-    let driveOk=0, localFallback=0;
+
+    // ── 第一步：壓縮後立刻存本機，馬上顯示縮圖 ──
+    setCloud(`壓縮照片中…`);
+    const dataUrls=[];
     for(let i=0;i<files.length;i++){
-      setProgress(`⏳ 壓縮中… (${i+1}/${files.length})`);
       const dataUrl=await compressImageP(files[i],1200,0.75);
-      setProgress(`☁️ 上傳至雲端… (${i+1}/${files.length})`);
+      dataUrls.push(dataUrl);
+    }
+    const arr=(billingPhotos[id]||[]).slice();
+    dataUrls.forEach(u=>arr.push(u));
+    billingPhotos[id]=arr;
+    savePhotos(); render(); // 先 render，讓縮圖立刻出現
+    setCloud(`照片已存本機，嘗試上傳雲端…`);
+
+    // ── 第二步：背景上傳 Drive，成功後用 URL 取代本機 base64 ──
+    if(!CLOUD_URL) return;
+    const arr2=(billingPhotos[id]||[]).slice();
+    let changed=false;
+    for(let i=0;i<dataUrls.length;i++){
+      const dataUrl=dataUrls[i];
+      const localIdx=arr2.lastIndexOf(dataUrl); // 找對應的本機項目
       try{
         const res=await fetch(CLOUD_URL,{method:'POST',body:JSON.stringify({action:'uploadPhoto',data:dataUrl,name:files[i].name||'photo.jpg'})});
         const j=await res.json();
-        if(j&&j.ok&&j.url){ arr.push(j.url); driveOk++; }
-        else{
-          arr.push(dataUrl); localFallback++;
-          setProgress(`⚠️ 雲端回傳錯誤：${j&&j.error||'no url'}，已存本機`,'#92400e');
-        }
-      }catch(err){
-        arr.push(dataUrl); localFallback++;
-        setProgress(`⚠️ 上傳失敗：${String(err).slice(0,60)}，已存本機`,'#92400e');
-      }
+        if(j&&j.ok&&j.url&&localIdx>=0){ arr2[localIdx]=j.url; changed=true; }
+        else{ setCloud(`雲端回傳：${j&&j.error||'no url'}`); }
+      }catch(err){ setCloud(`雲端失敗：${String(err).slice(0,50)}`); }
     }
-    billingPhotos[id]=arr.filter(u=>u!=null);
-    savePhotos(); saveData();
-    if(localFallback>0&&driveOk===0){
-      setProgress(`📱 已存本機 ${files.length} 張（雲端失敗，照片不會跨裝置同步）`,'#92400e');
-      setTimeout(()=>render(),2000); // 延遲 render 讓使用者看到訊息
+    if(changed){
+      billingPhotos[id]=arr2;
+      savePhotos(); saveData(); render();
+      setCloud('照片已同步至雲端 ✓');
     } else {
-      render();
+      saveData(); // 確保主資料有存
+      setCloud('照片存於本機（未同步雲端）');
     }
   }));
   document.querySelectorAll('[data-photodel]').forEach(b=>b.onclick=()=>{
