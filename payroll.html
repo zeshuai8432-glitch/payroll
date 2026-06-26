@@ -2267,6 +2267,7 @@ function openFullscreenSign(onSaved){
   fs.id='sig-fs';
   fs.style='position:fixed;inset:0;z-index:10001;background:#fff;display:flex;flex-direction:column';
   const W=window.innerWidth, H=window.innerHeight-56-72;
+  const DPR=Math.min(window.devicePixelRatio||1,3);
   fs.innerHTML=`
     <div style="height:56px;display:flex;align-items:center;padding:0 10px;gap:6px;border-bottom:1px solid #e0e0e0;flex-shrink:0;background:#fff">
       <div style="font-size:15px;font-weight:700;flex:1;color:#1f2421">業主簽名</div>
@@ -2275,7 +2276,7 @@ function openFullscreenSign(onSaved){
       <button id="fs-clear" style="height:36px;padding:0 14px;border:none;background:rgba(100,116,139,.08);color:#475569;font-size:13px;cursor:pointer">清除</button>
       <button id="fs-cancel" style="height:36px;padding:0 14px;border:none;background:rgba(100,116,139,.08);color:#475569;font-size:13px;cursor:pointer">取消</button>
     </div>
-    <canvas id="fs-canvas" width="${W}" height="${H}"
+    <canvas id="fs-canvas" width="${Math.round(W*DPR)}" height="${Math.round(H*DPR)}"
       style="flex:1;width:100%;background:#fff;touch-action:none;cursor:crosshair;display:block"></canvas>
     <div style="height:72px;display:flex;align-items:center;justify-content:center;padding:0 16px;border-top:1px solid #e0e0e0;flex-shrink:0;background:#fff">
       <button id="fs-done" style="width:100%;max-width:480px;height:52px;background:#ede9fe;color:#3730a3;border:2px solid #c4b5fd;font-size:18px;font-weight:800;cursor:pointer;letter-spacing:.5px">✓ 儲存簽名</button>
@@ -2285,13 +2286,13 @@ function openFullscreenSign(onSaved){
   const cv=document.getElementById('fs-canvas');
   const ctx=cv.getContext('2d');
   ctx.lineCap='round'; ctx.lineJoin='round';
-  let drawing=false, lx=0, ly=0, eraser=false;
+  let drawing=false, eraser=false, lastPt=null, prevPt=null;
   // 預設允許手指簽名；需要 Apple Pencil 時可再切換。
   let penOnly=false;
 
   function applyMode(){
     if(eraser){ ctx.globalCompositeOperation='destination-out'; ctx.lineWidth=28; cv.style.cursor='cell'; }
-    else { ctx.globalCompositeOperation='source-over'; ctx.lineWidth=3; ctx.strokeStyle='#111'; cv.style.cursor='crosshair'; }
+    else { ctx.globalCompositeOperation='source-over'; ctx.strokeStyle='#111'; cv.style.cursor='crosshair'; }
   }
   applyMode();
 
@@ -2329,8 +2330,24 @@ function openFullscreenSign(onSaved){
     const r=cv.getBoundingClientRect();
     return {
       x:(e.clientX-r.left)*(cv.width/r.width),
-      y:(e.clientY-r.top)*(cv.height/r.height)
+      y:(e.clientY-r.top)*(cv.height/r.height),
+      p:e.pressure&&e.pressure>0?e.pressure:(e.pointerType==='pen'?0.45:0.55)
     };
+  }
+  function drawSegment(pt){
+    if(!lastPt){ lastPt=pt; prevPt=pt; return; }
+    const mid={x:(lastPt.x+pt.x)/2,y:(lastPt.y+pt.y)/2};
+    ctx.lineWidth=eraser?28*DPR:Math.max(1.8*DPR, (2.2 + pt.p*2.8)*DPR);
+    ctx.beginPath();
+    ctx.moveTo(prevPt.x,prevPt.y);
+    ctx.quadraticCurveTo(lastPt.x,lastPt.y,mid.x,mid.y);
+    ctx.stroke();
+    prevPt=mid;
+    lastPt=pt;
+  }
+  function drawEvent(e){
+    const events=(typeof e.getCoalescedEvents==='function')?e.getCoalescedEvents():[e];
+    events.forEach(ev=>drawSegment(pointerPos(ev)));
   }
 
   cv.addEventListener('pointerdown', e=>{
@@ -2338,24 +2355,22 @@ function openFullscreenSign(onSaved){
     e.preventDefault();
     hint.style.display='none';
     applyMode(); drawing=true;
-    const p=pointerPos(e);
-    lx=p.x; ly=p.y;
+    lastPt=null; prevPt=null;
+    drawEvent(e);
     cv.setPointerCapture(e.pointerId);
   });
   cv.addEventListener('pointermove', e=>{
     if(!drawing||!allowedPointer(e)) return;
     e.preventDefault();
-    const p=pointerPos(e), x=p.x, y=p.y;
-    ctx.beginPath(); ctx.moveTo(lx,ly); ctx.lineTo(x,y); ctx.stroke();
-    lx=x; ly=y;
+    drawEvent(e);
   });
-  cv.addEventListener('pointerup', ()=>drawing=false);
-  cv.addEventListener('pointercancel', ()=>drawing=false);
+  cv.addEventListener('pointerup', e=>{ if(drawing&&allowedPointer(e)){ e.preventDefault(); drawEvent(e); } drawing=false; lastPt=null; prevPt=null; });
+  cv.addEventListener('pointercancel', ()=>{ drawing=false; lastPt=null; prevPt=null; });
 
   document.getElementById('fs-mode').onclick=()=>{ penOnly=!penOnly; updateModeUI(); hint.style.display=''; };
   const eb=document.getElementById('fs-erase');
   eb.onclick=()=>{ eraser=!eraser; eb.textContent=eraser?'✏ 切回筆':'橡皮擦'; eb.style.background=eraser?'#fde9d4':'transparent'; eb.style.color=eraser?'#9a5b1a':''; applyMode(); };
-  document.getElementById('fs-clear').onclick=()=>{ ctx.globalCompositeOperation='source-over'; ctx.clearRect(0,0,cv.width,cv.height); applyMode(); };
+  document.getElementById('fs-clear').onclick=()=>{ ctx.globalCompositeOperation='source-over'; ctx.clearRect(0,0,cv.width,cv.height); lastPt=null; prevPt=null; applyMode(); };
   document.getElementById('fs-cancel').onclick=()=>fs.remove();
   document.getElementById('fs-done').onclick=()=>{
     const d=ctx.getImageData(0,0,cv.width,cv.height).data;
