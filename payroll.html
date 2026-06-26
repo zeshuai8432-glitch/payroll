@@ -541,9 +541,19 @@ async function pushCloud(){
   if(saving){ pendingSave=true; return; }
   saving=true;
   try {
+    // 推送前先讀雲端並合併簽名/照片，避免舊裝置整包資料把新簽名蓋回測試版。
+    try{
+      const gr=await fetch(CLOUD_URL,{method:'GET'});
+      const gj=await gr.json();
+      if(gj&&gj.ok&&gj.data){
+        const cd=JSON.parse(gj.data);
+        mergeBillingSigs(cd.billingSigs||{}, cd.billingSigsLocked||{}, cd.billingSigMeta||{});
+        if(cd.billingPhotos) mergeCloudPhotos(cd.billingPhotos);
+      }
+    }catch(e){}
     const res=await fetch(CLOUD_URL,{method:'POST',body:JSON.stringify(packData())});
     const j=await res.json();
-    if(j&&j.ok){ setCloud('已同步'); } else { setCloud('推送失敗：'+(j&&j.error||'未知錯誤').slice(0,60)); }
+    if(j&&j.ok){ localSigPending={}; setCloud('已同步'); } else { setCloud('推送失敗：'+(j&&j.error||'未知錯誤').slice(0,60)); }
   } catch(e){ setCloud('雲端儲存失敗：'+String(e).slice(0,50)); }
   saving=false;
   if(pendingSave){ pendingSave=false; pushCloud(); }
@@ -572,6 +582,7 @@ function savePhotos(){ try{ localStorage.setItem(LS_PHOTOS,JSON.stringify(billin
 function saveSigMeta(){ try{ localStorage.setItem(LS_SIG_META,JSON.stringify(billingSigMeta)); }catch(e){} }
 function mergeBillingSigs(inSigs={}, inLocked={}, inMeta={}){
   Object.keys(inSigs||{}).forEach(id=>{
+    if(localSigPending[id] && billingSigs[id]) return; // 剛簽完待上傳的本機正式簽名優先
     if(!inMeta[id] && billingSigs[id]) return; // 舊版無時間戳簽名不可覆蓋現有簽名
     const incomingTs=Number((inMeta[id]||{}).updatedAt)||0;
     const localTs=Number((billingSigMeta[id]||{}).updatedAt)||0;
@@ -603,6 +614,7 @@ function saveSig(id,url){
   billingSigs[id]=url;
   billingSigsLocked[id]=true; // 簽完自動鎖定
   billingSigMeta[id]={updatedAt:Date.now()};
+  localSigPending[id]=true;
   try{ localStorage.setItem(LS_SIGS,JSON.stringify(billingSigs)); }catch(e){}
   try{ localStorage.setItem(LS_SIGS_LOCKED,JSON.stringify(billingSigsLocked)); }catch(e){}
   saveSigMeta();
@@ -2950,6 +2962,7 @@ let billingPhotos={}; // { [billingId]: [dataUrl, ...] }
 let billingSigs={}; // { [billingId]: dataUrl }
 let billingSigsLocked={}; // { [billingId]: true } — 已鎖定不可覆寫
 let billingSigMeta={}; // { [billingId]: {updatedAt} } — 避免舊測試簽名蓋掉新簽名
+let localSigPending={}; // 剛在本機簽完、尚未成功推到雲端的簽名
 
 // 一筆分潤進帳戶的金額：代工/公司分潤＝金額−稅；（合作案在卡片另算，這裡不處理）
 function dealIncomeAmount(d){
