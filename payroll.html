@@ -456,9 +456,9 @@ function applyData(d){
   if(!d) return;
   state.employees=d.employees||[]; state.sites=d.sites||[]; state.attendance=d.attendance||[]; state.adjustments=d.adjustments||[]; state.loans=d.loans||[]; state.tools=d.tools||[]; state.locations=d.locations||[]; state.assets=d.assets||[]; state.advances=d.advances||[]; state.accounts=d.accounts||[]; state.ledger=d.ledger||[]; state.deals=d.deals||[]; state.billings=d.billings||[]; state.measurements=d.measurements||[]; state.contracts=d.contracts||{}; state.costs=d.costs||[]; state.parkAccId=d.parkAccId||''; state.oweBonus=d.oweBonus||{}; state.minFund=(d.minFund!==undefined?d.minFund:'');
   state.employees.forEach(e=>{ if(e.active===undefined) e.active=true; });
-  if(d.billingSigs) Object.assign(billingSigs, d.billingSigs);
-  if(d.billingSigsLocked) Object.assign(billingSigsLocked, d.billingSigsLocked);
   if(d.billingPhotos) mergeCloudPhotos(d.billingPhotos);
+  // 注意：billingSigs / billingSigsLocked 不在這裡處理
+  // loadCloud 在呼叫 applyData 之前已做鎖定保護合併；loadLocal 之後由 loadSigs() 讀取
 }
 function packData(){
   // billingPhotos 只同步 Drive URL（http 開頭），不同步 base64（太大）
