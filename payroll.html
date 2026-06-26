@@ -1929,41 +1929,34 @@ function bind(){
     const id=this.dataset.photoadd;
     const files=Array.from(this.files); if(!files.length) return;
 
-    // ── 第一步：壓縮後立刻存本機，馬上顯示縮圖 ──
-    setCloud(`壓縮照片中…`);
+    // ── 第一步：壓縮 → 存本機 → 顯示縮圖（全部完成再 render 一次，避免中途重建 DOM）
+    setCloud('壓縮照片中…');
     const dataUrls=[];
     for(let i=0;i<files.length;i++){
-      const dataUrl=await compressImageP(files[i],1200,0.75);
-      dataUrls.push(dataUrl);
+      dataUrls.push(await compressImageP(files[i],1200,0.75));
     }
-    const arr=(billingPhotos[id]||[]).slice();
-    dataUrls.forEach(u=>arr.push(u));
-    billingPhotos[id]=arr;
-    savePhotos(); render(); // 先 render，讓縮圖立刻出現
-    setCloud(`照片已存本機，嘗試上傳雲端…`);
+    dataUrls.forEach(u=>{ (billingPhotos[id]=billingPhotos[id]||[]).push(u); });
+    savePhotos(); saveData(); render();
+    setCloud('照片已存本機，背景上傳雲端中…');
 
-    // ── 第二步：背景上傳 Drive，成功後用 URL 取代本機 base64 ──
+    // ── 第二步：背景上傳 Drive，成功後在陣列中直接替換 base64 → Drive URL ──
     if(!CLOUD_URL) return;
-    const arr2=(billingPhotos[id]||[]).slice();
-    let changed=false;
+    let driveChanged=false;
     for(let i=0;i<dataUrls.length;i++){
       const dataUrl=dataUrls[i];
-      const localIdx=arr2.lastIndexOf(dataUrl); // 找對應的本機項目
       try{
         const res=await fetch(CLOUD_URL,{method:'POST',body:JSON.stringify({action:'uploadPhoto',data:dataUrl,name:files[i].name||'photo.jpg'})});
         const j=await res.json();
-        if(j&&j.ok&&j.url&&localIdx>=0){ arr2[localIdx]=j.url; changed=true; }
-        else{ setCloud(`雲端回傳：${j&&j.error||'no url'}`); }
+        if(j&&j.ok&&j.url){
+          // 在當前陣列中找到這個 base64（可能已被使用者刪除，lastIndexOf 找不到就跳過）
+          const cur=billingPhotos[id]||[];
+          const idx=cur.lastIndexOf(dataUrl);
+          if(idx>=0){ cur[idx]=j.url; driveChanged=true; }
+        } else { setCloud(`雲端回傳：${j&&j.error||'no url'}`); }
       }catch(err){ setCloud(`雲端失敗：${String(err).slice(0,50)}`); }
     }
-    if(changed){
-      billingPhotos[id]=arr2;
-      savePhotos(); saveData(); render();
-      setCloud('照片已同步至雲端 ✓');
-    } else {
-      saveData(); // 確保主資料有存
-      setCloud('照片存於本機（未同步雲端）');
-    }
+    if(driveChanged){ savePhotos(); saveData(); render(); setCloud('照片已同步至雲端 ✓'); }
+    else { setCloud('照片存於本機（Drive 未同步）'); }
   }));
   document.querySelectorAll('[data-photodel]').forEach(b=>b.onclick=()=>{
     const id=b.dataset.photodel; const idx=parseInt(b.dataset.photoidx);
