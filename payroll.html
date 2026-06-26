@@ -458,9 +458,25 @@ function applyData(d){
   state.employees.forEach(e=>{ if(e.active===undefined) e.active=true; });
   if(d.billingSigs) Object.assign(billingSigs, d.billingSigs);
   if(d.billingSigsLocked) Object.assign(billingSigsLocked, d.billingSigsLocked);
+  if(d.billingPhotos) mergeCloudPhotos(d.billingPhotos);
 }
 function packData(){
-  return {employees:state.employees,sites:state.sites,attendance:state.attendance,adjustments:state.adjustments,loans:state.loans,tools:state.tools,locations:state.locations,assets:state.assets,advances:state.advances,accounts:state.accounts,ledger:state.ledger,deals:state.deals,billings:state.billings,measurements:state.measurements,contracts:state.contracts,costs:state.costs,parkAccId:state.parkAccId,oweBonus:state.oweBonus,minFund:state.minFund,billingSigs:billingSigs,billingSigsLocked:billingSigsLocked,savedAt:Date.now()};
+  // billingPhotos 只同步 Drive URL（http 開頭），不同步 base64（太大）
+  const photosSync={};
+  Object.entries(billingPhotos).forEach(([id,urls])=>{
+    const driveUrls=(urls||[]).filter(u=>typeof u==='string'&&u.startsWith('http'));
+    if(driveUrls.length) photosSync[id]=driveUrls;
+  });
+  return {employees:state.employees,sites:state.sites,attendance:state.attendance,adjustments:state.adjustments,loans:state.loans,tools:state.tools,locations:state.locations,assets:state.assets,advances:state.advances,accounts:state.accounts,ledger:state.ledger,deals:state.deals,billings:state.billings,measurements:state.measurements,contracts:state.contracts,costs:state.costs,parkAccId:state.parkAccId,oweBonus:state.oweBonus,minFund:state.minFund,billingPhotos:photosSync,billingSigs:billingSigs,billingSigsLocked:billingSigsLocked,savedAt:Date.now()};
+}
+// 合併雲端照片 URL（去重、保留本機 base64 舊照片）
+function mergeCloudPhotos(cloudPhotos){
+  Object.entries(cloudPhotos).forEach(([id,urls])=>{
+    const existing=billingPhotos[id]||[];
+    const merged=[...new Set([...existing,...urls])];
+    billingPhotos[id]=merged;
+  });
+  savePhotos();
 }
 
 // 先讀本機快取（讓畫面秒開），再從雲端拉最新
@@ -487,6 +503,8 @@ async function loadCloud(){
         try{localStorage.setItem(LS_SIGS,JSON.stringify(billingSigs));}catch(e){}
         try{localStorage.setItem(LS_SIGS_LOCKED,JSON.stringify(billingSigsLocked));}catch(e){}
       }
+      // 照片 URL 永遠合併（各裝置各有自己上傳的照片）
+      if(cloudData.billingPhotos) mergeCloudPhotos(cloudData.billingPhotos);
       if(cloudTs>=localTs){
         // 雲端較新，套用
         applyData(cloudData); try{localStorage.setItem(LS,j.data);}catch(e){} setCloud('已同步');
@@ -1907,15 +1925,21 @@ function bind(){
   document.querySelectorAll('[data-togglesettle]').forEach(b=>b.onclick=()=>{
     const bill=state.billings.find(x=>x.id===b.dataset.togglesettle); if(bill){ bill.settled=!bill.settled; saveData(); render(); }
   });
-  document.querySelectorAll('[data-photoadd]').forEach(inp=>inp.onchange=()=>{
+  document.querySelectorAll('[data-photoadd]').forEach(inp=>inp.onchange=async()=>{
     const id=inp.dataset.photoadd;
     const files=Array.from(inp.files); if(!files.length) return;
     const arr=(billingPhotos[id]||[]).slice();
-    let done=0;
-    files.forEach(file=>compressImage(file,1200,0.75,dataUrl=>{
-      arr.push(dataUrl); done++;
-      if(done===files.length){ billingPhotos[id]=arr; savePhotos(); render(); }
-    }));
+    setCloud(`上傳照片中… (0/${files.length})`);
+    for(let i=0;i<files.length;i++){
+      setCloud(`上傳照片中… (${i+1}/${files.length})`);
+      const dataUrl=await compressImageP(files[i],1200,0.75);
+      try{
+        const res=await fetch(CLOUD_URL,{method:'POST',body:JSON.stringify({action:'uploadPhoto',data:dataUrl,name:files[i].name||'photo.jpg'})});
+        const j=await res.json();
+        arr.push((j&&j.ok)?j.url:dataUrl); // 成功用 Drive URL，失敗 fallback 本機
+      }catch(e){ arr.push(dataUrl); } // 網路失敗 fallback 本機
+    }
+    billingPhotos[id]=arr; savePhotos(); saveData(); render();
   });
   document.querySelectorAll('[data-photodel]').forEach(b=>b.onclick=()=>{
     const id=b.dataset.photodel; const idx=parseInt(b.dataset.photoidx);
@@ -2141,6 +2165,7 @@ function compressImage(file, maxW, quality, cb){
   };
   reader.readAsDataURL(file);
 }
+function compressImageP(file,maxW,quality){ return new Promise(r=>compressImage(file,maxW,quality,r)); }
 
 // 全版面簽名畫布（業主補充用）
 function openFullscreenSign(onSaved){
