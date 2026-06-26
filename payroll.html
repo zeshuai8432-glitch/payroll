@@ -547,7 +547,7 @@ async function pushCloud(){
       const gj=await gr.json();
       if(gj&&gj.ok&&gj.data){
         const cd=JSON.parse(gj.data);
-        mergeBillingSigs(cd.billingSigs||{}, cd.billingSigsLocked||{}, cd.billingSigMeta||{});
+        applyCloudSigsBeforePush(cd.billingSigs||{}, cd.billingSigsLocked||{}, cd.billingSigMeta||{});
         if(cd.billingPhotos) mergeCloudPhotos(cd.billingPhotos);
       }
     }catch(e){}
@@ -567,10 +567,7 @@ async function diagCloud(){
     const cd=JSON.parse(j.data);
     const cloudSigCount=Object.keys(cd.billingSigs||{}).length;
     const localSigCount=Object.keys(billingSigs).length;
-    // 試推一次
-    const pr=await fetch(CLOUD_URL,{method:'POST',body:JSON.stringify(packData())});
-    const pj=await pr.json();
-    setCloud(`本機簽名:${localSigCount}筆 雲端:${cloudSigCount}筆 推送:${pj&&pj.ok?'✓':'✗'+(pj&&pj.error||'').slice(0,30)}`);
+    setCloud(`本機簽名:${localSigCount}筆 雲端:${cloudSigCount}筆`);
   }catch(e){ setCloud('診斷失敗：'+String(e).slice(0,60)); }
 }
 function setCloud(s){ cloudStatus=s; const el=document.getElementById('cloud-status'); if(el) el.textContent=s; }
@@ -594,6 +591,30 @@ function mergeBillingSigs(inSigs={}, inLocked={}, inMeta={}){
   });
   Object.keys(inLocked||{}).forEach(id=>{
     if(!billingSigsLocked[id] && (!billingSigMeta[id] || !inMeta[id] || Number((inMeta[id]||{}).updatedAt)>=Number((billingSigMeta[id]||{}).updatedAt||0))) billingSigsLocked[id]=!!inLocked[id];
+  });
+  try{ localStorage.setItem(LS_SIGS,JSON.stringify(billingSigs)); }catch(e){}
+  try{ localStorage.setItem(LS_SIGS_LOCKED,JSON.stringify(billingSigsLocked)); }catch(e){}
+  saveSigMeta();
+}
+function applyCloudSigsBeforePush(cloudSigs={}, cloudLocked={}, cloudMeta={}){
+  // 一般同步時，雲端簽名是權威；只有剛在本機重新簽、尚未成功推送的 localSigPending 可以覆蓋雲端。
+  Object.keys(billingSigs).forEach(id=>{
+    if(localSigPending[id]) return;
+    if(cloudSigs[id]){
+      billingSigs[id]=cloudSigs[id];
+      billingSigsLocked[id]=!!cloudLocked[id];
+      billingSigMeta[id]=cloudMeta[id]||{updatedAt:Number((cloudMeta[id]||{}).updatedAt)||0};
+    } else {
+      delete billingSigs[id];
+      delete billingSigsLocked[id];
+      delete billingSigMeta[id];
+    }
+  });
+  Object.keys(cloudSigs||{}).forEach(id=>{
+    if(localSigPending[id]) return;
+    billingSigs[id]=cloudSigs[id];
+    billingSigsLocked[id]=!!cloudLocked[id];
+    billingSigMeta[id]=cloudMeta[id]||{updatedAt:Number((cloudMeta[id]||{}).updatedAt)||0};
   });
   try{ localStorage.setItem(LS_SIGS,JSON.stringify(billingSigs)); }catch(e){}
   try{ localStorage.setItem(LS_SIGS_LOCKED,JSON.stringify(billingSigsLocked)); }catch(e){}
@@ -4117,10 +4138,10 @@ function exportYearVerify(){
   printHTML('年度總結·驗算明細', `<h1>年度總結·驗算明細</h1><div class="meta">期間：${period}　|　列印日：${new Date().toISOString().slice(0,10)}</div>${secs}`);
 }
 
-// 關閉頁面前強制送出（sendBeacon 在 beforeunload 裡仍可執行）
+// 關閉頁面前只保留本機資料；雲端推送必須走 pushCloud() 的簽名合併保護。
 window.addEventListener('beforeunload', ()=>{
   if(saveTimer){ clearTimeout(saveTimer); saveTimer=null; }
-  try{ navigator.sendBeacon(CLOUD_URL, JSON.stringify(packData())); }catch(e){}
+  try{ localStorage.setItem(LS, JSON.stringify(packData())); }catch(e){}
 });
 
 loadLocal(); loadPhotos(); loadSigs(); render(); loadCloud();
