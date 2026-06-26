@@ -2041,6 +2041,19 @@ function printHTML(title, inner){
   ov.innerHTML=`
     <div class="pbar">
       <button class="btn" id="po-print">列印 / 存成 PDF</button>
+      <button class="act" id="po-close" style=" render();
+  });
+}
+
+// ---- PDF 匯出（以列印視窗產生，可存成 PDF 或直接列印）----
+function printHTML(title, inner){
+  // 移除舊浮層
+  const old=document.getElementById('print-overlay'); if(old) old.remove();
+  const ov=document.createElement('div');
+  ov.id='print-overlay';
+  ov.innerHTML=`
+    <div class="pbar">
+      <button class="btn" id="po-print">列印 / 存成 PDF</button>
       <button class="act" id="po-close" style="padding:0 14px">關閉</button>
     </div>
     <div class="pdoc">${inner}</div>`;
@@ -2421,11 +2434,11 @@ function exportBillingPDF(){
   let GB=0,GS=0;
   names.forEach(name=>{
     const list=groups[name].sort((a,b)=>(a.date||'').localeCompare(b.date||''));
-    const total=list.reduce((s,b)=>s+(Number(b.amount)||0),0);
+    const total=list.reduce((s,b)=>s+billingAmount(b),0);
     GB+=total;
     const contract=Number(state.contracts[name])||0;
     const cline=contract>0?`　合約總額 ${money(contract)}　未請款 ${money(contract-total)}`:'';
-    const rows=list.map(b=>`<tr><td>${esc(b.date||'')}</td><td class="num">${money(b.amount)}</td><td>${esc(b.method||'')}</td><td>${esc(b.client||'')}</td><td>${esc(b.note||b.docType||'')}</td></tr>`).join('');
+    const rows=list.map(b=>`<tr><td>${esc(b.date||'')}</td><td class="num">${money(billingAmount(b))}</td><td>${esc(b.method||'')}</td><td>${esc(b.client||'')}</td><td>${esc(b.note||b.docType||'')}</td></tr>`).join('');
     secs+=`<div class="sec">${esc(name)}　已結算 ${money(total)}${cline}</div>
       <table><thead><tr><th>日期</th><th class="num">金額</th><th>方式</th><th>業主</th><th>說明</th></tr></thead><tbody>${rows}</tbody></table>`;
   });
@@ -3406,18 +3419,20 @@ function viewMeasurements(){
 
 function viewBilling(){
   // 依案場名稱分組
+  const trackedBillings=state.billings.filter(b=>b.settled);
+  const pendingCount=state.billings.length-trackedBillings.length;
   const groups={};
-  state.billings.forEach(b=>{ const k=b.site||'（未填案場）'; (groups[k]=groups[k]||[]).push(b); });
+  trackedBillings.forEach(b=>{ const k=b.site||'（未填案場）'; (groups[k]=groups[k]||[]).push(b); });
   const siteNames=Object.keys(groups).sort((a,b)=>a.localeCompare(b));
 
-  const totalBilled=state.billings.reduce((s,b)=>s+(Number(b.amount)||0),0);
-  const totalSettled=state.billings.filter(b=>b.settled).reduce((s,b)=>s+(Number(b.amount)||0),0);
-  const totalUnsettled=totalBilled-totalSettled;
+  const totalBilled=trackedBillings.reduce((s,b)=>s+billingAmount(b),0);
+  const totalSettled=totalBilled;
+  const totalUnsettled=0;
 
   const cardForName=(name)=>{
     const list=groups[name].sort((a,b)=>(a.date||'').localeCompare(b.date||''));
-    const billed=list.reduce((s,b)=>s+(Number(b.amount)||0),0);
-    const settled=list.filter(b=>b.settled).reduce((s,b)=>s+(Number(b.amount)||0),0);
+    const billed=list.reduce((s,b)=>s+billingAmount(b),0);
+    const settled=billed;
     const unsettled=billed-settled;
     const siteObj=state.sites.find(x=>x.name===name);
     const contract=Number(siteObj&&siteObj.contract!==undefined&&siteObj.contract!==''?siteObj.contract:state.contracts[name])||0;
@@ -3449,7 +3464,7 @@ function viewBilling(){
       const thumbs=photos.map((url,i)=>`<div style="position:relative;display:inline-block;vertical-align:top"><img src="${url}" class="photo-thumb" style="width:80px;height:60px;object-fit:cover;border-radius:5px;border:1px solid var(--line)"><button data-photodel="${b.id}" data-photoidx="${i}" style="position:absolute;top:-5px;right:-5px;width:20px;height:20px;border-radius:50%;border:none;background:var(--danger);color:#fff;font-size:12px;cursor:pointer;padding:0;line-height:20px;text-align:center">✕</button></div>`).join('');
       return `<tr>
       <td><span class="tag" style="${typeStyle}">${esc(docType)}</span> ${esc(b.date||'')}</td>
-      <td class="num">${money(b.amount)}</td>
+      <td class="num">${money(billingAmount(b))}</td>
       <td>${esc(b.method||'')}</td><td>${esc(b.client||'')}</td>
       <td><button class="act ${b.settled?'':'muted'}" data-togglesettle="${b.id}" style="${b.settled?'color:var(--accent)':''}">${b.settled?'✓ 已結算':'未結算'}</button></td>
       <td>${esc(b.note||'')}</td>
@@ -3466,7 +3481,7 @@ function viewBilling(){
     return `<div class="card">
       <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px;flex-wrap:wrap;gap:8px">
         <div style="font-size:15px;font-weight:600">${esc(name)}${(()=>{const so=state.sites.find(x=>x.name===name);if(!so)return '';if(so.coop||so.type==='合作案')return '<span class="tag" style="background:#fde9d4;color:#9a5b1a">合作案</span>';if(so.type)return `<span class="tag" style="background:#e3efe9;color:var(--accent)">${esc(so.type)}</span>`;return '';})()}</div>
-        <div style="font-size:14px">已請款 <b>${money(billed)}</b>　|　已結算 <span style="color:var(--accent)">${money(settled)}</span>　|　未結算 <span style="color:var(--danger)">${money(unsettled)}</span></div>
+        <div style="font-size:14px">已入帳 <b>${money(billed)}</b></div>
       </div>
       ${progress}
       <div class="scroll"><table>
@@ -3487,16 +3502,16 @@ function viewBilling(){
 
   return `
   <div class="metrics">
-    <div class="metric"><div class="l">累計請款</div><div class="v" style="font-size:20px">${money(totalBilled)}</div></div>
-    <div class="metric"><div class="l">已結算</div><div class="v" style="font-size:20px;color:var(--accent)">${money(totalSettled)}</div></div>
-    <div class="metric"><div class="l">未結算（在外面的錢）</div><div class="v" style="font-size:20px;color:var(--danger)">${money(totalUnsettled)}</div></div>
+    <div class="metric"><div class="l">已入帳請款</div><div class="v" style="font-size:20px">${money(totalBilled)}</div></div>
+    <div class="metric"><div class="l">已入帳筆數</div><div class="v" style="font-size:20px;color:var(--accent)">${trackedBillings.length}</div></div>
+    <div class="metric"><div class="l">未入帳未列入</div><div class="v" style="font-size:20px;color:var(--muted)">${pendingCount}</div></div>
   </div>
   <div class="card">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;flex-wrap:wrap;gap:8px">
       <div style="font-size:14px;font-weight:600">新增單據</div>
-      <button class="btn" id="export-billing" ${state.billings.length===0?'disabled style="opacity:.5"':''}>匯出 PDF</button>
+      <button class="btn" id="export-billing" ${trackedBillings.length===0?'disabled style="opacity:.5"':''}>匯出 PDF</button>
     </div>
-    <p class="sub">記一筆請款單或追加單。同一案場可多次登記，下方自動按案場彙總。追加單可在記錄後上傳施作照片，列印時會一併嵌入縮圖。</p>
+    <p class="sub">請款追蹤只顯示已入帳（已結算）的請款單與追加單。未入帳資料請到「請款單」或「追加單」頁查看與管理。</p>
     <div class="row">
       <div class="field"><label>類型</label><select id="b-type"><option value="請款單">請款單</option><option value="追加單">追加單</option></select></div>
       <div class="field"><label>請款日</label><input type="date" id="b-date" value="${new Date().toISOString().slice(0,10)}"></div>
@@ -3509,7 +3524,7 @@ function viewBilling(){
     </div>
     <div class="row" style="margin-top:8px"><button class="btn" id="b-add">＋ 新增</button></div>
   </div>
-  ${cards===''&&pausedCards===''?'<div class="card"><div class="empty">尚無請款紀錄。</div></div>':cards}${pausedCards}`;
+  ${cards===''&&pausedCards===''?'<div class="card"><div class="empty">尚無已入帳請款紀錄。</div></div>':cards}${pausedCards}`;
 }
 
 // ---- 對帳匯出 ----
@@ -3587,15 +3602,16 @@ function reconSection(key, from, to){
       <tbody>${rows}<tr class="total-row"><td colspan="3">合計</td><td class="num">${money(tin)}</td><td class="num">${money(tout)}</td></tr></tbody></table>`;
   }
   if(key==='billing'){
-    if(state.billings.length===0) return '';
-    const groups={}; state.billings.forEach(b=>{ const k=b.site||'（未填）'; (groups[k]=groups[k]||[]).push(b); });
+    const settledBills=state.billings.filter(b=>b.settled);
+    if(settledBills.length===0) return '';
+    const groups={}; settledBills.forEach(b=>{ const k=b.site||'（未填）'; (groups[k]=groups[k]||[]).push(b); });
     let GB=0,GS=0; const rows=Object.keys(groups).sort().map(name=>{
-      const list=groups[name]; const billed=list.reduce((s,b)=>s+(Number(b.amount)||0),0); const settled=list.filter(b=>b.settled).reduce((s,b)=>s+(Number(b.amount)||0),0);
-      GB+=billed; GS+=settled;
-      return `<tr><td>${esc(name)}</td><td class="num">${money(billed)}</td><td class="num">${money(settled)}</td><td class="num">${money(billed-settled)}</td></tr>`;
+      const list=groups[name]; const settled=list.reduce((s,b)=>s+billingAmount(b),0);
+      GB+=settled; GS+=settled;
+      return `<tr><td>${esc(name)}</td><td class="num">${money(settled)}</td><td class="num">${money(settled)}</td><td class="num">${money(0)}</td></tr>`;
     }).join('');
-    return `<h2 class="sec">請款追蹤明細（累計至今）</h2>
-      <table><thead><tr><th>案場</th><th class="num">已請款</th><th class="num">已結算</th><th class="num">未結算</th></tr></thead>
+    return `<h2 class="sec">請款追蹤明細（已入帳）</h2>
+      <table><thead><tr><th>案場</th><th class="num">已入帳請款</th><th class="num">已結算</th><th class="num">未列入</th></tr></thead>
       <tbody>${rows}<tr class="total-row"><td>合計</td><td class="num">${money(GB)}</td><td class="num">${money(GS)}</td><td class="num">${money(GB-GS)}</td></tr></tbody></table>`;
   }
   if(key==='deals'){
@@ -3983,16 +3999,4 @@ function exportYearVerify(){
   }
   if(!secs){ alert('請至少勾選一個段落'); return; }
   const period=(yearFrom||yearTo)?`${yearFrom||'起'} ~ ${yearTo||'今'}`:'全部期間';
-  printHTML('年度總結·驗算明細', `<h1>年度總結·驗算明細</h1><div class="meta">期間：${period}　|　列印日：${new Date().toISOString().slice(0,10)}</div>${secs}`);
-}
-
-// 關閉頁面前強制送出（sendBeacon 在 beforeunload 裡仍可執行）
-window.addEventListener('beforeunload', ()=>{
-  if(saveTimer){ clearTimeout(saveTimer); saveTimer=null; }
-  try{ navigator.sendBeacon(CLOUD_URL, JSON.stringify(packData())); }catch(e){}
-});
-
-loadLocal(); loadPhotos(); loadSigs(); render(); loadCloud();
-</script>
-</body>
-</html>
+  printHTML('年度總結·驗算明細', `<h1>年度總結·驗算明細</h1><div class="meta"
