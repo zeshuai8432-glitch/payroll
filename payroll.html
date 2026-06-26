@@ -390,6 +390,7 @@ const LS = 'pm_data_v2';
 const LS_PHOTOS = 'pm_billing_photos_v1';
 const LS_SIGS        = 'pm_billing_sigs_v1';
 const LS_SIGS_LOCKED = 'pm_billing_sigs_locked_v1';
+const LS_SIG_META    = 'pm_billing_sig_meta_v1';
 const CLOUD_URL = 'https://script.google.com/macros/s/AKfycbyMPs38UNzAwX3bcD2n9nQBz0HofUW9qFweSOnmoySs8VW2bJYHn47RdyZLQ8bD8SNWTg/exec';
 let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], tools:[], locations:[], assets:[], advances:[], accounts:[], ledger:[], deals:[], billings:[], measurements:[], contracts:{}, costs:[], parkAccId:'', oweBonus:{}, minFund:'', tab:'entry' };
 let cloudStatus='連線中…';
@@ -468,8 +469,11 @@ function applyData(d){
   if(!d) return;
   state.employees=d.employees||[]; state.sites=d.sites||[]; state.attendance=d.attendance||[]; state.adjustments=d.adjustments||[]; state.loans=d.loans||[]; state.tools=d.tools||[]; state.locations=d.locations||[]; state.assets=d.assets||[]; state.advances=d.advances||[]; state.accounts=d.accounts||[]; state.ledger=d.ledger||[]; state.deals=d.deals||[]; state.billings=d.billings||[]; state.measurements=d.measurements||[]; state.contracts=d.contracts||{}; state.costs=d.costs||[]; state.parkAccId=d.parkAccId||''; state.oweBonus=d.oweBonus||{}; state.minFund=(d.minFund!==undefined?d.minFund:'');
   state.employees.forEach(e=>{ if(e.active===undefined) e.active=true; });
-  if(d.billingSigs) Object.assign(billingSigs, d.billingSigs);
-  if(d.billingSigsLocked) Object.assign(billingSigsLocked, d.billingSigsLocked);
+  if(d.billingSigMeta) mergeBillingSigs(d.billingSigs||{}, d.billingSigsLocked||{}, d.billingSigMeta||{});
+  else {
+    if(d.billingSigs) Object.assign(billingSigs, d.billingSigs);
+    if(d.billingSigsLocked) Object.assign(billingSigsLocked, d.billingSigsLocked);
+  }
   if(d.billingPhotos) mergeCloudPhotos(d.billingPhotos);
 }
 function packData(){
@@ -479,7 +483,7 @@ function packData(){
     const driveUrls=(urls||[]).filter(u=>typeof u==='string'&&u.startsWith('http'));
     if(driveUrls.length) photosSync[id]=driveUrls;
   });
-  return {employees:state.employees,sites:state.sites,attendance:state.attendance,adjustments:state.adjustments,loans:state.loans,tools:state.tools,locations:state.locations,assets:state.assets,advances:state.advances,accounts:state.accounts,ledger:state.ledger,deals:state.deals,billings:state.billings,measurements:state.measurements,contracts:state.contracts,costs:state.costs,parkAccId:state.parkAccId,oweBonus:state.oweBonus,minFund:state.minFund,billingPhotos:photosSync,billingSigs:billingSigs,billingSigsLocked:billingSigsLocked,savedAt:Date.now()};
+  return {employees:state.employees,sites:state.sites,attendance:state.attendance,adjustments:state.adjustments,loans:state.loans,tools:state.tools,locations:state.locations,assets:state.assets,advances:state.advances,accounts:state.accounts,ledger:state.ledger,deals:state.deals,billings:state.billings,measurements:state.measurements,contracts:state.contracts,costs:state.costs,parkAccId:state.parkAccId,oweBonus:state.oweBonus,minFund:state.minFund,billingPhotos:photosSync,billingSigs:billingSigs,billingSigsLocked:billingSigsLocked,billingSigMeta:billingSigMeta,savedAt:Date.now()};
 }
 // 合併雲端照片 URL（去重、保留本機 base64 舊照片）
 function mergeCloudPhotos(cloudPhotos){
@@ -505,16 +509,8 @@ async function loadCloud(){
       const localRaw=localStorage.getItem(LS);
       const localTs=localRaw?((JSON.parse(localRaw)||{}).savedAt||0):0;
       const cloudTs=cloudData.savedAt||0;
-      // 簽名永遠合併；但本機已鎖定的簽名不被雲端蓋掉
-      if(cloudData.billingSigsLocked) Object.assign(billingSigsLocked, cloudData.billingSigsLocked);
-      if(cloudData.billingSigs){
-        Object.keys(cloudData.billingSigs).forEach(id=>{
-          if(billingSigsLocked[id] && billingSigs[id]) return; // 本機已鎖，保留本機
-          billingSigs[id]=cloudData.billingSigs[id];
-        });
-        try{localStorage.setItem(LS_SIGS,JSON.stringify(billingSigs));}catch(e){}
-        try{localStorage.setItem(LS_SIGS_LOCKED,JSON.stringify(billingSigsLocked));}catch(e){}
-      }
+      // 簽名依 updatedAt 合併，避免舊測試簽名蓋掉較新的正式簽名
+      mergeBillingSigs(cloudData.billingSigs||{}, cloudData.billingSigsLocked||{}, cloudData.billingSigMeta||{});
       // 照片 URL 永遠合併（各裝置各有自己上傳的照片）
       if(cloudData.billingPhotos) mergeCloudPhotos(cloudData.billingPhotos);
       if(cloudTs>=localTs){
@@ -571,27 +567,54 @@ function setCloud(s){ cloudStatus=s; const el=document.getElementById('cloud-sta
 function loadData(){ loadLocal(); }
 function loadPhotos(){ try{ const raw=localStorage.getItem(LS_PHOTOS); if(raw) billingPhotos=JSON.parse(raw); }catch(e){} }
 function savePhotos(){ try{ localStorage.setItem(LS_PHOTOS,JSON.stringify(billingPhotos)); }catch(e){} }
+function saveSigMeta(){ try{ localStorage.setItem(LS_SIG_META,JSON.stringify(billingSigMeta)); }catch(e){} }
+function mergeBillingSigs(inSigs={}, inLocked={}, inMeta={}){
+  Object.keys(inSigs||{}).forEach(id=>{
+    const incomingTs=Number((inMeta[id]||{}).updatedAt)||0;
+    const localTs=Number((billingSigMeta[id]||{}).updatedAt)||0;
+    if(!billingSigs[id] || incomingTs>localTs){
+      billingSigs[id]=inSigs[id];
+      billingSigsLocked[id]=!!inLocked[id];
+      billingSigMeta[id]=inMeta[id]||{updatedAt:incomingTs||Date.now()};
+    }
+  });
+  Object.keys(inLocked||{}).forEach(id=>{
+    if(!billingSigsLocked[id] && (!billingSigMeta[id] || !inMeta[id] || Number((inMeta[id]||{}).updatedAt)>=Number((billingSigMeta[id]||{}).updatedAt||0))) billingSigsLocked[id]=!!inLocked[id];
+  });
+  try{ localStorage.setItem(LS_SIGS,JSON.stringify(billingSigs)); }catch(e){}
+  try{ localStorage.setItem(LS_SIGS_LOCKED,JSON.stringify(billingSigsLocked)); }catch(e){}
+  saveSigMeta();
+}
 function loadSigs(){
   try{ const raw=localStorage.getItem(LS_SIGS); if(raw) Object.assign(billingSigs,JSON.parse(raw)); }catch(e){}
   try{ const raw=localStorage.getItem(LS_SIGS_LOCKED); if(raw) Object.assign(billingSigsLocked,JSON.parse(raw)); }catch(e){}
+  try{ const raw=localStorage.getItem(LS_SIG_META); if(raw) Object.assign(billingSigMeta,JSON.parse(raw)); }catch(e){}
   // 遷移：把舊版存在 state.billings 裡的 signedPhoto 搬出來
-  state.billings.forEach(b=>{ if(b.signedPhoto){ billingSigs[b.id]=b.signedPhoto; delete b.signedPhoto; } });
+  state.billings.forEach(b=>{ if(b.signedPhoto){ billingSigs[b.id]=b.signedPhoto; billingSigMeta[b.id]=billingSigMeta[b.id]||{updatedAt:Date.now()}; delete b.signedPhoto; } });
+  Object.keys(billingSigs).forEach(id=>{ billingSigMeta[id]=billingSigMeta[id]||{updatedAt:0}; });
   try{ localStorage.setItem(LS_SIGS,JSON.stringify(billingSigs)); }catch(e){}
+  saveSigMeta();
 }
 function saveSig(id,url){
   billingSigs[id]=url;
   billingSigsLocked[id]=true; // 簽完自動鎖定
+  billingSigMeta[id]={updatedAt:Date.now()};
   try{ localStorage.setItem(LS_SIGS,JSON.stringify(billingSigs)); }catch(e){}
   try{ localStorage.setItem(LS_SIGS_LOCKED,JSON.stringify(billingSigsLocked)); }catch(e){}
+  saveSigMeta();
   setCloud('簽名已儲存，同步中…');
 }
 function deleteSig(id){
   delete billingSigs[id];
+  delete billingSigMeta[id];
   try{ localStorage.setItem(LS_SIGS,JSON.stringify(billingSigs)); }catch(e){}
+  saveSigMeta();
 }
 function unlockSig(id){
   delete billingSigsLocked[id];
+  billingSigMeta[id]={updatedAt:Date.now()};
   try{ localStorage.setItem(LS_SIGS_LOCKED,JSON.stringify(billingSigsLocked)); }catch(e){}
+  saveSigMeta();
 }
 
 function computeRecords(records){
@@ -2905,6 +2928,7 @@ let dealPosting=null, dealEditId=null, dealCarry=null, coopCarry=null, billEditI
 let billingPhotos={}; // { [billingId]: [dataUrl, ...] }
 let billingSigs={}; // { [billingId]: dataUrl }
 let billingSigsLocked={}; // { [billingId]: true } — 已鎖定不可覆寫
+let billingSigMeta={}; // { [billingId]: {updatedAt} } — 避免舊測試簽名蓋掉新簽名
 
 // 一筆分潤進帳戶的金額：代工/公司分潤＝金額−稅；（合作案在卡片另算，這裡不處理）
 function dealIncomeAmount(d){
