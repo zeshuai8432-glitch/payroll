@@ -451,6 +451,18 @@ const esc = s => String(s==null?'':s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2,7);
 const empName = id => { const e=state.employees.find(x=>x.id===id); return e?e.name:'（已移除）'; };
 const siteName = id => { const s=state.sites.find(x=>x.id===id); return s?s.name:'（已移除）'; };
+const siteTypeLabel = name => {
+  const s=state.sites.find(x=>x.name===name);
+  if(!s) return '';
+  if(s.coop||s.type==='合作案') return '合作案';
+  return s.type||'未分類';
+};
+const siteTypeTag = name => {
+  const label=siteTypeLabel(name);
+  if(!label) return '';
+  const isCoop=label==='合作案';
+  return `<span class="tag" style="background:${isCoop?'#fde9d4':'#e3efe9'};color:${isCoop?'#9a5b1a':'var(--accent)'}">${esc(label)}</span>`;
+};
 
 function applyData(d){
   if(!d) return;
@@ -2041,19 +2053,6 @@ function printHTML(title, inner){
   ov.innerHTML=`
     <div class="pbar">
       <button class="btn" id="po-print">列印 / 存成 PDF</button>
-      <button class="act" id="po-close" style=" render();
-  });
-}
-
-// ---- PDF 匯出（以列印視窗產生，可存成 PDF 或直接列印）----
-function printHTML(title, inner){
-  // 移除舊浮層
-  const old=document.getElementById('print-overlay'); if(old) old.remove();
-  const ov=document.createElement('div');
-  ov.id='print-overlay';
-  ov.innerHTML=`
-    <div class="pbar">
-      <button class="btn" id="po-print">列印 / 存成 PDF</button>
       <button class="act" id="po-close" style="padding:0 14px">關閉</button>
     </div>
     <div class="pdoc">${inner}</div>`;
@@ -3150,7 +3149,10 @@ function viewBillingReq(){
   const total=list.reduce((s,b)=>s+billingAmount(b),0);
   const totalSettled=list.filter(b=>b.settled).reduce((s,b)=>s+billingAmount(b),0);
   const unsettled=total-totalSettled;
-  const siteSelOpts=`<option value="">（選案場）</option>`+state.sites.filter(s=>s.active!==false).map(s=>`<option value="${esc(s.name)}">${esc(s.name)}</option>`).join('');
+  const siteSelOpts=`<option value="">（選案場）</option>`+state.sites.filter(s=>s.active!==false).map(s=>{
+    const label=siteTypeLabel(s.name);
+    return `<option value="${esc(s.name)}">${esc(s.name)}${label?`（${esc(label)}）`:''}</option>`;
+  }).join('');
 
   // 依案場分組
   const groups={};
@@ -3186,7 +3188,7 @@ function viewBillingReq(){
     }).join(''):'';
     return `<div class="card" style="border-left:3px solid ${siteSettled>=siteTot?'var(--accent)':'var(--line2)'}">
       <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px;cursor:pointer" data-toggle-form="req-site-${siteName}">
-        <div style="font-size:15px;font-weight:700">${esc(siteName)}</div>
+        <div style="font-size:15px;font-weight:700;display:flex;align-items:center;gap:6px;flex-wrap:wrap">${esc(siteName)}${siteTypeTag(siteName)}</div>
         <div style="display:flex;align-items:center;gap:12px">
           <div style="font-size:13px;color:var(--muted)">合計 <b style="color:var(--accent)">${money(siteTot)}</b>　未結算 <span style="color:var(--danger)">${money(siteTot-siteSettled)}</span></div>
           <span style="font-size:12px;color:var(--muted)">${open?'▲':'▼'}</span>
@@ -3227,7 +3229,10 @@ function viewBillingAdd(){
   const total=list.reduce((s,b)=>s+billingAmount(b),0);
   const totalSettled=list.filter(b=>b.settled).reduce((s,b)=>s+billingAmount(b),0);
   const unsettled=total-totalSettled;
-  const siteSelOpts=`<option value="">（選案場）</option>`+state.sites.filter(s=>s.active!==false).map(s=>`<option value="${esc(s.name)}">${esc(s.name)}</option>`).join('');
+  const siteSelOpts=`<option value="">（選案場）</option>`+state.sites.filter(s=>s.active!==false).map(s=>{
+    const label=siteTypeLabel(s.name);
+    return `<option value="${esc(s.name)}">${esc(s.name)}${label?`（${esc(label)}）`:''}</option>`;
+  }).join('');
 
   // 依案場分組，預設收合
   const groups={};
@@ -3246,7 +3251,10 @@ function viewBillingAdd(){
       const sep=idx>0?'border-top:1px solid var(--line);':'';
 
       if(billingAddEditId===b.id){
-        const siteOpts=`<option value="">（選案場）</option>`+state.sites.filter(s=>s.active!==false).map(s=>`<option value="${esc(s.name)}" ${b.site===s.name?'selected':''}>${esc(s.name)}</option>`).join('');
+        const siteOpts=`<option value="">（選案場）</option>`+state.sites.filter(s=>s.active!==false).map(s=>{
+          const label=siteTypeLabel(s.name);
+          return `<option value="${esc(s.name)}" ${b.site===s.name?'selected':''}>${esc(s.name)}${label?`（${esc(label)}）`:''}</option>`;
+        }).join('');
         return `<div style="${sep}padding:14px 0 10px">
           <div style="font-size:12px;font-weight:700;color:#6366f1;margin-bottom:10px">編輯此筆</div>
           <div class="row">
@@ -3303,7 +3311,7 @@ function viewBillingAdd(){
     return `<div class="card" style="border-left:3px solid #d97706">
       <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
         <div style="display:flex;align-items:center;gap:10px;flex:1;min-width:0;cursor:pointer" data-toggle-form="add-site-${siteName}">
-          <div style="font-size:15px;font-weight:700">${esc(siteName)}</div>
+          <div style="font-size:15px;font-weight:700;display:flex;align-items:center;gap:6px;flex-wrap:wrap">${esc(siteName)}${siteTypeTag(siteName)}</div>
           <div style="font-size:13px;color:var(--muted)">合計 <b style="color:#9a5b1a">${money(siteTot)}</b>　未結算 <span style="color:var(--danger)">${money(siteTot-siteSettled)}</span></div>
           <span style="font-size:12px;color:var(--muted)">${open?'▲':'▼'}</span>
         </div>
@@ -3999,4 +4007,16 @@ function exportYearVerify(){
   }
   if(!secs){ alert('請至少勾選一個段落'); return; }
   const period=(yearFrom||yearTo)?`${yearFrom||'起'} ~ ${yearTo||'今'}`:'全部期間';
-  printHTML('年度總結·驗算明細', `<h1>年度總結·驗算明細</h1><div class="meta"
+  printHTML('年度總結·驗算明細', `<h1>年度總結·驗算明細</h1><div class="meta">期間：${period}　|　列印日：${new Date().toISOString().slice(0,10)}</div>${secs}`);
+}
+
+// 關閉頁面前強制送出（sendBeacon 在 beforeunload 裡仍可執行）
+window.addEventListener('beforeunload', ()=>{
+  if(saveTimer){ clearTimeout(saveTimer); saveTimer=null; }
+  try{ navigator.sendBeacon(CLOUD_URL, JSON.stringify(packData())); }catch(e){}
+});
+
+loadLocal(); loadPhotos(); loadSigs(); render(); loadCloud();
+</script>
+</body>
+</html>
