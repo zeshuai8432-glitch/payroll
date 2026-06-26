@@ -571,6 +571,7 @@ function saveSig(id,url){
   billingSigsLocked[id]=true; // 簽完自動鎖定
   try{ localStorage.setItem(LS_SIGS,JSON.stringify(billingSigs)); }catch(e){}
   try{ localStorage.setItem(LS_SIGS_LOCKED,JSON.stringify(billingSigsLocked)); }catch(e){}
+  setCloud('簽名已儲存，同步中…');
 }
 function deleteSig(id){
   delete billingSigs[id];
@@ -2232,8 +2233,8 @@ function openFullscreenSign(onSaved){
   const ctx=cv.getContext('2d');
   ctx.lineCap='round'; ctx.lineJoin='round';
   let drawing=false, lx=0, ly=0, eraser=false;
-  // penOnly=true：只接受 Apple Pencil；false：手指/觸控也可以
-  let penOnly=true;
+  // 預設允許手指簽名；需要 Apple Pencil 時可再切換。
+  let penOnly=false;
 
   function applyMode(){
     if(eraser){ ctx.globalCompositeOperation='destination-out'; ctx.lineWidth=28; cv.style.cursor='cell'; }
@@ -2271,17 +2272,27 @@ function openFullscreenSign(onSaved){
     return !penOnly; // touch 只在手簽模式允許
   }
 
+  function pointerPos(e){
+    const r=cv.getBoundingClientRect();
+    return {
+      x:(e.clientX-r.left)*(cv.width/r.width),
+      y:(e.clientY-r.top)*(cv.height/r.height)
+    };
+  }
+
   cv.addEventListener('pointerdown', e=>{
     if(!allowedPointer(e)) return;
     e.preventDefault();
     hint.style.display='none';
     applyMode(); drawing=true;
-    lx=e.offsetX; ly=e.offsetY;
+    const p=pointerPos(e);
+    lx=p.x; ly=p.y;
     cv.setPointerCapture(e.pointerId);
   });
   cv.addEventListener('pointermove', e=>{
     if(!drawing||!allowedPointer(e)) return;
-    const x=e.offsetX, y=e.offsetY;
+    e.preventDefault();
+    const p=pointerPos(e), x=p.x, y=p.y;
     ctx.beginPath(); ctx.moveTo(lx,ly); ctx.lineTo(x,y); ctx.stroke();
     lx=x; ly=y;
   });
