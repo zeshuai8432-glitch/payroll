@@ -450,8 +450,8 @@ function bindMeasSubtotal(){
   const calc=()=>{
     const isPartition=!type||type.value==='partition';
     const isCarry=type&&type.value==='carry';
-    if(widthField) widthField.style.display=isPartition?'block':'none';
-    if(heightField) heightField.style.display=isPartition?'block':'none';
+    if(widthField) widthField.style.display=(isPartition||isCarry)?'block':'none';
+    if(heightField) heightField.style.display=(isPartition||isCarry)?'block':'none';
     qty.readOnly=isPartition;
     qty.placeholder=isPartition?'自動計算':(isCarry?'直接輸入數量':'直接輸入面積');
     if(itemLabel) itemLabel.textContent=isCarry?'材料名稱':'項目';
@@ -2315,7 +2315,7 @@ function bind(){
     const note=document.getElementById('meas-note').value.trim();
     if(measureType==='partition'&&(isNaN(width)||width<=0||isNaN(height)||height<=0)){ alert('隔間請填寬度與高度（公尺）'); return; }
     if(!date||!site||!item||isNaN(qty)||qty<=0||isNaN(price)||price<0){ alert('請填日期、案場、項目/材料名稱、數量與單價'); return; }
-    state.measurements.push({id:uid(),date,site,item,unit,qty,unitPrice:price,note,measureType,width:measureType==='partition'?width:null,height:measureType==='partition'?height:null});
+    state.measurements.push({id:uid(),date,site,item,unit,qty,unitPrice:price,note,measureType,width:(measureType==='partition'||measureType==='carry')&&!isNaN(width)&&width>0?width:null,height:(measureType==='partition'||measureType==='carry')&&!isNaN(height)&&height>0?height:null});
     saveData(); render();
   };
   document.querySelectorAll('[data-del-meas]').forEach(b=>b.onclick=()=>{
@@ -3853,9 +3853,11 @@ function viewMeasurements(){
     const open=!!formOpen['meas-site-'+name];
     const trs=open?rows.map(m=>{
       const amt=(Number(m.qty)||0)*(Number(m.unitPrice)||0);
-      const isPartition=(m.measureType||'')==='partition'||(m.width&&m.height);
-      const typeLabel=isPartition?'隔間':((m.measureType||'')==='ceiling'?'天花板':((m.measureType||'')==='carry'?'搬運':''));
-      const sizeLabel=isPartition?`${Number(m.width)||0} × ${Number(m.height)||0} m`:((m.measureType||'')==='carry'?'':'直接輸入');
+      const mt=m.measureType||'';
+      const isPartition=mt==='partition'||(!mt&&m.width&&m.height);
+      const typeLabel=isPartition?'隔間':(mt==='ceiling'?'天花板':(mt==='carry'?'搬運':''));
+      const carrySize=(m.width&&m.height)?`${Number(m.width)||0} × ${Number(m.height)||0} m`:(m.width?`寬 ${Number(m.width)||0} m`:(m.height?`高 ${Number(m.height)||0} m`:''));
+      const sizeLabel=isPartition?`${Number(m.width)||0} × ${Number(m.height)||0} m`:(mt==='carry'?carrySize:'直接輸入');
       return `<tr>
         <td>${esc(m.date||'')}</td>
         <td style="max-width:160px">${esc(m.item||'')}</td>
