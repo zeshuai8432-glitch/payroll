@@ -424,9 +424,27 @@ function bindBillingSubtotal(prefix){
   qty.oninput=calc; price.oninput=calc; calc();
 }
 function bindMeasSubtotal(){
+  const type=document.getElementById('meas-type'), width=document.getElementById('meas-width'), height=document.getElementById('meas-height');
+  const widthField=document.getElementById('meas-width-field'), heightField=document.getElementById('meas-height-field');
   const qty=document.getElementById('meas-qty'), price=document.getElementById('meas-price'), out=document.getElementById('meas-subtotal');
   if(!qty||!price||!out) return;
-  const calc=()=>{ const q=parseFloat(qty.value),p=parseFloat(price.value); out.textContent=(!isNaN(q)&&!isNaN(p))?money(q*p):money(0); };
+  const roundArea=n=>Math.round(n*100)/100;
+  const calc=()=>{
+    const isPartition=!type||type.value==='partition';
+    if(widthField) widthField.style.display=isPartition?'block':'none';
+    if(heightField) heightField.style.display=isPartition?'block':'none';
+    qty.readOnly=isPartition;
+    qty.placeholder=isPartition?'自動計算':'直接輸入面積';
+    if(isPartition){
+      const w=parseFloat(width&&width.value), h=parseFloat(height&&height.value);
+      qty.value=(!isNaN(w)&&w>0&&!isNaN(h)&&h>0)?roundArea(w*h):'';
+    }
+    const q=parseFloat(qty.value),p=parseFloat(price.value);
+    out.textContent=(!isNaN(q)&&!isNaN(p))?money(q*p):money(0);
+  };
+  if(type) type.onchange=calc;
+  if(width) width.oninput=calc;
+  if(height) height.oninput=calc;
   qty.oninput=calc; price.oninput=calc; calc();
 }
 // 工數顯示：工數 = 工時÷8，用分數符號。例：9h → 1⅛ 工
@@ -1977,12 +1995,16 @@ function bind(){
     const date=document.getElementById('meas-date').value;
     const site=document.getElementById('meas-site').value.trim();
     const item=document.getElementById('meas-item').value.trim();
-    const unit=document.getElementById('meas-unit').value.trim()||'才';
+    const unit=document.getElementById('meas-unit').value.trim()||'㎡';
+    const measureType=(document.getElementById('meas-type')||{}).value||'partition';
+    const width=parseFloat((document.getElementById('meas-width')||{}).value);
+    const height=parseFloat((document.getElementById('meas-height')||{}).value);
     const qty=parseFloat(document.getElementById('meas-qty').value);
     const price=parseFloat(document.getElementById('meas-price').value);
     const note=document.getElementById('meas-note').value.trim();
+    if(measureType==='partition'&&(isNaN(width)||width<=0||isNaN(height)||height<=0)){ alert('隔間請填寬度與高度（公尺）'); return; }
     if(!date||!site||!item||isNaN(qty)||qty<=0||isNaN(price)||price<0){ alert('請填日期、案場、項目、數量與單價'); return; }
-    state.measurements.push({id:uid(),date,site,item,unit,qty,unitPrice:price,note});
+    state.measurements.push({id:uid(),date,site,item,unit,qty,unitPrice:price,note,measureType,width:measureType==='partition'?width:null,height:measureType==='partition'?height:null});
     saveData(); render();
   };
   document.querySelectorAll('[data-del-meas]').forEach(b=>b.onclick=()=>{
@@ -3493,9 +3515,14 @@ function viewMeasurements(){
     const open=!!formOpen['meas-site-'+name];
     const trs=open?rows.map(m=>{
       const amt=(Number(m.qty)||0)*(Number(m.unitPrice)||0);
+      const isPartition=(m.measureType||'')==='partition'||(m.width&&m.height);
+      const typeLabel=isPartition?'隔間':((m.measureType||'')==='ceiling'?'天花板':'');
+      const sizeLabel=isPartition?`${Number(m.width)||0} × ${Number(m.height)||0} m`:'直接輸入';
       return `<tr>
         <td>${esc(m.date||'')}</td>
         <td style="max-width:160px">${esc(m.item||'')}</td>
+        <td style="text-align:center">${esc(typeLabel)}</td>
+        <td style="text-align:right">${esc(sizeLabel)}</td>
         <td style="text-align:center">${esc(m.unit||'')}</td>
         <td style="text-align:right">${(Number(m.qty)||0).toLocaleString()}</td>
         <td style="text-align:right">${money(Number(m.unitPrice)||0)}</td>
@@ -3517,6 +3544,8 @@ function viewMeasurements(){
           <thead><tr style="background:var(--bg);color:var(--muted);font-size:12px">
             <th style="padding:6px 10px;text-align:left;white-space:nowrap">日期</th>
             <th style="padding:6px 10px;text-align:left">項目</th>
+            <th style="padding:6px 10px;text-align:center">類型</th>
+            <th style="padding:6px 10px;text-align:right">尺寸</th>
             <th style="padding:6px 10px;text-align:center">單位</th>
             <th style="padding:6px 10px;text-align:right">數量</th>
             <th style="padding:6px 10px;text-align:right">單價</th>
@@ -3539,13 +3568,16 @@ function viewMeasurements(){
   <div class="card">
     ${foldBtn('meas','新增計量明細')}
     ${formOpen.meas?`<div class="row" style="margin-top:8px">
-      <div class="field"><label>日期</label><input type="date" id="meas-date" value="${new Date().toISOString().slice(0,10)}"></div>
       <div class="field" style="flex:1;min-width:150px"><label>案場</label><select id="meas-site">${siteSelOpts}</select></div>
       <div class="field" style="flex:1;min-width:160px"><label>項目</label><input id="meas-item" placeholder="例：貼磁磚"></div>
-      <div class="field"><label>單位</label><input id="meas-unit" value="才" placeholder="才、坪、m…" style="width:80px"></div>
-      <div class="field"><label>數量</label><input type="number" id="meas-qty" min="0" step="0.01" style="width:90px"></div>
+      <div class="field"><label>單位</label><input id="meas-unit" value="㎡" placeholder="㎡、坪、才、式" style="width:90px"></div>
+      <div class="field"><label>類型</label><select id="meas-type" style="width:100px"><option value="partition">隔間</option><option value="ceiling">天花板</option></select></div>
+      <div class="field" id="meas-width-field"><label>寬度（m）</label><input type="number" id="meas-width" min="0" step="0.01" style="width:95px"></div>
+      <div class="field" id="meas-height-field"><label>高度（m）</label><input type="number" id="meas-height" min="0" step="0.01" style="width:95px"></div>
+      <div class="field"><label>數量/面積</label><input type="number" id="meas-qty" min="0" step="0.01" style="width:105px"></div>
       <div class="field"><label>單價</label><input type="number" id="meas-price" min="0" step="1" style="width:120px"></div>
       <div class="field"><label>小計</label><div id="meas-subtotal" class="num" style="height:36px;display:flex;align-items:center;font-weight:700">$0</div></div>
+      <div class="field"><label>日期</label><input type="date" id="meas-date" value="${new Date().toISOString().slice(0,10)}"></div>
       <div class="field" style="flex:1;min-width:150px"><label>備注</label><input id="meas-note" placeholder="（選填）"></div>
     </div>
     <div class="row" style="margin-top:10px"><button class="btn" id="meas-add">＋ 新增</button></div>`:''}
