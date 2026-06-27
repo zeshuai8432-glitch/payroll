@@ -442,7 +442,7 @@ function bindSiteClientAutofill(siteId, clientId){
 }
 function bindMeasSubtotal(){
   const type=document.getElementById('meas-type'), width=document.getElementById('meas-width'), height=document.getElementById('meas-height');
-  const widthField=document.getElementById('meas-width-field'), heightField=document.getElementById('meas-height-field');
+  const widthField=document.getElementById('meas-width-field'), heightField=document.getElementById('meas-height-field'), sizeField=document.getElementById('meas-size-field');
   const itemLabel=document.getElementById('meas-item-label'), item=document.getElementById('meas-item'), qtyLabel=document.getElementById('meas-qty-label'), unit=document.getElementById('meas-unit');
   const qty=document.getElementById('meas-qty'), price=document.getElementById('meas-price'), out=document.getElementById('meas-subtotal');
   if(!qty||!price||!out) return;
@@ -450,8 +450,9 @@ function bindMeasSubtotal(){
   const calc=()=>{
     const isPartition=!type||type.value==='partition';
     const isCarry=type&&type.value==='carry';
-    if(widthField) widthField.style.display=(isPartition||isCarry)?'block':'none';
-    if(heightField) heightField.style.display=(isPartition||isCarry)?'block':'none';
+    if(widthField) widthField.style.display=isPartition?'block':'none';
+    if(heightField) heightField.style.display=isPartition?'block':'none';
+    if(sizeField) sizeField.style.display=isCarry?'block':'none';
     qty.readOnly=isPartition;
     qty.placeholder=isPartition?'自動計算':(isCarry?'直接輸入數量':'直接輸入面積');
     if(itemLabel) itemLabel.textContent=isCarry?'材料名稱':'項目';
@@ -2315,7 +2316,8 @@ function bind(){
     const note=document.getElementById('meas-note').value.trim();
     if(measureType==='partition'&&(isNaN(width)||width<=0||isNaN(height)||height<=0)){ alert('隔間請填寬度與高度（公尺）'); return; }
     if(!date||!site||!item||isNaN(qty)||qty<=0||isNaN(price)||price<0){ alert('請填日期、案場、項目/材料名稱、數量與單價'); return; }
-    state.measurements.push({id:uid(),date,site,item,unit,qty,unitPrice:price,note,measureType,width:(measureType==='partition'||measureType==='carry')&&!isNaN(width)&&width>0?width:null,height:(measureType==='partition'||measureType==='carry')&&!isNaN(height)&&height>0?height:null});
+    const sizeText=(document.getElementById('meas-size')||{}).value||'';
+    state.measurements.push({id:uid(),date,site,item,unit,qty,unitPrice:price,note,measureType,sizeText:measureType==='carry'?sizeText.trim():'',width:measureType==='partition'?width:null,height:measureType==='partition'?height:null});
     saveData(); render();
   };
   document.querySelectorAll('[data-del-meas]').forEach(b=>b.onclick=()=>{
@@ -3856,7 +3858,7 @@ function viewMeasurements(){
       const mt=m.measureType||'';
       const isPartition=mt==='partition'||(!mt&&m.width&&m.height);
       const typeLabel=isPartition?'隔間':(mt==='ceiling'?'天花板':(mt==='carry'?'搬運':''));
-      const carrySize=(m.width&&m.height)?`${Number(m.width)||0} × ${Number(m.height)||0} m`:(m.width?`寬 ${Number(m.width)||0} m`:(m.height?`高 ${Number(m.height)||0} m`:''));
+      const carrySize=m.sizeText||((m.width&&m.height)?`${Number(m.width)||0} × ${Number(m.height)||0} m`:(m.width?`寬 ${Number(m.width)||0} m`:(m.height?`高 ${Number(m.height)||0} m`:'')));
       const sizeLabel=isPartition?`${Number(m.width)||0} × ${Number(m.height)||0} m`:(mt==='carry'?carrySize:'直接輸入');
       return `<tr>
         <td>${esc(m.date||'')}</td>
@@ -3916,6 +3918,7 @@ function viewMeasurements(){
       <div class="field"><label>單位</label><input id="meas-unit" value="㎡" placeholder="㎡、坪、才、式" style="width:90px"></div>
       <div class="field" id="meas-width-field"><label>寬度（m）</label><input type="number" id="meas-width" min="0" step="0.01" style="width:95px"></div>
       <div class="field" id="meas-height-field"><label>高度（m）</label><input type="number" id="meas-height" min="0" step="0.01" style="width:95px"></div>
+      <div class="field" id="meas-size-field" style="display:none;flex:1;min-width:130px"><label>尺寸</label><input id="meas-size" placeholder="例：4尺×8尺、120×240"></div>
       <div class="field"><label id="meas-qty-label">數量/面積</label><input type="number" id="meas-qty" min="0" step="0.01" style="width:105px"></div>
       <div class="field"><label>單價</label><input type="number" id="meas-price" min="0" step="1" style="width:120px"></div>
       <div class="field"><label>小計</label><div id="meas-subtotal" class="num" style="height:36px;display:flex;align-items:center;font-weight:700">$0</div></div>
