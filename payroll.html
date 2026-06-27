@@ -479,13 +479,24 @@ function gongH(hours){ const h=Number(hours)||0; return `${gongStr(h)}<span styl
 const esc = s => String(s==null?'':s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2,7);
 const empName = id => { const e=state.employees.find(x=>x.id===id); return e?e.name:'（已移除）'; };
-const siteName = id => { const s=state.sites.find(x=>x.id===id); return s?s.name:'（已移除）'; };
+const parentSiteOf = s => s&&s.parentSiteId?state.sites.find(x=>x.id===s.parentSiteId):null;
+const siteDisplayName = s => {
+  const p=parentSiteOf(s);
+  return s?(p?`${p.name} / ${s.name}`:s.name):'（已移除）';
+};
+const siteName = id => siteDisplayName(state.sites.find(x=>x.id===id));
 const siteApplyUnit = name => {
   const s=state.sites.find(x=>x.name===parentSiteName(name));
   return s?(s.applyUnit||s.contractCompany||s.company||''):'';
 };
 const SUB_SITE_TYPES=['代工','連工代料','業主分潤','舊制'];
-const subSitesOf = s => Array.isArray(s&&s.subSites)?s.subSites.map(x=>typeof x==='string'?x:(x&&x.name)||'').filter(Boolean):[];
+const childSitesOf = s => s?state.sites.filter(x=>x.parentSiteId===s.id):[];
+const childSiteFor = (s, subName) => s?state.sites.find(x=>x.parentSiteId===s.id&&x.name===subName):null;
+const subSitesOf = s => {
+  const saved=Array.isArray(s&&s.subSites)?s.subSites.map(x=>typeof x==='string'?x:(x&&x.name)||'').filter(Boolean):[];
+  const linked=childSitesOf(s).map(x=>x.name);
+  return [...new Set([...saved,...linked])];
+};
 const ensureSubSiteMeta = s => {
   if(!s) return {};
   if(!s.subSiteTypes || typeof s.subSiteTypes!=='object' || Array.isArray(s.subSiteTypes)) s.subSiteTypes={};
@@ -495,6 +506,8 @@ const ensureSubSiteMeta = s => {
 const subSiteType = (siteOrName, subName) => {
   const s=typeof siteOrName==='string'?state.sites.find(x=>x.name===siteOrName):siteOrName;
   if(!s||!subName) return '';
+  const child=childSiteFor(s,subName);
+  if(child) return child.type||'代工';
   const meta=ensureSubSiteMeta(s);
   return meta[subName]||'代工';
 };
@@ -513,15 +526,18 @@ const splitSiteValue = value => {
 const parentSiteName = value => splitSiteValue(value).parent || '（未填案場）';
 const childSiteName = value => splitSiteValue(value).sub;
 const siteDisplayLabel = value => {
+  const direct=state.sites.find(s=>s.name===String(value||''));
+  if(direct) return siteDisplayName(direct);
   const p=splitSiteValue(value);
   return p.sub?`${p.parent} / ${p.sub}`:p.parent;
 };
 function siteSelectOptions(selected=''){
-  return `<option value="">（選案場）</option>`+state.sites.filter(s=>s.active!==false).map(s=>{
+  return `<option value="">（選案場）</option>`+state.sites.filter(s=>s.active!==false&&!s.parentSiteId).map(s=>{
     const label=siteTypeLabel(s.name);
     const parentOpt=`<option value="${esc(s.name)}" ${selected===s.name?'selected':''}>${esc(s.name)}${label?`（${esc(label)}）`:''}</option>`;
     const subOpts=subSitesOf(s).map(sub=>{
-      const val=siteOptionValue(s.name,sub);
+      const child=childSiteFor(s,sub);
+      const val=child?child.name:siteOptionValue(s.name,sub);
       const type=subSiteType(s,sub);
       return `<option value="${esc(val)}" ${selected===val?'selected':''}>　↳ ${esc(sub)}${type?`（${esc(type)}）`:''}</option>`;
     }).join('');
@@ -556,6 +572,17 @@ function applyData(d){
   if(!d) return;
   state.employees=d.employees||[]; state.sites=d.sites||[]; state.attendance=d.attendance||[]; state.adjustments=d.adjustments||[]; state.loans=d.loans||[]; state.tools=d.tools||[]; state.locations=d.locations||[]; state.assets=d.assets||[]; state.advances=d.advances||[]; state.accounts=d.accounts||[]; state.ledger=d.ledger||[]; state.deals=d.deals||[]; state.billings=d.billings||[]; state.measurements=d.measurements||[]; state.contracts=d.contracts||{}; state.costs=d.costs||[]; state.parkAccId=d.parkAccId||''; state.oweBonus=d.oweBonus||{}; state.minFund=(d.minFund!==undefined?d.minFund:'');
   state.employees.forEach(e=>{ if(e.active===undefined) e.active=true; });
+  state.sites.forEach(s=>{
+    if(s.parentSiteId){
+      const p=state.sites.find(x=>x.id===s.parentSiteId);
+      if(p){
+        s.parentSiteName=p.name;
+        p.subSites=subSitesOf(p);
+        if(!p.subSites.includes(s.name)) p.subSites.push(s.name);
+        ensureSubSiteMeta(p)[s.name]=s.type||ensureSubSiteMeta(p)[s.name]||'代工';
+      }
+    }
+  });
   mergeBillingSigs(d.billingSigs||{}, d.billingSigsLocked||{}, d.billingSigMeta||{});
   if(d.billingPhotos) mergeCloudPhotos(d.billingPhotos);
 }
@@ -795,7 +822,7 @@ function viewEntry(){
   const activeEmps=state.employees.filter(e=>e.active);
   const empOpts=activeEmps.map(e=>`<option value="${e.id}">${esc(e.name)}（日薪 ${e.daily}）</option>`).join('');
   const activeSites=state.sites.filter(s=>s.active!==false && !s.coop);
-  const siteOpts=activeSites.map(s=>`<option value="${s.id}">${esc(s.name)}</option>`).join('');
+  const siteOpts=activeSites.map(s=>`<option value="${s.id}">${esc(siteDisplayName(s))}</option>`).join('');
   const needEmp=activeEmps.length===0, needSite=activeSites.length===0;
   const noSetup=needEmp||needSite;
   let setupMsg='';
@@ -871,7 +898,7 @@ function viewEntry(){
     </div>`;
   }).join('');
   const empOptsSel=activeEmps.map(e=>`<option value="${e.id}" ${e.id===entryEmp?'selected':''}>${esc(e.name)}（日薪 ${e.daily}）</option>`).join('');
-  const siteOptsSel=activeSites.map(s=>`<option value="${s.id}" ${s.id===curSite?'selected':''}>${esc(s.name)}</option>`).join('');
+  const siteOptsSel=activeSites.map(s=>`<option value="${s.id}" ${s.id===curSite?'selected':''}>${esc(siteDisplayName(s))}</option>`).join('');
   return `
   <div class="card">
     <p class="sub">登記一筆出工。日期與案場會保留，方便連續登記同案場多人。同一人同一天跑多案場就分開登記多筆。</p>
@@ -1095,7 +1122,6 @@ function viewSites(){
         return `<tr><td colspan="5" style="background:var(--bg)">
           <div class="row" style="margin:6px 0">
             <div class="field"><label>日期</label><input type="date" id="ce-date" value="${c.date||''}"></div>
-            ${isCoop?`<div class="field"><label>樓層</label><select id="ce-subsite"><option value="">主案場</option>${subSitesOf(site).map(sub=>`<option value="${esc(sub)}" ${c.subSite===sub?'selected':''}>${esc(sub)}（${esc(subSiteType(site,sub)||'代工')}）</option>`).join('')}</select></div>`:''}
             <div class="field" style="flex:1;min-width:120px"><label>項目</label><input id="ce-item" value="${esc(c.item||'')}"></div>
             <div class="field"><label>金額</label><input type="number" id="ce-amount" value="${c.amount||0}" min="0" step="1000" style="width:120px"></div>
             <div class="field"><label>誰支付</label><select id="ce-payer"><option value="dz" ${c.payer==='dz'?'selected':''}>東澤</option><option value="gx" ${c.payer==='gx'?'selected':''}>廣昕</option><option value="py" ${c.payer==='py'?'selected':''}>品佑</option></select></div>
@@ -1130,7 +1156,6 @@ function viewSites(){
       <details ${isCoop?'open':''}><summary>手動成本明細（${myCosts.length} 筆）</summary>
         <div class="row" style="margin:8px 0">
           <div class="field"><label>日期</label><input type="date" data-costdate="${sid}" value="${new Date().toISOString().slice(0,10)}"></div>
-          ${isCoop?`<div class="field"><label>樓層</label><select data-costsubsite="${sid}"><option value="">主案場</option>${subSitesOf(site).map(sub=>`<option value="${esc(sub)}">${esc(sub)}（${esc(subSiteType(site,sub)||'代工')}）</option>`).join('')}</select></div>`:''}
           <div class="field" style="flex:1;min-width:120px"><label>項目</label><input data-costitem="${sid}" placeholder="材料、工資、機具…"></div>
           <div class="field"><label>金額</label><input type="number" data-costamount="${sid}" min="0" step="1000" style="width:120px"></div>
           <div class="field"><label>誰支付</label><select data-costpayer="${sid}"><option value="dz">東澤</option><option value="gx">廣昕</option><option value="py">品佑</option></select></div>
@@ -1208,7 +1233,7 @@ function viewManage(){
     const contractVal=(s.contract!==undefined&&s.contract!=='')?s.contract:(state.contracts[s.name]||'');
     const curType=s.type||(s.coop?'合作案':'代工');
     const applyUnit=s.applyUnit||s.contractCompany||s.company||'';
-    const importCandidates=state.sites.filter(x=>x.id!==s.id && x.active!==false && !(x.coop||x.type==='合作案') && !subSitesOf(s).includes(x.name));
+    const importCandidates=state.sites.filter(x=>x.id!==s.id && x.active!==false && !x.parentSiteId && !(x.coop||x.type==='合作案') && !subSitesOf(s).includes(x.name));
     const settings=`<tr${paused?' style="color:var(--muted)"':''}><td colspan="4" style="padding-top:0">
       <details ${siteSettingsOpen[s.id]?'open':''} data-sitesettings="${s.id}" style="margin:2px 0 8px"><summary style="cursor:pointer;font-size:12px;color:var(--info)">案場設定（類型／稅率／負責人／帳戶／申請單位）</summary>
         <div class="row" style="margin:8px 0 4px">
@@ -1228,8 +1253,8 @@ function viewManage(){
             <button class="act" data-addsubsite="${s.id}" style="border:1px solid var(--accent);border-radius:6px;padding:0 12px;color:var(--accent);height:36px">＋ 加樓層</button>
           </div>
           <div class="row" style="margin-top:8px;border-top:1px dashed var(--line);padding-top:8px">
-            <div class="field" style="flex:1;min-width:220px"><label>匯入既有案場為樓層（臨時）</label><select data-importsubsite="${s.id}"><option value="">選擇已建立的子樓層案場</option>${importCandidates.map(x=>`<option value="${x.id}">${esc(x.name)}${x.type?`（${esc(x.type)}）`:''}</option>`).join('')}</select></div>
-            <button class="act" data-importsubsitebtn="${s.id}" style="border:1px solid var(--info);border-radius:6px;padding:0 12px;color:var(--info);height:36px">匯入並移除原案場</button>
+            <div class="field" style="flex:1;min-width:220px"><label>收納既有案場為子案場</label><select data-importsubsite="${s.id}"><option value="">選擇已建立的子樓層案場</option>${importCandidates.map(x=>`<option value="${x.id}">${esc(x.name)}${x.type?`（${esc(x.type)}）`:''}</option>`).join('')}</select></div>
+            <button class="act" data-importsubsitebtn="${s.id}" style="border:1px solid var(--info);border-radius:6px;padding:0 12px;color:var(--info);height:36px">收納到合作案底下</button>
           </div>
         </div>`:''}
         <p class="sub" style="margin:0 0 8px">申請單位會帶到請款單／追加單 PDF。改類型會影響分潤算法。代工/連工代料/業主分潤＝（總請款−成本−稅）做30/70；合作案＝（總請款−案場成本）對拆；舊制全進公積金。改設定後請款的分潤會自動跟著重算。</p>
@@ -1239,8 +1264,8 @@ function viewManage(){
     </td></tr>`;
     return `<tr${paused?' style="color:var(--muted)"':''}><td>${nameCell}</td><td><button class="act" data-rensite="${s.id}">改名</button></td><td>${toggle}</td><td>${delBtn}</td></tr>${settings}`;
   };
-  const activeSitesList=state.sites.filter(s=>s.active!==false);
-  const pausedSitesList=state.sites.filter(s=>s.active===false);
+  const activeSitesList=state.sites.filter(s=>s.active!==false&&!s.parentSiteId);
+  const pausedSitesList=state.sites.filter(s=>s.active===false&&!s.parentSiteId);
   const siteRows=activeSitesList.map(siteRowFor).join('');
   const pausedSiteTable=pausedSitesList.length?`<details style="margin-top:10px"><summary style="cursor:pointer;font-weight:600;padding:8px 0">已暫停案場（${pausedSitesList.length}）</summary><table><tbody>${pausedSitesList.map(siteRowFor).join('')}</tbody></table></details>`:'';
   return `
@@ -1519,6 +1544,8 @@ function bind(){
     const s=state.sites.find(x=>x.id===sel.dataset.subtype); if(!s) return;
     const sub=sel.dataset.subsite;
     if(!subSitesOf(s).includes(sub)) return;
+    const child=childSiteFor(s,sub);
+    if(child){ child.type=sel.value||'代工'; child.coop=false; }
     ensureSubSiteMeta(s)[sub]=sel.value||'代工';
     siteSettingsOpen[s.id]=true; saveData(); render();
   });
@@ -1527,56 +1554,42 @@ function bind(){
     const sel=document.querySelector(`[data-importsubsite="${s.id}"]`);
     const child=sel?state.sites.find(x=>x.id===sel.value):null;
     if(!child) return;
-    if(state.attendance.some(r=>r.siteId===child.id)){
-      alert('這個案場已有出工紀錄，先不要匯入合作案樓層。合作案目前不做出工登記，直接匯入會讓薪資/出工資料對不上。');
-      return;
-    }
     const sub=child.name;
-    if(!confirm(`要把「${sub}」匯入到「${s.name}」底下當子案場嗎？\n\n會搬移請款、追加、計量與成本資料，並移除原本獨立案場。`)) return;
+    if(!confirm(`要把「${sub}」收進「${s.name}」底下當子案場嗎？\n\n子案場會保留自己的出工、成本、請款與計量，不會併入合作案成本。`)) return;
     s.subSites=subSitesOf(s);
     if(!s.subSites.includes(sub)) s.subSites.push(sub);
     const childType=SUB_SITE_TYPES.includes(child.type)?child.type:'代工';
+    child.type=childType;
+    child.coop=false;
+    child.parentSiteId=s.id;
+    child.parentSiteName=s.name;
     ensureSubSiteMeta(s)[sub]=childType;
-    const oldName=child.name;
-    const newName=siteOptionValue(s.name,sub);
-    (state.billings||[]).forEach(x=>{ if(x.site===oldName) x.site=newName; });
-    (state.measurements||[]).forEach(x=>{ if(x.site===oldName) x.site=newName; });
-    (state.costs||[]).forEach(x=>{ if(x.siteId===child.id){ x.siteId=s.id; x.subSite=sub; } });
-    const dealIds=(state.deals||[]).filter(d=>d.autoSiteId===child.id||d.name===oldName).map(d=>d.id);
-    if(dealIds.length){
-      state.deals=state.deals.filter(d=>!dealIds.includes(d.id));
-      state.ledger=state.ledger.filter(t=>!dealIds.includes(t.autoDealId)&&!dealIds.includes(t.fromDeal));
-    }
-    if(state.contracts) delete state.contracts[oldName];
-    state.sites=state.sites.filter(x=>x.id!==child.id);
     siteSettingsOpen[s.id]=true;
     resyncAllSiteDeals(); saveData(); render();
-    alert(`已匯入「${sub}」，並移除原本獨立案場。`);
+    alert(`已把「${sub}」收進「${s.name}」底下。`);
   });
   document.querySelectorAll('[data-extractsubsite]').forEach(b=>b.onclick=()=>{
     const s=state.sites.find(x=>x.id===b.dataset.extractsubsite); if(!s) return;
     const sub=b.dataset.subsite;
     if(!subSitesOf(s).includes(sub)) return;
-    const existing=state.sites.find(x=>x.name===sub);
+    const linked=childSiteFor(s,sub);
+    const existing=state.sites.find(x=>x.name===sub && x.id!==(linked&&linked.id));
     if(existing){ alert(`已經有名為「${sub}」的獨立案場，請先改名或確認資料後再拉出。`); return; }
     const type=subSiteType(s,sub)||'代工';
     const val=siteOptionValue(s.name,sub);
     const movedBills=(state.billings||[]).filter(x=>x.site===val).length;
     const movedMeas=(state.measurements||[]).filter(x=>x.site===val).length;
     const movedCosts=(state.costs||[]).filter(x=>x.siteId===s.id&&x.subSite===sub).length;
-    if(!confirm(`要把「${sub}」從「${s.name}」拉回獨立案場嗎？\n\n會還原：請款 ${movedBills} 筆、計量 ${movedMeas} 筆、成本 ${movedCosts} 筆。`)) return;
-    const child={
-      id:uid(),
-      name:sub,
-      type,
-      coop:false,
-      active:true,
-      siteTaxPct:s.siteTaxPct||0,
-      siteOwnerId:s.siteOwnerId||'',
-      siteAcc:s.siteAcc||'',
-      applyUnit:s.applyUnit||''
+    if(!confirm(`要把「${sub}」從「${s.name}」拉回一般案場列表嗎？\n\n既有出工、成本、請款與計量仍會留在「${sub}」。${movedBills+movedMeas+movedCosts?`\n也會順便還原舊格式資料：請款 ${movedBills} 筆、計量 ${movedMeas} 筆、成本 ${movedCosts} 筆。`:''}`)) return;
+    const child=linked||{
+      id:uid(), name:sub, type, coop:false, active:true,
+      siteTaxPct:s.siteTaxPct||0, siteOwnerId:s.siteOwnerId||'', siteAcc:s.siteAcc||'', applyUnit:s.applyUnit||''
     };
-    state.sites.push(child);
+    if(!linked) state.sites.push(child);
+    child.parentSiteId='';
+    child.parentSiteName='';
+    child.type=type;
+    child.coop=false;
     (state.billings||[]).forEach(x=>{ if(x.site===val) x.site=sub; });
     (state.measurements||[]).forEach(x=>{ if(x.site===val) x.site=sub; });
     (state.costs||[]).forEach(x=>{ if(x.siteId===s.id&&x.subSite===sub){ x.siteId=child.id; delete x.subSite; } });
@@ -1589,6 +1602,7 @@ function bind(){
   document.querySelectorAll('[data-delsubsite]').forEach(b=>b.onclick=()=>{
     const s=state.sites.find(x=>x.id===b.dataset.delsubsite); if(!s) return;
     const sub=b.dataset.subsite;
+    if(childSiteFor(s,sub)){ alert('這個樓層已經是子案場。若要解除收納，請按「拉出」。'); return; }
     const val=siteOptionValue(s.name,sub);
     const used=(state.billings||[]).some(x=>x.site===val)||(state.measurements||[]).some(x=>x.site===val)||(state.costs||[]).some(x=>x.siteId===s.id&&x.subSite===sub);
     if(used&&!confirm(`「${sub}」已有請款、計量或成本資料。\n刪除後既有資料仍會保留文字，但選單不再顯示此樓層。確定刪除？`)) return;
@@ -1606,7 +1620,13 @@ function bind(){
     const applyInp=document.querySelector(`[data-siteapplyunit="${id}"]`); if(applyInp){ s.applyUnit=applyInp.value.trim(); }
     const mgrInp=document.querySelector(`[data-sitemgr="${id}"]`); if(mgrInp){ const v=parseFloat(mgrInp.value); s.coopMgrPct=isNaN(v)?50:Math.max(0,Math.min(100,v)); }
     const conInp=document.querySelector(`[data-sitecontract="${id}"]`); if(conInp){ const v=parseFloat(conInp.value); if(isNaN(v)||v<=0){ s.contract=''; delete state.contracts[s.name]; } else { s.contract=v; state.contracts[s.name]=v; } }
-    document.querySelectorAll(`[data-subtype="${id}"]`).forEach(sel=>{ if(subSitesOf(s).includes(sel.dataset.subsite)) ensureSubSiteMeta(s)[sel.dataset.subsite]=sel.value||'代工'; });
+    document.querySelectorAll(`[data-subtype="${id}"]`).forEach(sel=>{
+      if(subSitesOf(s).includes(sel.dataset.subsite)){
+        const child=childSiteFor(s,sel.dataset.subsite);
+        if(child){ child.type=sel.value||'代工'; child.coop=false; }
+        ensureSubSiteMeta(s)[sel.dataset.subsite]=sel.value||'代工';
+      }
+    });
     resyncSiteDeal(s); saveData();
     const tag=document.querySelector(`[data-sitesaved="${id}"]`);
     if(tag){ tag.style.display='inline'; setTimeout(()=>{ if(tag) tag.style.display='none'; }, 2500); }
@@ -1720,7 +1740,17 @@ function bind(){
         state.billings.forEach(b=>{ const p=splitSiteValue(b.site); if(p.parent===old) b.site=siteOptionValue(v,p.sub); });
         state.measurements.forEach(m=>{ const p=splitSiteValue(m.site); if(p.parent===old) m.site=siteOptionValue(v,p.sub); });
         if(state.contracts[old]!==undefined){ state.contracts[v]=state.contracts[old]; delete state.contracts[old]; }
-        s.name=v; saveData();
+        s.name=v;
+        if(s.parentSiteId){
+          const p=parentSiteOf(s);
+          if(p){
+            p.subSites=subSitesOf(p).map(x=>x===old?v:x);
+            if(p.subSiteTypes&&p.subSiteTypes[old]!==undefined){ p.subSiteTypes[v]=p.subSiteTypes[old]; delete p.subSiteTypes[old]; }
+          }
+        }else{
+          childSitesOf(s).forEach(ch=>{ ch.parentSiteName=v; });
+        }
+        saveData();
       }
       render();
     };
@@ -3562,9 +3592,9 @@ function viewBillingReq(){
     }).join(''):'';
     return `<div class="card" style="border-left:3px solid ${siteSettled>=siteTot?'var(--accent)':'var(--line2)'}">
       <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px;cursor:pointer" data-toggle-form="req-site-${siteName}">
-        <div style="font-size:15px;font-weight:700;display:flex;align-items:center;gap:6px;flex-wrap:wrap">${esc(siteName)}${siteTypeTag(siteName)}</div>
+        <div style="font-size:15px;font-weight:700;display:flex;align-items:center;gap:6px;flex-wrap:wrap">${esc(siteDisplayLabel(siteName))}${siteTypeTag(siteName)}</div>
         <div style="display:flex;align-items:center;gap:12px">
-          <div style="font-size:13px;color:var(--muted)">合計 <b style="color:var(--accent)">${money(siteTot)}</b>　未收款 <span style="color:var(--danger)">${money(siteTot-siteSettled)}</span></div>
+          <div style="font-size:13px;color:var(--muted)">合計 <b style="color:var(--accent)">${money(siteTot)}</b>　案場未收款合計 <span style="color:var(--danger)">${money(siteTot-siteSettled)}</span></div>
           <span style="font-size:12px;color:var(--muted)">${open?'▲':'▼'}</span>
         </div>
       </div>
@@ -3576,7 +3606,7 @@ function viewBillingReq(){
   <div class="metrics">
     <div class="metric"><div class="l">請款單數</div><div class="v">${list.length}</div></div>
     <div class="metric"><div class="l">請款總額</div><div class="v" style="font-size:21px">${money(total)}</div></div>
-    <div class="metric"><div class="l">未收款</div><div class="v" style="font-size:21px">${money(unsettled)}</div></div>
+    <div class="metric"><div class="l">全部未收款合計</div><div class="v" style="font-size:21px">${money(unsettled)}</div></div>
   </div>
   <div class="card">
     ${foldBtn('bnr','新增請款單')}
@@ -3681,8 +3711,8 @@ function viewBillingAdd(){
     return `<div class="card" style="border-left:3px solid #d97706">
       <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
         <div style="display:flex;align-items:center;gap:10px;flex:1;min-width:0;cursor:pointer" data-toggle-form="add-site-${siteName}">
-          <div style="font-size:15px;font-weight:700;display:flex;align-items:center;gap:6px;flex-wrap:wrap">${esc(siteName)}${siteTypeTag(siteName)}</div>
-          <div style="font-size:13px;color:var(--muted)">合計 <b style="color:#9a5b1a">${money(siteTot)}</b>　未收款 <span style="color:var(--danger)">${money(siteTot-siteSettled)}</span></div>
+        <div style="font-size:15px;font-weight:700;display:flex;align-items:center;gap:6px;flex-wrap:wrap">${esc(siteDisplayLabel(siteName))}${siteTypeTag(siteName)}</div>
+          <div style="font-size:13px;color:var(--muted)">合計 <b style="color:#9a5b1a">${money(siteTot)}</b>　案場未收款合計 <span style="color:var(--danger)">${money(siteTot-siteSettled)}</span></div>
           <span style="font-size:12px;color:var(--muted)">${open?'▲':'▼'}</span>
         </div>
         <div style="display:flex;gap:6px;flex-shrink:0">
@@ -3698,7 +3728,7 @@ function viewBillingAdd(){
   <div class="metrics">
     <div class="metric"><div class="l">追加單數</div><div class="v">${list.length}</div></div>
     <div class="metric"><div class="l">追加總額</div><div class="v" style="font-size:21px">${money(total)}</div></div>
-    <div class="metric"><div class="l">未收款</div><div class="v" style="font-size:21px">${money(unsettled)}</div></div>
+    <div class="metric"><div class="l">全部未收款合計</div><div class="v" style="font-size:21px">${money(unsettled)}</div></div>
   </div>
   <div class="card">
     ${foldBtn('bna','新增追加單')}
