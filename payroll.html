@@ -470,6 +470,10 @@ const esc = s => String(s==null?'':s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2,7);
 const empName = id => { const e=state.employees.find(x=>x.id===id); return e?e.name:'（已移除）'; };
 const siteName = id => { const s=state.sites.find(x=>x.id===id); return s?s.name:'（已移除）'; };
+const siteApplyUnit = name => {
+  const s=state.sites.find(x=>x.name===name);
+  return s?(s.applyUnit||s.contractCompany||s.company||''):'';
+};
 const siteTypeLabel = name => {
   const s=state.sites.find(x=>x.name===name);
   if(!s) return '';
@@ -1127,8 +1131,9 @@ function viewManage(){
     const nameCell=`${esc(s.name)}${s.coop?'<span class="tag" style="background:#fde9d4;color:#9a5b1a">合作案</span>':(s.type?`<span class="tag" style="background:#e3efe9;color:var(--accent)">${esc(s.type)}</span>`:'')}${paused?'<span class="tag" style="background:var(--warn-bg);color:var(--warn-ink)">已暫停</span>':''}`;
     const contractVal=(s.contract!==undefined&&s.contract!=='')?s.contract:(state.contracts[s.name]||'');
     const curType=s.type||(s.coop?'合作案':'代工');
+    const applyUnit=s.applyUnit||s.contractCompany||s.company||'';
     const settings=`<tr${paused?' style="color:var(--muted)"':''}><td colspan="4" style="padding-top:0">
-      <details ${siteSettingsOpen[s.id]?'open':''} data-sitesettings="${s.id}" style="margin:2px 0 8px"><summary style="cursor:pointer;font-size:12px;color:var(--info)">案場設定（類型／稅率／負責人／帳戶）</summary>
+      <details ${siteSettingsOpen[s.id]?'open':''} data-sitesettings="${s.id}" style="margin:2px 0 8px"><summary style="cursor:pointer;font-size:12px;color:var(--info)">案場設定（類型／稅率／負責人／帳戶／申請單位）</summary>
         <div class="row" style="margin:8px 0 4px">
           <div class="field"><label>類型</label><select data-sitetype="${s.id}">${['代工','連工代料','業主分潤','合作案','舊制'].map(t=>`<option value="${t}" ${curType===t?'selected':''}>${t}${t==='合作案'?'（50/50）':t==='舊制'?'（全進公積金）':'（30/70）'}</option>`).join('')}</select></div>
           <div class="field"><label>稅率 %</label><input type="number" data-sitetax="${s.id}" value="${s.siteTaxPct!==undefined?s.siteTaxPct:(s.coopTaxPct||0)}" min="0" max="100" step="0.5" style="width:90px"></div>
@@ -1136,8 +1141,9 @@ function viewManage(){
           <div class="field"><label>錢進哪個帳戶</label><select data-siteacc="${s.id}"><option value="">（未指定）</option>${state.accounts.map(a=>`<option value="${a.id}" ${s.siteAcc===a.id?'selected':''}>${esc(a.name)}</option>`).join('')}</select></div>
           ${curType==='合作案'?`<div class="field"><label>管理人(你們)佔 %</label><input type="number" data-sitemgr="${s.id}" value="${s.coopMgrPct!==undefined?s.coopMgrPct:50}" min="0" max="100" step="5" style="width:120px"></div>`:''}
           <div class="field"><label>合約總額（選填）</label><input type="number" data-sitecontract="${s.id}" value="${contractVal}" placeholder="未設定" min="0" step="10000" style="width:140px"></div>
+          <div class="field" style="flex:1;min-width:180px"><label>申請單位（簽約公司）</label><input data-siteapplyunit="${s.id}" value="${esc(applyUnit)}" placeholder="例：東澤工程有限公司"></div>
         </div>
-        <p class="sub" style="margin:0 0 8px">改類型會影響分潤算法。代工/連工代料/業主分潤＝（總請款−成本−稅）做30/70；合作案＝（總請款−案場成本）對拆；舊制全進公積金。改設定後請款的分潤會自動跟著重算。</p>
+        <p class="sub" style="margin:0 0 8px">申請單位會帶到請款單／追加單 PDF。改類型會影響分潤算法。代工/連工代料/業主分潤＝（總請款−成本−稅）做30/70；合作案＝（總請款−案場成本）對拆；舊制全進公積金。改設定後請款的分潤會自動跟著重算。</p>
         <button class="btn" data-sitesave="${s.id}">✓ 儲存設定</button>
         <span data-sitesaved="${s.id}" style="margin-left:10px;color:var(--accent);font-weight:600;display:none">已儲存 ✓</span>
       </details>
@@ -1161,7 +1167,7 @@ function viewManage(){
   </div>
   <div class="card">
     <div style="font-size:14px;font-weight:600;margin-bottom:4px">案場</div>
-    <p class="sub">建案場時設好<b>類型、稅率、負責人、錢進哪個帳戶</b>，之後請款追蹤一輸入，系統就自動算分潤、自動進帳戶，不用再去分潤頁手動建。<b>代工／公司分潤</b>＝（總請款−稅）做30/70；<b>合作案</b>＝（總請款−案場成本）對拆、不出現在出工登記、成本記「案場成本」頁。改名會套用到所有相關紀錄。</p>
+    <p class="sub">建案場時設好<b>類型、稅率、負責人、錢進哪個帳戶、申請單位</b>，之後請款追蹤一輸入，系統就自動算分潤、自動進帳戶；請款單／追加單 PDF 也會自動帶申請單位。<b>代工／公司分潤</b>＝（總請款−稅）做30/70；<b>合作案</b>＝（總請款−案場成本）對拆、不出現在出工登記、成本記「案場成本」頁。改名會套用到所有相關紀錄。</p>
     <div class="row" style="margin-bottom:8px">
       <div class="field" style="flex:1;min-width:180px"><label>案場名稱</label><input id="s-name" placeholder="例：台北富邦"></div>
       <div class="field"><label>類型</label><select id="s-type">${['代工','連工代料','業主分潤','合作案','舊制'].map(t=>`<option value="${t}">${t}${t==='合作案'?'（50/50）':t==='舊制'?'（全進公積金）':'（30/70）'}</option>`).join('')}</select></div>
@@ -1170,6 +1176,7 @@ function viewManage(){
     <div class="row" style="margin-bottom:10px">
       <div class="field"><label>負責人</label><select id="s-owner"><option value="">（未指定）</option>${state.employees.filter(e=>e.partner).map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join('')}</select></div>
       <div class="field"><label>錢進哪個帳戶</label><select id="s-acc"><option value="">（未指定）</option>${state.accounts.map(a=>`<option value="${a.id}">${esc(a.name)}</option>`).join('')}</select></div>
+      <div class="field" style="flex:1;min-width:180px"><label>申請單位（簽約公司）</label><input id="s-applyunit" placeholder="例：東澤工程有限公司"></div>
       <div class="field" id="s-mgr-wrap" style="display:none"><label>管理人(你們)佔 %</label><input type="number" id="s-mgrpct" min="0" max="100" step="5" value="50" style="width:120px"></div>
       <button class="btn" id="s-add">＋ 新增案場</button>
     </div>
@@ -1404,6 +1411,10 @@ function bind(){
     const s=state.sites.find(x=>x.id===sel.dataset.siteowner); if(!s) return;
     s.siteOwnerId=sel.value; s.coopOwnerId=sel.value; resyncSiteDeal(s); saveData();
   });
+  document.querySelectorAll('[data-siteapplyunit]').forEach(inp=>inp.onchange=()=>{
+    const s=state.sites.find(x=>x.id===inp.dataset.siteapplyunit); if(!s) return;
+    s.applyUnit=inp.value.trim(); siteSettingsOpen[s.id]=true; saveData();
+  });
   document.querySelectorAll('[data-sitesave]').forEach(b=>b.onclick=()=>{
     const id=b.dataset.sitesave; const s=state.sites.find(x=>x.id===id); if(!s) return;
     // 主動把面板上目前的值讀進來（避免有欄位沒觸發 onchange）
@@ -1411,6 +1422,7 @@ function bind(){
     const taxInp=document.querySelector(`[data-sitetax="${id}"]`); if(taxInp){ const v=parseFloat(taxInp.value); s.siteTaxPct=isNaN(v)?0:Math.max(0,v); s.coopTaxPct=s.siteTaxPct; }
     const ownSel=document.querySelector(`[data-siteowner="${id}"]`); if(ownSel){ s.siteOwnerId=ownSel.value; s.coopOwnerId=ownSel.value; }
     const accSel=document.querySelector(`[data-siteacc="${id}"]`); if(accSel){ s.siteAcc=accSel.value; }
+    const applyInp=document.querySelector(`[data-siteapplyunit="${id}"]`); if(applyInp){ s.applyUnit=applyInp.value.trim(); }
     const mgrInp=document.querySelector(`[data-sitemgr="${id}"]`); if(mgrInp){ const v=parseFloat(mgrInp.value); s.coopMgrPct=isNaN(v)?50:Math.max(0,Math.min(100,v)); }
     const conInp=document.querySelector(`[data-sitecontract="${id}"]`); if(conInp){ const v=parseFloat(conInp.value); if(isNaN(v)||v<=0){ s.contract=''; delete state.contracts[s.name]; } else { s.contract=v; state.contracts[s.name]=v; } }
     resyncSiteDeal(s); saveData();
@@ -1431,8 +1443,9 @@ function bind(){
     const tax=parseFloat(document.getElementById('s-tax').value);
     const ownerId=document.getElementById('s-owner').value;
     const acc=document.getElementById('s-acc').value;
+    const applyUnit=document.getElementById('s-applyunit').value.trim();
     const mgrPct=parseFloat(document.getElementById('s-mgrpct').value);
-    const site={id:uid(),name,type,coop:type==='合作案',siteTaxPct:isNaN(tax)?0:tax,siteOwnerId:ownerId,siteAcc:acc};
+    const site={id:uid(),name,type,coop:type==='合作案',siteTaxPct:isNaN(tax)?0:tax,siteOwnerId:ownerId,siteAcc:acc,applyUnit};
     if(type==='合作案'){ site.coopMgrPct=isNaN(mgrPct)?50:mgrPct; site.coopTaxPct=isNaN(tax)?0:tax; }
     const miss=[];
     if(type!=='合作案' && !ownerId) miss.push('負責人');
@@ -2482,6 +2495,7 @@ function billingDocInner(id){
   const type=(b.docType||'請款單');
   const photos=billingPhotos[id]||[];
   const amt=billingAmount(b);
+  const applyUnit=siteApplyUnit(b.site);
   const photoSec=photos.length?`<div class="sec">施作照片</div>
     <div style="display:flex;flex-wrap:wrap;gap:10px;margin:8px 0 16px">
       ${photos.map(url=>`<img src="${url}" style="width:180px;height:135px;object-fit:cover;border:1px solid #ddd;border-radius:4px">`).join('')}
@@ -2502,7 +2516,7 @@ function billingDocInner(id){
       </tbody></table>
     ${photoSec}
     <div class="sign">
-      <div>申請人</div>
+      <div>申請單位${applyUnit?`<div style="font-size:13px;font-weight:400;margin-top:10px">${esc(applyUnit)}</div>`:''}</div>
       <div>審核</div>
       <div>業主簽收${signImgHtml}</div>
     </div>`;
