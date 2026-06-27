@@ -3855,7 +3855,7 @@ function viewMeasurements(){
       const amt=(Number(m.qty)||0)*(Number(m.unitPrice)||0);
       const isPartition=(m.measureType||'')==='partition'||(m.width&&m.height);
       const typeLabel=isPartition?'隔間':((m.measureType||'')==='ceiling'?'天花板':((m.measureType||'')==='carry'?'搬運':''));
-      const sizeLabel=isPartition?`${Number(m.width)||0} × ${Number(m.height)||0} m`:'直接輸入';
+      const sizeLabel=isPartition?`${Number(m.width)||0} × ${Number(m.height)||0} m`:((m.measureType||'')==='carry'?'':'直接輸入');
       return `<tr>
         <td>${esc(m.date||'')}</td>
         <td style="max-width:160px">${esc(m.item||'')}</td>
