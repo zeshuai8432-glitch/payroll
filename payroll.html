@@ -1222,7 +1222,7 @@ function viewManage(){
         </div>
         ${curType==='合作案'?`<div style="margin:6px 0 10px;padding:10px;background:var(--bg);border-radius:10px">
           <div style="font-size:12px;font-weight:700;margin-bottom:6px;color:var(--muted)">樓層 / 子案場</div>
-          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">${subSitesOf(s).map(sub=>`<span class="tag" style="background:#eef6ff;color:#1d4ed8;border-color:#bfdbfe;gap:6px">${esc(sub)} <select data-subtype="${s.id}" data-subsite="${esc(sub)}" style="height:24px;border:1px solid #bfdbfe;border-radius:6px;background:white;color:#1d4ed8;font-size:12px">${SUB_SITE_TYPES.map(t=>`<option value="${t}" ${subSiteType(s,sub)===t?'selected':''}>${t}</option>`).join('')}</select><button class="act danger" data-delsubsite="${s.id}" data-subsite="${esc(sub)}" style="height:22px;padding:0 6px;margin-left:2px;font-size:11px">刪</button></span>`).join('')||'<span class="sub" style="margin:0">尚未設定樓層。</span>'}</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">${subSitesOf(s).map(sub=>`<span class="tag" style="background:#eef6ff;color:#1d4ed8;border-color:#bfdbfe;gap:6px">${esc(sub)} <select data-subtype="${s.id}" data-subsite="${esc(sub)}" style="height:24px;border:1px solid #bfdbfe;border-radius:6px;background:white;color:#1d4ed8;font-size:12px">${SUB_SITE_TYPES.map(t=>`<option value="${t}" ${subSiteType(s,sub)===t?'selected':''}>${t}</option>`).join('')}</select><button class="act" data-extractsubsite="${s.id}" data-subsite="${esc(sub)}" style="height:22px;padding:0 6px;margin-left:2px;font-size:11px;color:var(--info)">拉出</button><button class="act danger" data-delsubsite="${s.id}" data-subsite="${esc(sub)}" style="height:22px;padding:0 6px;margin-left:2px;font-size:11px">刪</button></span>`).join('')||'<span class="sub" style="margin:0">尚未設定樓層。</span>'}</div>
           <div class="row">
             <div class="field" style="flex:1;min-width:160px"><label>新增樓層</label><input data-subsiteinput="${s.id}" placeholder="例：9F、10F、A棟"></div>
             <button class="act" data-addsubsite="${s.id}" style="border:1px solid var(--accent);border-radius:6px;padding:0 12px;color:var(--accent);height:36px">＋ 加樓層</button>
@@ -1552,6 +1552,39 @@ function bind(){
     siteSettingsOpen[s.id]=true;
     resyncAllSiteDeals(); saveData(); render();
     alert(`已匯入「${sub}」，並移除原本獨立案場。`);
+  });
+  document.querySelectorAll('[data-extractsubsite]').forEach(b=>b.onclick=()=>{
+    const s=state.sites.find(x=>x.id===b.dataset.extractsubsite); if(!s) return;
+    const sub=b.dataset.subsite;
+    if(!subSitesOf(s).includes(sub)) return;
+    const existing=state.sites.find(x=>x.name===sub);
+    if(existing){ alert(`已經有名為「${sub}」的獨立案場，請先改名或確認資料後再拉出。`); return; }
+    const type=subSiteType(s,sub)||'代工';
+    const val=siteOptionValue(s.name,sub);
+    const movedBills=(state.billings||[]).filter(x=>x.site===val).length;
+    const movedMeas=(state.measurements||[]).filter(x=>x.site===val).length;
+    const movedCosts=(state.costs||[]).filter(x=>x.siteId===s.id&&x.subSite===sub).length;
+    if(!confirm(`要把「${sub}」從「${s.name}」拉回獨立案場嗎？\n\n會還原：請款 ${movedBills} 筆、計量 ${movedMeas} 筆、成本 ${movedCosts} 筆。`)) return;
+    const child={
+      id:uid(),
+      name:sub,
+      type,
+      coop:false,
+      active:true,
+      siteTaxPct:s.siteTaxPct||0,
+      siteOwnerId:s.siteOwnerId||'',
+      siteAcc:s.siteAcc||'',
+      applyUnit:s.applyUnit||''
+    };
+    state.sites.push(child);
+    (state.billings||[]).forEach(x=>{ if(x.site===val) x.site=sub; });
+    (state.measurements||[]).forEach(x=>{ if(x.site===val) x.site=sub; });
+    (state.costs||[]).forEach(x=>{ if(x.siteId===s.id&&x.subSite===sub){ x.siteId=child.id; delete x.subSite; } });
+    s.subSites=subSitesOf(s).filter(x=>x!==sub);
+    if(s.subSiteTypes) delete s.subSiteTypes[sub];
+    siteSettingsOpen[s.id]=true;
+    resyncAllSiteDeals(); saveData(); render();
+    alert(`已把「${sub}」拉回獨立案場。`);
   });
   document.querySelectorAll('[data-delsubsite]').forEach(b=>b.onclick=()=>{
     const s=state.sites.find(x=>x.id===b.dataset.delsubsite); if(!s) return;
