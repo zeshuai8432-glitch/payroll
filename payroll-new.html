@@ -310,6 +310,15 @@
   #print-overlay .sub { font-size: 11px; color: #777; margin-top: 8px; }
   #print-overlay .sec { font-size: 13px; font-weight: 700; margin: 16px 0 6px; }
   #print-overlay h2.sec { font-size: 14px; margin: 18px 0 6px; padding-top: 10px; border-top: 1px solid #cfd2cd; }
+  #print-overlay .paydoc h1 { color: #1f3a5f; border-bottom: 3px solid #dbeafe; padding-bottom: 8px; margin-bottom: 8px; }
+  #print-overlay .paydoc .sec { padding: 7px 10px; border-radius: 8px; background: #eef6ff; color: #1e3a5f; border-left: 4px solid #60a5fa; }
+  #print-overlay .paydoc .sec.add-sec { background: #eefaf4; color: #166534; border-left-color: #34d399; }
+  #print-overlay .paydoc .sec.ded-sec { background: #fff1f2; color: #991b1b; border-left-color: #fb7185; }
+  #print-overlay .paydoc .sec.summary-sec { background: #f8fafc; color: #334155; border-left-color: #94a3b8; }
+  #print-overlay .paydoc th { background: #f1f5f9; color: #334155; }
+  #print-overlay .paydoc tr.add-row td, #print-overlay .paydoc .add-amt { color: #047857; background: #f0fdf4; }
+  #print-overlay .paydoc tr.ded-row td, #print-overlay .paydoc .ded-amt { color: #b91c1c; background: #fff1f2; }
+  #print-overlay .paydoc .night-check { color: #0f766e; font-weight: 800; font-size: 14px; }
   @media print {
     body > .top, body > .layout { display: none !important; }
     #print-overlay { position: static; padding: 0; }
@@ -631,9 +640,12 @@ function computeRecords(records){
     const totalAllowance=group.filter(r=>r.night).length*400;
     group.forEach(r=>{
       const daily=Number(r.dailyRate)||0, hourly=daily/8, h=Number(r.hours)||0;
-      const wage=hourly*h;  // 每小時同時薪，各案場各自算
+      const ot=Number(r.overtime)||0;
+      const baseWage=hourly*h;
+      const overtimePay=hourly*1.33*ot;
+      const wage=baseWage+overtimePay;
       const allow=(attended.length>0&&h>0)?totalAllowance/attended.length:0;
-      out[r.id]={wage,allow,total:wage+allow};
+      out[r.id]={wage,baseWage,overtimePay,allow,total:wage+allow};
     });
   });
   return out;
@@ -714,8 +726,8 @@ function viewEntry(){
       const isLeave=r.type==='請假'||r.type==='休假';
       const editing=(!isLeave)&&(entryEditId===r.id);
       const hoursCell=isLeave?'—':editing
-        ? `<span class="inline"><input type="number" id="edit-hours" value="${r.hours}" min="0" max="24" step="1" style="width:80px;height:30px"><span style="font-size:11px;color:var(--muted)">時</span><button class="act" id="edit-ok" data-editok="${r.id}">✓</button><button class="act muted" id="edit-cancel" style="cursor:pointer">✕</button></span>`
-        : `${gongH(r.hours)} <button class="act" data-edithours="${r.id}" style="font-size:12px">改</button>`;
+        ? `<span class="inline" style="flex-wrap:wrap;gap:4px"><input type="number" id="edit-hours" value="${r.hours}" min="0" max="24" step="1" style="width:65px;height:30px"><span style="font-size:11px;color:var(--muted)">h +</span><input type="number" id="edit-ot" value="${r.overtime||0}" min="0" max="12" step="1" style="width:55px;height:30px"><span style="font-size:11px;color:var(--muted)">h加班</span><button class="act" id="edit-ok" data-editok="${r.id}">✓</button><button class="act muted" id="edit-cancel" style="cursor:pointer">✕</button></span>`
+        : `${gongH(r.hours)}${r.overtime?`<span style="font-size:11px;color:#d97706;margin-left:3px">+${r.overtime}h加班</span>`:''} <button class="act" data-edithours="${r.id}" style="font-size:12px">改</button>`;
       return `<tr>
         <td>${isLeave?`<span style="color:var(--info);font-weight:500">${r.type}</span>`:esc(siteName(r.siteId))}</td>
         <td>${esc(empName(r.empId))}</td>
@@ -757,6 +769,7 @@ function viewEntry(){
       ${entryType==='work'?`
         <div class="field"><label>案場</label><select id="f-site">${siteOptsSel}</select></div>
         <div class="field"><label>工時（小時，整數）</label><input type="number" id="f-hours" min="0" max="24" step="1" value="8" style="width:110px"></div>
+        <div class="field"><label>加班（小時）</label><input type="number" id="f-overtime" min="0" max="12" step="1" value="0" style="width:90px"></div>
         <div class="field"><label>過夜外宿</label><div style="height:36px;display:flex;align-items:center"><input type="checkbox" id="f-night" ${entryNight?'checked':''}></div></div>
       `:''}
       <button class="btn" id="f-add">＋ 新增</button>
@@ -800,23 +813,30 @@ function prevPayRange(){
 const ADD_TYPES=['獎金','全勤獎金','其他加給'];
 const DED_TYPES=['借支扣還','勞保自負額','健保自負額','工具遺失賠償','其他扣款'];
 
-// 建立某計薪區間的完整發薪資料（出工薪資 + 加扣項 = 實發）
+// 建立某計薪區間的完整發薪資料（基本工資 + 系統加項 + 手動加扣項 = 實發）
 function buildPayroll(from,to){
   const inRange=d=> (!from||d>=from) && (!to||d<=to);
   const comp=computeRecords(state.attendance);
   const byEmp={};
   state.attendance.filter(r=>inRange(r.date)).forEach(r=>{ const c=comp[r.id]; if(!c)return;
-    const e=byEmp[r.empId]=byEmp[r.empId]||{empId:r.empId,hours:0,wage:0,allow:0,gross:0,days:new Set(),adds:[],deds:[]};
-    e.hours+=Number(r.hours)||0; e.wage+=c.wage; e.allow+=c.allow; e.gross+=c.total;
+    const e=byEmp[r.empId]=byEmp[r.empId]||{empId:r.empId,hours:0,wage:0,overtimeHours:0,overtimePay:0,allow:0,gross:0,days:new Set(),adds:[],deds:[],systemAdds:[]};
+    const h=Number(r.hours)||0, ot=Number(r.overtime)||0;
+    e.hours+=h; e.overtimeHours+=ot; e.wage+=Number(c.baseWage)||0; e.overtimePay+=Number(c.overtimePay)||0; e.allow+=c.allow; e.gross+=Number(c.baseWage)||0;
     if((Number(r.hours)||0)>0) e.days.add(r.date);
   });
   // 套用區間內的調整項
   state.adjustments.filter(a=>inRange(a.date)).forEach(a=>{
-    const e=byEmp[a.empId]=byEmp[a.empId]||{empId:a.empId,hours:0,wage:0,allow:0,gross:0,days:new Set(),adds:[],deds:[]};
+    const e=byEmp[a.empId]=byEmp[a.empId]||{empId:a.empId,hours:0,wage:0,overtimeHours:0,overtimePay:0,allow:0,gross:0,days:new Set(),adds:[],deds:[],systemAdds:[]};
     (a.kind==='add'?e.adds:e.deds).push(a);
   });
   Object.values(byEmp).forEach(e=>{
-    e.addTotal=e.adds.reduce((s,a)=>s+(Number(a.amount)||0),0);
+    const travelDays=e.allow>0?e.allow/400:0;
+    e.systemAdds=[];
+    if(e.allow>0) e.systemAdds.push({label:'出差外宿津貼',note:`共 ${travelDays.toLocaleString()} 天 × $400`,amount:e.allow});
+    if(e.overtimePay>0) e.systemAdds.push({label:'加班費',note:`共 ${e.overtimeHours.toLocaleString()} 小時 × 時薪 × 1.33`,amount:e.overtimePay});
+    e.manualAddTotal=e.adds.reduce((s,a)=>s+(Number(a.amount)||0),0);
+    e.systemAddTotal=e.systemAdds.reduce((s,a)=>s+(Number(a.amount)||0),0);
+    e.addTotal=e.manualAddTotal+e.systemAddTotal;
     e.dedTotal=e.deds.reduce((s,a)=>s+(Number(a.amount)||0),0);
     e.net=e.gross+e.addTotal-e.dedTotal;
   });
@@ -889,7 +909,7 @@ function viewPayroll(){
   <div class="metrics">
     <div class="metric"><div class="l">區間</div><div class="v" style="font-size:15px">${state.payFrom||'—'} ～ ${state.payTo||'—'}</div></div>
     <div class="metric"><div class="l">員工數</div><div class="v">${allIds.length}</div></div>
-    <div class="metric"><div class="l">出工薪資</div><div class="v" style="font-size:20px">${money(grossSum)}</div></div>
+    <div class="metric"><div class="l">基本工資</div><div class="v" style="font-size:20px">${money(grossSum)}</div></div>
     <div class="metric"><div class="l">實發總額</div><div class="v">${money(netSum)}</div></div>
   </div>
   <details class="card">
@@ -897,9 +917,9 @@ function viewPayroll(){
     <div class="card-body">
       ${rows===''?'<div class="empty">此區間內尚無可計算的薪資。</div>':`
       <div class="scroll"><table>
-        <thead><tr><th>員工</th><th class="num">出勤天</th><th class="num">總工數</th><th class="num">出工薪資</th><th class="num">加項</th><th class="num">扣項</th><th class="num">實發金額</th><th></th></tr></thead>
+        <thead><tr><th>員工</th><th class="num">出勤天</th><th class="num">總工數</th><th class="num">基本工資</th><th class="num">加項</th><th class="num">扣項</th><th class="num">實發金額</th><th></th></tr></thead>
         <tbody>${rows}</tbody></table></div>
-      <p class="sub" style="margin:10px 0 0">出工薪資＝工資＋津貼。實發＝出工薪資＋加項−扣項。</p>`}
+      <p class="sub" style="margin:10px 0 0">基本工資＝正常工時薪資；加項＝出差外宿津貼＋加班費＋手動加項；實發＝基本工資＋加項−扣項。</p>`}
     </div>
   </details>
   ${loanShortageRows===''?'':`<details class="card" open style="border-color:var(--danger)">
@@ -1207,9 +1227,10 @@ function bind(){
     }
     const siteId=document.getElementById('f-site').value;
     const hours=parseFloat(document.getElementById('f-hours').value);
+    const overtime=parseFloat(document.getElementById('f-overtime').value)||0;
     const night=document.getElementById('f-night').checked;
-    if(!siteId||isNaN(hours)) return;
-    if(!Number.isInteger(hours)){ alert('工時請輸入整數小時（例如 8、9），不接受小數。'); return; }
+    if(!siteId||isNaN(hours)||isNaN(overtime)) return;
+    if(!Number.isInteger(hours)||!Number.isInteger(overtime)){ alert('工時與加班請輸入整數小時（例如 8、9），不接受小數。'); return; }
     // 防呆：同人同日是否已登記（只比對出工紀錄）
     const sameDay=state.attendance.filter(r=>r.empId===empId&&r.date===date&&r.type!=='請假'&&r.type!=='休假');
     if(sameDay.length>0){
@@ -1223,7 +1244,7 @@ function bind(){
       }
       if(!confirm(msg)) return;
     }
-    state.attendance.push({id:uid(),date,empId,siteId,hours,night,dailyRate:effectiveDaily(emp,date)});
+    state.attendance.push({id:uid(),date,empId,siteId,hours,overtime,night,dailyRate:effectiveDaily(emp,date)});
     entryDate=date; entrySite=siteId; entryEmp='';
     entryNight=night; // 保留過夜外宿狀態
     saveData(); render();
@@ -1254,7 +1275,9 @@ function bind(){
   document.querySelectorAll('[data-editok]').forEach(b=>b.onclick=()=>{
     const r=state.attendance.find(x=>x.id===b.dataset.editok); if(!r) return;
     const v=parseFloat(document.getElementById('edit-hours').value);
-    if(!isNaN(v)&&v>=0){ r.hours=v; saveData(); }
+    const otv=parseFloat(document.getElementById('edit-ot').value)||0;
+    if(!Number.isInteger(v)||!Number.isInteger(otv)){ alert('工時與加班請輸入整數小時。'); return; }
+    if(!isNaN(v)&&v>=0&&!isNaN(otv)&&otv>=0){ r.hours=v; r.overtime=otv; saveData(); }
     entryEditId=null; render();
   });
   const ecancel=document.getElementById('edit-cancel'); if(ecancel) ecancel.onclick=()=>{ entryEditId=null; render(); };
@@ -1413,48 +1436,51 @@ function exportSummaryPDF(){
   }).join('');
   const inner=`<h1>薪資總表</h1>
     <div class="meta">計薪期間：${state.payFrom||'起始'} ～ ${state.payTo||'迄今'}　|　列印日期：${new Date().toISOString().slice(0,10)}　|　共 ${ids.length} 人</div>
-    <table><thead><tr><th>員工</th><th class="num">出勤天</th><th class="num">總工數</th><th class="num">出工薪資</th><th class="num">加項</th><th class="num">扣項</th><th class="num">實發金額</th></tr></thead>
+    <table><thead><tr><th>員工</th><th class="num">出勤天</th><th class="num">總工數</th><th class="num">基本工資</th><th class="num">加項</th><th class="num">扣項</th><th class="num">實發金額</th></tr></thead>
     <tbody>${rows}
       <tr class="total-row"><td>合計</td><td class="num"></td><td class="num"></td><td class="num">${money(gG)}</td><td class="num">${money(gA)}</td><td class="num">${money(gD)}</td><td class="num">${money(gN)}</td></tr>
     </tbody></table>
-    <p class="sub">出工薪資＝工資＋津貼（工資為各案場工時×時薪，各案場各自計算）。實發＝出工薪資＋加項−扣項。金額四捨五入至整數。</p>`;
+    <p class="sub">基本工資＝正常工時薪資；加項＝出差外宿津貼＋加班費＋手動加項；實發＝基本工資＋加項−扣項。金額四捨五入至整數。</p>`;
   printHTML('薪資總表 '+(state.payFrom||''), inner);
 }
 
 function exportPayslipPDF(empId){
   const byEmp=buildPayroll(state.payFrom,state.payTo);
   const e=byEmp[empId]; if(!e) return;
-  const addRows=e.adds.map(a=>`<tr><td>${esc(a.label)}</td><td>${esc(a.note||'')}</td><td class="num">+${money(a.amount)}</td></tr>`).join('');
-  const dedRows=e.deds.map(a=>`<tr><td>${esc(a.label)}</td><td>${esc(a.note||'')}</td><td class="num">−${money(a.amount)}</td></tr>`).join('');
+  const systemAddRows=(e.systemAdds||[]).map(a=>`<tr class="add-row"><td>${esc(a.label)}</td><td>${esc(a.note||'')}</td><td class="num add-amt">+${money(a.amount)}</td></tr>`).join('');
+  const manualAddRows=e.adds.map(a=>`<tr class="add-row"><td>${esc(a.label)}</td><td>${esc(a.note||'')}</td><td class="num add-amt">+${money(a.amount)}</td></tr>`).join('');
+  const addRows=systemAddRows+manualAddRows;
+  const dedRows=e.deds.map(a=>`<tr class="ded-row"><td>${esc(a.label)}</td><td>${esc(a.note||'')}</td><td class="num ded-amt">−${money(a.amount)}</td></tr>`).join('');
   const inRange=d=> (!state.payFrom||d>=state.payFrom) && (!state.payTo||d<=state.payTo);
   const comp=computeRecords(state.attendance);
   const myRecs=state.attendance.filter(r=>r.empId===empId&&inRange(r.date)).sort((a,b)=>a.date.localeCompare(b.date));
-  const recRows=myRecs.map(r=>{ const c=comp[r.id]||{wage:0,allow:0,total:0};
+  const recRows=myRecs.map(r=>{ const c=comp[r.id]||{baseWage:0,overtimePay:0,allow:0,total:0};
     const isLeaveR=r.type==='請假'||r.type==='休假';
-    return `<tr><td>${esc(r.date)}</td><td>${isLeaveR?r.type:esc(siteName(r.siteId))}</td><td class="num">${isLeaveR?'—':gongStr(r.hours)}</td><td class="num">${isLeaveR?'—':(r.night?'是':'-')}</td>
-      <td class="num">${isLeaveR?'—':money(c.wage)}</td><td class="num">${isLeaveR?'—':(c.allow>0?money(c.allow):'-')}</td></tr>`;
+    return `<tr><td>${esc(r.date)}</td><td>${isLeaveR?r.type:esc(siteName(r.siteId))}</td><td class="num">${isLeaveR?'—':gongStr(r.hours)}</td><td class="num">${isLeaveR?'—':(r.overtime?`${r.overtime}h`:'—')}</td><td class="num">${isLeaveR?'—':(r.night?'<span class="night-check">✓</span>':'—')}</td>
+      <td class="num">${isLeaveR?'—':money(c.baseWage||0)}</td></tr>`;
   }).join('');
-  const inner=`<h1>薪資明細單</h1>
+  const inner=`<div class="paydoc"><h1>薪資明細單</h1>
     <div class="meta">員工：${esc(empName(empId))}　|　計薪期間：${state.payFrom||'起始'} ～ ${state.payTo||'迄今'}　|　出勤 ${e.days.size} 天 / ${gongStr(e.hours)}</div>
     <div class="sec">一、出工明細</div>
-    <table><thead><tr><th>日期</th><th>案場</th><th class="num">工數</th><th class="num">過夜</th><th class="num">工資</th><th class="num">津貼</th></tr></thead>
+    <table><thead><tr><th>日期</th><th>案場</th><th class="num">工數</th><th class="num">加班</th><th class="num">過夜</th><th class="num">基本工資</th></tr></thead>
     <tbody>${recRows||'<tr><td colspan="6">本期無出工</td></tr>'}
-      <tr class="total-row"><td colspan="4">出工薪資小計</td><td class="num">${money(e.wage)}</td><td class="num">${money(e.allow)}</td></tr>
+      <tr class="total-row"><td colspan="5">基本工資小計</td><td class="num">${money(e.gross)}</td></tr>
     </tbody></table>
-    <div class="sec">二、加項</div>
+    <div class="sec add-sec">二、加項</div>
     <table><thead><tr><th>項目</th><th>備註</th><th class="num">金額</th></tr></thead>
-    <tbody>${addRows||'<tr><td colspan="3">無</td></tr>'}<tr class="total-row"><td colspan="2">加項小計</td><td class="num">+${money(e.addTotal)}</td></tr></tbody></table>
-    <div class="sec">三、扣項</div>
+    <tbody>${addRows||'<tr><td colspan="3">無</td></tr>'}<tr class="total-row"><td colspan="2">加項小計</td><td class="num add-amt">+${money(e.addTotal)}</td></tr></tbody></table>
+    <div class="sec ded-sec">三、扣項</div>
     <table><thead><tr><th>項目</th><th>備註</th><th class="num">金額</th></tr></thead>
-    <tbody>${dedRows||'<tr><td colspan="3">無</td></tr>'}<tr class="total-row"><td colspan="2">扣項小計</td><td class="num">−${money(e.dedTotal)}</td></tr></tbody></table>
+    <tbody>${dedRows||'<tr><td colspan="3">無</td></tr>'}<tr class="total-row"><td colspan="2">扣項小計</td><td class="num ded-amt">−${money(e.dedTotal)}</td></tr></tbody></table>
+    <div class="sec summary-sec">四、結算</div>
     <table style="margin-top:14px"><tbody>
-      <tr><td>出工薪資</td><td class="num">${money(e.gross)}</td></tr>
-      <tr><td>加項合計</td><td class="num">+${money(e.addTotal)}</td></tr>
-      <tr><td>扣項合計</td><td class="num">−${money(e.dedTotal)}</td></tr>
+      <tr><td>基本工資</td><td class="num">${money(e.gross)}</td></tr>
+      <tr><td>加項合計</td><td class="num add-amt">+${money(e.addTotal)}</td></tr>
+      <tr><td>扣項合計</td><td class="num ded-amt">−${money(e.dedTotal)}</td></tr>
       <tr class="total-row"><td>實發金額</td><td class="num">${money(e.net)}</td></tr>
     </tbody></table>
     <div class="sign"><div>員工簽收</div><div>主管核章</div></div>
-    <p class="sub">本明細之日薪採各筆出工登記當時鎖定金額；工資以時薪（日薪÷8）×工時計、各案場各自計算；外宿津貼每晚400元按當日出勤案場平均分攤。金額四捨五入至整數。</p>`;
+    <p class="sub">本明細之日薪採各筆出工登記當時鎖定金額；基本工資以時薪（日薪÷8）×正常工時計；加班費以加班時數 × 時薪 × 1.33 計；出差外宿津貼每晚400元。金額四捨五入至整數。</p></div>`;
   printHTML('薪資明細單 '+esc(empName(empId)), inner);
 }
 
