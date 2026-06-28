@@ -888,12 +888,17 @@ function viewPayroll(){
       <td><button class="act" data-repay="${l.id}" style="border:1px solid var(--accent);border-radius:6px;padding:3px 10px;color:var(--accent)">加入扣款</button></td>
     </tr>`;
   }).join('');
-  const loanShortageRows=state.employees.filter(emp=>state.loans.some(l=>l.empId===emp.id&&loanBalance(l)>0)).map(emp=>{
-    const loanLeft=state.loans.filter(l=>l.empId===emp.id).reduce((s,l)=>s+loanBalance(l),0);
-    const pay=byEmp[emp.id]?Math.max(0,Number(byEmp[emp.id].net)||0):0;
-    const afterFullDeduct=Math.max(0,loanLeft-pay);
-    if(afterFullDeduct<=0) return '';
-    return `<tr><td>${esc(emp.name)}</td><td class="num">${money(pay)}</td><td class="num">${money(loanLeft)}</td><td class="num" style="color:var(--danger);font-weight:700">${money(afterFullDeduct)}</td></tr>`;
+  const loanDebtRows=state.employees.map(emp=>{
+    const debt=state.loans.filter(l=>l.empId===emp.id).reduce((s,l)=>s+loanBalance(l),0);
+    const pay=byEmp[emp.id]?Number(byEmp[emp.id].net)||0:0;
+    const over=debt-pay;
+    if(debt<=0||over<=0) return '';
+    return `<tr>
+      <td>${esc(emp.name)}${!emp.active?'<span class="tag">已停用</span>':''}</td>
+      <td class="num">${money(pay)}</td>
+      <td class="num">${money(debt)}</td>
+      <td class="num" style="font-weight:700;color:var(--danger)">${money(over)}</td>
+    </tr>`;
   }).join('');
 
   return `
@@ -924,15 +929,13 @@ function viewPayroll(){
       <p class="sub" style="margin:10px 0 0">基本工資＝正常工時薪資；加項＝出差外宿津貼＋加班費＋手動加項；實發＝基本工資＋加項−扣項。</p>`}
     </div>
   </details>
-  ${loanShortageRows===''?'':`<details class="card" open style="border-color:var(--danger)">
-    <summary>借支超過本期薪資</summary>
-    <div class="card-body">
-      <p class="sub">以下員工目前借支未還金額已超過本期實發薪資；若本期薪資全數拿來扣還，仍會留下表中的未扣餘額。</p>
-      <div class="scroll"><table>
-        <thead><tr><th>員工</th><th class="num">本期目前實發</th><th class="num">借支未還</th><th class="num">薪資全扣後仍欠</th></tr></thead>
-        <tbody>${loanShortageRows}</tbody></table></div>
-    </div>
-  </details>`}
+  ${loanDebtRows===''?'':`<div class="card" style="border-color:var(--danger)">
+    <div style="font-size:14px;font-weight:600;margin-bottom:4px;color:var(--danger)">借支超過本期薪資</div>
+    <p class="sub">以下員工目前未還借支已大於本期實發薪資；若本期薪資全數扣還，仍會欠公司右側金額。</p>
+    <div class="scroll"><table>
+      <thead><tr><th>員工</th><th class="num">本期實發</th><th class="num">未還借支</th><th class="num">仍欠公司</th></tr></thead>
+      <tbody>${loanDebtRows}</tbody></table></div>
+  </div>`}
   ${loanReminders===''?'':`<details class="card" style="border-color:var(--accent)">
     <summary>💡 本期借支扣款提示</summary>
     <div class="card-body">
