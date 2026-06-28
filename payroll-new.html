@@ -341,7 +341,7 @@ const LS_SIGS_LOCKED = 'pm_billing_sigs_locked_v1';
 const LS_SIG_META = 'pm_billing_sig_meta_v1';
 // ↓↓↓ 把這裡換成你自己的 Google Apps Script 網址（/exec 結尾）。留空則只用本機儲存。
 const CLOUD_URL = 'https://script.google.com/macros/s/AKfycbynPpe_rq76SrW5_sTNaXms4U65bRrb4oscpH0GMyIXsM4Gk2DUXpOlEimP0C-pCahOVw/exec';
-let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], parkLedger:[], parkOpening:0, billings:[], measurements:[], textMemory:{clients:[],companies:[]}, tab:'entry' };
+let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], parkLedger:[], parkOpening:0, billings:[], measurements:[], billingPhotoDeleted:{}, textMemory:{clients:[],companies:[]}, tab:'entry' };
 let cloudStatus = CLOUD_URL ? '連線中…' : '本機模式';
 let entryDate='', entrySite='', entryEmp=''; // 登記出工：記住上次選的日期、案場、員工
 let entryOpenDates={}, entryEditId=null; // 出工紀錄分組收合狀態與正在編輯的紀錄
@@ -422,9 +422,16 @@ function saveSigMeta(){ try{ localStorage.setItem(LS_SIG_META,JSON.stringify(bil
 function mergeCloudPhotos(cloudPhotos){
   Object.entries(cloudPhotos||{}).forEach(([id,urls])=>{
     const existing=billingPhotos[id]||[];
-    billingPhotos[id]=[...new Set([...existing,...(urls||[])])];
+    const deleted=new Set((state.billingPhotoDeleted&&state.billingPhotoDeleted[id])||[]);
+    billingPhotos[id]=[...new Set([...existing,...(urls||[])])].filter(url=>!deleted.has(url));
+    if(!billingPhotos[id].length) delete billingPhotos[id];
   });
   savePhotos();
+}
+function rememberDeletedPhoto(id,url){
+  if(!url) return;
+  state.billingPhotoDeleted=state.billingPhotoDeleted||{};
+  state.billingPhotoDeleted[id]=[...new Set([...(state.billingPhotoDeleted[id]||[]),url])];
 }
 function mergeBillingSigs(inSigs={}, inLocked={}, inMeta={}){
   Object.keys(inSigs||{}).forEach(id=>{
@@ -539,7 +546,7 @@ function photoDisplayUrl(url){
 
 function applyData(d){
   if(!d) return;
-  state.employees=d.employees||[]; state.sites=d.sites||[]; state.attendance=d.attendance||[]; state.adjustments=d.adjustments||[]; state.loans=d.loans||[]; state.parkLedger=d.parkLedger||[]; state.parkOpening=Number(d.parkOpening)||0; state.billings=d.billings||[]; state.measurements=d.measurements||[]; state.textMemory=d.textMemory||{clients:[],companies:[]};
+  state.employees=d.employees||[]; state.sites=d.sites||[]; state.attendance=d.attendance||[]; state.adjustments=d.adjustments||[]; state.loans=d.loans||[]; state.parkLedger=d.parkLedger||[]; state.parkOpening=Number(d.parkOpening)||0; state.billings=d.billings||[]; state.measurements=d.measurements||[]; state.billingPhotoDeleted=d.billingPhotoDeleted||{}; state.textMemory=d.textMemory||{clients:[],companies:[]};
   state.employees.forEach(e=>{ if(e.active===undefined) e.active=true; });
   mergeBillingSigs(d.billingSigs||{}, d.billingSigsLocked||{}, d.billingSigMeta||{});
   if(d.billingPhotos) mergeCloudPhotos(d.billingPhotos);
@@ -551,7 +558,7 @@ function packData(){
     const driveUrls=(urls||[]).filter(u=>typeof u==='string'&&u.startsWith('http'));
     if(driveUrls.length) photosSync[id]=driveUrls;
   });
-  return {employees:state.employees,sites:state.sites,attendance:state.attendance,adjustments:state.adjustments,loans:state.loans,parkLedger:state.parkLedger,parkOpening:state.parkOpening,billings:state.billings,measurements:state.measurements,textMemory:state.textMemory,billingPhotos:photosSync,billingSigs,billingSigsLocked,billingSigMeta,savedAt:Date.now()};
+  return {employees:state.employees,sites:state.sites,attendance:state.attendance,adjustments:state.adjustments,loans:state.loans,parkLedger:state.parkLedger,parkOpening:state.parkOpening,billings:state.billings,measurements:state.measurements,billingPhotoDeleted:state.billingPhotoDeleted||{},textMemory:state.textMemory,billingPhotos:photosSync,billingSigs,billingSigsLocked,billingSigMeta,savedAt:Date.now()};
 }
 
 // 先讀本機快取（讓畫面秒開），再從雲端拉最新
@@ -1120,9 +1127,9 @@ function bind(){
     };
     inp.click();
   });
-  document.querySelectorAll('[data-photodel]').forEach(b=>b.onclick=()=>{ const id=b.dataset.photodel, idx=Number(b.dataset.photoidx); if(!billingPhotos[id]) return; billingPhotos[id].splice(idx,1); if(!billingPhotos[id].length) delete billingPhotos[id]; savePhotos(); render(); });
+  document.querySelectorAll('[data-photodel]').forEach(b=>b.onclick=()=>{ const id=b.dataset.photodel, idx=Number(b.dataset.photoidx); if(!billingPhotos[id]) return; const removed=billingPhotos[id][idx]; rememberDeletedPhoto(id,removed); billingPhotos[id].splice(idx,1); if(!billingPhotos[id].length) delete billingPhotos[id]; savePhotos(); saveData(); render(); });
   document.querySelectorAll('[data-togglesettle]').forEach(b=>b.onclick=()=>{ const bill=state.billings.find(x=>x.id===b.dataset.togglesettle); if(!bill) return; bill.settled=!bill.settled; saveData(); render(); });
-  document.querySelectorAll('[data-delbill]').forEach(b=>b.onclick=()=>{ if(!confirm('確定刪除這筆單據？')) return; const id=b.dataset.delbill; state.billings=state.billings.filter(x=>x.id!==id); delete billingPhotos[id]; deleteSig(id); savePhotos(); saveData(); render(); });
+  document.querySelectorAll('[data-delbill]').forEach(b=>b.onclick=()=>{ if(!confirm('確定刪除這筆單據？')) return; const id=b.dataset.delbill; (billingPhotos[id]||[]).forEach(url=>rememberDeletedPhoto(id,url)); state.billings=state.billings.filter(x=>x.id!==id); delete billingPhotos[id]; deleteSig(id); savePhotos(); saveData(); render(); });
   document.querySelectorAll('.nav-item').forEach(b=>b.onclick=()=>{ state.tab=b.dataset.tab; closeSidebar(); render(); });
 
   const pf=document.getElementById('pay-from'); if(pf) pf.onchange=()=>{ state.payFrom=pf.value; render(); };
