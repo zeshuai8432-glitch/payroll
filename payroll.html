@@ -1359,6 +1359,11 @@ function bind(){
   const plm=document.getElementById('pay-lastmonth'); if(plm) plm.onclick=()=>{ const d=prevPayRange(); state.payFrom=d.from; state.payTo=d.to; render(); };
   const pa=document.getElementById('pay-all'); if(pa) pa.onclick=()=>{ state.payFrom=''; state.payTo=''; render(); };
   const tp=document.getElementById('toggle-partners'); if(tp) tp.onclick=()=>{ state.showPartners=!state.showPartners; render(); };
+  const lf=document.getElementById('loan-from'); if(lf) lf.onchange=()=>{ loanFrom=lf.value; render(); };
+  const lt=document.getElementById('loan-to'); if(lt) lt.onchange=()=>{ loanTo=lt.value; render(); };
+  const ltp=document.getElementById('loan-thisperiod'); if(ltp) ltp.onclick=()=>{ const d=defaultPayRange(); loanFrom=d.from; loanTo=d.to; render(); };
+  const llp=document.getElementById('loan-lastperiod'); if(llp) llp.onclick=()=>{ const d=prevPayRange(); loanFrom=d.from; loanTo=d.to; render(); };
+  const laAll=document.getElementById('loan-all'); if(laAll) laAll.onclick=()=>{ loanFrom=''; loanTo=''; render(); };
 
   // 加扣項：性質改變時切換項目清單
   const adjKind=document.getElementById('adj-kind'), adjLabel=document.getElementById('adj-label');
@@ -2978,10 +2983,13 @@ function loanDeductedInRange(loanId,from,to){
   return state.adjustments.some(a=>a.loanId===loanId && a.kind==='ded' && inRange(a.date));
 }
 
+let loanFrom=null, loanTo=null;
 function viewLoans(){
+  if(loanFrom===null||loanTo===null){ const d=defaultPayRange(); loanFrom=d.from; loanTo=d.to; }
+  const inRange=d=>(!loanFrom||d>=loanFrom)&&(!loanTo||d<=loanTo);
   const activeEmps=state.employees.filter(e=>e.active);
   const empOpts=activeEmps.map(e=>`<option value="${e.id}">${esc(e.name)}</option>`).join('');
-  const loans=[...state.loans].sort((a,b)=>b.date.localeCompare(a.date));
+  const loans=[...state.loans].filter(l=>inRange(l.date)).sort((a,b)=>b.date.localeCompare(a.date));
   const outstanding=loans.filter(l=>loanBalance(l)>0).reduce((s,l)=>s+loanBalance(l),0);
   const rows=loans.map(l=>{
     const repaid=loanRepaid(l.id), bal=loanBalance(l), done=bal<=0;
@@ -2996,6 +3004,17 @@ function viewLoans(){
     </tr>`;
   }).join('');
   return `
+  <div class="card">
+    <div style="font-size:14px;font-weight:600;margin-bottom:4px">借支紀錄區間</div>
+    <p class="sub">依借款日篩選。預設與員工薪資同樣採 11 號週期。</p>
+    <div class="row">
+      <div class="field"><label>起</label><input type="date" id="loan-from" value="${loanFrom}"></div>
+      <div class="field"><label>訖</label><input type="date" id="loan-to" value="${loanTo}"></div>
+      <button class="act" id="loan-thisperiod" style="height:36px;padding:0 12px">本期</button>
+      <button class="act" id="loan-lastperiod" style="height:36px;padding:0 12px">上期</button>
+      <button class="act" id="loan-all" style="height:36px;padding:0 12px">全部</button>
+    </div>
+  </div>
   <div class="metrics">
     <div class="metric"><div class="l">借支筆數</div><div class="v">${loans.length}</div></div>
     <div class="metric"><div class="l">尚未還清總額</div><div class="v">${money(outstanding)}</div></div>
