@@ -528,6 +528,14 @@ async function uploadBillingPhoto(file){
   if(!res.ok || !j || !j.ok || !j.url) throw new Error((j&&j.error)||('照片上傳失敗 HTTP '+res.status));
   return j.url;
 }
+function photoDisplayUrl(url){
+  const raw=String(url||'');
+  const m=raw.match(/[?&]id=([^&]+)/) || raw.match(/\/d\/([^/=]+)/);
+  if(m && (raw.includes('drive.google.com') || raw.includes('googleusercontent.com'))){
+    return `https://drive.google.com/thumbnail?id=${encodeURIComponent(m[1])}&sz=w1000`;
+  }
+  return raw;
+}
 
 function applyData(d){
   if(!d) return;
@@ -1578,7 +1586,7 @@ function viewBillingAdd(){
           </div>
         </td></tr>`;
       }
-      const thumbs=photos.map((url,i)=>`<div style="position:relative;display:inline-block;margin:3px"><img src="${url}" class="photo-thumb" style="width:80px;height:60px;object-fit:cover;border-radius:8px;border:1px solid var(--line)"><button data-photodel="${b.id}" data-photoidx="${i}" style="position:absolute;top:-5px;right:-5px;width:20px;height:20px;border:none;background:var(--danger);color:#fff;padding:0;line-height:20px">×</button></div>`).join('');
+      const thumbs=photos.map((url,i)=>`<div style="position:relative;display:inline-block;margin:3px"><img src="${photoDisplayUrl(url)}" class="photo-thumb" style="width:80px;height:60px;object-fit:cover;border-radius:8px;border:1px solid var(--line)"><button data-photodel="${b.id}" data-photoidx="${i}" style="position:absolute;top:-5px;right:-5px;width:20px;height:20px;border:none;background:var(--danger);color:#fff;padding:0;line-height:20px">×</button></div>`).join('');
       return `<tr>
         <td>${esc(b.date||'')}</td>
         <td>${esc(b.note||'')}<div class="sub" style="margin:0">${billingLineMeta(b)} ${b.remark?`｜${esc(b.remark)}`:''}</div>${thumbs}</td>
@@ -1666,7 +1674,7 @@ function viewMeasurements(){
 function buildBillingDocHTML(id){
   const b=state.billings.find(x=>x.id===id); if(!b) return '';
   const type=b.docType||'請款單', amount=billingAmount(b), photos=billingPhotos[id]||[], sig=billingSigs[id]||null;
-  const photoSec=photos.length?`<div class="sec">施作照片</div><div style="display:flex;gap:8px;flex-wrap:wrap">${photos.map(url=>`<img src="${url}" style="width:180px;height:135px;object-fit:cover;border:1px solid #ddd;border-radius:4px">`).join('')}</div>`:'';
+  const photoSec=photos.length?`<div class="sec">施作照片</div><div style="display:flex;gap:8px;flex-wrap:wrap">${photos.map(url=>`<img src="${photoDisplayUrl(url)}" style="width:180px;height:135px;object-fit:cover;border:1px solid #ddd;border-radius:4px">`).join('')}</div>`:'';
   const signImg=sig?`<img src="${sig}" style="max-width:180px;max-height:70px;display:block;margin-top:4px">`:'';
   return `<h1>${esc(type)}</h1>
     <div class="meta">列印日：${new Date().toISOString().slice(0,10)}</div>
