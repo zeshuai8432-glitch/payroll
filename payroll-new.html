@@ -335,14 +335,18 @@
 
 <script>
 const LS = 'pm_payroll_v1';
+const LS_PHOTOS = 'pm_billing_photos_v1';
+const LS_SIGS = 'pm_billing_sigs_v1';
 // ↓↓↓ 把這裡換成你自己的 Google Apps Script 網址（/exec 結尾）。留空則只用本機儲存。
 const CLOUD_URL = 'https://script.google.com/macros/s/AKfycbynPpe_rq76SrW5_sTNaXms4U65bRrb4oscpH0GMyIXsM4Gk2DUXpOlEimP0C-pCahOVw/exec';
-let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], parkLedger:[], parkOpening:0, tab:'entry' };
+let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], parkLedger:[], parkOpening:0, billings:[], measurements:[], textMemory:{clients:[],companies:[]}, tab:'entry' };
 let cloudStatus = CLOUD_URL ? '連線中…' : '本機模式';
 let entryDate='', entrySite='', entryEmp=''; // 登記出工：記住上次選的日期、案場、員工
 let entryOpenDates={}, entryEditId=null; // 出工紀錄分組收合狀態與正在編輯的紀錄
 let entryType='work'; // 'work' | '請假' | '休假'
 let entryNight=false;
+let formOpen={}, billingReqDraft=null, billingAddDraft=null, billingAddEditId=null;
+let billingPhotos={}, billingSigs={};
 
 const round = n => Math.round(n);
 const money = n => '$' + round(n).toLocaleString();
@@ -370,14 +374,59 @@ const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2,7
 const empName = id => { const e=state.employees.find(x=>x.id===id); return e?e.name:'（已移除）'; };
 const siteName = id => { const s=state.sites.find(x=>x.id===id); return s?s.name:'（已移除）'; };
 const recordLabel = r => r.type==='請假'?'請假':r.type==='休假'?'休假':siteName(r.siteId);
+const billingAmount = b => {
+  const qty=Number(b&&b.qty), unitPrice=Number(b&&b.unitPrice);
+  if(b&&b.qty!==undefined&&b.unitPrice!==undefined&&!isNaN(qty)&&qty>0&&!isNaN(unitPrice)&&unitPrice>=0) return qty*unitPrice;
+  return Number(b&&b.amount)||0;
+};
+const billingLineMeta = b => {
+  if(!b||b.qty===undefined||b.unitPrice===undefined) return '';
+  return `${esc(b.unit||'式')} × ${Number(b.qty)||0} × ${money(Number(b.unitPrice)||0)}`;
+};
+function readBillingLine(prefix){
+  const unit=(document.getElementById(prefix+'-unit')||{}).value||'式';
+  const qty=parseFloat((document.getElementById(prefix+'-qty')||{}).value);
+  const unitPrice=parseFloat((document.getElementById(prefix+'-unit-price')||{}).value);
+  return {unit:unit.trim()||'式', qty, unitPrice, amount:qty*unitPrice};
+}
+function bindBillingSubtotal(prefix){
+  const qty=document.getElementById(prefix+'-qty'), unitPrice=document.getElementById(prefix+'-unit-price'), out=document.getElementById(prefix+'-subtotal');
+  if(!qty||!unitPrice||!out) return;
+  const calc=()=>{ const q=parseFloat(qty.value), p=parseFloat(unitPrice.value); out.textContent=(!isNaN(q)&&!isNaN(p))?money(q*p):'$0'; };
+  qty.oninput=calc; unitPrice.oninput=calc; calc();
+}
+const uniqueTexts = arr => [...new Set((arr||[]).map(x=>String(x||'').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'zh-Hant'));
+function rememberText(kind, value){
+  const v=String(value||'').trim(); if(!v) return;
+  state.textMemory=state.textMemory||{clients:[],companies:[]};
+  state.textMemory[kind]=uniqueTexts([v,...(state.textMemory[kind]||[])]).slice(0,80);
+}
+const knownClients = () => uniqueTexts([...(state.textMemory&&state.textMemory.clients||[]), ...state.sites.map(s=>s.clientOwner||s.ownerName||''), ...state.billings.map(b=>b.client||'')]);
+const dataListHtml = (id, arr) => `<datalist id="${id}">${(arr||[]).map(v=>`<option value="${esc(v)}"></option>`).join('')}</datalist>`;
+const parentSiteName = value => String(value||'（未填案場）');
+const siteDisplayLabel = value => parentSiteName(value);
+const siteSelectOptions = selected => `<option value="">請選案場</option>`+state.sites.filter(s=>s.active!==false).map(s=>`<option value="${esc(s.name)}" ${selected===s.name?'selected':''}>${esc(s.name)}</option>`).join('');
+const subSiteTag = () => '';
+function foldBtn(key, label){
+  const open=!!formOpen[key];
+  return `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:${open?'8px':'0'}">
+    <div style="font-size:14px;font-weight:600">${label}</div>
+    <button data-toggle-form="${key}" style="font-size:12px;padding:0 14px;height:28px;background:rgba(100,116,139,.08);border:none;cursor:pointer;color:#64748b;font-weight:600">${open?'▲ 收合':'＋ 展開'}</button>
+  </div>`;
+}
+function loadPhotos(){ try{ const raw=localStorage.getItem(LS_PHOTOS); if(raw) billingPhotos=JSON.parse(raw); }catch(e){} }
+function savePhotos(){ try{ localStorage.setItem(LS_PHOTOS,JSON.stringify(billingPhotos)); }catch(e){} }
+function loadSigs(){ try{ const raw=localStorage.getItem(LS_SIGS); if(raw) billingSigs=JSON.parse(raw); }catch(e){} }
+function saveSig(id,url){ billingSigs[id]=url; try{ localStorage.setItem(LS_SIGS,JSON.stringify(billingSigs)); }catch(e){} }
+function deleteSig(id){ delete billingSigs[id]; try{ localStorage.setItem(LS_SIGS,JSON.stringify(billingSigs)); }catch(e){} }
 
 function applyData(d){
   if(!d) return;
-  state.employees=d.employees||[]; state.sites=d.sites||[]; state.attendance=d.attendance||[]; state.adjustments=d.adjustments||[]; state.loans=d.loans||[]; state.parkLedger=d.parkLedger||[]; state.parkOpening=Number(d.parkOpening)||0;
+  state.employees=d.employees||[]; state.sites=d.sites||[]; state.attendance=d.attendance||[]; state.adjustments=d.adjustments||[]; state.loans=d.loans||[]; state.parkLedger=d.parkLedger||[]; state.parkOpening=Number(d.parkOpening)||0; state.billings=d.billings||[]; state.measurements=d.measurements||[]; state.textMemory=d.textMemory||{clients:[],companies:[]};
   state.employees.forEach(e=>{ if(e.active===undefined) e.active=true; });
 }
 function packData(){
-  return {employees:state.employees,sites:state.sites,attendance:state.attendance,adjustments:state.adjustments,loans:state.loans,parkLedger:state.parkLedger,parkOpening:state.parkOpening};
+  return {employees:state.employees,sites:state.sites,attendance:state.attendance,adjustments:state.adjustments,loans:state.loans,parkLedger:state.parkLedger,parkOpening:state.parkOpening,billings:state.billings,measurements:state.measurements,textMemory:state.textMemory};
 }
 
 // 先讀本機快取（讓畫面秒開），再從雲端拉最新
@@ -441,6 +490,7 @@ function tabsBar(){
   const groups=[
     ['薪資作業',[['entry','登記出工'],['payroll','員工薪資']]],
     ['財務管理',[['loans','借支管理'],['park','品佑收支明細']]],
+    ['單據',[['billingReq','請款單'],['billingAdd','追加單'],['meas','計量明細']]],
     ['設定',[['sites','案場成本'],['manage','員工/案場']]],
   ];
   return groups.map(([label,items])=>`
@@ -457,7 +507,7 @@ function render(){
   });
   document.getElementById('sidebar').innerHTML=tabsBar();
   const body=document.getElementById('body');
-  body.innerHTML = state.tab==='entry'?viewEntry():state.tab==='payroll'?viewPayroll():state.tab==='sites'?viewSites():state.tab==='loans'?viewLoans():state.tab==='park'?viewPark():viewManage();
+  body.innerHTML = state.tab==='entry'?viewEntry():state.tab==='payroll'?viewPayroll():state.tab==='sites'?viewSites():state.tab==='loans'?viewLoans():state.tab==='park'?viewPark():state.tab==='billingReq'?viewBillingReq():state.tab==='billingAdd'?viewBillingAdd():state.tab==='meas'?viewMeasurements():viewManage();
   if(openKeys.size) document.querySelectorAll('details.card').forEach(d=>{
     const s=d.querySelector(':scope>summary');
     if(s && openKeys.has(state.tab+'|'+s.textContent.trim().slice(0,40))) d.open=true;
@@ -819,6 +869,93 @@ function viewManage(){
 }
 
 function bind(){
+  document.querySelectorAll('[data-toggle-form]').forEach(b=>b.onclick=()=>{ const k=b.dataset.toggleForm; formOpen[k]=!formOpen[k]; render(); });
+  bindBillingSubtotal('bnr'); bindBillingSubtotal('bna'); bindBillingSubtotal('bae');
+  ['meas-type','meas-width','meas-height','meas-qty','meas-price'].forEach(id=>{ const el=document.getElementById(id); if(el) el.oninput=updateMeasurePreview; if(el) el.onchange=updateMeasurePreview; });
+  updateMeasurePreview();
+  const bnrAdd=document.getElementById('bnr-add');
+  if(bnrAdd) bnrAdd.onclick=()=>{
+    const date=document.getElementById('bnr-date').value;
+    const site=document.getElementById('bnr-site').value.trim();
+    const line=readBillingLine('bnr');
+    const method=document.getElementById('bnr-method').value.trim();
+    const client=document.getElementById('bnr-client').value.trim();
+    const note=document.getElementById('bnr-note').value.trim();
+    const settled=document.getElementById('bnr-settled').value==='1';
+    if(!date||!site||isNaN(line.qty)||line.qty<=0||isNaN(line.unitPrice)||line.unitPrice<0){ alert('請填日期、案場、數量與單價'); return; }
+    rememberText('clients',client);
+    state.billings.push({id:uid(),docType:'請款單',date,site,unit:line.unit,qty:line.qty,unitPrice:line.unitPrice,amount:line.amount,method,client,note,settled});
+    billingReqDraft=null; saveData(); render();
+  };
+  document.querySelectorAll('[data-copy-req]').forEach(b=>b.onclick=()=>{
+    const bill=state.billings.find(x=>x.id===b.dataset.copyReq); if(!bill) return;
+    billingReqDraft={date:bill.date||new Date().toISOString().slice(0,10),method:bill.method||'',client:bill.client||'',note:bill.note||'',settled:!!bill.settled};
+    formOpen.bnr=true; render();
+  });
+  const bnaAdd=document.getElementById('bna-add');
+  if(bnaAdd) bnaAdd.onclick=()=>{
+    const date=document.getElementById('bna-date').value;
+    const site=document.getElementById('bna-site').value.trim();
+    const line=readBillingLine('bna');
+    const client=document.getElementById('bna-client').value.trim();
+    const note=document.getElementById('bna-note').value.trim();
+    const remark=document.getElementById('bna-remark').value.trim();
+    const settled=document.getElementById('bna-settled').value==='1';
+    if(!date||!site||isNaN(line.qty)||line.qty<=0||isNaN(line.unitPrice)||line.unitPrice<0){ alert('請填日期、案場、數量與單價'); return; }
+    rememberText('clients',client);
+    state.billings.push({id:uid(),docType:'追加單',date,site,unit:line.unit,qty:line.qty,unitPrice:line.unitPrice,amount:line.amount,client,note,remark,settled});
+    billingAddDraft=null; saveData(); render();
+  };
+  document.querySelectorAll('[data-copy-add]').forEach(b=>b.onclick=()=>{
+    const bill=state.billings.find(x=>x.id===b.dataset.copyAdd); if(!bill) return;
+    billingAddDraft={date:bill.date||new Date().toISOString().slice(0,10),client:bill.client||'',note:bill.note||'',remark:bill.remark||'',settled:!!bill.settled};
+    formOpen.bna=true; render();
+  });
+  document.querySelectorAll('[data-billedit-add]').forEach(b=>b.onclick=()=>{ billingAddEditId=b.dataset.billeditAdd; render(); });
+  document.querySelectorAll('[data-bae-cancel]').forEach(b=>b.onclick=()=>{ billingAddEditId=null; render(); });
+  document.querySelectorAll('[data-bae-ok]').forEach(b=>b.onclick=()=>{
+    const bill=state.billings.find(x=>x.id===b.dataset.baeOk); if(!bill) return;
+    const line=readBillingLine('bae');
+    if(isNaN(line.qty)||line.qty<=0||isNaN(line.unitPrice)||line.unitPrice<0){ alert('請填數量與單價'); return; }
+    bill.date=document.getElementById('bae-date').value;
+    bill.site=document.getElementById('bae-site').value.trim();
+    bill.unit=line.unit; bill.qty=line.qty; bill.unitPrice=line.unitPrice; bill.amount=line.amount;
+    bill.client=document.getElementById('bae-client').value.trim();
+    bill.note=document.getElementById('bae-note').value.trim();
+    bill.remark=document.getElementById('bae-remark').value.trim();
+    bill.settled=document.getElementById('bae-settled').value==='1';
+    rememberText('clients',bill.client);
+    billingAddEditId=null; saveData(); render();
+  });
+  const measAdd=document.getElementById('meas-add');
+  if(measAdd) measAdd.onclick=()=>{
+    const date=document.getElementById('meas-date').value, site=document.getElementById('meas-site').value.trim();
+    const item=document.getElementById('meas-item').value.trim(), unit=document.getElementById('meas-unit').value.trim()||'㎡';
+    const measureType=document.getElementById('meas-type').value, width=parseFloat((document.getElementById('meas-width')||{}).value), height=parseFloat((document.getElementById('meas-height')||{}).value);
+    const qty=parseFloat(document.getElementById('meas-qty').value), price=parseFloat(document.getElementById('meas-price').value), note=document.getElementById('meas-note').value.trim();
+    const sizeText=(document.getElementById('meas-size')||{}).value||'';
+    if(!date||!site||!item||isNaN(qty)||qty<=0||isNaN(price)||price<0){ alert('請填日期、案場、項目、數量與單價'); return; }
+    if(measureType==='partition'&&(isNaN(width)||width<=0||isNaN(height)||height<=0)){ alert('隔間請填寬度與高度'); return; }
+    state.measurements.push({id:uid(),date,site,item,unit,qty,unitPrice:price,note,measureType,sizeText:measureType==='carry'?sizeText.trim():'',width:measureType==='partition'?width:null,height:measureType==='partition'?height:null});
+    saveData(); render();
+  };
+  document.querySelectorAll('[data-del-meas]').forEach(b=>b.onclick=()=>{ if(!confirm('確定刪除這筆計量明細？')) return; state.measurements=state.measurements.filter(m=>m.id!==b.dataset.delMeas); saveData(); render(); });
+  document.querySelectorAll('[data-billprint]').forEach(b=>b.onclick=()=>printBillingDoc(b.dataset.billprint));
+  document.querySelectorAll('[data-batch-add]').forEach(b=>b.onclick=()=>{
+    const site=b.dataset.batchAdd;
+    const ids=state.billings.filter(x=>(x.docType||'請款單')==='追加單'&&parentSiteName(x.site)===site).sort((a,c)=>(a.date||'').localeCompare(c.date||'')).map(x=>x.id);
+    printBillingDocs(ids);
+  });
+  document.querySelectorAll('[data-billsign]').forEach(b=>b.onclick=()=>openFullscreenSign(dataUrl=>{ saveSig(b.dataset.billsign,dataUrl); saveData(); render(); }));
+  document.querySelectorAll('[data-photoup]').forEach(b=>b.onclick=()=>{
+    const id=b.dataset.photoup;
+    const inp=document.createElement('input'); inp.type='file'; inp.accept='image/*'; inp.multiple=true;
+    inp.onchange=()=>{ const files=[...inp.files]; if(!files.length) return; let left=files.length; files.forEach(f=>{ const r=new FileReader(); r.onload=()=>{ (billingPhotos[id]=billingPhotos[id]||[]).push(r.result); if(--left===0){ savePhotos(); render(); } }; r.readAsDataURL(f); }); };
+    inp.click();
+  });
+  document.querySelectorAll('[data-photodel]').forEach(b=>b.onclick=()=>{ const id=b.dataset.photodel, idx=Number(b.dataset.photoidx); if(!billingPhotos[id]) return; billingPhotos[id].splice(idx,1); if(!billingPhotos[id].length) delete billingPhotos[id]; savePhotos(); render(); });
+  document.querySelectorAll('[data-togglesettle]').forEach(b=>b.onclick=()=>{ const bill=state.billings.find(x=>x.id===b.dataset.togglesettle); if(!bill) return; bill.settled=!bill.settled; saveData(); render(); });
+  document.querySelectorAll('[data-delbill]').forEach(b=>b.onclick=()=>{ if(!confirm('確定刪除這筆單據？')) return; const id=b.dataset.delbill; state.billings=state.billings.filter(x=>x.id!==id); delete billingPhotos[id]; deleteSig(id); savePhotos(); saveData(); render(); });
   document.querySelectorAll('.nav-item').forEach(b=>b.onclick=()=>{ state.tab=b.dataset.tab; closeSidebar(); render(); });
 
   const pf=document.getElementById('pay-from'); if(pf) pf.onchange=()=>{ state.payFrom=pf.value; render(); };
@@ -1213,6 +1350,204 @@ function viewLoans(){
 }
 
 // ---- 品佑收支明細 ----
+function billSiteGroups(list){
+  const groups={};
+  list.forEach(b=>{ const k=parentSiteName(b.site); (groups[k]=groups[k]||[]).push(b); });
+  return groups;
+}
+function viewBillingReq(){
+  const list=state.billings.filter(b=>(b.docType||'請款單')==='請款單').sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+  const total=list.reduce((s,b)=>s+billingAmount(b),0);
+  const groups=billSiteGroups(list);
+  const siteCards=Object.keys(groups).sort((a,b)=>a.localeCompare(b,'zh-Hant')).map(name=>{
+    const rows=groups[name].map(b=>`
+      <tr>
+        <td>${esc(b.date||'')}</td>
+        <td>${esc(b.note||'')}<div class="sub" style="margin:0">${billingLineMeta(b)}</div></td>
+        <td>${esc(b.client||'')}</td>
+        <td class="num">${money(billingAmount(b))}</td>
+        <td><button class="act ${b.settled?'':'muted'}" data-togglesettle="${b.id}">${b.settled?'已收款':'未收款'}</button></td>
+        <td><button class="act" data-copy-req="${b.id}">複製</button> <button class="act" data-billprint="${b.id}">列印</button> <button class="act danger" data-delbill="${b.id}">刪</button></td>
+      </tr>`).join('');
+    return `<details class="card" open><summary>${esc(name)}<span style="margin-left:auto;font-size:16px;font-weight:700">${money(groups[name].reduce((s,b)=>s+billingAmount(b),0))}</span></summary><div class="card-body"><div class="scroll"><table><thead><tr><th>日期</th><th>說明</th><th>業主</th><th class="num">金額</th><th>收款</th><th></th></tr></thead><tbody>${rows}</tbody></table></div></div></details>`;
+  }).join('');
+  const siteSelOpts=siteSelectOptions('');
+  return `<div class="metrics">
+    <div class="metric"><div class="l">請款單數</div><div class="v">${list.length}</div></div>
+    <div class="metric"><div class="l">請款總額</div><div class="v" style="font-size:21px">${money(total)}</div></div>
+  </div>
+  <div class="card">
+    ${foldBtn('bnr','新增請款單')}
+    ${formOpen.bnr?`<div class="row" style="margin-top:8px">
+      <div class="field"><label>日期</label><input type="date" id="bnr-date" value="${billingReqDraft?esc(billingReqDraft.date):new Date().toISOString().slice(0,10)}"></div>
+      <div class="field" style="flex:1;min-width:150px"><label>案場</label><select id="bnr-site">${siteSelOpts}</select></div>
+      <div class="field"><label>單位</label><input id="bnr-unit" value="式" style="width:80px"></div>
+      <div class="field"><label>數量</label><input type="number" id="bnr-qty" min="0" step="0.01" value="${billingReqDraft?'':'1'}" style="width:90px"></div>
+      <div class="field"><label>單價</label><input type="number" id="bnr-unit-price" min="0" step="1" style="width:120px"></div>
+      <div class="field"><label>小計</label><div id="bnr-subtotal" class="num" style="height:38px;display:flex;align-items:center;font-weight:700">$0</div></div>
+      <div class="field"><label>方式</label><input id="bnr-method" placeholder="匯款" value="${billingReqDraft?esc(billingReqDraft.method):''}" style="width:100px"></div>
+      <div class="field"><label>業主</label><input id="bnr-client" list="client-memory-list" placeholder="業主名稱" value="${billingReqDraft?esc(billingReqDraft.client):''}" style="width:120px"></div>
+      <div class="field" style="flex:1;min-width:180px"><label>說明</label><input id="bnr-note" placeholder="例：第一期工程款" value="${billingReqDraft?esc(billingReqDraft.note):''}"></div>
+      <div class="field"><label>收款狀態</label><select id="bnr-settled"><option value="">未收款</option><option value="1" ${billingReqDraft&&billingReqDraft.settled?'selected':''}>已收款</option></select></div>
+    </div>
+    <div class="row" style="margin-top:10px"><button class="btn" id="bnr-add">＋ 新增請款單</button></div>`:''}
+    ${dataListHtml('client-memory-list', knownClients())}
+  </div>
+  ${list.length===0?'<div class="card"><div class="empty">尚無請款單。點上方「新增請款單」開始登記。</div></div>':siteCards}`;
+}
+function viewBillingAdd(){
+  const list=state.billings.filter(b=>(b.docType||'請款單')==='追加單').sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+  const total=list.reduce((s,b)=>s+billingAmount(b),0);
+  const groups=billSiteGroups(list);
+  const siteCards=Object.keys(groups).sort((a,b)=>a.localeCompare(b,'zh-Hant')).map(name=>{
+    const rows=groups[name].map(b=>{
+      const photos=billingPhotos[b.id]||[];
+      if(billingAddEditId===b.id){
+        return `<tr><td colspan="6" style="background:var(--bg)">
+          <div class="row" style="margin:6px 0">
+            <div class="field"><label>日期</label><input type="date" id="bae-date" value="${b.date||''}"></div>
+            <div class="field" style="flex:1;min-width:150px"><label>案場</label><select id="bae-site">${siteSelectOptions(b.site||'')}</select></div>
+            <div class="field"><label>單位</label><input id="bae-unit" value="${esc(b.unit||'式')}" style="width:80px"></div>
+            <div class="field"><label>數量</label><input type="number" id="bae-qty" value="${b.qty||1}" step="0.01" style="width:90px"></div>
+            <div class="field"><label>單價</label><input type="number" id="bae-unit-price" value="${b.unitPrice||0}" step="1" style="width:120px"></div>
+            <div class="field"><label>小計</label><div id="bae-subtotal" class="num" style="height:38px;display:flex;align-items:center;font-weight:700">$0</div></div>
+            <div class="field"><label>業主</label><input id="bae-client" list="client-memory-list" value="${esc(b.client||'')}" style="width:120px"></div>
+            <div class="field" style="flex:1;min-width:180px"><label>說明</label><input id="bae-note" value="${esc(b.note||'')}"></div>
+            <div class="field" style="flex:1;min-width:150px"><label>備注</label><input id="bae-remark" value="${esc(b.remark||'')}"></div>
+            <div class="field"><label>收款狀態</label><select id="bae-settled"><option value="">未收款</option><option value="1" ${b.settled?'selected':''}>已收款</option></select></div>
+            <button class="btn" data-bae-ok="${b.id}">儲存</button><button class="act muted" data-bae-cancel="1" style="height:38px">取消</button>
+          </div>
+        </td></tr>`;
+      }
+      const thumbs=photos.map((url,i)=>`<div style="position:relative;display:inline-block;margin:3px"><img src="${url}" class="photo-thumb" style="width:80px;height:60px;object-fit:cover;border-radius:8px;border:1px solid var(--line)"><button data-photodel="${b.id}" data-photoidx="${i}" style="position:absolute;top:-5px;right:-5px;width:20px;height:20px;border:none;background:var(--danger);color:#fff;padding:0;line-height:20px">×</button></div>`).join('');
+      return `<tr>
+        <td>${esc(b.date||'')}</td>
+        <td>${esc(b.note||'')}<div class="sub" style="margin:0">${billingLineMeta(b)} ${b.remark?`｜${esc(b.remark)}`:''}</div>${thumbs}</td>
+        <td>${esc(b.client||'')}</td>
+        <td class="num">${money(billingAmount(b))}</td>
+        <td><button class="act ${b.settled?'':'muted'}" data-togglesettle="${b.id}">${b.settled?'已收款':'未收款'}</button></td>
+        <td><button class="act" data-copy-add="${b.id}">複製</button> <button class="act" data-billedit-add="${b.id}">改</button> <button class="act" data-billprint="${b.id}">列印</button> <button class="act" data-billsign="${b.id}">${billingSigs[b.id]?'已簽':'簽名'}</button> <button class="act" data-photoup="${b.id}">照片</button> <button class="act danger" data-delbill="${b.id}">刪</button></td>
+      </tr>`;
+    }).join('');
+    return `<details class="card" open><summary>${esc(name)}<span style="margin-left:auto;font-size:16px;font-weight:700">${money(groups[name].reduce((s,b)=>s+billingAmount(b),0))}</span></summary><div class="card-body"><div class="scroll"><table><thead><tr><th>日期</th><th>追加項目</th><th>業主</th><th class="num">金額</th><th>收款</th><th></th></tr></thead><tbody>${rows}</tbody></table></div><button class="act" data-batch-add="${esc(name)}" style="margin-top:8px">列印此案場追加單</button></div></details>`;
+  }).join('');
+  return `<div class="metrics">
+    <div class="metric"><div class="l">追加單數</div><div class="v">${list.length}</div></div>
+    <div class="metric"><div class="l">追加總額</div><div class="v" style="font-size:21px">${money(total)}</div></div>
+  </div>
+  <div class="card">
+    ${foldBtn('bna','新增追加單')}
+    ${formOpen.bna?`<div class="row" style="margin-top:8px">
+      <div class="field"><label>日期</label><input type="date" id="bna-date" value="${billingAddDraft?esc(billingAddDraft.date):new Date().toISOString().slice(0,10)}"></div>
+      <div class="field" style="flex:1;min-width:150px"><label>案場</label><select id="bna-site">${siteSelectOptions('')}</select></div>
+      <div class="field"><label>單位</label><input id="bna-unit" value="式" style="width:80px"></div>
+      <div class="field"><label>數量</label><input type="number" id="bna-qty" min="0" step="0.01" value="${billingAddDraft?'':'1'}" style="width:90px"></div>
+      <div class="field"><label>單價</label><input type="number" id="bna-unit-price" min="0" step="1" style="width:120px"></div>
+      <div class="field"><label>小計</label><div id="bna-subtotal" class="num" style="height:38px;display:flex;align-items:center;font-weight:700">$0</div></div>
+      <div class="field"><label>業主</label><input id="bna-client" list="client-memory-list" placeholder="業主名稱" value="${billingAddDraft?esc(billingAddDraft.client):''}" style="width:120px"></div>
+      <div class="field" style="flex:1;min-width:180px"><label>說明（追加項目）</label><input id="bna-note" placeholder="例：追加防水工程" value="${billingAddDraft?esc(billingAddDraft.note):''}"></div>
+      <div class="field" style="flex:1;min-width:150px"><label>備注</label><input id="bna-remark" placeholder="其他備注" value="${billingAddDraft?esc(billingAddDraft.remark):''}"></div>
+      <div class="field"><label>收款狀態</label><select id="bna-settled"><option value="">未收款</option><option value="1" ${billingAddDraft&&billingAddDraft.settled?'selected':''}>已收款</option></select></div>
+    </div>
+    <div class="row" style="margin-top:10px"><button class="btn" id="bna-add">＋ 新增追加單</button></div>`:''}
+    ${dataListHtml('client-memory-list', knownClients())}
+  </div>
+  ${list.length===0?'<div class="card"><div class="empty">尚無追加單。點上方「新增追加單」開始登記。</div></div>':siteCards}`;
+}
+function updateMeasurePreview(){
+  const type=document.getElementById('meas-type'), width=document.getElementById('meas-width'), height=document.getElementById('meas-height');
+  const widthField=document.getElementById('meas-width-field'), heightField=document.getElementById('meas-height-field'), sizeField=document.getElementById('meas-size-field');
+  const qty=document.getElementById('meas-qty'), price=document.getElementById('meas-price'), out=document.getElementById('meas-subtotal'), unit=document.getElementById('meas-unit');
+  if(!type) return;
+  const isPartition=type.value==='partition', isCarry=type.value==='carry';
+  if(widthField) widthField.style.display=isPartition?'flex':'none';
+  if(heightField) heightField.style.display=isPartition?'flex':'none';
+  if(sizeField) sizeField.style.display=isCarry?'flex':'none';
+  if(unit) unit.value=isCarry?'車':(type.value==='ceiling'?'坪':'㎡');
+  if(isPartition&&width&&height&&qty) qty.value=((parseFloat(width.value)||0)*(parseFloat(height.value)||0)).toFixed(2).replace(/\.00$/,'');
+  if(out){ const q=parseFloat(qty&&qty.value), p=parseFloat(price&&price.value); out.textContent=(!isNaN(q)&&!isNaN(p))?money(q*p):'$0'; }
+}
+function viewMeasurements(){
+  const list=[...state.measurements].sort((a,b)=>(b.date||'').localeCompare(a.date||'')||(a.site||'').localeCompare(b.site||''));
+  const total=list.reduce((s,m)=>s+(Number(m.qty)||0)*(Number(m.unitPrice)||0),0);
+  const bysite={}; list.forEach(m=>{ const k=parentSiteName(m.site); (bysite[k]=bysite[k]||[]).push(m); });
+  const siteCards=Object.keys(bysite).sort((a,b)=>a.localeCompare(b,'zh-Hant')).map(name=>{
+    const rows=bysite[name].map(m=>{
+      const mt=m.measureType==='partition'?'隔間':m.measureType==='ceiling'?'天花板':m.measureType==='carry'?'搬運':'';
+      const size=m.measureType==='partition'?`${m.width||''}m × ${m.height||''}m`:m.sizeText||'';
+      return `<tr><td>${esc(m.date||'')}</td><td>${esc(mt)}</td><td>${esc(m.item||'')}</td><td>${esc(size)}</td><td class="num">${Number(m.qty)||0} ${esc(m.unit||'')}</td><td class="num">${money(m.unitPrice||0)}</td><td class="num">${money((Number(m.qty)||0)*(Number(m.unitPrice)||0))}</td><td>${esc(m.note||'')}</td><td><button class="act danger" data-del-meas="${m.id}">刪</button></td></tr>`;
+    }).join('');
+    const subtotal=bysite[name].reduce((s,m)=>s+(Number(m.qty)||0)*(Number(m.unitPrice)||0),0);
+    return `<details class="card" open><summary>${esc(name)}<span style="margin-left:auto;font-size:16px;font-weight:700">${money(subtotal)}</span></summary><div class="card-body"><div class="scroll"><table><thead><tr><th>日期</th><th>類型</th><th>項目</th><th>尺寸</th><th class="num">數量</th><th class="num">單價</th><th class="num">小計</th><th>備注</th><th></th></tr></thead><tbody>${rows}</tbody></table></div></div></details>`;
+  }).join('');
+  return `<div class="metrics">
+    <div class="metric"><div class="l">計量筆數</div><div class="v">${list.length}</div></div>
+    <div class="metric"><div class="l">計量總額</div><div class="v" style="font-size:21px">${money(total)}</div></div>
+  </div>
+  <div class="card">
+    ${foldBtn('meas','新增計量明細')}
+    ${formOpen.meas?`<div class="row" style="margin-top:8px">
+      <div class="field"><label>類型</label><select id="meas-type" style="width:110px"><option value="partition">隔間</option><option value="ceiling">天花板</option><option value="carry">搬運</option></select></div>
+      <div class="field" style="flex:1;min-width:150px"><label>案場</label><select id="meas-site">${siteSelectOptions('')}</select></div>
+      <div class="field" style="flex:1;min-width:160px"><label>項目</label><input id="meas-item" placeholder="例：矽酸鈣板"></div>
+      <div class="field"><label>單位</label><input id="meas-unit" value="㎡" style="width:90px"></div>
+      <div class="field" id="meas-width-field"><label>寬度（m）</label><input type="number" id="meas-width" min="0" step="0.01" style="width:95px"></div>
+      <div class="field" id="meas-height-field"><label>高度（m）</label><input type="number" id="meas-height" min="0" step="0.01" style="width:95px"></div>
+      <div class="field" id="meas-size-field" style="display:none;flex:1;min-width:130px"><label>尺寸</label><input id="meas-size" placeholder="例：4尺×8尺"></div>
+      <div class="field"><label>數量/面積</label><input type="number" id="meas-qty" min="0" step="0.01" style="width:105px"></div>
+      <div class="field"><label>單價</label><input type="number" id="meas-price" min="0" step="1" style="width:120px"></div>
+      <div class="field"><label>小計</label><div id="meas-subtotal" class="num" style="height:38px;display:flex;align-items:center;font-weight:700">$0</div></div>
+      <div class="field"><label>日期</label><input type="date" id="meas-date" value="${new Date().toISOString().slice(0,10)}"></div>
+      <div class="field" style="flex:1;min-width:150px"><label>備注</label><input id="meas-note"></div>
+    </div>
+    <div class="row" style="margin-top:10px"><button class="btn" id="meas-add">＋ 新增</button></div>`:''}
+  </div>
+  ${list.length===0?'<div class="card"><div class="empty">尚無計量明細。點上方「新增」開始登記。</div></div>':siteCards}`;
+}
+function buildBillingDocHTML(id){
+  const b=state.billings.find(x=>x.id===id); if(!b) return '';
+  const type=b.docType||'請款單', amount=billingAmount(b), photos=billingPhotos[id]||[], sig=billingSigs[id]||null;
+  const photoSec=photos.length?`<div class="sec">施作照片</div><div style="display:flex;gap:8px;flex-wrap:wrap">${photos.map(url=>`<img src="${url}" style="width:180px;height:135px;object-fit:cover;border:1px solid #ddd;border-radius:4px">`).join('')}</div>`:'';
+  const signImg=sig?`<img src="${sig}" style="max-width:180px;max-height:70px;display:block;margin-top:4px">`:'';
+  return `<h1>${esc(type)}</h1>
+    <div class="meta">列印日：${new Date().toISOString().slice(0,10)}</div>
+    <table><tbody>
+      <tr><th style="width:90px">日期</th><td>${esc(b.date||'')}</td><th style="width:90px">案場</th><td>${esc(siteDisplayLabel(b.site))}</td></tr>
+      <tr><th>業主</th><td>${esc(b.client||'')}${type!=='追加單'&&b.method?`　（${esc(b.method)}）`:''}</td><th>狀態</th><td>${b.settled?'已收款':'未收款'}</td></tr>
+      <tr><th>項目</th><td colspan="3">${esc(b.note||type)}${b.remark?`<div class="sub">${esc(b.remark)}</div>`:''}</td></tr>
+      <tr><th>單位</th><td>${esc(b.unit||'式')}</td><th>數量</th><td>${Number(b.qty)||0}</td></tr>
+      <tr><th>單價</th><td class="num">${money(b.unitPrice||0)}</td><th>金額</th><td class="num">${money(amount)}</td></tr>
+    </tbody></table>
+    ${photoSec}
+    <div class="sign"><div>申請單位</div><div>業主簽收${signImg}</div></div>`;
+}
+function printBillingDoc(id){ const html=buildBillingDocHTML(id); if(html) printHTML('單據列印', html); }
+function printBillingDocs(ids){
+  const pages=ids.map((id,i)=>`<div ${i?'style="page-break-before:always"':''}>${buildBillingDocHTML(id)}</div>`).join('');
+  if(pages) printHTML('批次列印', pages);
+}
+function openFullscreenSign(onSaved){
+  const old=document.getElementById('sig-overlay'); if(old) old.remove();
+  const ov=document.createElement('div');
+  ov.id='sig-overlay';
+  ov.style.cssText='position:fixed;inset:0;background:#fff;z-index:10000;display:flex;flex-direction:column;padding:14px';
+  ov.innerHTML=`<div style="display:flex;gap:8px;justify-content:flex-end;margin-bottom:10px"><button class="act" id="sig-clear">清除</button><button class="btn" id="sig-save">儲存簽名</button><button class="act" id="sig-close">取消</button></div><canvas id="sig-canvas" style="flex:1;border:1px solid var(--line2);border-radius:12px;touch-action:none"></canvas>`;
+  document.body.appendChild(ov);
+  const cv=document.getElementById('sig-canvas'), ctx=cv.getContext('2d');
+  const resize=()=>{ const r=cv.getBoundingClientRect(); cv.width=Math.max(1,Math.floor(r.width)); cv.height=Math.max(1,Math.floor(r.height)); ctx.lineWidth=3; ctx.lineCap='round'; ctx.strokeStyle='#111'; };
+  resize();
+  let drawing=false,last=null;
+  const pos=e=>{ const p=e.touches?e.touches[0]:e, r=cv.getBoundingClientRect(); return {x:p.clientX-r.left,y:p.clientY-r.top}; };
+  const down=e=>{ drawing=true; last=pos(e); e.preventDefault(); };
+  const move=e=>{ if(!drawing) return; const p=pos(e); ctx.beginPath(); ctx.moveTo(last.x,last.y); ctx.lineTo(p.x,p.y); ctx.stroke(); last=p; e.preventDefault(); };
+  const up=()=>{ drawing=false; };
+  cv.addEventListener('mousedown',down); cv.addEventListener('mousemove',move); window.addEventListener('mouseup',up);
+  cv.addEventListener('touchstart',down,{passive:false}); cv.addEventListener('touchmove',move,{passive:false}); cv.addEventListener('touchend',up);
+  document.getElementById('sig-clear').onclick=()=>ctx.clearRect(0,0,cv.width,cv.height);
+  document.getElementById('sig-close').onclick=()=>ov.remove();
+  document.getElementById('sig-save').onclick=()=>{ onSaved(cv.toDataURL('image/png')); ov.remove(); };
+}
+
 let parkFrom='', parkTo='', parkEditId=null;
 function parkBalance(){
   const opening=Number(state.parkOpening)||0;
@@ -1316,7 +1651,7 @@ document.getElementById('burger').onclick=()=>{
 document.getElementById('scrim').onclick=closeSidebar;
 document.getElementById('cloud-refresh').onclick=()=>loadCloud();
 
-loadLocal(); render(); loadCloud();
+loadPhotos(); loadSigs(); loadLocal(); render(); loadCloud();
 </script>
 </body>
 </html>
