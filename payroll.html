@@ -2590,6 +2590,8 @@ function exportPayslipPDF(empId){
     <tbody>${dedRows||'<tr><td colspan="3">無</td></tr>'}<tr class="total-row"><td colspan="2">扣項小計</td><td class="num ded-amt">−${money(e.dedTotal)}</td></tr></tbody></table>
     <div class="sec summary-sec">${showWorkDetails?'四':'三'}、薪資彙總</div>
     <table style="margin-top:14px"><tbody>
+      <tr><td>出勤天數</td><td class="num">${e.days.size} 天</td></tr>
+      <tr><td>總工數</td><td class="num">${gongStr(e.hours)}</td></tr>
       <tr><td>基本工資</td><td class="num">${money(e.gross)}</td></tr>
       <tr><td>加項合計</td><td class="num add-amt">+${money(e.addTotal)}</td></tr>
       <tr><td>扣項合計</td><td class="num ded-amt">−${money(e.dedTotal)}</td></tr>
