@@ -319,6 +319,7 @@
   #print-overlay .paydoc tr.add-row td, #print-overlay .paydoc .add-amt { color: #047857; background: #f0fdf4; }
   #print-overlay .paydoc tr.ded-row td, #print-overlay .paydoc .ded-amt { color: #b91c1c; background: #fff1f2; }
   #print-overlay .paydoc .night-check { color: #0f766e; font-weight: 800; font-size: 14px; }
+  #print-overlay .site-pill { display:inline-block; padding:2px 8px; border-radius:999px; font-weight:700; font-size:11px; border:1px solid transparent; }
   @media print {
     body > .top, body > .layout { display: none !important; }
     #print-overlay { position: static; padding: 0; }
@@ -1454,9 +1455,25 @@ function exportPayslipPDF(empId){
   const inRange=d=> (!state.payFrom||d>=state.payFrom) && (!state.payTo||d<=state.payTo);
   const comp=computeRecords(state.attendance);
   const myRecs=state.attendance.filter(r=>r.empId===empId&&inRange(r.date)).sort((a,b)=>a.date.localeCompare(b.date));
+  const sitePalette=[
+    {bg:'#eef6ff',ink:'#1d4ed8',line:'#93c5fd'},
+    {bg:'#f0fdf4',ink:'#047857',line:'#86efac'},
+    {bg:'#fff7ed',ink:'#c2410c',line:'#fdba74'},
+    {bg:'#f5f3ff',ink:'#6d28d9',line:'#c4b5fd'},
+    {bg:'#ecfeff',ink:'#0e7490',line:'#67e8f9'},
+    {bg:'#fdf2f8',ink:'#be185d',line:'#f9a8d4'}
+  ];
+  const siteColorMap={};
+  let siteColorIdx=0;
+  const siteBadge=name=>{
+    if(!siteColorMap[name]) siteColorMap[name]=sitePalette[siteColorIdx++%sitePalette.length];
+    const c=siteColorMap[name];
+    return `<span class="site-pill" style="background:${c.bg};color:${c.ink};border-color:${c.line}">${esc(name)}</span>`;
+  };
   const recRows=myRecs.map(r=>{ const c=comp[r.id]||{baseWage:0,overtimePay:0,allow:0,total:0};
     const isLeaveR=r.type==='請假'||r.type==='休假';
-    return `<tr><td>${esc(r.date)}</td><td>${isLeaveR?r.type:esc(siteName(r.siteId))}</td><td class="num">${isLeaveR?'—':gongStr(r.hours)}</td><td class="num">${isLeaveR?'—':(r.overtime?`${r.overtime}h`:'—')}</td><td class="num">${isLeaveR?'—':(r.night?'<span class="night-check">✓</span>':'—')}</td>
+    const siteLabel=isLeaveR?r.type:siteBadge(siteName(r.siteId));
+    return `<tr><td>${esc(r.date)}</td><td>${siteLabel}</td><td class="num">${isLeaveR?'—':gongStr(r.hours)}</td><td class="num">${isLeaveR?'—':(r.overtime?`${r.overtime}h`:'—')}</td><td class="num">${isLeaveR?'—':(r.night?'<span class="night-check">✓</span>':'—')}</td>
       <td class="num">${isLeaveR?'—':money(c.baseWage||0)}</td></tr>`;
   }).join('');
   const inner=`<div class="paydoc"><h1>薪資明細單</h1>
