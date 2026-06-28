@@ -859,7 +859,7 @@ function viewPayroll(){
       <td class="num" style="color:var(--accent)">${e.addTotal?'+'+money(e.addTotal):'—'}</td>
       <td class="num" style="color:var(--danger)">${e.dedTotal?'−'+money(e.dedTotal):'—'}</td>
       <td class="num" style="font-weight:600">${money(e.net)}</td>
-      <td><button class="act" data-payslip="${id}">明細單</button></td></tr>`;
+      <td><button class="act" data-payslip="${id}">明細單</button> <button class="act" data-payslip-sites="${id}" title="匯出含案場版本">含案場</button></td></tr>`;
   };
   const rows=allIds.map(id=>rowFor(id)).join('');
 
@@ -1195,7 +1195,8 @@ function bind(){
   };
   document.querySelectorAll('[data-deladj]').forEach(b=>b.onclick=()=>{ if(!confirm('確定刪除這筆加扣項？')) return; state.adjustments=state.adjustments.filter(a=>a.id!==b.dataset.deladj); saveData(); render(); });
   const esi=document.getElementById('export-sites'); if(esi) esi.onclick=()=>exportSitesPDF();
-  document.querySelectorAll('[data-payslip]').forEach(b=>b.onclick=()=>exportPayslipPDF(b.dataset.payslip));
+  document.querySelectorAll('[data-payslip]').forEach(b=>b.onclick=()=>exportPayslipPDF(b.dataset.payslip,false));
+  document.querySelectorAll('[data-payslip-sites]').forEach(b=>b.onclick=()=>exportPayslipPDF(b.dataset.payslipSites,true));
 
   const gotoM=document.getElementById('goto-manage'); if(gotoM) gotoM.onclick=()=>{ state.tab='manage'; render(); };
 
@@ -1445,7 +1446,7 @@ function exportSummaryPDF(){
   printHTML('薪資總表 '+(state.payFrom||''), inner);
 }
 
-function exportPayslipPDF(empId){
+function exportPayslipPDF(empId,showSite=false){
   const byEmp=buildPayroll(state.payFrom,state.payTo);
   const e=byEmp[empId]; if(!e) return;
   const systemAddRows=(e.systemAdds||[]).map(a=>`<tr class="add-row"><td>${esc(a.label)}</td><td>${esc(a.note||'')}</td><td class="num add-amt">+${money(a.amount)}</td></tr>`).join('');
@@ -1473,15 +1474,20 @@ function exportPayslipPDF(empId){
   const recRows=myRecs.map(r=>{ const c=comp[r.id]||{baseWage:0,overtimePay:0,allow:0,total:0};
     const isLeaveR=r.type==='請假'||r.type==='休假';
     const siteLabel=isLeaveR?r.type:siteBadge(siteName(r.siteId));
-    return `<tr><td>${esc(r.date)}</td><td>${siteLabel}</td><td class="num">${isLeaveR?'—':gongStr(r.hours)}</td><td class="num">${isLeaveR?'—':(r.overtime?`${r.overtime}h`:'—')}</td><td class="num">${isLeaveR?'—':(r.night?'<span class="night-check">✓</span>':'—')}</td>
+    return `<tr><td>${esc(r.date)}</td>${showSite?`<td>${siteLabel}</td>`:''}<td class="num">${isLeaveR?'—':gongStr(r.hours)}</td><td class="num">${isLeaveR?'—':(r.overtime?`${r.overtime}h`:'—')}</td><td class="num">${isLeaveR?'—':(r.night?'<span class="night-check">✓</span>':'—')}</td>
       <td class="num">${isLeaveR?'—':money(c.baseWage||0)}</td></tr>`;
   }).join('');
+  const workHead=showSite
+    ? '<tr><th>日期</th><th>案場</th><th class="num">工數</th><th class="num">加班</th><th class="num">過夜</th><th class="num">基本工資</th></tr>'
+    : '<tr><th>日期</th><th class="num">工數</th><th class="num">加班</th><th class="num">過夜</th><th class="num">基本工資</th></tr>';
+  const workEmptyColspan=showSite?6:5;
+  const workTotalColspan=showSite?5:4;
   const inner=`<div class="paydoc"><h1>薪資明細單</h1>
-    <div class="meta">員工：${esc(empName(empId))}　|　計薪期間：${state.payFrom||'起始'} ～ ${state.payTo||'迄今'}　|　出勤 ${e.days.size} 天 / ${gongStr(e.hours)}</div>
+    <div class="meta">員工：${esc(empName(empId))}　|　計薪期間：${state.payFrom||'起始'} ～ ${state.payTo||'迄今'}　|　出勤 ${e.days.size} 天 / ${gongStr(e.hours)}　|　案場：${showSite?'顯示':'省略'}</div>
     <div class="sec">一、出工明細</div>
-    <table><thead><tr><th>日期</th><th>案場</th><th class="num">工數</th><th class="num">加班</th><th class="num">過夜</th><th class="num">基本工資</th></tr></thead>
-    <tbody>${recRows||'<tr><td colspan="6">本期無出工</td></tr>'}
-      <tr class="total-row"><td colspan="5">基本工資小計</td><td class="num">${money(e.gross)}</td></tr>
+    <table><thead>${workHead}</thead>
+    <tbody>${recRows||`<tr><td colspan="${workEmptyColspan}">本期無出工</td></tr>`}
+      <tr class="total-row"><td colspan="${workTotalColspan}">基本工資小計</td><td class="num">${money(e.gross)}</td></tr>
     </tbody></table>
     <div class="sec add-sec">二、加項</div>
     <table><thead><tr><th>項目</th><th>備註</th><th class="num">金額</th></tr></thead>
