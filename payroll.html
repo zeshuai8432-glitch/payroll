@@ -1078,13 +1078,13 @@ function viewPayroll(){
   </tr>`).join('');
 
   // 本期借支扣款提示：尚未還清、且本期還沒扣過的借支
-  const loanReminders=state.loans.filter(l=>loanBalance(l)>0 && Number(l.perPeriod)>0 && !loanDeductedInRange(l.id,state.payFrom,state.payTo)).map(l=>{
-    const bal=loanBalance(l), suggest=Math.min(l.perPeriod,bal);
+  const loanReminders=state.loans.filter(l=>loanBalance(l)>0 && !loanDeductedInRange(l.id,state.payFrom,state.payTo)).map(l=>{
+    const bal=loanBalance(l);
     return `<tr>
       <td>${esc(empName(l.empId))}</td>
       <td class="num">${money(bal)}</td>
-      <td class="num">${money(suggest)}</td>
-      <td><button class="act" data-repay="${l.id}" style="border:1px solid var(--accent);border-radius:6px;padding:3px 10px;color:var(--accent)">扣這期 ${money(suggest)}</button></td>
+      <td class="num"><input type="number" data-loanpay="${l.id}" min="0" max="${bal}" step="500" placeholder="本期扣多少" style="width:120px;text-align:right"></td>
+      <td><button class="act" data-repay="${l.id}" style="border:1px solid var(--accent);border-radius:6px;padding:3px 10px;color:var(--accent)">加入扣款</button></td>
     </tr>`;
   }).join('');
 
@@ -1122,9 +1122,9 @@ function viewPayroll(){
   </div>
   ${loanReminders===''?'':`<div class="card" style="border-color:var(--accent)">
     <div style="font-size:14px;font-weight:600;margin-bottom:4px">💡 本期借支扣款提示</div>
-    <p class="sub">以下員工有未還清借支、且本期尚未扣款。點「扣這期」即把該筆金額加入本期扣項（可在下方加扣項清單微調或刪除）。</p>
+    <p class="sub">以下員工有未還清借支、且本期尚未扣款。輸入本期要扣的金額後按「加入扣款」，系統會帶入本期扣項。</p>
     <div class="scroll"><table>
-      <thead><tr><th>員工</th><th class="num">尚欠</th><th class="num">本期建議扣</th><th></th></tr></thead>
+      <thead><tr><th>員工</th><th class="num">尚欠</th><th class="num">本期扣款</th><th></th></tr></thead>
       <tbody>${loanReminders}</tbody></table></div>
   </div>`}
   <div class="card">
@@ -1829,11 +1829,9 @@ function bind(){
     const date=document.getElementById('loan-date').value;
     const empId=document.getElementById('loan-emp').value;
     const amount=parseFloat(document.getElementById('loan-amount').value);
-    const perRaw=document.getElementById('loan-per').value.trim();
-    const perPeriod=perRaw===''?0:parseFloat(perRaw);
     const note=document.getElementById('loan-note').value.trim();
-    if(!date||!empId||isNaN(amount)||amount<=0||isNaN(perPeriod)||perPeriod<0) return;
-    state.loans.push({id:uid(),date,empId,amount,perPeriod,note});
+    if(!date||!empId||isNaN(amount)||amount<=0) return;
+    state.loans.push({id:uid(),date,empId,amount,note});
     saveData(); render();
   };
   document.querySelectorAll('[data-delloan]').forEach(b=>b.onclick=()=>{
@@ -1843,9 +1841,10 @@ function bind(){
   document.querySelectorAll('[data-repay]').forEach(b=>b.onclick=()=>{
     const loan=state.loans.find(l=>l.id===b.dataset.repay); if(!loan) return;
     const bal=loanBalance(loan);
-    const amt=Math.min(loan.perPeriod, bal);
-    if(amt<=0) return;
-    state.adjustments.push({id:uid(),date:state.payTo||new Date().toISOString().slice(0,10),empId:loan.empId,kind:'ded',label:'借支扣還',amount:amt,note:(loan.note?loan.note+' ':'')+'借支分期',loanId:loan.id});
+    const inp=document.querySelector(`[data-loanpay="${loan.id}"]`);
+    const amt=Math.min(parseFloat(inp&&inp.value), bal);
+    if(isNaN(amt)||amt<=0){ alert('請輸入本期要扣的金額'); return; }
+    state.adjustments.push({id:uid(),date:state.payTo||new Date().toISOString().slice(0,10),empId:loan.empId,kind:'ded',label:'借支扣還',amount:amt,note:(loan.note?loan.note+' ':'')+'借支扣還',loanId:loan.id});
     saveData(); render();
   });
 
@@ -2986,7 +2985,6 @@ function viewLoans(){
     return `<tr>
       <td>${esc(l.date)}</td><td>${esc(empName(l.empId))}</td>
       <td class="num">${money(l.amount)}</td>
-      <td class="num">${Number(l.perPeriod)>0?money(l.perPeriod):'—'}</td>
       <td class="num">${money(repaid)}（${pct}%）</td>
       <td class="num" style="font-weight:600;color:${done?'var(--accent)':'var(--danger)'}">${done?'已還清':money(bal)}</td>
       <td>${esc(l.note||'')}</td>
@@ -3000,17 +2998,16 @@ function viewLoans(){
   </div>
   <div class="card">
     <div style="font-size:14px;font-weight:600;margin-bottom:4px">新增借支</div>
-    <p class="sub">登記一筆借款：借出日、總額、每期扣款可先不填。系統會追蹤已扣與剩餘；有填每期扣款時，發薪頁才會提示應扣金額。</p>
+    <p class="sub">登記一筆借款：借出日與總額。系統會追蹤已扣與剩餘；發薪時可在薪資頁手動輸入本期扣款金額。</p>
     <div class="row" style="margin-bottom:10px">
       <div class="field"><label>借款日</label><input type="date" id="loan-date" value="${new Date().toISOString().slice(0,10)}"></div>
       <div class="field"><label>員工</label><select id="loan-emp">${empOpts}</select></div>
       <div class="field"><label>借款總額</label><input type="number" id="loan-amount" min="0" step="500" style="width:120px"></div>
-      <div class="field"><label>每期扣款（選填）</label><input type="number" id="loan-per" min="0" step="500" placeholder="可空白" style="width:120px"></div>
       <div class="field" style="flex:1;min-width:140px"><label>備註（選填）</label><input id="loan-note" placeholder="例：預支生活費"></div>
       <button class="btn" id="loan-add">＋ 新增借支</button>
     </div>
     ${rows===''?'<div class="empty">尚無借支紀錄。</div>':`<div class="scroll"><table>
-      <thead><tr><th>借款日</th><th>員工</th><th class="num">總額</th><th class="num">每期扣</th><th class="num">已扣</th><th class="num">剩餘</th><th>備註</th><th></th></tr></thead>
+      <thead><tr><th>借款日</th><th>員工</th><th class="num">總額</th><th class="num">已扣</th><th class="num">剩餘</th><th>備註</th><th></th></tr></thead>
       <tbody>${rows}</tbody></table></div>`}
   </div>`;
 }
