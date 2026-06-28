@@ -1831,6 +1831,10 @@ function bind(){
     const amount=parseFloat(document.getElementById('loan-amount').value);
     const note=document.getElementById('loan-note').value.trim();
     if(!date||!empId||isNaN(amount)||amount<=0) return;
+    const payRange=(state.payFrom&&state.payTo)?{from:state.payFrom,to:state.payTo}:defaultPayRange();
+    const payroll=buildPayroll(payRange.from,payRange.to);
+    const currentPay=payroll[empId]?Number(payroll[empId].net)||0:0;
+    if(amount>currentPay&&!confirm(`借支金額 ${money(amount)} 已超過此員工當期實發薪資 ${money(currentPay)}。\n\n計薪期間：${payRange.from} ～ ${payRange.to}\n\n是否仍要新增這筆借款？`)) return;
     state.loans.push({id:uid(),date,empId,amount,note});
     saveData(); render();
   };
