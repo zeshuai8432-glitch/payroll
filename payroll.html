@@ -2570,14 +2570,15 @@ function exportPayslipPDF(empId){
   const recRows=myRecs.map(r=>{ const c=comp[r.id]||{wage:0,allow:0,total:0};
     const isLeaveR=r.kind==='leave'||r.kind==='off';
     const siteLabel=isLeaveR?(r.kind==='leave'?`請假${r.half?'（半天）':''}`:'休假'):siteBadge(siteName(r.siteId));
-    return `<tr><td>${esc(r.date)}</td><td>${siteLabel}</td><td class="num">${isLeaveR?'—':gongStr(r.hours)}</td><td class="num">${isLeaveR?'—':(r.night?'<span class="night-check">✓</span>':'—')}</td>
+    const overtime=Number(r.overtime)||0;
+    return `<tr><td>${esc(r.date)}</td><td>${siteLabel}</td><td class="num">${isLeaveR?'—':gongStr(r.hours)}</td><td class="num">${isLeaveR?'—':(overtime>0?`${overtime.toLocaleString()} 小時`:'—')}</td><td class="num">${isLeaveR?'—':(r.night?'<span class="night-check">✓</span>':'—')}</td>
       <td class="num">${isLeaveR?'—':money(c.baseWage||0)}</td></tr>`;
   }).join('');
   const workDetailSection=showWorkDetails?`
     <div class="sec">一、出工明細</div>
-    <table><thead><tr><th>日期</th><th>案場</th><th class="num">工數</th><th class="num">過夜</th><th class="num">基本工資</th></tr></thead>
-    <tbody>${recRows||'<tr><td colspan="5">本期無出工</td></tr>'}
-      <tr class="total-row"><td colspan="4">基本工資小計</td><td class="num">${money(e.gross)}</td></tr>
+    <table><thead><tr><th>日期</th><th>案場</th><th class="num">工數</th><th class="num">加班</th><th class="num">過夜</th><th class="num">基本工資</th></tr></thead>
+    <tbody>${recRows||'<tr><td colspan="6">本期無出工</td></tr>'}
+      <tr class="total-row"><td colspan="5">基本工資小計</td><td class="num">${money(e.gross)}</td></tr>
     </tbody></table>`:'';
   const inner=`<div class="paydoc"><h1>薪資明細單</h1>
     <div class="meta">員工：${esc(empName(empId))}　|　計薪期間：${state.payFrom||'起始'} ～ ${state.payTo||'迄今'}　|　出勤 ${e.days.size} 天 / ${gongStr(e.hours)}</div>
