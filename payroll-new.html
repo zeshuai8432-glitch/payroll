@@ -617,10 +617,10 @@ function saveData(){
   localDirty=true;
   try{ localStorage.setItem(LS_DIRTY,'1'); localStorage.setItem(LS, JSON.stringify(packData())); }catch(e){}
   if(!CLOUD_URL){ setCloud('已存本機'); return; }
-  // 雲端防抖動：1秒內多次變更只送一次
+  // 雲端防抖動：手機常很快切走，縮短等待時間讓資料更早開始上傳。
   if(saveTimer) clearTimeout(saveTimer);
   setCloud('儲存中…');
-  saveTimer=setTimeout(pushCloud, 800);
+  saveTimer=setTimeout(pushCloud, 250);
 }
 async function pushCloud(){
   if(!CLOUD_URL) return;
@@ -661,6 +661,11 @@ async function pushCloud(){
   } catch(e){ setCloud('雲端儲存失敗（已存本機）'); }
   saving=false;
   if(pendingSave){ pendingSave=false; pushCloud(); }
+}
+function pushCloudSoon(){
+  if(!CLOUD_URL) return;
+  if(saveTimer){ clearTimeout(saveTimer); saveTimer=null; }
+  pushCloud();
 }
 function flushCloudOnExit(){
   if(!CLOUD_URL) return;
@@ -1946,10 +1951,12 @@ document.getElementById('burger').onclick=()=>{
 document.getElementById('scrim').onclick=closeSidebar;
 document.getElementById('cloud-refresh').onclick=()=>loadCloud();
 window.addEventListener('beforeunload', ()=>flushCloudOnExit());
-window.addEventListener('pagehide', ()=>flushCloudOnExit());
+window.addEventListener('pagehide', ()=>{ pushCloudSoon(); flushCloudOnExit(); });
+window.addEventListener('blur', ()=>pushCloudSoon());
 document.addEventListener('visibilitychange', ()=>{
-  if(document.visibilityState==='hidden') flushCloudOnExit();
+  if(document.visibilityState==='hidden'){ pushCloudSoon(); flushCloudOnExit(); }
 });
+document.addEventListener('freeze', ()=>{ pushCloudSoon(); flushCloudOnExit(); });
 
 loadLocal(); loadPhotos(); loadSigs(); render(); loadCloud();
 </script>
