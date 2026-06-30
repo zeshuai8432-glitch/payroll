@@ -120,7 +120,7 @@
     /* ── 頂列精簡 ── */
     .top { padding: 0 12px; height: 52px; gap: 10px; }
     .top h1 { font-size: 15px; }
-    #cloud-status { display: none; }
+    #cloud-status { display: inline; font-size: 11px; max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     #cloud-refresh { font-size: 12px; padding: 4px 10px; }
 
     /* ── 主內容 ── */
@@ -718,6 +718,18 @@ async function pushCloud(){
   } catch(e){ setCloud('雲端儲存失敗：'+String(e).slice(0,50)); }
   saving=false;
   if(pendingSave){ pendingSave=false; pushCloud(); }
+}
+function flushCloudOnExit(){
+  if(saveTimer){ clearTimeout(saveTimer); saveTimer=null; }
+  const payload=JSON.stringify(packData());
+  try{ localStorage.setItem(LS, payload); }catch(e){}
+  try{
+    if(navigator.sendBeacon){
+      const blob=new Blob([payload],{type:'text/plain;charset=UTF-8'});
+      if(navigator.sendBeacon(CLOUD_URL, blob)) return;
+    }
+  }catch(e){}
+  try{ fetch(CLOUD_URL,{method:'POST',body:payload,keepalive:true}); }catch(e){}
 }
 async function diagCloud(){
   setCloud('診斷中…');
@@ -4568,10 +4580,13 @@ function exportYearVerify(){
   printHTML('年度總結·驗算明細', `<h1>年度總結·驗算明細</h1><div class="meta">期間：${period}　|　列印日：${new Date().toISOString().slice(0,10)}</div>${secs}`);
 }
 
-// 關閉頁面前只保留本機資料；雲端推送必須走 pushCloud() 的簽名合併保護。
+// 手機關頁/切換 App 時，盡量把最後資料補送到雲端，避免只留在本機。
 window.addEventListener('beforeunload', ()=>{
-  if(saveTimer){ clearTimeout(saveTimer); saveTimer=null; }
-  try{ localStorage.setItem(LS, JSON.stringify(packData())); }catch(e){}
+  flushCloudOnExit();
+});
+window.addEventListener('pagehide', ()=>flushCloudOnExit());
+document.addEventListener('visibilitychange', ()=>{
+  if(document.visibilityState==='hidden') flushCloudOnExit();
 });
 
 loadLocal(); loadPhotos(); loadSigs(); render(); loadCloud();
