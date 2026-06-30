@@ -401,9 +401,11 @@ const LS_PHOTOS = 'pm_billing_photos_v1';
 const LS_SIGS        = 'pm_billing_sigs_v1';
 const LS_SIGS_LOCKED = 'pm_billing_sigs_locked_v1';
 const LS_SIG_META    = 'pm_billing_sig_meta_v1';
+const LS_DIRTY       = 'pm_cloud_dirty_v1';
 const CLOUD_URL = 'https://script.google.com/macros/s/AKfycbyMPs38UNzAwX3bcD2n9nQBz0HofUW9qFweSOnmoySs8VW2bJYHn47RdyZLQ8bD8SNWTg/exec';
 let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], tools:[], locations:[], assets:[], advances:[], accounts:[], ledger:[], deals:[], billings:[], measurements:[], contracts:{}, costs:[], textMemory:{clients:[],companies:[]}, parkAccId:'', oweBonus:{}, minFund:'', tab:'entry' };
 let cloudStatus='連線中…';
+let localDirty=false, lastCloudTs=0;
 let entryDate='', entrySite='', entryEmp=''; // 登記出工：記住上次選的日期、案場、員工
 let entryOpenDates={}, entryEditId=null; // 出工紀錄分組收合狀態與正在編輯的紀錄
 let entryKind='work'; // 'work' | 'leave' | 'off'
@@ -674,6 +676,7 @@ function mergeCloudPhotos(cloudPhotos){
 
 // 先讀本機快取（讓畫面秒開），再從雲端拉最新
 function loadLocal(){
+  try { localDirty=localStorage.getItem(LS_DIRTY)==='1'; } catch(e){}
   try { const raw=localStorage.getItem(LS); if(raw) applyData(JSON.parse(raw)); } catch(e){}
 }
 async function loadCloud(){
@@ -686,21 +689,22 @@ async function loadCloud(){
       const localRaw=localStorage.getItem(LS);
       const localTs=localRaw?((JSON.parse(localRaw)||{}).savedAt||0):0;
       const cloudTs=cloudData.savedAt||0;
+      lastCloudTs=cloudTs;
       // 簽名依 updatedAt 合併，避免舊測試簽名蓋掉較新的正式簽名
       mergeBillingSigs(cloudData.billingSigs||{}, cloudData.billingSigsLocked||{}, cloudData.billingSigMeta||{});
       // 照片 URL 永遠合併（各裝置各有自己上傳的照片）
       if(cloudData.billingPhotos) mergeCloudPhotos(cloudData.billingPhotos);
-      if(cloudTs>=localTs){
+      if(!localDirty || cloudTs>=localTs){
         // 雲端較新，套用
         const keepSigs={...billingSigs}, keepLocked={...billingSigsLocked}, keepMeta={...billingSigMeta};
         applyData(cloudData);
         Object.assign(billingSigs, keepSigs);
         Object.assign(billingSigsLocked, keepLocked);
         Object.assign(billingSigMeta, keepMeta);
-        try{localStorage.setItem(LS,j.data);}catch(e){} setCloud('已同步');
+        try{localStorage.setItem(LS,j.data); localStorage.removeItem(LS_DIRTY); localDirty=false;}catch(e){} setCloud('已同步');
       } else {
         // 本機較新，推上雲端（此時 billingSigs 已含雲端簽名，不會漏掉）
-        setCloud('本機資料較新，同步中…'); pushCloud();
+        setCloud('本機有未上傳資料，未自動覆蓋雲端');
       }
       _lastCloudJson=j.data;
     } else { setCloud('雲端尚無資料'); }
@@ -711,7 +715,8 @@ async function loadCloud(){
 let saveTimer=null, saving=false, pendingSave=false;
 function saveData(){
   // 本機立即存
-  try{ localStorage.setItem(LS, JSON.stringify(packData())); }catch(e){}
+  localDirty=true;
+  try{ localStorage.setItem(LS_DIRTY,'1'); localStorage.setItem(LS, JSON.stringify(packData())); }catch(e){}
   // 雲端防抖動：300ms 內多次變更只送一次
   if(saveTimer) clearTimeout(saveTimer);
   setCloud('儲存中…');
@@ -719,6 +724,7 @@ function saveData(){
 }
 async function pushCloud(){
   if(saving){ pendingSave=true; return; }
+  if(!localDirty && Object.keys(localSigPending).length===0){ setCloud('已同步'); return; }
   saving=true;
   try {
     // 推送前先讀雲端並合併簽名/照片，避免舊裝置整包資料把新簽名蓋回測試版。
@@ -727,21 +733,38 @@ async function pushCloud(){
       const gj=await gr.json();
       if(gj&&gj.ok&&gj.data){
         const cd=JSON.parse(gj.data);
+        const cloudTs=Number(cd.savedAt)||0;
+        const localRaw=localStorage.getItem(LS);
+        const localTs=localRaw?Number((JSON.parse(localRaw)||{}).savedAt)||0:0;
+        if(cloudTs>lastCloudTs && cloudTs>localTs){
+          lastCloudTs=cloudTs;
+          setCloud('雲端已有較新資料，請先重新整理');
+          saving=false;
+          return;
+        }
         applyCloudSigsBeforePush(cd.billingSigs||{}, cd.billingSigsLocked||{}, cd.billingSigMeta||{});
         if(cd.billingPhotos) mergeCloudPhotos(cd.billingPhotos);
       }
     }catch(e){}
-    const res=await fetch(CLOUD_URL,{method:'POST',body:JSON.stringify(packData())});
+    const payload=JSON.stringify(packData());
+    try{ localStorage.setItem(LS,payload); }catch(e){}
+    const res=await fetch(CLOUD_URL,{method:'POST',body:payload});
     const j=await res.json();
-    if(j&&j.ok){ localSigPending={}; setCloud('已同步'); } else { setCloud('推送失敗：'+(j&&j.error||'未知錯誤').slice(0,60)); }
+    if(j&&j.ok){
+      localSigPending={}; localDirty=false;
+      try{ localStorage.removeItem(LS_DIRTY); }catch(e){}
+      try{ lastCloudTs=Number((JSON.parse(payload)||{}).savedAt)||Date.now(); _lastCloudJson=payload; }catch(e){}
+      setCloud('已同步');
+    } else { setCloud('推送失敗：'+(j&&j.error||'未知錯誤').slice(0,60)); }
   } catch(e){ setCloud('雲端儲存失敗：'+String(e).slice(0,50)); }
   saving=false;
   if(pendingSave){ pendingSave=false; pushCloud(); }
 }
 function flushCloudOnExit(){
+  if(!localDirty && Object.keys(localSigPending).length===0) return;
   if(saveTimer){ clearTimeout(saveTimer); saveTimer=null; }
   const payload=JSON.stringify(packData());
-  try{ localStorage.setItem(LS, payload); }catch(e){}
+  try{ localStorage.setItem(LS_DIRTY,'1'); localStorage.setItem(LS, payload); }catch(e){}
   try{
     if(navigator.sendBeacon){
       const blob=new Blob([payload],{type:'text/plain;charset=UTF-8'});
