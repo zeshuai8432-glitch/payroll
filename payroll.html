@@ -552,6 +552,25 @@ const subSiteType = (siteOrName, subName) => {
   const meta=ensureSubSiteMeta(s);
   return meta[subName]||'代工';
 };
+function renameSubSite(parent, oldName, newName){
+  const next=String(newName||'').trim();
+  if(!parent||!oldName||!next||next===oldName) return false;
+  const current=subSitesOf(parent);
+  if(current.includes(next)){ alert('這個子案場名稱已經存在'); return false; }
+  const oldVal=siteOptionValue(parent.name,oldName);
+  const newVal=siteOptionValue(parent.name,next);
+  const child=childSiteFor(parent,oldName);
+  parent.subSites=current.map(x=>x===oldName?next:x);
+  if(parent.subSiteTypes&&parent.subSiteTypes[oldName]!==undefined){
+    parent.subSiteTypes[next]=parent.subSiteTypes[oldName];
+    delete parent.subSiteTypes[oldName];
+  }
+  if(child) child.name=next;
+  (state.billings||[]).forEach(x=>{ if(x.site===oldVal) x.site=newVal; if(child&&x.site===oldName) x.site=next; });
+  (state.measurements||[]).forEach(x=>{ if(x.site===oldVal) x.site=newVal; if(child&&x.site===oldName) x.site=next; });
+  (state.costs||[]).forEach(x=>{ if(x.siteId===parent.id&&x.subSite===oldName) x.subSite=next; });
+  return true;
+}
 const siteOptionValue = (siteName, subName='') => subName?`${siteName} / ${subName}`:siteName;
 const splitSiteValue = value => {
   const raw=String(value||'');
@@ -1329,7 +1348,7 @@ function viewManage(){
         </div>
         ${curType==='合作案'?`<div style="margin:6px 0 10px;padding:10px;background:var(--bg);border-radius:10px">
           <div style="font-size:12px;font-weight:700;margin-bottom:6px;color:var(--muted)">樓層 / 子案場</div>
-          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">${subSitesOf(s).map(sub=>`<span class="tag" style="background:#eef6ff;color:#1d4ed8;border-color:#bfdbfe;gap:6px">${esc(sub)} <select data-subtype="${s.id}" data-subsite="${esc(sub)}" style="height:24px;border:1px solid #bfdbfe;border-radius:6px;background:white;color:#1d4ed8;font-size:12px">${SUB_SITE_TYPES.map(t=>`<option value="${t}" ${subSiteType(s,sub)===t?'selected':''}>${t}</option>`).join('')}</select><button class="act" data-extractsubsite="${s.id}" data-subsite="${esc(sub)}" style="height:22px;padding:0 6px;margin-left:2px;font-size:11px;color:var(--info)">拉出</button><button class="act danger" data-delsubsite="${s.id}" data-subsite="${esc(sub)}" style="height:22px;padding:0 6px;margin-left:2px;font-size:11px">刪</button></span>`).join('')||'<span class="sub" style="margin:0">尚未設定樓層。</span>'}</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">${subSitesOf(s).map(sub=>`<span class="tag" style="background:#eef6ff;color:#1d4ed8;border-color:#bfdbfe;gap:6px">${esc(sub)} <select data-subtype="${s.id}" data-subsite="${esc(sub)}" style="height:24px;border:1px solid #bfdbfe;border-radius:6px;background:white;color:#1d4ed8;font-size:12px">${SUB_SITE_TYPES.map(t=>`<option value="${t}" ${subSiteType(s,sub)===t?'selected':''}>${t}</option>`).join('')}</select><button class="act" data-rensubsite="${s.id}" data-subsite="${esc(sub)}" style="height:22px;padding:0 6px;margin-left:2px;font-size:11px;color:var(--info)">改名</button><button class="act" data-extractsubsite="${s.id}" data-subsite="${esc(sub)}" style="height:22px;padding:0 6px;margin-left:2px;font-size:11px;color:var(--info)">拉出</button><button class="act danger" data-delsubsite="${s.id}" data-subsite="${esc(sub)}" style="height:22px;padding:0 6px;margin-left:2px;font-size:11px">刪</button></span>`).join('')||'<span class="sub" style="margin:0">尚未設定樓層。</span>'}</div>
           <div class="row">
             <div class="field" style="flex:1;min-width:160px"><label>新增樓層</label><input data-subsiteinput="${s.id}" placeholder="例：9F、10F、A棟"></div>
             <button class="act" data-addsubsite="${s.id}" style="border:1px solid var(--accent);border-radius:6px;padding:0 12px;color:var(--accent);height:36px">＋ 加樓層</button>
@@ -1634,6 +1653,16 @@ function bind(){
     s.subSites.push(name);
     ensureSubSiteMeta(s)[name]='代工';
     siteSettingsOpen[s.id]=true; saveData(); render();
+  });
+  document.querySelectorAll('[data-rensubsite]').forEach(b=>b.onclick=()=>{
+    const s=state.sites.find(x=>x.id===b.dataset.rensubsite); if(!s) return;
+    const oldName=b.dataset.subsite;
+    const next=prompt('新的子案場名稱', oldName);
+    if(next===null) return;
+    if(renameSubSite(s, oldName, next)){
+      siteSettingsOpen[s.id]=true;
+      resyncAllSiteDeals(); saveData(); render();
+    }
   });
   document.querySelectorAll('[data-subtype]').forEach(sel=>sel.onchange=()=>{
     const s=state.sites.find(x=>x.id===sel.dataset.subtype); if(!s) return;
