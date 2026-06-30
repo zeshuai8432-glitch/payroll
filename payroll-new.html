@@ -349,10 +349,12 @@ const LS_PHOTOS = 'pm_billing_photos_v1';
 const LS_SIGS = 'pm_billing_sigs_v1';
 const LS_SIGS_LOCKED = 'pm_billing_sigs_locked_v1';
 const LS_SIG_META = 'pm_billing_sig_meta_v1';
+const LS_DIRTY = 'pm_cloud_dirty_v1';
 // ↓↓↓ 把這裡換成你自己的 Google Apps Script 網址（/exec 結尾）。留空則只用本機儲存。
 const CLOUD_URL = 'https://script.google.com/macros/s/AKfycbynPpe_rq76SrW5_sTNaXms4U65bRrb4oscpH0GMyIXsM4Gk2DUXpOlEimP0C-pCahOVw/exec';
 let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], parkLedger:[], parkOpening:0, billings:[], measurements:[], billingPhotoDeleted:{}, textMemory:{clients:[],companies:[]}, tab:'entry' };
 let cloudStatus = CLOUD_URL ? '連線中…' : '本機模式';
+let localDirty=false, lastCloudTs=0;
 let entryDate='', entrySite='', entryEmp=''; // 登記出工：記住上次選的日期、案場、員工
 let entryOpenDates={}, entryEditId=null; // 出工紀錄分組收合狀態與正在編輯的紀錄
 let entryType='work'; // 'work' | '請假' | '休假'
@@ -574,6 +576,7 @@ function packData(){
 
 // 先讀本機快取（讓畫面秒開），再從雲端拉最新
 function loadLocal(){
+  try { localDirty=localStorage.getItem(LS_DIRTY)==='1'; } catch(e){}
   try { const raw=localStorage.getItem(LS); if(raw) applyData(JSON.parse(raw)); } catch(e){}
 }
 async function loadCloud(){
@@ -584,15 +587,23 @@ async function loadCloud(){
     const j=await res.json();
     if(j&&j.ok&&j.data){
       const cloudData=JSON.parse(j.data);
+      const localRaw=localStorage.getItem(LS);
+      const localTs=localRaw?Number((JSON.parse(localRaw)||{}).savedAt)||0:0;
+      const cloudTs=Number(cloudData.savedAt)||0;
+      lastCloudTs=cloudTs;
       mergeBillingSigs(cloudData.billingSigs||{}, cloudData.billingSigsLocked||{}, cloudData.billingSigMeta||{});
       if(cloudData.billingPhotos) mergeCloudPhotos(cloudData.billingPhotos);
-      const keepSigs={...billingSigs}, keepLocked={...billingSigsLocked}, keepMeta={...billingSigMeta};
-      applyData(cloudData);
-      Object.assign(billingSigs, keepSigs);
-      Object.assign(billingSigsLocked, keepLocked);
-      Object.assign(billingSigMeta, keepMeta);
-      try{localStorage.setItem(LS,JSON.stringify(packData()));}catch(e){}
-      setCloud('已同步');
+      if(!localDirty || cloudTs>=localTs){
+        const keepSigs={...billingSigs}, keepLocked={...billingSigsLocked}, keepMeta={...billingSigMeta};
+        applyData(cloudData);
+        Object.assign(billingSigs, keepSigs);
+        Object.assign(billingSigsLocked, keepLocked);
+        Object.assign(billingSigMeta, keepMeta);
+        try{localStorage.setItem(LS,j.data); localStorage.removeItem(LS_DIRTY); localDirty=false;}catch(e){}
+        setCloud('已同步');
+      } else {
+        setCloud('本機有未上傳資料，未自動覆蓋雲端');
+      }
     }
     else { setCloud('雲端尚無資料'); }
   } catch(e){ setCloud('雲端讀取失敗（顯示本機資料）'); }
@@ -603,7 +614,8 @@ let saveTimer=null, saving=false, pendingSave=false;
 let raiseEmpId=null;
 function saveData(){
   // 本機立即存（不怕當掉）
-  try{ localStorage.setItem(LS, JSON.stringify(packData())); }catch(e){}
+  localDirty=true;
+  try{ localStorage.setItem(LS_DIRTY,'1'); localStorage.setItem(LS, JSON.stringify(packData())); }catch(e){}
   if(!CLOUD_URL){ setCloud('已存本機'); return; }
   // 雲端防抖動：1秒內多次變更只送一次
   if(saveTimer) clearTimeout(saveTimer);
@@ -613,6 +625,7 @@ function saveData(){
 async function pushCloud(){
   if(!CLOUD_URL) return;
   if(saving){ pendingSave=true; return; }
+  if(!localDirty && Object.keys(localSigPending).length===0){ setCloud('已同步'); return; }
   saving=true;
   try {
     try{
@@ -620,16 +633,48 @@ async function pushCloud(){
       const gj=await gr.json();
       if(gj&&gj.ok&&gj.data){
         const cd=JSON.parse(gj.data);
+        const cloudTs=Number(cd.savedAt)||0;
+        const localRaw=localStorage.getItem(LS);
+        const localTs=localRaw?Number((JSON.parse(localRaw)||{}).savedAt)||0:0;
+        if(cloudTs>lastCloudTs && cloudTs>localTs){
+          lastCloudTs=cloudTs;
+          setCloud('雲端已有較新資料，請先重新整理');
+          saving=false;
+          return;
+        }
         applyCloudSigsBeforePush(cd.billingSigs||{}, cd.billingSigsLocked||{}, cd.billingSigMeta||{});
         if(cd.billingPhotos) mergeCloudPhotos(cd.billingPhotos);
       }
     }catch(e){}
-    await fetch(CLOUD_URL, {method:'POST', body: JSON.stringify(packData())});
-    localSigPending={};
-    setCloud('已同步');
+    const payload=JSON.stringify(packData());
+    try{ localStorage.setItem(LS,payload); }catch(e){}
+    const pr=await fetch(CLOUD_URL, {method:'POST', body: payload});
+    const pj=await pr.json();
+    if(pj&&pj.ok){
+      localSigPending={}; localDirty=false;
+      try{ localStorage.removeItem(LS_DIRTY); }catch(e){}
+      try{ lastCloudTs=Number((JSON.parse(payload)||{}).savedAt)||Date.now(); }catch(e){}
+      setCloud('已同步');
+    } else {
+      setCloud('推送失敗：'+String((pj&&pj.error)||'未知錯誤').slice(0,60));
+    }
   } catch(e){ setCloud('雲端儲存失敗（已存本機）'); }
   saving=false;
   if(pendingSave){ pendingSave=false; pushCloud(); }
+}
+function flushCloudOnExit(){
+  if(!CLOUD_URL) return;
+  if(!localDirty && Object.keys(localSigPending).length===0) return;
+  if(saveTimer){ clearTimeout(saveTimer); saveTimer=null; }
+  const payload=JSON.stringify(packData());
+  try{ localStorage.setItem(LS_DIRTY,'1'); localStorage.setItem(LS, payload); }catch(e){}
+  try{
+    if(navigator.sendBeacon){
+      const blob=new Blob([payload],{type:'text/plain;charset=UTF-8'});
+      if(navigator.sendBeacon(CLOUD_URL, blob)) return;
+    }
+  }catch(e){}
+  try{ fetch(CLOUD_URL,{method:'POST',body:payload,keepalive:true}); }catch(e){}
 }
 function setCloud(s){ cloudStatus=s; const el=document.getElementById('cloud-status'); if(el) el.textContent=s; }
 
@@ -1900,6 +1945,11 @@ document.getElementById('burger').onclick=()=>{
 };
 document.getElementById('scrim').onclick=closeSidebar;
 document.getElementById('cloud-refresh').onclick=()=>loadCloud();
+window.addEventListener('beforeunload', ()=>flushCloudOnExit());
+window.addEventListener('pagehide', ()=>flushCloudOnExit());
+document.addEventListener('visibilitychange', ()=>{
+  if(document.visibilityState==='hidden') flushCloudOnExit();
+});
 
 loadLocal(); loadPhotos(); loadSigs(); render(); loadCloud();
 </script>
