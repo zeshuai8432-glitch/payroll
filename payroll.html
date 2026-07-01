@@ -610,6 +610,7 @@ const subSiteTag = value => {
   const sub=childSiteName(value);
   return sub?`<span class="tag" style="background:#eef6ff;color:#1d4ed8;border-color:#bfdbfe">${esc(sub)}</span>`:'';
 };
+const subSiteText = value => childSiteName(value)||'';
 const billingsForSiteName = name => state.billings.filter(b=>parentSiteName(b.site)===name);
 const settledBillingsForSiteName = name => billingsForSiteName(name).filter(b=>b.settled);
 const siteTypeLabel = name => {
@@ -2421,6 +2422,12 @@ function bind(){
     state.measurements=state.measurements.filter(m=>m.id!==b.dataset.delMeas);
     saveData(); render();
   });
+  document.querySelectorAll('[data-measpick-cb]').forEach(cb=>cb.onchange=()=>{
+    measSel[cb.dataset.measpickCb]=cb.checked;
+    render();
+  });
+  const ema=document.getElementById('export-meas-all'); if(ema) ema.onclick=()=>exportMeasurementsPDF(false);
+  const ems=document.getElementById('export-meas-sel'); if(ems) ems.onclick=()=>exportMeasurementsPDF(true);
   bindBillingSubtotal('bnr'); bindBillingSubtotal('bna'); bindBillingSubtotal('bae'); bindMeasSubtotal();
   bindSiteClientAutofill('bnr-site','bnr-client');
   bindSiteClientAutofill('bna-site','bna-client');
@@ -3554,6 +3561,7 @@ function resyncSiteDeal(site){
   syncDealIncome(d);
 }
 let dealSel={}; // 分潤清單勾選
+let measSel={}; // 計量明細匯出勾選
 let costEditId=null; // 手動成本編輯中
 let siteSettingsOpen={}; // 案場設定展開狀態
 let siteCostDetailsOpen={}; // 案場成本明細展開狀態
@@ -3954,6 +3962,17 @@ function viewBillingAdd(){
 }
 
 // ---- 計量明細 ----
+function measurementTypeLabel(m){
+  const mt=m.measureType||'';
+  const isPartition=mt==='partition'||(!mt&&m.width&&m.height);
+  return isPartition?'隔間':(mt==='ceiling'?'天花板':(mt==='carry'?'搬運':''));
+}
+function measurementSizeLabel(m){
+  const mt=m.measureType||'';
+  const isPartition=mt==='partition'||(!mt&&m.width&&m.height);
+  const carrySize=m.sizeText||((m.width&&m.height)?`${Number(m.width)||0} × ${Number(m.height)||0} m`:(m.width?`寬 ${Number(m.width)||0} m`:(m.height?`高 ${Number(m.height)||0} m`:'')));
+  return isPartition?`${Number(m.width)||0} × ${Number(m.height)||0} m`:(mt==='carry'?carrySize:'直接輸入');
+}
 function viewMeasurements(){
   const siteSelOpts=siteSelectOptions();
   const list=[...state.measurements].sort((a,b)=>(b.date||'').localeCompare(a.date||'')||(a.site||'').localeCompare(b.site||''));
@@ -3969,12 +3988,10 @@ function viewMeasurements(){
     const open=!!formOpen['meas-site-'+name];
     const trs=open?rows.map(m=>{
       const amt=(Number(m.qty)||0)*(Number(m.unitPrice)||0);
-      const mt=m.measureType||'';
-      const isPartition=mt==='partition'||(!mt&&m.width&&m.height);
-      const typeLabel=isPartition?'隔間':(mt==='ceiling'?'天花板':(mt==='carry'?'搬運':''));
-      const carrySize=m.sizeText||((m.width&&m.height)?`${Number(m.width)||0} × ${Number(m.height)||0} m`:(m.width?`寬 ${Number(m.width)||0} m`:(m.height?`高 ${Number(m.height)||0} m`:'')));
-      const sizeLabel=isPartition?`${Number(m.width)||0} × ${Number(m.height)||0} m`:(mt==='carry'?carrySize:'直接輸入');
+      const typeLabel=measurementTypeLabel(m);
+      const sizeLabel=measurementSizeLabel(m);
       return `<tr>
+        <td style="text-align:center"><input type="checkbox" data-measpick-cb="${m.id}" ${measSel[m.id]?'checked':''} style="width:16px;height:16px"></td>
         <td>${esc(m.date||'')}</td>
         <td style="max-width:160px">${esc(m.item||'')}</td>
         <td style="text-align:center">${subSiteTag(m.site)||'—'}</td>
@@ -3999,6 +4016,7 @@ function viewMeasurements(){
       ${open?`<div class="scroll" style="border-top:1px solid var(--line)">
         <table style="width:100%;border-collapse:collapse;font-size:13px">
           <thead><tr style="background:var(--bg);color:var(--muted);font-size:12px">
+            <th style="padding:6px 10px;width:28px"></th>
             <th style="padding:6px 10px;text-align:left;white-space:nowrap">日期</th>
             <th style="padding:6px 10px;text-align:left">項目</th>
             <th style="padding:6px 10px;text-align:center">樓層</th>
@@ -4023,6 +4041,11 @@ function viewMeasurements(){
     <div class="metric"><div class="l">案場數</div><div class="v">${siteNames.length}</div></div>
     <div class="metric"><div class="l">累計金額</div><div class="v" style="font-size:21px">${money(grandTotal)}</div></div>
   </div>
+  <div class="card" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+    <button class="btn" id="export-meas-all" ${list.length===0?'disabled style="opacity:.5"':''}>全部匯出 PDF</button>
+    <button class="act" id="export-meas-sel" style="height:36px;padding:0 14px" ${list.some(m=>measSel[m.id])?'':'disabled style="opacity:.5"'}>匯出勾選 PDF</button>
+    <span class="sub" style="margin:0">可展開案場後勾選指定明細匯出。</span>
+  </div>
   <div class="card">
     ${foldBtn('meas','新增計量明細')}
     ${formOpen.meas?`<div class="row" style="margin-top:8px">
@@ -4042,6 +4065,43 @@ function viewMeasurements(){
     <div class="row" style="margin-top:10px"><button class="btn" id="meas-add">＋ 新增</button></div>`:''}
   </div>
   ${list.length===0?'<div class="card"><div class="empty">尚無計量明細。點上方「新增」開始登記。</div></div>':siteCards}`;
+}
+
+function exportMeasurementsPDF(selectedOnly=false){
+  let list=[...state.measurements].sort((a,b)=>(a.site||'').localeCompare(b.site||'')||(a.date||'').localeCompare(b.date||''));
+  if(selectedOnly) list=list.filter(m=>measSel[m.id]);
+  if(list.length===0){ alert(selectedOnly?'尚未勾選任何計量明細':'尚無可匯出的計量明細'); return; }
+  const bysite={};
+  list.forEach(m=>{ const k=parentSiteName(m.site)||'未指定案場'; (bysite[k]=bysite[k]||[]).push(m); });
+  const sections=Object.keys(bysite).sort((a,b)=>a.localeCompare(b)).map(name=>{
+    const rows=bysite[name];
+    const subtotal=rows.reduce((s,m)=>s+(Number(m.qty)||0)*(Number(m.unitPrice)||0),0);
+    const trs=rows.map(m=>{
+      const amt=(Number(m.qty)||0)*(Number(m.unitPrice)||0);
+      return `<tr>
+        <td>${esc(m.date||'')}</td>
+        <td>${esc(subSiteText(m.site))}</td>
+        <td>${esc(measurementTypeLabel(m))}</td>
+        <td>${esc(m.item||'')}</td>
+        <td>${esc(measurementSizeLabel(m))}</td>
+        <td>${esc(m.unit||'')}</td>
+        <td class="num">${(Number(m.qty)||0).toLocaleString()}</td>
+        <td class="num">${money(Number(m.unitPrice)||0)}</td>
+        <td class="num">${money(amt)}</td>
+        <td>${esc(m.note||'')}</td>
+      </tr>`;
+    }).join('');
+    return `<h2>${esc(name)}</h2>
+      <table><thead><tr><th>日期</th><th>子案場</th><th>類型</th><th>項目</th><th>尺寸</th><th>單位</th><th class="num">數量</th><th class="num">單價</th><th class="num">小計</th><th>備註</th></tr></thead>
+      <tbody>${trs}<tr class="total-row"><td colspan="8">小計</td><td class="num">${money(subtotal)}</td><td></td></tr></tbody></table>`;
+  }).join('<div style="height:16px"></div>');
+  const total=list.reduce((s,m)=>s+(Number(m.qty)||0)*(Number(m.unitPrice)||0),0);
+  const title=selectedOnly?'計量明細（勾選）':'計量明細';
+  const inner=`<h1>${title}</h1>
+    <div class="meta">匯出日期：${new Date().toISOString().slice(0,10)}　|　筆數：${list.length}　|　總金額：${money(total)}</div>
+    ${sections}
+    <table style="margin-top:18px"><tbody><tr class="total-row"><td>總計</td><td class="num">${money(total)}</td></tr></tbody></table>`;
+  printHTML(title, inner);
 }
 
 function viewBilling(){
