@@ -870,7 +870,13 @@ function unlockSig(id){
 
 function computeRecords(records){
   const byKey={};
-  records.forEach(r=>{ if(r.kind&&r.kind!=='work') return; const k=r.empId+'|'+r.date; (byKey[k]=byKey[k]||[]).push(r); });
+  records.forEach(r=>{
+    if(r.kind&&r.kind!=='work') return;
+    const emp=state.employees.find(e=>e.id===r.empId);
+    const empKey=(emp&&String(emp.name||'').trim())||r.empId;
+    const k=empKey+'|'+r.date;
+    (byKey[k]=byKey[k]||[]).push(r);
+  });
   const out={};
   Object.values(byKey).forEach(group=>{
     const attended=group.filter(r=>(Number(r.hours)||0)>0);
