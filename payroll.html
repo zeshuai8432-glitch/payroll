@@ -735,9 +735,7 @@ async function pushCloud(){
       if(gj&&gj.ok&&gj.data){
         const cd=JSON.parse(gj.data);
         const cloudTs=Number(cd.savedAt)||0;
-        const localRaw=localStorage.getItem(LS);
-        const localTs=localRaw?Number((JSON.parse(localRaw)||{}).savedAt)||0:0;
-        if(cloudTs>lastCloudTs && cloudTs>localTs){
+        if(cloudTs>lastCloudTs){
           lastCloudTs=cloudTs;
           setCloud('雲端已有較新資料，請先重新整理');
           saving=false;
@@ -766,13 +764,6 @@ function flushCloudOnExit(){
   if(saveTimer){ clearTimeout(saveTimer); saveTimer=null; }
   const payload=JSON.stringify(packData());
   try{ localStorage.setItem(LS_DIRTY,'1'); localStorage.setItem(LS, payload); }catch(e){}
-  try{
-    if(navigator.sendBeacon){
-      const blob=new Blob([payload],{type:'text/plain;charset=UTF-8'});
-      if(navigator.sendBeacon(CLOUD_URL, blob)) return;
-    }
-  }catch(e){}
-  try{ fetch(CLOUD_URL,{method:'POST',body:payload,keepalive:true}); }catch(e){}
 }
 async function diagCloud(){
   setCloud('診斷中…');
