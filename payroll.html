@@ -877,15 +877,15 @@ function computeRecords(records){
   records.forEach(r=>{ if(r.kind&&r.kind!=='work') return; const k=r.empId+'|'+r.date; (byKey[k]=byKey[k]||[]).push(r); });
   const out={};
   Object.values(byKey).forEach(group=>{
-    const attended=group.filter(r=>(Number(r.hours)||0)>0);
-    const totalAllowance=group.filter(r=>r.night).length*400;
+    const nightAttended=group.filter(r=>r.night&&(Number(r.hours)||0)>0);
+    const totalAllowance=nightAttended.length>0?400:0;
     group.forEach(r=>{
       const daily=Number(r.dailyRate)||0, hourly=daily/8, h=Number(r.hours)||0;
       const ot=Number(r.overtime)||0;
       const baseWage=hourly*h;
       const overtimePay=hourly*1.33*ot;  // 加班以1.33倍時薪計
       const wage=baseWage + overtimePay;
-      const allow=(attended.length>0&&h>0)?totalAllowance/attended.length:0;
+      const allow=(r.night&&h>0&&nightAttended.length>0)?totalAllowance/nightAttended.length:0;
       out[r.id]={wage,baseWage,overtimePay,allow,total:wage+allow};
     });
   });
