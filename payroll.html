@@ -3,6 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <title>點工薪資與案場人事成本管理</title>
 <style>
   :root {
@@ -385,6 +388,7 @@
   <h1>點工薪資管理系統</h1>
   <div style="margin-left:auto;display:flex;align-items:center;gap:10px">
     <span id="cloud-status" style="font-size:12px;opacity:.85;letter-spacing:.2px">連線中…</span>
+    <span id="app-version" style="font-size:11px;opacity:.7;white-space:nowrap"></span>
     <button id="cloud-refresh" style="background:rgba(255,255,255,.22);color:#fff;border:1px solid rgba(255,255,255,.3);padding:5px 14px;cursor:pointer;font-size:13px;font-weight:600;backdrop-filter:blur(4px);transition:background .15s"><span class="mob-hide">↻ 重新整理</span><span class="mob-show" style="display:none">↻</span></button>
     <button id="cloud-diag" style="background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.3);padding:5px 12px;cursor:pointer;font-size:12px">診斷</button>
   </div>
@@ -403,6 +407,7 @@ const LS_SIGS_LOCKED = 'pm_billing_sigs_locked_v1';
 const LS_SIG_META    = 'pm_billing_sig_meta_v1';
 const LS_DIRTY       = 'pm_cloud_dirty_v1';
 const CLOUD_URL = 'https://script.google.com/macros/s/AKfycbyMPs38UNzAwX3bcD2n9nQBz0HofUW9qFweSOnmoySs8VW2bJYHn47RdyZLQ8bD8SNWTg/exec';
+const APP_VERSION = 'v2026.07.02.2';
 let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], tools:[], locations:[], assets:[], advances:[], accounts:[], ledger:[], deals:[], billings:[], measurements:[], contracts:{}, costs:[], textMemory:{clients:[],companies:[]}, parkAccId:'', oweBonus:{}, minFund:'', tab:'entry' };
 let cloudStatus='連線中…';
 let localDirty=false, lastCloudTs=0;
@@ -4347,6 +4352,7 @@ function exportRecon(){
 
 document.getElementById('cloud-refresh').onclick=()=>loadCloud();
 document.getElementById('cloud-diag').onclick=()=>diagCloud();
+const appVersionEl=document.getElementById('app-version'); if(appVersionEl) appVersionEl.textContent=APP_VERSION;
 
 // ---- 品佑帳戶結算 ----
 let parkFrom='', parkTo='';
