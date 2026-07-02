@@ -407,7 +407,7 @@ const LS_SIGS_LOCKED = 'pm_billing_sigs_locked_v1';
 const LS_SIG_META    = 'pm_billing_sig_meta_v1';
 const LS_DIRTY       = 'pm_cloud_dirty_v1';
 const CLOUD_URL = 'https://script.google.com/macros/s/AKfycbyMPs38UNzAwX3bcD2n9nQBz0HofUW9qFweSOnmoySs8VW2bJYHn47RdyZLQ8bD8SNWTg/exec';
-const APP_VERSION = 'v2026.07.02.2';
+const APP_VERSION = 'v2026.07.02.4';
 let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], tools:[], locations:[], assets:[], advances:[], accounts:[], ledger:[], deals:[], billings:[], measurements:[], contracts:{}, costs:[], textMemory:{clients:[],companies:[]}, parkAccId:'', oweBonus:{}, minFund:'', tab:'entry' };
 let cloudStatus='連線中…';
 let localDirty=false, lastCloudTs=0;
@@ -1006,6 +1006,7 @@ function viewEntry(){
   return `
   <div class="card">
     <p class="sub">登記一筆出工。日期與案場會保留，方便連續登記同案場多人。同一人同一天跑多案場就分開登記多筆。</p>
+    <p class="sub" style="margin-top:-4px;color:var(--info)">目前版本 ${APP_VERSION}：過夜津貼同一員工同一天只算 $400，平均分到當天所有出工案場。</p>
     ${noSetup?setupMsg:`
     <div class="row">
       <div class="field"><label>日期</label><input type="date" id="f-date" value="${curDate}"></div>
