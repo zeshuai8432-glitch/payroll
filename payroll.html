@@ -680,6 +680,45 @@ function mergeCloudPhotos(cloudPhotos){
   savePhotos();
 }
 
+// ---- 備份 / 還原 ----
+function exportBackup(){
+  try{
+    const data=packData();
+    // 連同本機的完整照片（含 base64）一起備份，才是真正完整
+    data._fullPhotos=billingPhotos;
+    data._backupVersion=1;
+    data._backupAt=new Date().toISOString();
+    const blob=new Blob([JSON.stringify(data)],{type:'application/json'});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');
+    const stamp=new Date().toISOString().slice(0,16).replace(/[:T]/g,'-');
+    a.href=url; a.download=`點工系統備份-${stamp}.json`;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(()=>URL.revokeObjectURL(url),1000);
+    const s=document.getElementById('backup-status'); if(s){ s.textContent='已匯出 ✓'; s.style.color='var(--accent)'; setTimeout(()=>{ if(s) s.textContent=''; },3000); }
+  }catch(e){ alert('匯出失敗：'+e.message); }
+}
+function importBackup(file){
+  const reader=new FileReader();
+  reader.onload=()=>{
+    try{
+      const data=JSON.parse(reader.result);
+      if(!data || (!data.employees && !data.attendance && !data.deals)){ alert('這個檔案看起來不是有效的備份檔。'); return; }
+      const when=data._backupAt?('\n備份時間：'+data._backupAt.slice(0,16).replace('T',' ')):'';
+      const cnt=`員工${(data.employees||[]).length}・出工${(data.attendance||[]).length}・分潤${(data.deals||[]).length}・請款${(data.billings||[]).length}`;
+      if(!confirm(`確定用這個備份「覆蓋」目前的資料嗎？${when}\n內容：${cnt}\n\n這會取代現在畫面上的所有資料，且無法復原。建議還原前先「匯出備份」現況以防萬一。`)) return;
+      // 還原照片（含 base64）
+      if(data._fullPhotos){ try{ billingPhotos=data._fullPhotos; savePhotos(); }catch(e){} }
+      applyData(data);
+      saveData();        // 寫回本機並推雲端，讓三人同步到還原後的版本
+      render();
+      alert('已還原備份。資料已更新並同步。');
+    }catch(e){ alert('還原失敗：檔案可能損壞。\n'+e.message); }
+  };
+  reader.onerror=()=>alert('讀取檔案失敗。');
+  reader.readAsText(file);
+}
+
 // 先讀本機快取（讓畫面秒開），再從雲端拉最新
 function loadLocal(){
   try { localDirty=localStorage.getItem(LS_DIRTY)==='1'; } catch(e){}
@@ -1433,10 +1472,23 @@ function viewManage(){
     ${state.sites.length===0?'<div class="empty">尚無案場。</div>':`${activeSitesList.length?`<table><thead><tr><th>名稱</th><th></th><th></th><th></th></tr></thead><tbody>${siteRows}</tbody></table>`:'<div class="empty">沒有啟用中的案場。</div>'}${pausedSiteTable}`}
     ${dataListHtml('client-memory-list', knownClients())}
     ${dataListHtml('company-memory-list', knownCompanies())}
+  </div>
+  <div class="card">
+    <div style="font-size:14px;font-weight:600;margin-bottom:4px">資料備份與還原</div>
+    <p class="sub" style="margin:0 0 10px">「匯出備份」把目前全部資料存成一個檔案下載保存；「匯入還原」讀回備份檔、覆蓋現在的資料。建議每週匯出一份存到雲端／檔案App，做大動作（例如重算、大量改資料）前也先匯出一份。</p>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+      <button class="btn" id="backup-export">⬇︎ 匯出備份</button>
+      <button class="act" id="backup-import-btn" style="border:1px solid var(--info);border-radius:8px;padding:0 14px;height:38px;color:var(--info)">⬆︎ 匯入還原…</button>
+      <input type="file" id="backup-import-file" accept="application/json,.json" style="display:none">
+      <span class="sub" id="backup-status" style="margin:0"></span>
+    </div>
   </div>`;
 }
 
 function bind(){
+  const bkE=document.getElementById('backup-export'); if(bkE) bkE.onclick=()=>exportBackup();
+  const bkBtn=document.getElementById('backup-import-btn'); const bkFile=document.getElementById('backup-import-file');
+  if(bkBtn&&bkFile){ bkBtn.onclick=()=>bkFile.click(); bkFile.onchange=()=>{ if(bkFile.files&&bkFile.files[0]) importBackup(bkFile.files[0]); bkFile.value=''; }; }
   document.querySelectorAll('.nav-item').forEach(b=>b.onclick=()=>{ state.tab=b.dataset.tab; closeSidebar(); render(); });
   document.querySelectorAll('[data-toggle-form]').forEach(b=>b.onclick=()=>{ const k=b.dataset.toggleForm; formOpen[k]=!formOpen[k]; render(); });
 
