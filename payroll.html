@@ -176,6 +176,26 @@
     table.cardtable td.actions { justify-content: flex-end; flex-wrap: wrap; gap: 6px; padding-top: 8px; border-top: 1px dashed var(--line); margin-top: 4px; }
     table.cardtable td .num, table.cardtable td.num { font-weight: 700; }
 
+    /* 登記出工：同一人的「人名列＋案場明細」在手機上組成一張卡 */
+    table.cardtable tr.emp-head {
+      margin-bottom: 0; border-bottom: 0;
+      border-radius: 12px 12px 0 0; background: #f3f2fb;
+      box-shadow: none;
+    }
+    table.cardtable tr.emp-head td[data-label="員工"] { font-size: 15.5px; }
+    table.cardtable tr.emp-detail {
+      margin-bottom: 0; margin-top: 0;
+      border-top: 0; border-radius: 0;
+      border-left: 3px solid var(--accent); box-shadow: none;
+    }
+    /* 一個人的最後一筆明細：收尾（圓角＋底部間距） */
+    table.cardtable tr.emp-detail:last-child,
+    table.cardtable tr.emp-detail:has(+ tr.emp-head) {
+      border-radius: 0 0 12px 12px; margin-bottom: 12px;
+    }
+    /* 人名列的操作欄在手機上不佔空間 */
+    table.cardtable tr.emp-head td.actions { display: none; }
+
     /* ── 側邊欄項目加高（觸控友善） ── */
     .nav-item { padding: 12px 20px 12px 22px; font-size: 14px; }
     /* ── 頂列按鈕文字切換 ── */
@@ -1079,30 +1099,26 @@ function viewEntry(){
         const sumAllow=workRecs.reduce((s,r)=>s+((comp[r.id]||{}).allow||0),0);
         const sumTotal=workRecs.reduce((s,r)=>s+((comp[r.id]||{}).total||0),0);
         const multi=workRecs.length>1;
-        if(multi){
-          // 標題列：這個人當天總計
-          html+=`<tr style="background:var(--bg)">
-            <td colspan="2" data-label="員工" style="font-weight:700">${esc(empName(eid))}<span class="sub" style="margin-left:6px">跑 ${workRecs.length} 個案場</span></td>
-            <td class="num" data-label="工數" style="font-weight:700">${gongStr(sumHours)}${sumOt?`<span style="font-size:11px;color:#d97706">+${sumOt}h</span>`:''}</td>
-            <td class="num" data-label="過夜">${workRecs.some(r=>r.night)?'<span class="moon">●夜</span>':'—'}</td>
-            <td class="num" data-label="工資">${money(sumWage)}</td>
-            <td class="num" data-label="津貼">${sumAllow>0?money(sumAllow):'—'}</td>
-            <td class="num" data-label="小計" style="font-weight:700">${money(sumTotal)}</td>
-            <td class="actions"></td>
-          </tr>`;
-        }
-        // 各案場明細（單案場就正常一列；多案場則縮排列在標題下）
+        // 每個人都給一條「人名開頭列」（粗體、淡底色），單案場也一樣，視覺份量一致
+        html+=`<tr class="emp-head" style="background:var(--bg)">
+          <td colspan="2" data-label="員工" style="font-weight:700">${esc(empName(eid))}${multi?`<span class="sub" style="margin-left:6px">跑 ${workRecs.length} 個案場</span>`:''}</td>
+          <td class="num" data-label="工數" style="font-weight:700">${gongStr(sumHours)}${sumOt?`<span style="font-size:11px;color:#d97706">+${sumOt}h</span>`:''}</td>
+          <td class="num" data-label="過夜">${workRecs.some(r=>r.night)?'<span class="moon">●夜</span>':'—'}</td>
+          <td class="num" data-label="工資">${money(sumWage)}</td>
+          <td class="num" data-label="津貼">${sumAllow>0?money(sumAllow):'—'}</td>
+          <td class="num" data-label="小計" style="font-weight:700">${money(sumTotal)}</td>
+          <td class="actions"></td>
+        </tr>`;
+        // 各案場明細（縮排列在人名列下）
         workRecs.sort((a,b)=>siteName(a.siteId).localeCompare(siteName(b.siteId))).forEach(r=>{
           const c=comp[r.id]||{wage:0,allow:0,total:0};
           const editing=(entryEditId===r.id);
           const hoursCell=editing
             ? `<span class="inline" style="flex-wrap:wrap;gap:4px"><input type="number" id="edit-hours" value="${r.hours}" min="0" max="24" step="1" style="width:65px;height:30px"><span style="font-size:11px;color:var(--muted)">h +</span><input type="number" id="edit-ot" value="${r.overtime||0}" min="0" max="12" step="1" style="width:55px;height:30px"><span style="font-size:11px;color:var(--muted)">h加班</span><button class="act" id="edit-ok" data-editok="${r.id}">✓</button><button class="act muted" id="edit-cancel" style="cursor:pointer">✕</button></span>`
             : `${gongH(r.hours)}${r.overtime?`<span style="font-size:11px;color:#d97706;margin-left:3px">+${r.overtime}h加班</span>`:''} <button class="act" data-edithours="${r.id}" style="font-size:12px">改</button>`;
-          const siteCell=multi ? `<span style="color:var(--muted)">↳</span> ${esc(siteName(r.siteId))}` : esc(siteName(r.siteId));
-          const empCell=multi ? '' : esc(empName(r.empId));
-          html+=`<tr${multi?' style="background:rgba(0,0,0,.015)"':''}>
-            <td data-label="案場">${siteCell}</td>
-            <td data-label="員工">${empCell}</td>
+          html+=`<tr class="emp-detail">
+            <td data-label="案場"><span style="color:var(--muted)">↳</span> ${esc(siteName(r.siteId))}</td>
+            <td data-label="員工"></td>
             <td class="num" data-label="工數">${hoursCell}</td>
             <td class="num" data-label="過夜">${r.night?'<span class="moon">●夜</span>':'—'}</td>
             <td class="num" data-label="工資">${money(c.wage)}</td>
@@ -1691,11 +1707,14 @@ function bind(){
     }
 
     const siteId=document.getElementById('f-site').value;
-    const hours=parseFloat(document.getElementById('f-hours').value);
+    const hoursRaw=document.getElementById('f-hours').value.trim();
+    const hours=hoursRaw===''?0:parseFloat(hoursRaw);
     const overtime=parseFloat(document.getElementById('f-overtime').value)||0;
     const night=document.getElementById('f-night').checked;
-    if(!siteId||isNaN(hours)) return;
+    if(!siteId) return;
+    if(isNaN(hours)||hours<0){ alert('工時請填 0 或正整數（只加班可留空）。'); return; }
     if(!Number.isInteger(hours)){ alert('工時請輸入整數小時（例如 8、9），不接受小數。'); return; }
+    if(hours===0 && overtime<=0 && !night){ alert('這筆工時、加班、過夜都是空的，沒有東西可記。至少要有工時或加班時數。'); return; }
     const sameDay=state.attendance.filter(r=>r.empId===empId&&r.date===date&&(!r.kind||r.kind==='work'));
     if(sameDay.length>0){
       const sameSite=sameDay.find(r=>r.siteId===siteId);
