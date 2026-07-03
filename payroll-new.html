@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="zh-Hant">
 <head>
 <meta charset="UTF-8">
@@ -636,7 +636,7 @@ async function pushCloud(){
         const cloudTs=Number(cd.savedAt)||0;
         const localRaw=localStorage.getItem(LS);
         const localTs=localRaw?Number((JSON.parse(localRaw)||{}).savedAt)||0:0;
-        if(cloudTs>lastCloudTs && cloudTs>localTs){
+        if(cloudTs>lastCloudTs){
           lastCloudTs=cloudTs;
           setCloud('雲端已有較新資料，請先重新整理');
           saving=false;
