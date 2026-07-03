@@ -154,6 +154,28 @@
     th { padding: 8px 7px; font-size: 10.5px; }
     td { padding: 9px 7px; font-size: 13px; }
 
+    /* ── 卡片式表格（登記出工／代墊款／公積金 等）：手機上一列一張卡，不用左右滑 ── */
+    table.cardtable { border: 0; }
+    table.cardtable thead { display: none; }
+    table.cardtable, table.cardtable tbody, table.cardtable tr, table.cardtable td { display: block; width: 100%; box-sizing: border-box; }
+    table.cardtable tr {
+      background: #fff; border: 1px solid var(--line); border-radius: 12px;
+      padding: 10px 12px; margin-bottom: 10px; box-shadow: 0 1px 3px rgba(30,27,75,.06);
+    }
+    table.cardtable td {
+      padding: 4px 0; border: 0; font-size: 14.5px; text-align: left !important;
+      display: flex; justify-content: space-between; align-items: baseline; gap: 12px;
+    }
+    table.cardtable td::before {
+      content: attr(data-label); color: var(--muted); font-size: 12px; font-weight: 600;
+      flex: 0 0 auto; white-space: nowrap;
+    }
+    table.cardtable td:empty { display: none; }
+    /* 沒有 data-label 的欄（例如操作按鈕列）靠右整排 */
+    table.cardtable td[data-label=""]::before, table.cardtable td:not([data-label])::before { content: ""; }
+    table.cardtable td.actions { justify-content: flex-end; flex-wrap: wrap; gap: 6px; padding-top: 8px; border-top: 1px dashed var(--line); margin-top: 4px; }
+    table.cardtable td .num, table.cardtable td.num { font-weight: 700; }
+
     /* ── 側邊欄項目加高（觸控友善） ── */
     .nav-item { padding: 12px 20px 12px 22px; font-size: 14px; }
     /* ── 頂列按鈕文字切換 ── */
@@ -388,7 +410,7 @@
   <h1>點工薪資管理系統</h1>
   <div style="margin-left:auto;display:flex;align-items:center;gap:10px">
     <span id="cloud-status" style="font-size:12px;opacity:.85;letter-spacing:.2px">連線中…</span>
-    <span id="app-version" style="font-size:11px;opacity:.7;white-space:nowrap"></span>
+    <span id="app-version" style="font-size:11px;opacity:.7;white-space:nowrap;display:none"></span>
     <button id="cloud-refresh" style="background:rgba(255,255,255,.22);color:#fff;border:1px solid rgba(255,255,255,.3);padding:5px 14px;cursor:pointer;font-size:13px;font-weight:600;backdrop-filter:blur(4px);transition:background .15s"><span class="mob-hide">↻ 重新整理</span><span class="mob-show" style="display:none">↻</span></button>
     <button id="cloud-diag" style="background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.3);padding:5px 12px;cursor:pointer;font-size:12px">診斷</button>
   </div>
@@ -829,6 +851,7 @@ function flushCloudOnExit(){
 }
 async function diagCloud(){
   setCloud('診斷中…');
+  const vEl=document.getElementById('app-version'); if(vEl){ vEl.textContent=APP_VERSION; vEl.style.display=''; }
   try{
     if(!window.__fb||!window.__fb.ok){ setCloud('Firebase 未就緒：'+String(window.__fb&&window.__fb.err||'').slice(0,60)); return; }
     const snap=await window.__fb.doc.get();
@@ -1034,9 +1057,9 @@ function viewEntry(){
         const empObj=state.employees.find(e=>e.id===r.empId);
         const leaveNote=r.kind==='leave'?(empObj&&empObj.partner?'':'扣全勤'):'不扣全勤';
         return `<tr style="color:var(--muted)">
-          <td colspan="2">${esc(empName(r.empId))} ${lab}</td>
-          <td class="num" colspan="5" style="text-align:left;color:var(--muted)">${leaveNote}</td>
-          <td><button class="act danger" data-del="${r.id}">刪</button></td>
+          <td colspan="2" data-label="員工">${esc(empName(r.empId))} ${lab}</td>
+          <td class="num" colspan="5" data-label="狀態" style="text-align:left;color:var(--muted)">${leaveNote}</td>
+          <td class="actions"><button class="act danger" data-del="${r.id}">刪</button></td>
         </tr>`;
       }
       const c=comp[r.id]||{wage:0,allow:0,total:0};
@@ -1045,14 +1068,14 @@ function viewEntry(){
         ? `<span class="inline" style="flex-wrap:wrap;gap:4px"><input type="number" id="edit-hours" value="${r.hours}" min="0" max="24" step="1" style="width:65px;height:30px"><span style="font-size:11px;color:var(--muted)">h +</span><input type="number" id="edit-ot" value="${r.overtime||0}" min="0" max="12" step="1" style="width:55px;height:30px"><span style="font-size:11px;color:var(--muted)">h加班</span><button class="act" id="edit-ok" data-editok="${r.id}">✓</button><button class="act muted" id="edit-cancel" style="cursor:pointer">✕</button></span>`
         : `${gongH(r.hours)}${r.overtime?`<span style="font-size:11px;color:#d97706;margin-left:3px">+${r.overtime}h加班</span>`:''} <button class="act" data-edithours="${r.id}" style="font-size:12px">改</button>`;
       return `<tr>
-        <td>${esc(siteName(r.siteId))}</td>
-        <td>${esc(empName(r.empId))}</td>
-        <td class="num">${hoursCell}</td>
-        <td class="num">${r.night?'<span class="moon">●夜</span>':'—'}</td>
-        <td class="num">${money(c.wage)}</td>
-        <td class="num">${c.allow>0?money(c.allow):'—'}</td>
-        <td class="num" style="font-weight:600">${money(c.total)}</td>
-        <td><button class="act danger" data-del="${r.id}">刪</button></td>
+        <td data-label="案場">${esc(siteName(r.siteId))}</td>
+        <td data-label="員工">${esc(empName(r.empId))}</td>
+        <td class="num" data-label="工數">${hoursCell}</td>
+        <td class="num" data-label="過夜">${r.night?'<span class="moon">●夜</span>':'—'}</td>
+        <td class="num" data-label="工資">${money(c.wage)}</td>
+        <td class="num" data-label="津貼">${c.allow>0?money(c.allow):'—'}</td>
+        <td class="num" data-label="小計" style="font-weight:600">${money(c.total)}</td>
+        <td class="actions"><button class="act danger" data-del="${r.id}">刪</button></td>
       </tr>`;
     }).join('');
     return `<div style="margin-bottom:10px;border:1px solid var(--line);border-radius:8px;overflow:hidden">
@@ -1060,7 +1083,7 @@ function viewEntry(){
         <div style="font-weight:600;font-size:14px">${open?'▼':'▶'} ${esc(dk)}（週${wd}）</div>
         <div class="sub" style="margin:0">${list.length} 人 · ${gongStr(dayHours)} · ${money(dayTotal)}</div>
       </div>
-      ${open?`<div class="scroll"><table>
+      ${open?`<div class="scroll"><table class="cardtable">
         <thead><tr><th>案場</th><th>員工</th><th class="num">工數</th><th class="num">過夜</th><th class="num">工資</th><th class="num">津貼</th><th class="num">小計</th><th></th></tr></thead>
         <tbody>${rows}</tbody></table></div>`:''}
     </div>`;
@@ -1069,8 +1092,7 @@ function viewEntry(){
   const siteOptsSel=activeSites.map(s=>`<option value="${s.id}" ${s.id===curSite?'selected':''}>${esc(siteDisplayName(s))}</option>`).join('');
   return `
   <div class="card">
-    <p class="sub">登記一筆出工。日期與案場會保留，方便連續登記同案場多人。同一人同一天跑多案場就分開登記多筆。</p>
-    <p class="sub" style="margin-top:-4px;color:var(--info)">目前版本 ${APP_VERSION}：過夜津貼同一員工同一天只算 $400，平均分到當天所有出工案場。</p>
+    <p class="sub">登記一筆出工。日期與案場會保留，方便連續登記同案場多人。同一人同一天跑多案場就分開登記多筆。過夜津貼同一員工同一天只算 $400，平均分到當天所有出工案場。</p>
     ${noSetup?setupMsg:`
     <div class="row">
       <div class="field"><label>日期</label><input type="date" id="f-date" value="${curDate}"></div>
@@ -3379,8 +3401,8 @@ function viewAdvances(){
     const advTotal=mine.reduce((s,a)=>s+(Number(a.amount)||0),0);
     const due=wage+advTotal;
     const advRows=mine.map(a=>`<tr>
-      <td>${esc(a.date)}</td><td>${esc(a.purpose||'')}</td><td class="num">${money(a.amount)}</td>
-      <td><button class="act danger" data-deladv="${a.id}">刪</button></td>
+      <td data-label="日期">${esc(a.date)}</td><td data-label="用途">${esc(a.purpose||'')}</td><td class="num" data-label="金額">${money(a.amount)}</td>
+      <td class="actions"><button class="act danger" data-deladv="${a.id}">刪</button></td>
     </tr>`).join('');
     // 是否已就本期此股東入帳
     const postKey=`${advFrom}~${advTo}|${p.id}`;
@@ -3402,7 +3424,7 @@ function viewAdvances(){
         <div style="font-size:18px;font-weight:600">應領 ${money(due)}</div>
       </div>
       <div class="sub">薪資 ${money(wage)}（本期薪資自動帶入）＋ 代墊款 ${money(advTotal)} ＝ 應領 ${money(due)}</div>
-      ${advRows===''?'<div class="empty" style="padding:10px 0">本期尚無代墊款。</div>':`<div class="scroll"><table>
+      ${advRows===''?'<div class="empty" style="padding:10px 0">本期尚無代墊款。</div>':`<div class="scroll"><table class="cardtable">
         <thead><tr><th>日期</th><th>用途</th><th class="num">金額</th><th></th></tr></thead><tbody>${advRows}</tbody></table></div>`}
       <div style="margin-top:8px">${postBtn}</div>
     </div>`;
@@ -3473,11 +3495,11 @@ function viewAccounts(){
   const inLedRange=d=> (!ledgerFrom||d>=ledgerFrom) && (!ledgerTo||d<=ledgerTo);
   const txs=state.ledger.filter(t=>(!ledgerAcc||t.accId===ledgerAcc)&&inLedRange(t.date)).sort((a,b)=>b.date.localeCompare(a.date)||b.id.localeCompare(a.id));
   const txRows=txs.slice(0,300).map(t=>`<tr>
-    <td>${esc(t.date)}</td><td>${esc(accountName(t.accId))}</td>
-    <td>${esc(t.note||'')}${t.fromAdvance?'<span class="tag" style="background:#e3efe9;color:var(--accent)">代墊報銷</span>':''}</td>
-    <td class="num" style="color:var(--accent)">${t.kind==='in'?money(t.amount):'—'}</td>
-    <td class="num" style="color:var(--danger)">${t.kind==='out'?money(t.amount):'—'}</td>
-    <td><button class="act danger" data-delledger="${t.id}">刪</button></td>
+    <td data-label="日期">${esc(t.date)}</td><td data-label="帳戶">${esc(accountName(t.accId))}</td>
+    <td data-label="項目">${esc(t.note||'')}${t.fromAdvance?'<span class="tag" style="background:#e3efe9;color:var(--accent)">代墊報銷</span>':''}</td>
+    <td class="num" data-label="收入" style="color:var(--accent)">${t.kind==='in'?money(t.amount):'—'}</td>
+    <td class="num" data-label="支出" style="color:var(--danger)">${t.kind==='out'?money(t.amount):'—'}</td>
+    <td class="actions"><button class="act danger" data-delledger="${t.id}">刪</button></td>
   </tr>`).join('');
   const rangeIn=txs.filter(t=>t.kind==='in').reduce((s,t)=>s+(Number(t.amount)||0),0);
   const rangeOut=txs.filter(t=>t.kind==='out').reduce((s,t)=>s+(Number(t.amount)||0),0);
@@ -3499,11 +3521,11 @@ function viewAccounts(){
       <div class="field"><label>期初餘額</label><input type="number" id="acc-opening" min="0" step="1000" value="0" style="width:130px"></div>
       <button class="btn" id="acc-add">＋ 新增帳戶</button>
     </div>
-    ${accs.length===0?'<div class="empty">尚無帳戶，請先新增。</div>':`<table><thead><tr><th>帳戶</th><th class="num">期初</th><th class="num">目前餘額</th><th></th></tr></thead>
+    ${accs.length===0?'<div class="empty">尚無帳戶，請先新增。</div>':`<table class="cardtable"><thead><tr><th>帳戶</th><th class="num">期初</th><th class="num">目前餘額</th><th></th></tr></thead>
       <tbody>${accs.map(a=>{
         const inUse=state.ledger.some(t=>t.accId===a.id);
         const del=inUse?'<span class="act muted" title="已有交易，無法刪除">🔒</span>':`<button class="act danger" data-delacc="${a.id}">刪</button>`;
-        return `<tr><td>${esc(a.name)}</td><td class="num">${money(a.opening||0)}</td><td class="num" style="font-weight:600">${money(accountBalance(a.id))}</td><td><button class="act" data-editopen="${a.id}">改期初</button> ${del}</td></tr>`;
+        return `<tr><td data-label="帳戶">${esc(a.name)}</td><td class="num" data-label="期初">${money(a.opening||0)}</td><td class="num" data-label="目前餘額" style="font-weight:600">${money(accountBalance(a.id))}</td><td class="actions"><button class="act" data-editopen="${a.id}">改期初</button> ${del}</td></tr>`;
       }).join('')}</tbody></table>`}
   </div>
 
@@ -3531,7 +3553,7 @@ function viewAccounts(){
       <button class="act" id="led-clearrange" style="height:36px;padding:0 12px">清除日期</button>
       ${(ledgerFrom||ledgerTo)?`<div class="sub" style="margin:0;align-self:center">區間內　收入 ${money(rangeIn)}・支出 ${money(rangeOut)}</div>`:''}
     </div>
-    ${txRows===''?'<div class="empty">此條件下尚無收支紀錄。</div>':`<div class="scroll"><table>
+    ${txRows===''?'<div class="empty">此條件下尚無收支紀錄。</div>':`<div class="scroll"><table class="cardtable">
       <thead><tr><th>日期</th><th>帳戶</th><th>項目/來源</th><th class="num">收入</th><th class="num">支出</th><th></th></tr></thead>
       <tbody>${txRows}</tbody></table></div>`}
   </div>`}`;
