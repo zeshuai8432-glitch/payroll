@@ -399,6 +399,26 @@
   <main class="main" id="body"></main>
 </div>
 
+<!-- Firebase (compat 版，直接用 script 標籤) -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script>
+window.__fb = (function(){
+  try{
+    firebase.initializeApp({
+      apiKey: "AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8",
+      authDomain: "payroll-d1abe.firebaseapp.com",
+      projectId: "payroll-d1abe",
+      storageBucket: "payroll-d1abe.firebasestorage.app",
+      messagingSenderId: "443839333943",
+      appId: "1:443839333943:web:82df3e7641ceb6fa2021b2"
+    });
+    const db = firebase.firestore();
+    return { db: db, doc: db.collection('payroll').doc('main'), ok: true };
+  }catch(e){ console.error('Firebase 初始化失敗:', e); return { ok:false, err:e }; }
+})();
+</script>
+
 <script>
 const LS = 'pm_data_v2';
 const LS_PHOTOS = 'pm_billing_photos_v1';
@@ -407,7 +427,7 @@ const LS_SIGS_LOCKED = 'pm_billing_sigs_locked_v1';
 const LS_SIG_META    = 'pm_billing_sig_meta_v1';
 const LS_DIRTY       = 'pm_cloud_dirty_v1';
 const CLOUD_URL = 'https://script.google.com/macros/s/AKfycbyMPs38UNzAwX3bcD2n9nQBz0HofUW9qFweSOnmoySs8VW2bJYHn47RdyZLQ8bD8SNWTg/exec';
-const APP_VERSION = 'v2026.07.02.4';
+const APP_VERSION = 'v2026.07.03-firebase';
 let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], tools:[], locations:[], assets:[], advances:[], accounts:[], ledger:[], deals:[], billings:[], measurements:[], contracts:{}, costs:[], textMemory:{clients:[],companies:[]}, parkAccId:'', oweBonus:{}, minFund:'', tab:'entry' };
 let cloudStatus='連線中…';
 let localDirty=false, lastCloudTs=0;
@@ -727,8 +747,9 @@ function loadLocal(){
 async function loadCloud(){
   setCloud('讀取雲端中…');
   try {
-    const res=await fetch(CLOUD_URL, {method:'GET'});
-    const j=await res.json();
+    if(!window.__fb||!window.__fb.ok) throw new Error('Firebase 未就緒');
+    const snap=await window.__fb.doc.get();
+    const j = snap.exists ? {ok:true, data: snap.data().json} : {ok:false};
     if(j&&j.ok&&j.data){
       const cloudData=JSON.parse(j.data);
       const localRaw=localStorage.getItem(LS);
@@ -772,12 +793,12 @@ async function pushCloud(){
   if(!localDirty && Object.keys(localSigPending).length===0){ setCloud('已同步'); return; }
   saving=true;
   try {
-    // 推送前先讀雲端並合併簽名/照片，避免舊裝置整包資料把新簽名蓋回測試版。
+    if(!window.__fb||!window.__fb.ok) throw new Error('Firebase 未就緒');
+    // 推送前先讀雲端並合併簽名/照片，並用時間戳擋掉「雲端比較新」的情況（避免蓋掉別人剛存的）
     try{
-      const gr=await fetch(CLOUD_URL,{method:'GET'});
-      const gj=await gr.json();
-      if(gj&&gj.ok&&gj.data){
-        const cd=JSON.parse(gj.data);
+      const gsnap=await window.__fb.doc.get();
+      if(gsnap.exists){
+        const cd=JSON.parse(gsnap.data().json);
         const cloudTs=Number(cd.savedAt)||0;
         if(cloudTs>lastCloudTs){
           lastCloudTs=cloudTs;
@@ -791,14 +812,11 @@ async function pushCloud(){
     }catch(e){}
     const payload=JSON.stringify(packData());
     try{ localStorage.setItem(LS,payload); }catch(e){}
-    const res=await fetch(CLOUD_URL,{method:'POST',body:payload});
-    const j=await res.json();
-    if(j&&j.ok){
-      localSigPending={}; localDirty=false;
-      try{ localStorage.removeItem(LS_DIRTY); }catch(e){}
-      try{ lastCloudTs=Number((JSON.parse(payload)||{}).savedAt)||Date.now(); _lastCloudJson=payload; }catch(e){}
-      setCloud('已同步');
-    } else { setCloud('推送失敗：'+(j&&j.error||'未知錯誤').slice(0,60)); }
+    await window.__fb.doc.set({ json: payload, savedAt: Date.now() });
+    localSigPending={}; localDirty=false;
+    try{ localStorage.removeItem(LS_DIRTY); }catch(e){}
+    try{ lastCloudTs=Number((JSON.parse(payload)||{}).savedAt)||Date.now(); _lastCloudJson=payload; }catch(e){}
+    setCloud('已同步');
   } catch(e){ setCloud('雲端儲存失敗：'+String(e).slice(0,50)); }
   saving=false;
   if(pendingSave){ pendingSave=false; pushCloud(); }
@@ -812,14 +830,14 @@ function flushCloudOnExit(){
 async function diagCloud(){
   setCloud('診斷中…');
   try{
-    const res=await fetch(CLOUD_URL,{method:'GET'});
-    const j=await res.json();
-    if(!j||!j.ok){ setCloud('GET失敗：'+JSON.stringify(j).slice(0,80)); return; }
-    const cd=JSON.parse(j.data);
+    if(!window.__fb||!window.__fb.ok){ setCloud('Firebase 未就緒：'+String(window.__fb&&window.__fb.err||'').slice(0,60)); return; }
+    const snap=await window.__fb.doc.get();
+    if(!snap.exists){ setCloud('Firebase 已連線，雲端尚無資料（第一次存檔後就會有）'); return; }
+    const cd=JSON.parse(snap.data().json);
     const cloudSigCount=Object.keys(cd.billingSigs||{}).length;
     const localSigCount=Object.keys(billingSigs).length;
-    setCloud(`本機簽名:${localSigCount}筆 雲端:${cloudSigCount}筆`);
-  }catch(e){ setCloud('診斷失敗：'+String(e).slice(0,60)); }
+    setCloud(`✓ Firebase 連線正常｜本機簽名:${localSigCount} 雲端:${cloudSigCount}`);
+  }catch(e){ setCloud('診斷失敗：'+String(e).slice(0,70)); }
 }
 function setCloud(s){ cloudStatus=s; const el=document.getElementById('cloud-status'); if(el) el.textContent=s; }
 
