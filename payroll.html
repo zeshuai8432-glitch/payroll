@@ -922,6 +922,22 @@ function render(){
   bind();
 }
 
+function entryTodayNoteInner(cs,cd){
+  if(!cs) return '';
+  const done=state.attendance.filter(r=>r.date===cd&&r.siteId===cs);
+  if(done.length>0){
+    const names=done.map(r=>`${esc(empName(r.empId))}${r.hours?`(${gongStr(r.hours)})`:''}`).join('、');
+    return `<div class="sub" style="padding:8px 10px;background:var(--bg);border-radius:8px">📋 ${esc(siteName(cs))}・${esc(cd)} 已登記 ${done.length} 位：${names}</div>`;
+  }
+  return `<div class="sub">📋 ${esc(siteName(cs))}・${esc(cd)} 尚無人登記。</div>`;
+}
+function refreshEntryTodayNote(){
+  const el=document.getElementById('entry-today-note'); if(!el) return;
+  const fd=document.getElementById('f-date'), fs=document.getElementById('f-site');
+  const cd=(fd&&fd.value)|| entryDate || new Date().toISOString().slice(0,10);
+  const cs=(fs&&fs.value)|| entrySite || '';
+  el.innerHTML=entryTodayNoteInner(cs,cd);
+}
 function viewEntry(){
   const activeEmps=state.employees.filter(e=>e.active);
   const empOpts=activeEmps.map(e=>`<option value="${e.id}">${esc(e.name)}（日薪 ${e.daily}）</option>`).join('');
@@ -942,16 +958,7 @@ function viewEntry(){
   const curDate=entryDate||today;
   const curSite=entrySite|| (activeSites[0]?activeSites[0].id:'');
   // 今天(所選日期)這個案場已登記哪幾位
-  let todayNote='';
-  if(curSite){
-    const done=state.attendance.filter(r=>r.date===curDate&&r.siteId===curSite);
-    if(done.length>0){
-      const names=done.map(r=>`${esc(empName(r.empId))}${r.hours?`(${gongStr(r.hours)})`:''}`).join('、');
-      todayNote=`<div class="sub" style="margin:8px 0 0;padding:8px 10px;background:var(--bg);border-radius:8px">📋 ${esc(siteName(curSite))}・${esc(curDate)} 已登記 ${done.length} 位：${names}</div>`;
-    } else {
-      todayNote=`<div class="sub" style="margin:8px 0 0">📋 ${esc(siteName(curSite))}・${esc(curDate)} 尚無人登記。</div>`;
-    }
-  }
+  const todayNote=`<div id="entry-today-note" style="margin:8px 0 0">${entryTodayNoteInner(curSite,curDate)}</div>`;
   const comp=computeRecords(state.attendance);
   // 依日期分組（新到舊）
   const byDate={};
@@ -1520,10 +1527,10 @@ function bind(){
   const fDate=document.getElementById('f-date');
   if(fDate){
     fDate.oninput=()=>{ entryDate=fDate.value; };
-    fDate.onchange=()=>{ entryDate=fDate.value; };
-    fDate.onblur=()=>{ entryDate=fDate.value; const fe=document.getElementById('f-emp'); if(fe) entryEmp=fe.value; render(); };
+    fDate.onchange=()=>{ entryDate=fDate.value; refreshEntryTodayNote(); };
+    fDate.onblur=()=>{ entryDate=fDate.value; const fe=document.getElementById('f-emp'); if(fe) entryEmp=fe.value; refreshEntryTodayNote(); };
   }
-  const fSite=document.getElementById('f-site'); if(fSite) fSite.onchange=()=>{ entrySite=fSite.value; const fe=document.getElementById('f-emp'); if(fe) entryEmp=fe.value; render(); };
+  const fSite=document.getElementById('f-site'); if(fSite) fSite.onchange=()=>{ entrySite=fSite.value; const fe=document.getElementById('f-emp'); if(fe) entryEmp=fe.value; refreshEntryTodayNote(); };
   const fEmp=document.getElementById('f-emp'); if(fEmp) fEmp.onchange=()=>{ entryEmp=fEmp.value; };
   const fKind=document.getElementById('f-kind'); if(fKind) fKind.onchange=()=>{
     entryKind=fKind.value;
