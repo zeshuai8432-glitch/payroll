@@ -2570,9 +2570,21 @@ function bind(){
   };
   document.querySelectorAll('[data-copy-add]').forEach(b=>b.onclick=()=>{
     const bill=state.billings.find(x=>x.id===b.dataset.copyAdd); if(!bill) return;
-    billingAddDraft={date:bill.date||new Date().toISOString().slice(0,10),client:bill.client||'',note:bill.note||'',remark:bill.remark||'',settled:!!bill.settled};
+    billingAddDraft={
+      date:bill.date||new Date().toISOString().slice(0,10),
+      site:bill.site||'',
+      unit:bill.unit||'式',
+      qty:(bill.qty!==undefined&&bill.qty!==null)?bill.qty:1,
+      unitPrice:(bill.unitPrice!==undefined&&bill.unitPrice!==null)?bill.unitPrice:billingAmount(bill),
+      client:bill.client||'',
+      note:bill.note||'',
+      remark:bill.remark||'',
+      settled:false // 複製出來的是新的一筆，預設未收款
+    };
     formOpen.bna=true;
     render();
+    // 捲到新增表單
+    setTimeout(()=>{ const el=document.getElementById('bna-date'); if(el) el.scrollIntoView({behavior:'smooth',block:'center'}); },50);
   });
   // 追加單頁：改（inline 展開）
   document.querySelectorAll('[data-billedit-add]').forEach(b=>b.onclick=()=>{ billingAddEditId=b.dataset.billeditAdd; render(); });
@@ -4101,7 +4113,7 @@ function viewBillingAdd(){
           </div>
           <div style="display:flex;gap:4px;flex-wrap:wrap;flex-shrink:0">
             <button class="act ${b.settled?'':'muted'}" data-togglesettle="${b.id}" style="${b.settled?'color:var(--accent)':''}">${b.settled?'✓ 已收款':'未收款'}</button>
-            ${isCoopSiteValue(b.site)?`<button class="act" data-copy-add="${b.id}">複製內容</button>`:''}
+            <button class="act" data-copy-add="${b.id}">複製</button>
             <button class="act" data-billedit-add="${b.id}">改</button>
             <button class="act" data-billprint="${b.id}">列印</button>
             <button class="act" data-billsign="${b.id}" style="${billingSigs[b.id]?'color:var(--accent)':''}">${billingSigs[b.id]?(billingSigsLocked[b.id]?'🔒 已簽':'✍ 已簽'):'✍ 簽名'}</button>
@@ -4144,11 +4156,11 @@ function viewBillingAdd(){
     ${foldBtn('bna','新增追加單')}
     ${formOpen.bna?`<div class="row" style="margin-top:8px">
       <div class="field"><label>日期</label><input type="date" id="bna-date" value="${billingAddDraft?esc(billingAddDraft.date):new Date().toISOString().slice(0,10)}"></div>
-      <div class="field" style="flex:1;min-width:150px"><label>案場</label><select id="bna-site">${siteSelOpts}</select></div>
-      <div class="field"><label>單位</label><input id="bna-unit" value="式" placeholder="式、天、坪" style="width:90px"></div>
-      <div class="field"><label>數量</label><input type="number" id="bna-qty" min="0" step="0.01" value="${billingAddDraft?'':'1'}" style="width:90px"></div>
-      <div class="field"><label>單價</label><input type="number" id="bna-unit-price" min="0" step="1" style="width:120px"></div>
-      <div class="field"><label>小計</label><div id="bna-subtotal" class="num" style="height:36px;display:flex;align-items:center;font-weight:700">$0</div></div>
+      <div class="field" style="flex:1;min-width:150px"><label>案場</label><select id="bna-site">${siteSelectOptions(billingAddDraft?billingAddDraft.site:'')}</select></div>
+      <div class="field"><label>單位</label><input id="bna-unit" value="${billingAddDraft?esc(billingAddDraft.unit||'式'):'式'}" placeholder="式、天、坪" style="width:90px"></div>
+      <div class="field"><label>數量</label><input type="number" id="bna-qty" min="0" step="0.01" value="${billingAddDraft?(billingAddDraft.qty!==undefined?billingAddDraft.qty:''):'1'}" style="width:90px"></div>
+      <div class="field"><label>單價</label><input type="number" id="bna-unit-price" min="0" step="1" value="${billingAddDraft&&billingAddDraft.unitPrice!==undefined?billingAddDraft.unitPrice:''}" style="width:120px"></div>
+      <div class="field"><label>小計</label><div id="bna-subtotal" class="num" style="height:36px;display:flex;align-items:center;font-weight:700">${billingAddDraft?money((Number(billingAddDraft.qty)||0)*(Number(billingAddDraft.unitPrice)||0)):'$0'}</div></div>
       <div class="field"><label>業主</label><input id="bna-client" list="client-memory-list" placeholder="業主名稱" value="${billingAddDraft?esc(billingAddDraft.client):''}" style="width:110px"></div>
       <div class="field" style="flex:1;min-width:180px"><label>說明（追加項目）</label><input id="bna-note" placeholder="例：追加防水工程" value="${billingAddDraft?esc(billingAddDraft.note):''}"></div>
       <div class="field" style="flex:1;min-width:150px"><label>備注</label><input id="bna-remark" placeholder="其他備注" value="${billingAddDraft?esc(billingAddDraft.remark):''}"></div>
