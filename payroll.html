@@ -4258,10 +4258,10 @@ function measurementSizeLabel(m){
   if(isPartition){
     const w=Number(m.width)||0, h=Number(m.height)||0;
     if(w>0&&h>0) return `${w} × ${h} m${cnt>1?` ×${cnt}間`:''}`;
-    return cnt>1?`每間 ${Number(m.perQty)||''} ×${cnt}間`:'直接輸入';
+    return cnt>1?`每間 ${Number(m.perQty)||''} ×${cnt}間`:'—';
   }
   if(mt==='carry') return carrySize;
-  return cnt>1?`每間 ${Number(m.perQty)||''} ×${cnt}間`:'直接輸入';
+  return cnt>1?`每間 ${Number(m.perQty)||''} ×${cnt}間`:'—';
 }
 function viewMeasurements(){
   const siteSelOpts=siteSelectOptions(measDraft?measDraft.site:'');
