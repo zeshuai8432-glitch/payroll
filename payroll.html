@@ -524,32 +524,35 @@ function bindMeasSubtotal(){
     const isPartition=!type||type.value==='partition';
     const isCarry=type&&type.value==='carry';
     const cnt=Math.max(1,parseInt(count&&count.value)||1); // 間數選填，留空=1
+    const u=(unit&&unit.value||'').trim();
+    const isAutoArea=isPartition&&(u===''||u==='㎡'); // 只有「隔間＋單位㎡」才自動算面積
     if(widthField) widthField.style.display=isPartition?'block':'none';
     if(heightField) heightField.style.display=isPartition?'block':'none';
     if(sizeField) sizeField.style.display=isCarry?'block':'none';
     if(countField) countField.style.display=isCarry?'none':'block';
-    qty.readOnly=isPartition;
-    qty.placeholder=isPartition?'自動計算':(isCarry?'直接輸入數量':(cnt>1?'每間面積':'直接輸入面積'));
+    qty.readOnly=isAutoArea;
+    qty.placeholder=isAutoArea?'自動計算':(cnt>1?'每間數量':'直接輸入數量');
     if(itemLabel) itemLabel.textContent=isCarry?'材料名稱':'項目';
     if(item) item.placeholder=isCarry?'例：水泥板、角料、矽酸鈣板':'例：貼磁磚、隔間牆';
-    if(qtyLabel) qtyLabel.textContent=isCarry?'數量':(!isPartition&&cnt>1?'每間面積':'數量/面積');
+    if(qtyLabel) qtyLabel.textContent=isCarry?'數量':(isAutoArea?'數量/面積':(cnt>1?'每間數量':'數量'));
     if(unit){
-      unit.placeholder=isCarry?'趟、車、包、式':'㎡、坪、才、式';
+      unit.placeholder=isCarry?'趟、車、包、式':'㎡、坪、工、M、式';
       if(isCarry&&unit.value==='㎡') unit.value='趟';
       if(!isCarry&&unit.value==='趟') unit.value='㎡';
     }
-    if(isPartition){
+    if(isAutoArea){
       const w=parseFloat(width&&width.value), h=parseFloat(height&&height.value);
       qty.value=(!isNaN(w)&&w>0&&!isNaN(h)&&h>0)?roundArea(w*h*cnt):'';
     }
     const q=parseFloat(qty.value),p=parseFloat(price.value);
-    const mult=(!isPartition&&!isCarry)?cnt:1; // 天花板：每間面積 × 間數
+    const mult=(isCarry||isAutoArea)?1:cnt; // 手動輸入時：每間數量 × 間數（自動面積已含間數）
     out.textContent=(!isNaN(q)&&!isNaN(p))?money(q*mult*p):money(0);
   };
   if(type) type.onchange=calc;
   if(width) width.oninput=calc;
   if(height) height.oninput=calc;
   if(count) count.oninput=calc;
+  if(unit) unit.oninput=calc;
   qty.oninput=calc; price.oninput=calc; calc();
 }
 // 工數顯示：工數 = 工時÷8，用分數符號。例：9h → 1⅛ 工
@@ -2623,12 +2626,13 @@ function bind(){
     const price=parseFloat(document.getElementById('meas-price').value);
     const note=document.getElementById('meas-note').value.trim();
     const count=measureType==='carry'?1:Math.max(1,parseInt((document.getElementById('meas-count')||{}).value)||1); // 間數選填，留空=1
-    if(measureType==='partition'&&(isNaN(width)||width<=0||isNaN(height)||height<=0)){ alert('隔間請填寬度與高度（公尺）'); return; }
+    const isAutoArea=measureType==='partition'&&unit==='㎡'; // 只有隔間＋㎡才強制寬高、自動算面積
+    if(isAutoArea&&(isNaN(width)||width<=0||isNaN(height)||height<=0)){ alert('隔間（㎡）請填寬度與高度（公尺）；若以工、M 等其他單位計價，請改單位後直接輸入數量'); return; }
     if(!date||!site||!item||isNaN(qty)||qty<=0||isNaN(price)||price<0){ alert('請填日期、案場、項目/材料名稱、數量與單價'); return; }
     const sizeText=(document.getElementById('meas-size')||{}).value||'';
     let perQty=null;
-    if(measureType==='ceiling'&&count>1){ perQty=qty; qty=Math.round(qty*count*100)/100; } // 天花板：每間面積 × 間數 = 總面積
-    state.measurements.push({id:uid(),date,site,item,unit,qty,unitPrice:price,note,measureType,count,perQty,sizeText:measureType==='carry'?sizeText.trim():'',width:measureType==='partition'?width:null,height:measureType==='partition'?height:null});
+    if(count>1&&!isAutoArea&&measureType!=='carry'){ perQty=qty; qty=Math.round(qty*count*100)/100; } // 手動輸入：每間數量 × 間數 = 總數量（自動面積已含間數）
+    state.measurements.push({id:uid(),date,site,item,unit,qty,unitPrice:price,note,measureType,count,perQty,sizeText:measureType==='carry'?sizeText.trim():'',width:measureType==='partition'&&!isNaN(width)&&width>0?width:null,height:measureType==='partition'&&!isNaN(height)&&height>0?height:null});
     saveData(); render();
   };
   document.querySelectorAll('[data-del-meas]').forEach(b=>b.onclick=()=>{
@@ -4213,7 +4217,11 @@ function measurementSizeLabel(m){
   const isPartition=mt==='partition'||(!mt&&m.width&&m.height);
   const cnt=Number(m.count)||1;
   const carrySize=m.sizeText||((m.width&&m.height)?`${Number(m.width)||0} × ${Number(m.height)||0} m`:(m.width?`寬 ${Number(m.width)||0} m`:(m.height?`高 ${Number(m.height)||0} m`:'')));
-  if(isPartition) return `${Number(m.width)||0} × ${Number(m.height)||0} m${cnt>1?` ×${cnt}間`:''}`;
+  if(isPartition){
+    const w=Number(m.width)||0, h=Number(m.height)||0;
+    if(w>0&&h>0) return `${w} × ${h} m${cnt>1?` ×${cnt}間`:''}`;
+    return cnt>1?`每間 ${Number(m.perQty)||''} ×${cnt}間`:'直接輸入';
+  }
   if(mt==='carry') return carrySize;
   return cnt>1?`每間 ${Number(m.perQty)||''} ×${cnt}間`:'直接輸入';
 }
