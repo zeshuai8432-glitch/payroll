@@ -415,6 +415,20 @@
   #print-overlay .paydoc tr.ded-row td, #print-overlay .paydoc .ded-amt { color: #b91c1c; background: #fff1f2; }
   #print-overlay .paydoc .night-check { color: #0f766e; font-weight: 800; font-size: 14px; }
   #print-overlay .site-pill { display:inline-block; padding:2px 8px; border-radius:999px; font-weight:700; font-size:11px; border:1px solid transparent; }
+  /* ── 藍色系商用報告風（bluedoc）── */
+  #print-overlay .bluedoc { color: #1F2937; }
+  #print-overlay .bluedoc h1 { color: #1E3A8A; font-size: 20px; letter-spacing: 1px; border-bottom: 3px solid #1E3A8A; padding-bottom: 8px; margin-bottom: 6px; }
+  #print-overlay .bluedoc .meta { color: #64748B; margin-bottom: 18px; }
+  #print-overlay .bluedoc h2 { font-size: 14px; color: #1E3A8A; margin: 20px 0 8px; padding: 6px 10px; background: #EFF6FF; border-left: 4px solid #2563EB; border-radius: 4px; border-top: none; }
+  #print-overlay .bluedoc table { border: 1px solid #BFDBFE; }
+  #print-overlay .bluedoc th, #print-overlay .bluedoc td { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  #print-overlay .bluedoc th { background: #1E3A8A; color: #fff; border: 1px solid #1E3A8A; font-weight: 600; }
+  #print-overlay .bluedoc td { border: 1px solid #DBEAFE; color: #1F2937; }
+  #print-overlay .bluedoc tbody tr:nth-child(even) td { background: #EFF6FF; }
+  #print-overlay .bluedoc tr.type-head td { background: #E0F2FE !important; color: #1E40AF; font-weight: 700; }
+  #print-overlay .bluedoc .total-row td { background: #DBEAFE !important; color: #1E3A8A; font-weight: 700; }
+  #print-overlay .bluedoc tr.flag td { background: #FEF3C7 !important; }
+  #print-overlay .bluedoc .foot { margin-top: 22px; padding-top: 8px; border-top: 2px solid #1E3A8A; font-size: 11px; color: #64748B; display: flex; justify-content: space-between; }
   @media print {
     body > .top, body > .layout { display: none !important; }
     #print-overlay { position: static; padding: 0; }
@@ -4449,7 +4463,7 @@ function exportMeasurementsPDF(selectedOnly=false){
     const subtotal=rows.reduce((s,m)=>s+(Number(m.qty)||0)*(Number(m.unitPrice)||0),0);
     const rowHtml=m=>{
       const amt=(Number(m.qty)||0)*(Number(m.unitPrice)||0);
-      return `<tr${m.flag?' style="background:#fff7e6;-webkit-print-color-adjust:exact;print-color-adjust:exact"':''}>
+      return `<tr${m.flag?' class="flag"':''}>
         <td>${esc(m.date||'')}</td>
         <td>${m.flag?'★ ':''}${esc(m.item||'')}</td>
         <td>${esc(measurementSizeLabel(m))}</td>
@@ -4465,7 +4479,7 @@ function exportMeasurementsPDF(selectedOnly=false){
       const g=rows.filter(m=>measTypeKey(m)===k);
       if(!g.length) return '';
       const sub=g.reduce((s,m)=>s+(Number(m.qty)||0)*(Number(m.unitPrice)||0),0);
-      return `<tr><td colspan="8" style="background:#f3f4f6;font-weight:700;padding:6px 8px">${label}（${g.length}筆）　小計 ${money(sub)}</td></tr>`+g.map(rowHtml).join('');
+      return `<tr class="type-head"><td colspan="8" style="padding:6px 8px">${label}（${g.length}筆）　小計 ${money(sub)}</td></tr>`+g.map(rowHtml).join('');
     }).join('');
     return `<h2>${esc(name)}</h2>
       <table><thead><tr><th>日期</th><th>項目</th><th>尺寸</th><th>單位</th><th class="num">數量</th><th class="num">單價</th><th class="num">小計</th><th>備註</th></tr></thead>
@@ -4473,10 +4487,14 @@ function exportMeasurementsPDF(selectedOnly=false){
   }).join('<div style="height:16px"></div>');
   const total=list.reduce((s,m)=>s+(Number(m.qty)||0)*(Number(m.unitPrice)||0),0);
   const title='計量明細';
-  const inner=`<h1>${title}</h1>
-    <div class="meta">匯出日期：${new Date().toISOString().slice(0,10)}　|　筆數：${list.length}　|　總金額：${money(total)}</div>
+  const today=new Date().toISOString().slice(0,10);
+  const inner=`<div class="bluedoc">
+    <h1>${title}</h1>
+    <div class="meta">匯出日期：${today}　|　筆數：${list.length}　|　總金額：${money(total)}</div>
     ${sections}
-    <table style="margin-top:18px"><tbody><tr class="total-row"><td>總計</td><td class="num">${money(total)}</td></tr></tbody></table>`;
+    <table style="margin-top:18px"><tbody><tr class="total-row"><td>總計</td><td class="num">${money(total)}</td></tr></tbody></table>
+    <div class="foot"><span>本報表由系統自動產生</span><span>${today}</span></div>
+  </div>`;
   printHTML(title, inner);
 }
 
