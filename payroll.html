@@ -1073,7 +1073,7 @@ function viewEntry(){
     const dayTotal=list.reduce((s,r)=>s+((comp[r.id]||{}).total||0),0);
     const wd=WD[new Date(dk+'T00:00:00').getDay()];
     const peopleCount=new Set(list.map(r=>r.empId)).size;
-    const open=(entryOpenDates[dk]!==undefined)?entryOpenDates[dk]:(idx<2); // 預設展開最近2天
+    const open=(entryOpenDates[dk]!==undefined)?entryOpenDates[dk]:(idx<1); // 預設只展開最近1天
     // 以「人」為主分組：同一人同一天多案場整合成一組
     const byEmpDay={};
     list.forEach(r=>{ (byEmpDay[r.empId]=byEmpDay[r.empId]||[]).push(r); });
