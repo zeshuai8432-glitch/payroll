@@ -4434,7 +4434,6 @@ function exportMeasurementsPDF(selectedOnly=false){
       const amt=(Number(m.qty)||0)*(Number(m.unitPrice)||0);
       return `<tr>
         <td>${esc(m.date||'')}</td>
-        <td>${esc(subSiteText(m.site))}</td>
         <td>${esc(measurementTypeLabel(m))}</td>
         <td>${esc(m.item||'')}</td>
         <td>${esc(measurementSizeLabel(m))}</td>
@@ -4446,11 +4445,11 @@ function exportMeasurementsPDF(selectedOnly=false){
       </tr>`;
     }).join('');
     return `<h2>${esc(name)}</h2>
-      <table><thead><tr><th>日期</th><th>子案場</th><th>類型</th><th>項目</th><th>尺寸</th><th>單位</th><th class="num">數量</th><th class="num">單價</th><th class="num">小計</th><th>備註</th></tr></thead>
-      <tbody>${trs}<tr class="total-row"><td colspan="8">小計</td><td class="num">${money(subtotal)}</td><td></td></tr></tbody></table>`;
+      <table><thead><tr><th>日期</th><th>類型</th><th>項目</th><th>尺寸</th><th>單位</th><th class="num">數量</th><th class="num">單價</th><th class="num">小計</th><th>備註</th></tr></thead>
+      <tbody>${trs}<tr class="total-row"><td colspan="7">小計</td><td class="num">${money(subtotal)}</td><td></td></tr></tbody></table>`;
   }).join('<div style="height:16px"></div>');
   const total=list.reduce((s,m)=>s+(Number(m.qty)||0)*(Number(m.unitPrice)||0),0);
-  const title=selectedOnly?'計量明細（勾選）':'計量明細';
+  const title='計量明細';
   const inner=`<h1>${title}</h1>
     <div class="meta">匯出日期：${new Date().toISOString().slice(0,10)}　|　筆數：${list.length}　|　總金額：${money(total)}</div>
     ${sections}
