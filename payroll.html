@@ -2677,7 +2677,9 @@ function bind(){
   };
   document.querySelectorAll('[data-measpick-cb]').forEach(cb=>cb.onchange=()=>{
     measSel[cb.dataset.measpickCb]=cb.checked;
-    render();
+    // 不整頁重繪（避免畫面閃爍），只就地更新「匯出勾選」按鈕狀態
+    const btn=document.getElementById('export-meas-sel');
+    if(btn){ const any=state.measurements.some(m=>measSel[m.id]); btn.disabled=!any; btn.style.opacity=any?'1':'.5'; }
   });
   const ema=document.getElementById('export-meas-all'); if(ema) ema.onclick=()=>exportMeasurementsPDF(false);
   const ems=document.getElementById('export-meas-sel'); if(ems) ems.onclick=()=>exportMeasurementsPDF(true);
