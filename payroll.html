@@ -1765,7 +1765,7 @@ function bind(){
     }
     valid.forEach(v=>state.attendance.push({id:uid(),date,empId,siteId:v.siteId,hours:v.hours,overtime:v.overtime,night:v.night,dailyRate:emp.daily,kind:'work'}));
     entryDate=date; entryEmp=empId;
-    entryLines=[{siteId:'',hours:'8',overtime:'0',night:false}]; // 送出後清空案場明細，保留日期與員工
+    // 送出後保留案場明細輸入值（登記下一個人常常是同案場同工時），不清空
     resyncAllSiteDeals();
     saveData(); render();
   };
