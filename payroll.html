@@ -2715,6 +2715,7 @@ function bind(){
   });
   const ema=document.getElementById('export-meas-all'); if(ema) ema.onclick=()=>exportMeasurementsPDF(false);
   const ems=document.getElementById('export-meas-sel'); if(ems) ems.onclick=()=>exportMeasurementsPDF(true);
+  const mse=document.getElementById('meas-show-expr'); if(mse) mse.onchange=()=>{ measShowExpr=mse.checked; };
   bindBillingSubtotal('bnr'); bindBillingSubtotal('bna'); bindBillingSubtotal('bae'); bindMeasSubtotal();
   bindSiteClientAutofill('bnr-site','bnr-client');
   bindSiteClientAutofill('bna-site','bna-client');
@@ -3858,6 +3859,7 @@ let dealSel={}; // 分潤清單勾選
 let measSel={}; // 計量明細匯出勾選
 let measEditId=null, measDraft=null; // 計量明細：編輯中的紀錄 / 複製帶入新增表單的草稿
 let measKeep=null; // 計量明細：記住上次新增的類型/案場/日期，送出後不歸零
+let measShowExpr=false; // 匯出 PDF 時是否顯示單價算式（預設關）
 let costEditId=null; // 手動成本編輯中
 let siteSettingsOpen={}; // 案場設定展開狀態
 let siteCostDetailsOpen={}; // 案場成本明細展開狀態
@@ -4394,6 +4396,7 @@ function viewMeasurements(){
   <div class="card" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
     <button class="btn" id="export-meas-all" ${list.length===0?'disabled style="opacity:.5"':''}>全部匯出 PDF</button>
     <button class="act" id="export-meas-sel" style="height:36px;padding:0 14px" ${list.some(m=>measSel[m.id])?'':'disabled style="opacity:.5"'}>匯出勾選 PDF</button>
+    <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--muted);cursor:pointer;white-space:nowrap"><input type="checkbox" id="meas-show-expr" ${measShowExpr?'checked':''} style="width:15px;height:15px">PDF 顯示算式</label>
     <span class="sub" style="margin:0">可展開案場後勾選指定明細匯出。</span>
   </div>
   <div class="card">
@@ -4437,7 +4440,7 @@ function exportMeasurementsPDF(selectedOnly=false){
         <td>${esc(measurementSizeLabel(m))}</td>
         <td>${esc(m.unit||'')}</td>
         <td class="num">${(Number(m.qty)||0).toLocaleString()}</td>
-        <td class="num">${money(Number(m.unitPrice)||0)}</td>
+        <td class="num">${money(Number(m.unitPrice)||0)}${measShowExpr&&m.priceExpr?`<div style="font-size:10px;color:#888">=${esc(m.priceExpr)}</div>`:''}</td>
         <td class="num">${money(amt)}</td>
         <td>${esc(m.note||'')}</td>
       </tr>`;
