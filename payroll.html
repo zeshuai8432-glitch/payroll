@@ -512,6 +512,14 @@ function bindSiteClientAutofill(siteId, clientId){
   site.onchange=fill;
   fill();
 }
+// 單價欄支援算式：只允許數字與 + - * / ( ) 小數點，×÷ 自動轉換
+function evalPriceExpr(s){
+  if(s==null) return NaN;
+  s=String(s).trim().replace(/×/g,'*').replace(/÷/g,'/').replace(/[，,]/g,'');
+  if(s==='') return NaN;
+  if(!/^[0-9+\-*/().\s]+$/.test(s)) return NaN;
+  try{ const v=Function('"use strict";return('+s+')')(); return (typeof v==='number'&&isFinite(v))?v:NaN; }catch(e){ return NaN; }
+}
 function bindMeasSubtotal(){
   const type=document.getElementById('meas-type'), width=document.getElementById('meas-width'), height=document.getElementById('meas-height');
   const widthField=document.getElementById('meas-width-field'), heightField=document.getElementById('meas-height-field'), sizeField=document.getElementById('meas-size-field');
@@ -544,7 +552,7 @@ function bindMeasSubtotal(){
       const w=parseFloat(width&&width.value), h=parseFloat(height&&height.value);
       qty.value=(!isNaN(w)&&w>0&&!isNaN(h)&&h>0)?roundArea(w*h*cnt):'';
     }
-    const q=parseFloat(qty.value),p=parseFloat(price.value);
+    const q=parseFloat(qty.value),p=evalPriceExpr(price.value);
     const mult=(isCarry||isAutoArea)?1:cnt; // 手動輸入時：每間數量 × 間數（自動面積已含間數）
     out.textContent=(!isNaN(q)&&!isNaN(p))?money(q*mult*p):money(0);
   };
@@ -2623,7 +2631,10 @@ function bind(){
     const width=parseFloat((document.getElementById('meas-width')||{}).value);
     const height=parseFloat((document.getElementById('meas-height')||{}).value);
     let qty=parseFloat(document.getElementById('meas-qty').value);
-    const price=parseFloat(document.getElementById('meas-price').value);
+    const priceRaw=String(document.getElementById('meas-price').value||'').trim();
+    let price=evalPriceExpr(priceRaw);
+    if(!isNaN(price)) price=Math.round(price*100)/100;
+    const priceExpr=/[+*/()×÷]|\d-/.test(priceRaw)?priceRaw:''; // 有運算符才記算式
     const note=document.getElementById('meas-note').value.trim();
     const count=measureType==='carry'?1:Math.max(1,parseInt((document.getElementById('meas-count')||{}).value)||1); // 間數選填，留空=1
     const isAutoArea=measureType==='partition'&&unit==='㎡'; // 只有隔間＋㎡才強制寬高、自動算面積
@@ -2632,7 +2643,7 @@ function bind(){
     const sizeText=(document.getElementById('meas-size')||{}).value||'';
     let perQty=null;
     if(count>1&&!isAutoArea&&measureType!=='carry'){ perQty=qty; qty=Math.round(qty*count*100)/100; } // 手動輸入：每間數量 × 間數 = 總數量（自動面積已含間數）
-    state.measurements.push({id:uid(),date,site,item,unit,qty,unitPrice:price,note,measureType,count,perQty,sizeText:measureType==='carry'?sizeText.trim():'',width:measureType==='partition'&&!isNaN(width)&&width>0?width:null,height:measureType==='partition'&&!isNaN(height)&&height>0?height:null});
+    state.measurements.push({id:uid(),date,site,item,unit,qty,unitPrice:price,priceExpr,note,measureType,count,perQty,sizeText:measureType==='carry'?sizeText.trim():'',width:measureType==='partition'&&!isNaN(width)&&width>0?width:null,height:measureType==='partition'&&!isNaN(height)&&height>0?height:null});
     measDraft=null;
     measKeep={measureType,site,date}; // 送出後保留類型/案場/日期
     saveData(); render();
@@ -2658,7 +2669,9 @@ function bind(){
     const cntEl=document.getElementById('me-count');
     const cnt=cntEl?Math.max(1,parseInt(cntEl.value)||1):(Number(m.count)||1);
     let qtyV=parseFloat((document.getElementById('me-qty')||{}).value);
-    const priceV=parseFloat((document.getElementById('me-price')||{}).value);
+    const priceRawV=String(((document.getElementById('me-price')||{}).value||'')).trim();
+    let priceV=evalPriceExpr(priceRawV);
+    if(!isNaN(priceV)) priceV=Math.round(priceV*100)/100;
     const noteV=((document.getElementById('me-note')||{}).value||'').trim();
     const w=parseFloat((document.getElementById('me-width')||{}).value);
     const h=parseFloat((document.getElementById('me-height')||{}).value);
@@ -2673,6 +2686,7 @@ function bind(){
       m.perQty=cnt>1?Math.round(qtyV/cnt*100)/100:null;
     }
     const sz=document.getElementById('me-size'); if(sz) m.sizeText=sz.value.trim();
+    m.priceExpr=/[+*/()×÷]|\d-/.test(priceRawV)?priceRawV:'';
     m.date=date; m.item=item; m.unit=unitV||m.unit; m.count=cnt; m.qty=qtyV; m.unitPrice=priceV; m.note=noteV;
     measEditId=null; saveData(); render();
   };
@@ -4318,7 +4332,7 @@ function viewMeasurements(){
             ${m.measureType==='carry'?`<div class="field"><label>尺寸</label><input id="me-size" value="${esc(m.sizeText||'')}" style="width:130px"></div>`:''}
             ${m.measureType!=='carry'?`<div class="field"><label>間數</label><input type="number" id="me-count" value="${Number(m.count)||1}" min="1" step="1" style="width:75px"></div>`:''}
             <div class="field"><label>總數量</label><input type="number" id="me-qty" value="${m.qty}" min="0" step="0.01" style="width:95px"></div>
-            <div class="field"><label>單價</label><input type="number" id="me-price" value="${m.unitPrice}" min="0" step="1" style="width:100px"></div>
+            <div class="field"><label>單價（可算式）</label><input id="me-price" value="${esc(m.priceExpr||String(m.unitPrice))}" style="width:110px"></div>
             <div class="field" style="flex:1;min-width:140px"><label>備注</label><input id="me-note" value="${esc(m.note||'')}"></div>
           </div>
           <div style="display:flex;gap:8px;margin-top:8px;align-items:center">
@@ -4336,7 +4350,7 @@ function viewMeasurements(){
         <td style="text-align:right">${esc(sizeLabel)}</td>
         <td style="text-align:center">${esc(m.unit||'')}</td>
         <td style="text-align:right">${(Number(m.qty)||0).toLocaleString()}</td>
-        <td style="text-align:right">${money(Number(m.unitPrice)||0)}</td>
+        <td style="text-align:right">${money(Number(m.unitPrice)||0)}${m.priceExpr?`<div style="font-size:11px;color:var(--muted)">=${esc(m.priceExpr)}</div>`:''}</td>
         <td style="text-align:right;font-weight:700">${money(amt)}</td>
         <td style="max-width:140px;color:var(--muted);font-size:12px">${esc(m.note||'')}</td>
         <td style="white-space:nowrap"><button class="act" data-copy-meas="${m.id}" style="padding:2px 10px;font-size:12px">複製</button> <button class="act" data-edit-meas="${m.id}" style="padding:2px 10px;font-size:12px">改</button> <button class="act danger" data-del-meas="${m.id}" style="padding:2px 10px;font-size:12px">刪</button></td>
@@ -4394,7 +4408,7 @@ function viewMeasurements(){
       <div class="field" id="meas-size-field" style="display:none;flex:1 1 220px;min-width:220px"><label>尺寸</label><input id="meas-size" value="${measDraft?esc(measDraft.sizeText||''):''}" placeholder="例：4尺×8尺、120×240" style="width:100%"></div>
       <div class="field" id="meas-count-field"><label>間數（選填）</label><input type="number" id="meas-count" value="${measDraft&&Number(measDraft.count)>1?Number(measDraft.count):''}" min="1" step="1" placeholder="1" style="width:90px"></div>
       <div class="field" style="flex:0 0 130px;min-width:130px"><label id="meas-qty-label">數量/面積</label><input type="number" id="meas-qty" value="${mdQty}" min="0" step="0.01" style="width:100%"></div>
-      <div class="field"><label>單價</label><input type="number" id="meas-price" value="${measDraft?measDraft.unitPrice:''}" min="0" step="1" style="width:120px"></div>
+      <div class="field"><label>單價（可算式）</label><input id="meas-price" value="${measDraft?esc(measDraft.priceExpr||String(measDraft.unitPrice)):''}" placeholder="1200 或 1200*1.1" style="width:130px"></div>
       <div class="field"><label>小計</label><div id="meas-subtotal" class="num" style="height:36px;display:flex;align-items:center;font-weight:700">$0</div></div>
       <div class="field"><label>日期</label><input type="date" id="meas-date" value="${measKeep&&measKeep.date?esc(measKeep.date):new Date().toISOString().slice(0,10)}"></div>
       <div class="field" style="flex:1;min-width:150px"><label>備注</label><input id="meas-note" value="${measDraft?esc(measDraft.note||''):''}" placeholder="（選填）"></div>
