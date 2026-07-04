@@ -3980,9 +3980,12 @@ function viewBillingReq(){
   // 依案場分組
   const groups={};
   list.forEach(b=>{ const k=parentSiteName(b.site)||'（未填案場）'; (groups[k]=groups[k]||[]).push(b); });
-  const siteNames=Object.keys(groups).sort((a,b)=>a.localeCompare(b));
+  const allSiteNames=Object.keys(groups).sort((a,b)=>a.localeCompare(b));
+  const isPausedSite=n=>{ const so=state.sites.find(x=>x.name===n); return !!(so&&so.active===false); };
+  const siteNames=allSiteNames.filter(n=>!isPausedSite(n));
+  const pausedNames=allSiteNames.filter(isPausedSite);
 
-  const siteCards=siteNames.map(siteName=>{
+  const renderSiteCard=siteName=>{
     const siteList=groups[siteName];
     const siteTot=siteList.reduce((s,b)=>s+billingAmount(b),0);
     const siteSettled=siteList.filter(b=>b.settled).reduce((s,b)=>s+billingAmount(b),0);
@@ -4021,7 +4024,15 @@ function viewBillingReq(){
       </div>
       ${entries}
     </div>`;
-  }).join('');
+  };
+  const siteCards=siteNames.map(renderSiteCard).join('');
+  const pausedOpen=!!formOpen['req-paused-sites'];
+  const pausedSection=pausedNames.length?`<div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer" data-toggle-form="req-paused-sites">
+      <div style="font-size:14px;font-weight:600;color:var(--muted)">⏸ 已暫停案場（${pausedNames.length}）</div>
+      <span style="font-size:12px;color:var(--muted)">${pausedOpen?'▲ 收合':'▼ 展開'}</span>
+    </div>
+  </div>${pausedOpen?pausedNames.map(renderSiteCard).join(''):''}`:'';
 
   return `
   <div class="metrics">
@@ -4046,7 +4057,7 @@ function viewBillingReq(){
     <div class="row" style="margin-top:10px"><button class="btn" id="bnr-add">＋ 新增請款單</button></div>`:''}
     ${dataListHtml('client-memory-list', knownClients())}
   </div>
-  ${list.length===0?'<div class="card"><div class="empty">尚無請款單。點上方「新增請款單」開始登記。</div></div>':siteCards}`;
+  ${list.length===0?'<div class="card"><div class="empty">尚無請款單。點上方「新增請款單」開始登記。</div></div>':siteCards+pausedSection}`;
 }
 
 // ---- 追加單 ----
@@ -4060,9 +4071,12 @@ function viewBillingAdd(){
   // 依案場分組，預設收合
   const groups={};
   list.forEach(b=>{ const k=parentSiteName(b.site)||'（未填案場）'; (groups[k]=groups[k]||[]).push(b); });
-  const siteNames=Object.keys(groups).sort((a,b)=>a.localeCompare(b));
+  const allSiteNames=Object.keys(groups).sort((a,b)=>a.localeCompare(b));
+  const isPausedSite=n=>{ const so=state.sites.find(x=>x.name===n); return !!(so&&so.active===false); };
+  const siteNames=allSiteNames.filter(n=>!isPausedSite(n));
+  const pausedNames=allSiteNames.filter(isPausedSite);
 
-  const siteCards=siteNames.map(siteName=>{
+  const renderSiteCard=siteName=>{
     const siteList=groups[siteName];
     const siteTot=siteList.reduce((s,b)=>s+billingAmount(b),0);
     const siteSettled=siteList.filter(b=>b.settled).reduce((s,b)=>s+billingAmount(b),0);
@@ -4144,7 +4158,15 @@ function viewBillingAdd(){
       </div>
       ${entries}
     </div>`;
-  }).join('');
+  };
+  const siteCards=siteNames.map(renderSiteCard).join('');
+  const pausedOpen=!!formOpen['add-paused-sites'];
+  const pausedSection=pausedNames.length?`<div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer" data-toggle-form="add-paused-sites">
+      <div style="font-size:14px;font-weight:600;color:var(--muted)">⏸ 已暫停案場（${pausedNames.length}）</div>
+      <span style="font-size:12px;color:var(--muted)">${pausedOpen?'▲ 收合':'▼ 展開'}</span>
+    </div>
+  </div>${pausedOpen?pausedNames.map(renderSiteCard).join(''):''}`:'';
 
   return `
   <div class="metrics">
@@ -4169,7 +4191,7 @@ function viewBillingAdd(){
     <div class="row" style="margin-top:10px"><button class="btn" id="bna-add">＋ 新增追加單</button></div>`:''}
     ${dataListHtml('client-memory-list', knownClients())}
   </div>
-  ${list.length===0?'<div class="card"><div class="empty">尚無追加單。點上方「新增追加單」開始登記，新增後可在每張卡片上傳施作照片。</div></div>':siteCards}`;
+  ${list.length===0?'<div class="card"><div class="empty">尚無追加單。點上方「新增追加單」開始登記，新增後可在每張卡片上傳施作照片。</div></div>':siteCards+pausedSection}`;
 }
 
 // ---- 計量明細 ----
