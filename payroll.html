@@ -2675,11 +2675,28 @@ function bind(){
     m.date=date; m.item=item; m.unit=unitV||m.unit; m.count=cnt; m.qty=qtyV; m.unitPrice=priceV; m.note=noteV;
     measEditId=null; saveData(); render();
   };
-  document.querySelectorAll('[data-measpick-cb]').forEach(cb=>cb.onchange=()=>{
-    measSel[cb.dataset.measpickCb]=cb.checked;
-    // 不整頁重繪（避免畫面閃爍），只就地更新「匯出勾選」按鈕狀態
+  const measExportBtnRefresh=()=>{
     const btn=document.getElementById('export-meas-sel');
     if(btn){ const any=state.measurements.some(m=>measSel[m.id]); btn.disabled=!any; btn.style.opacity=any?'1':'.5'; }
+  };
+  document.querySelectorAll('[data-measpick-cb]').forEach(cb=>cb.onchange=()=>{
+    measSel[cb.dataset.measpickCb]=cb.checked;
+    // 不整頁重繪（避免畫面閃爍），只就地更新勾選狀態與按鈕
+    const site=state.measurements.find(m=>m.id===cb.dataset.measpickCb);
+    if(site){
+      const key=parentSiteName(site.site)||'（未填案場）';
+      const all=state.measurements.filter(m=>(parentSiteName(m.site)||'（未填案場）')===key);
+      const master=document.querySelector(`[data-measpick-all="${CSS.escape(key)}"]`);
+      if(master) master.checked=all.length>0&&all.every(m=>measSel[m.id]);
+    }
+    measExportBtnRefresh();
+  });
+  document.querySelectorAll('[data-measpick-all]').forEach(cb=>cb.onchange=()=>{
+    const key=cb.dataset.measpickAll;
+    const ids=state.measurements.filter(m=>(parentSiteName(m.site)||'（未填案場）')===key).map(m=>m.id);
+    ids.forEach(id=>{ if(cb.checked) measSel[id]=true; else delete measSel[id]; });
+    document.querySelectorAll('[data-measpick-cb]').forEach(r=>{ if(ids.includes(r.dataset.measpickCb)) r.checked=cb.checked; });
+    measExportBtnRefresh();
   });
   const ema=document.getElementById('export-meas-all'); if(ema) ema.onclick=()=>exportMeasurementsPDF(false);
   const ems=document.getElementById('export-meas-sel'); if(ems) ems.onclick=()=>exportMeasurementsPDF(true);
@@ -4279,6 +4296,7 @@ function viewMeasurements(){
     const rows=bysite[name];
     const siteTotal=rows.reduce((s,m)=>s+(Number(m.qty)||0)*(Number(m.unitPrice)||0),0);
     const open=!!formOpen['meas-site-'+name];
+    const allSel=rows.length>0&&rows.every(m=>measSel[m.id]);
     const trs=open?rows.map(m=>{
       const amt=(Number(m.qty)||0)*(Number(m.unitPrice)||0);
       const typeLabel=measurementTypeLabel(m);
@@ -4331,7 +4349,7 @@ function viewMeasurements(){
       ${open?`<div class="scroll" style="border-top:1px solid var(--line)">
         <table style="width:100%;border-collapse:collapse;font-size:13px">
           <thead><tr style="background:var(--bg);color:var(--muted);font-size:12px">
-            <th style="padding:6px 10px;width:28px"></th>
+            <th style="padding:6px 10px;width:44px;white-space:nowrap"><label style="display:flex;flex-direction:column;align-items:center;gap:2px;cursor:pointer;font-size:10px"><input type="checkbox" data-measpick-all="${name}" ${allSel?'checked':''} style="width:16px;height:16px">全選</label></th>
             <th style="padding:6px 10px;text-align:left;white-space:nowrap">日期</th>
             <th style="padding:6px 10px;text-align:left">項目</th>
             <th style="padding:6px 10px;text-align:center">類型</th>
