@@ -4246,7 +4246,6 @@ function viewMeasurements(){
         <td style="text-align:center"><input type="checkbox" data-measpick-cb="${m.id}" ${measSel[m.id]?'checked':''} style="width:16px;height:16px"></td>
         <td>${esc(m.date||'')}</td>
         <td style="max-width:160px">${esc(m.item||'')}</td>
-        <td style="text-align:center">${subSiteTag(m.site)||'—'}</td>
         <td style="text-align:center">${esc(typeLabel)}</td>
         <td style="text-align:right">${esc(sizeLabel)}</td>
         <td style="text-align:center">${esc(m.unit||'')}</td>
@@ -4271,7 +4270,6 @@ function viewMeasurements(){
             <th style="padding:6px 10px;width:28px"></th>
             <th style="padding:6px 10px;text-align:left;white-space:nowrap">日期</th>
             <th style="padding:6px 10px;text-align:left">項目</th>
-            <th style="padding:6px 10px;text-align:center">樓層</th>
             <th style="padding:6px 10px;text-align:center">類型</th>
             <th style="padding:6px 10px;text-align:right">尺寸</th>
             <th style="padding:6px 10px;text-align:center">單位</th>
