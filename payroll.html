@@ -2728,6 +2728,8 @@ function bind(){
   document.querySelectorAll('[data-togglesettle]').forEach(b=>b.onclick=()=>{
     const bill=state.billings.find(x=>x.id===b.dataset.togglesettle);
     if(bill){
+      // 從請款追蹤頁改回未收款 → 單據會離開追蹤頁，先確認
+      if(b.dataset.fromtrack&&bill.settled&&!confirm('改回未收款後，這筆會退出請款追蹤，回到「請款單／追加單」頁管理。\n確定嗎？')) return;
       bill.settled=!bill.settled;
       const so=state.sites.find(x=>x.name===parentSiteName(bill.site));
       if(so) resyncSiteDeal(so);
@@ -4460,7 +4462,7 @@ function viewBilling(){
     if(contract>0){
       const pct=Math.min(100,Math.round(billed/contract*100));
       const remain=contract-billed;
-      progress=`<div class="sub" style="margin:4px 0 8px">合約總額 ${money(contract)}　已請款 ${money(billed)}（${pct}%）　${remain>0?`尚未請款 <b>${money(remain)}</b>`:(remain<0?`<span style="color:var(--danger)">超出合約 ${money(-remain)}</span>`:'已請足')}
+      progress=`<div class="sub" style="margin:4px 0 8px">合約總額 ${money(contract)}　已收款 ${money(billed)}（${pct}%）　${remain>0?`尚未收款 <b>${money(remain)}</b>`:(remain<0?`<span style="color:var(--danger)">超出合約 ${money(-remain)}</span>`:'已收足')}
         <div style="height:6px;background:var(--line);border-radius:3px;margin-top:6px;overflow:hidden"><div style="height:100%;width:${pct}%;background:var(--accent)"></div></div></div>`;
     }
     const rows=list.map(b=>{
@@ -4486,7 +4488,7 @@ function viewBilling(){
       <td><span class="tag" style="${typeStyle}">${esc(docType)}</span> ${esc(b.date||'')} ${subSiteTag(b.site)}</td>
       <td class="num">${money(billingAmount(b))}</td>
       <td>${esc(b.method||'')}</td><td>${esc(b.client||'')}</td>
-      <td><button class="act ${b.settled?'':'muted'}" data-togglesettle="${b.id}" style="${b.settled?'color:var(--accent)':''}">${b.settled?'✓ 已收款':'未收款'}</button></td>
+      <td><button class="act ${b.settled?'':'muted'}" data-togglesettle="${b.id}" data-fromtrack="1" style="${b.settled?'color:var(--accent)':''}">${b.settled?'✓ 已收款':'未收款'}</button></td>
       <td>${esc(b.note||'')}</td>
       <td><button class="act" data-billprint="${b.id}">列印</button> <button class="act" data-billedit="${b.id}">改</button> <button class="act danger" data-delbill="${b.id}">刪</button></td>
     </tr>
@@ -4515,8 +4517,6 @@ function viewBilling(){
   const cards=activeNames.map(cardForName).join('');
   const pausedCards=pausedNames.length?`<details ${detailAttrs('billing-track-paused')} style="margin-top:10px"><summary style="cursor:pointer;font-weight:600;padding:8px 0">已暫停案場（${pausedNames.length}）</summary>${pausedNames.map(cardForName).join('')}</details>`:'';
 
-  const siteSelOpts=siteSelectOptions();
-
   return `
   <div class="metrics">
     <div class="metric"><div class="l">已收款請款</div><div class="v" style="font-size:20px">${money(totalBilled)}</div></div>
@@ -4524,25 +4524,13 @@ function viewBilling(){
     <div class="metric"><div class="l">未收款未列入</div><div class="v" style="font-size:20px;color:var(--muted)">${pendingCount}</div></div>
   </div>
   <div class="card">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;flex-wrap:wrap;gap:8px">
-      <div style="font-size:14px;font-weight:600">新增單據</div>
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+      <p class="sub" style="margin:0;flex:1;min-width:200px">流程：請款單先給業主確認 → 業主撥款後，到「請款單／追加單」頁按「✓ 已收款」→ 單據自動進入這裡追蹤。金額還會變動的單據請留在請款單頁。</p>
       <button class="btn" id="export-billing" ${trackedBillings.length===0?'disabled style="opacity:.5"':''}>匯出 PDF</button>
     </div>
-    <p class="sub">請款追蹤只顯示已收款的請款單與追加單。未收款資料請到「請款單」或「追加單」頁查看與管理。</p>
-    <div class="row">
-      <div class="field"><label>類型</label><select id="b-type"><option value="請款單">請款單</option><option value="追加單">追加單</option></select></div>
-      <div class="field"><label>請款日</label><input type="date" id="b-date" value="${new Date().toISOString().slice(0,10)}"></div>
-      <div class="field" style="flex:1;min-width:140px"><label>案場名稱</label><select id="b-site">${siteSelOpts}</select></div>
-      <div class="field"><label>金額</label><input type="number" id="b-amount" min="0" step="1000" style="width:140px"></div>
-      <div class="field"><label>方式</label><input id="b-method" placeholder="匯款" style="width:100px"></div>
-      <div class="field"><label>業主</label><input id="b-client" list="client-memory-list" placeholder="品佑、廣昕" style="width:110px"></div>
-      <div class="field"><label>備註</label><input id="b-note" placeholder="工程項目說明" style="width:160px"></div>
-      <div class="field"><label>收款狀態</label><select id="b-settled"><option value="">未收款</option><option value="1">已收款</option></select></div>
-    </div>
-    <div class="row" style="margin-top:8px"><button class="btn" id="b-add">＋ 新增</button></div>
-    ${dataListHtml('client-memory-list', knownClients())}
   </div>
-  ${cards===''&&pausedCards===''?'<div class="card"><div class="empty">尚無已收款請款紀錄。</div></div>':cards}${pausedCards}`;
+  ${cards===''&&pausedCards===''?'<div class="card"><div class="empty">尚無已收款請款紀錄。</div></div>':cards}${pausedCards}
+  ${dataListHtml('client-memory-list', knownClients())}`;
 }
 
 // ---- 對帳匯出 ----
