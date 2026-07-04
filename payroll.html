@@ -526,8 +526,8 @@ function bindMeasSubtotal(){
     const cnt=Math.max(1,parseInt(count&&count.value)||1); // 間數選填，留空=1
     const u=(unit&&unit.value||'').trim();
     const isAutoArea=isPartition&&(u===''||u==='㎡'); // 只有「隔間＋單位㎡」才自動算面積
-    if(widthField) widthField.style.display=isPartition?'block':'none';
-    if(heightField) heightField.style.display=isPartition?'block':'none';
+    if(widthField) widthField.style.display=isAutoArea?'block':'none'; // 單位非㎡時連寬高欄位一起收掉
+    if(heightField) heightField.style.display=isAutoArea?'block':'none';
     if(sizeField) sizeField.style.display=isCarry?'block':'none';
     if(countField) countField.style.display=isCarry?'none':'block';
     qty.readOnly=isAutoArea;
