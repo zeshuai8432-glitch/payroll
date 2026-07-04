@@ -427,7 +427,9 @@
   #print-overlay .bluedoc tbody tr:nth-child(even) td { background: #EFF6FF; }
   #print-overlay .bluedoc tr.type-head td { background: #E0F2FE !important; color: #1E40AF; font-weight: 700; }
   #print-overlay .bluedoc .total-row td { background: #DBEAFE !important; color: #1E3A8A; font-weight: 700; }
-  #print-overlay .bluedoc tr.flag td { background: #FEF3C7 !important; }
+  #print-overlay .bluedoc tr.flag-y td { background: #FEF3C7 !important; }
+  #print-overlay .bluedoc tr.flag-r td { background: #FEE2E2 !important; }
+  #print-overlay .bluedoc tr.flag-b td { background: #DBEAFE !important; }
   #print-overlay .bluedoc .foot { margin-top: 22px; padding-top: 8px; border-top: 2px solid #1E3A8A; font-size: 11px; color: #64748B; display: flex; justify-content: space-between; }
   @media print {
     body > .top, body > .layout { display: none !important; }
@@ -2669,7 +2671,10 @@ function bind(){
   });
   document.querySelectorAll('[data-flag-meas]').forEach(b=>b.onclick=()=>{
     const m=state.measurements.find(x=>x.id===b.dataset.flagMeas); if(!m) return;
-    m.flag=!m.flag; saveData(); render();
+    const cur=measFlagKey(m);
+    const next=MEAS_FLAG_CYCLE[(MEAS_FLAG_CYCLE.indexOf(cur)+1)%MEAS_FLAG_CYCLE.length];
+    if(next) m.flag=next; else delete m.flag;
+    saveData(); render();
   });
   document.querySelectorAll('[data-copy-meas]').forEach(b=>b.onclick=()=>{
     const m=state.measurements.find(x=>x.id===b.dataset.copyMeas); if(!m) return;
@@ -4318,6 +4323,14 @@ function measTypeKey(m){
   return 'other';
 }
 const MEAS_TYPE_ORDER=[['partition','隔間'],['ceiling','天花板'],['carry','搬運'],['other','其他']];
+// 重點標記三色循環：黃=注意 → 紅=待確認 → 藍=業主指定 → 取消
+const MEAS_FLAGS={
+  y:{label:'注意',   bg:'#FEF3C7', ink:'#d97706'},
+  r:{label:'待確認', bg:'#FEE2E2', ink:'#dc2626'},
+  b:{label:'業主指定', bg:'#DBEAFE', ink:'#2563EB'},
+};
+const MEAS_FLAG_CYCLE=['','y','r','b'];
+function measFlagKey(m){ return m.flag===true?'y':(MEAS_FLAGS[m.flag]?m.flag:''); } // 舊資料 true 視為黃
 function measurementSizeLabel(m){
   const mt=m.measureType||'';
   const isPartition=mt==='partition'||(!mt&&m.width&&m.height);
@@ -4374,17 +4387,18 @@ function viewMeasurements(){
           </div>
         </td></tr>`;
       }
-      return `<tr${m.flag?' style="background:#fff7e6"':''}>
+      const fk=measFlagKey(m); const ff=fk?MEAS_FLAGS[fk]:null;
+      return `<tr${ff?` style="background:${ff.bg}"`:''}>
         <td style="text-align:center"><input type="checkbox" data-measpick-cb="${m.id}" ${measSel[m.id]?'checked':''} style="width:16px;height:16px"></td>
         <td>${esc(m.date||'')}</td>
-        <td style="max-width:160px">${m.flag?'<span style="color:#d97706">★</span> ':''}${esc(m.item||'')}</td>
+        <td style="max-width:160px">${ff?`<span style="color:${ff.ink};font-weight:700;font-size:11px">★${ff.label}</span> `:''}${esc(m.item||'')}</td>
         <td style="text-align:right">${esc(sizeLabel)}</td>
         <td style="text-align:center">${esc(m.unit||'')}</td>
         <td style="text-align:right">${(Number(m.qty)||0).toLocaleString()}</td>
         <td style="text-align:right">${money(Number(m.unitPrice)||0)}${m.priceExpr?`<div style="font-size:11px;color:var(--muted)">=${esc(m.priceExpr)}</div>`:''}</td>
         <td style="text-align:right;font-weight:700">${money(amt)}</td>
         <td style="max-width:140px;color:var(--muted);font-size:12px">${esc(m.note||'')}</td>
-        <td style="white-space:nowrap"><button class="act" data-flag-meas="${m.id}" title="重點標記" style="padding:2px 8px;font-size:12px;${m.flag?'color:#d97706;background:rgba(217,119,6,.14)':''}">★</button> <button class="act" data-copy-meas="${m.id}" style="padding:2px 10px;font-size:12px">複製</button> <button class="act" data-edit-meas="${m.id}" style="padding:2px 10px;font-size:12px">改</button> <button class="act danger" data-del-meas="${m.id}" style="padding:2px 10px;font-size:12px">刪</button></td>
+        <td style="white-space:nowrap"><button class="act" data-flag-meas="${m.id}" title="重點標記：點擊循環 注意→待確認→業主指定→取消" style="padding:2px 8px;font-size:12px;${ff?`color:${ff.ink};background:${ff.bg}`:''}">★</button> <button class="act" data-copy-meas="${m.id}" style="padding:2px 10px;font-size:12px">複製</button> <button class="act" data-edit-meas="${m.id}" style="padding:2px 10px;font-size:12px">改</button> <button class="act danger" data-del-meas="${m.id}" style="padding:2px 10px;font-size:12px">刪</button></td>
       </tr>`;
     };
     // 案場內依類型分段：隔間 → 天花板 → 搬運，各段有小計
@@ -4467,9 +4481,10 @@ function exportMeasurementsPDF(selectedOnly=false){
     const subtotal=rows.reduce((s,m)=>s+(Number(m.qty)||0)*(Number(m.unitPrice)||0),0);
     const rowHtml=m=>{
       const amt=(Number(m.qty)||0)*(Number(m.unitPrice)||0);
-      return `<tr${m.flag?' class="flag"':''}>
+      const fk=measFlagKey(m); const ff=fk?MEAS_FLAGS[fk]:null;
+      return `<tr${fk?` class="flag-${fk}"`:''}>
         <td>${esc(m.date||'')}</td>
-        <td>${m.flag?'★ ':''}${esc(m.item||'')}</td>
+        <td>${ff?`<span style="color:${ff.ink};font-weight:700;font-size:10px">★${ff.label}</span> `:''}${esc(m.item||'')}</td>
         <td>${esc(measurementSizeLabel(m))}</td>
         <td>${esc(m.unit||'')}</td>
         <td class="num">${(Number(m.qty)||0).toLocaleString()}</td>
