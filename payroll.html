@@ -2878,7 +2878,7 @@ function bind(){
     const cur=measFlagKey(m);
     const next=MEAS_FLAG_CYCLE[(MEAS_FLAG_CYCLE.indexOf(cur)+1)%MEAS_FLAG_CYCLE.length];
     if(next) m.flag=next; else delete m.flag;
-    saveData(); render();
+    saveData(); pushCloud(); render();
   });
   document.querySelectorAll('[data-copy-meas]').forEach(b=>b.onclick=()=>{
     const m=state.measurements.find(x=>x.id===b.dataset.copyMeas); if(!m) return;
