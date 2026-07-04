@@ -517,19 +517,22 @@ function bindMeasSubtotal(){
   const widthField=document.getElementById('meas-width-field'), heightField=document.getElementById('meas-height-field'), sizeField=document.getElementById('meas-size-field');
   const itemLabel=document.getElementById('meas-item-label'), item=document.getElementById('meas-item'), qtyLabel=document.getElementById('meas-qty-label'), unit=document.getElementById('meas-unit');
   const qty=document.getElementById('meas-qty'), price=document.getElementById('meas-price'), out=document.getElementById('meas-subtotal');
+  const count=document.getElementById('meas-count'), countField=document.getElementById('meas-count-field');
   if(!qty||!price||!out) return;
   const roundArea=n=>Math.round(n*100)/100;
   const calc=()=>{
     const isPartition=!type||type.value==='partition';
     const isCarry=type&&type.value==='carry';
+    const cnt=Math.max(1,parseInt(count&&count.value)||1); // 間數選填，留空=1
     if(widthField) widthField.style.display=isPartition?'block':'none';
     if(heightField) heightField.style.display=isPartition?'block':'none';
     if(sizeField) sizeField.style.display=isCarry?'block':'none';
+    if(countField) countField.style.display=isCarry?'none':'block';
     qty.readOnly=isPartition;
-    qty.placeholder=isPartition?'自動計算':(isCarry?'直接輸入數量':'直接輸入面積');
+    qty.placeholder=isPartition?'自動計算':(isCarry?'直接輸入數量':(cnt>1?'每間面積':'直接輸入面積'));
     if(itemLabel) itemLabel.textContent=isCarry?'材料名稱':'項目';
     if(item) item.placeholder=isCarry?'例：水泥板、角料、矽酸鈣板':'例：貼磁磚、隔間牆';
-    if(qtyLabel) qtyLabel.textContent=isCarry?'數量':'數量/面積';
+    if(qtyLabel) qtyLabel.textContent=isCarry?'數量':(!isPartition&&cnt>1?'每間面積':'數量/面積');
     if(unit){
       unit.placeholder=isCarry?'趟、車、包、式':'㎡、坪、才、式';
       if(isCarry&&unit.value==='㎡') unit.value='趟';
@@ -537,14 +540,16 @@ function bindMeasSubtotal(){
     }
     if(isPartition){
       const w=parseFloat(width&&width.value), h=parseFloat(height&&height.value);
-      qty.value=(!isNaN(w)&&w>0&&!isNaN(h)&&h>0)?roundArea(w*h):'';
+      qty.value=(!isNaN(w)&&w>0&&!isNaN(h)&&h>0)?roundArea(w*h*cnt):'';
     }
     const q=parseFloat(qty.value),p=parseFloat(price.value);
-    out.textContent=(!isNaN(q)&&!isNaN(p))?money(q*p):money(0);
+    const mult=(!isPartition&&!isCarry)?cnt:1; // 天花板：每間面積 × 間數
+    out.textContent=(!isNaN(q)&&!isNaN(p))?money(q*mult*p):money(0);
   };
   if(type) type.onchange=calc;
   if(width) width.oninput=calc;
   if(height) height.oninput=calc;
+  if(count) count.oninput=calc;
   qty.oninput=calc; price.oninput=calc; calc();
 }
 // 工數顯示：工數 = 工時÷8，用分數符號。例：9h → 1⅛ 工
@@ -2614,13 +2619,16 @@ function bind(){
     const measureType=(document.getElementById('meas-type')||{}).value||'partition';
     const width=parseFloat((document.getElementById('meas-width')||{}).value);
     const height=parseFloat((document.getElementById('meas-height')||{}).value);
-    const qty=parseFloat(document.getElementById('meas-qty').value);
+    let qty=parseFloat(document.getElementById('meas-qty').value);
     const price=parseFloat(document.getElementById('meas-price').value);
     const note=document.getElementById('meas-note').value.trim();
+    const count=measureType==='carry'?1:Math.max(1,parseInt((document.getElementById('meas-count')||{}).value)||1); // 間數選填，留空=1
     if(measureType==='partition'&&(isNaN(width)||width<=0||isNaN(height)||height<=0)){ alert('隔間請填寬度與高度（公尺）'); return; }
     if(!date||!site||!item||isNaN(qty)||qty<=0||isNaN(price)||price<0){ alert('請填日期、案場、項目/材料名稱、數量與單價'); return; }
     const sizeText=(document.getElementById('meas-size')||{}).value||'';
-    state.measurements.push({id:uid(),date,site,item,unit,qty,unitPrice:price,note,measureType,sizeText:measureType==='carry'?sizeText.trim():'',width:measureType==='partition'?width:null,height:measureType==='partition'?height:null});
+    let perQty=null;
+    if(measureType==='ceiling'&&count>1){ perQty=qty; qty=Math.round(qty*count*100)/100; } // 天花板：每間面積 × 間數 = 總面積
+    state.measurements.push({id:uid(),date,site,item,unit,qty,unitPrice:price,note,measureType,count,perQty,sizeText:measureType==='carry'?sizeText.trim():'',width:measureType==='partition'?width:null,height:measureType==='partition'?height:null});
     saveData(); render();
   };
   document.querySelectorAll('[data-del-meas]').forEach(b=>b.onclick=()=>{
@@ -4203,8 +4211,11 @@ function measurementTypeLabel(m){
 function measurementSizeLabel(m){
   const mt=m.measureType||'';
   const isPartition=mt==='partition'||(!mt&&m.width&&m.height);
+  const cnt=Number(m.count)||1;
   const carrySize=m.sizeText||((m.width&&m.height)?`${Number(m.width)||0} × ${Number(m.height)||0} m`:(m.width?`寬 ${Number(m.width)||0} m`:(m.height?`高 ${Number(m.height)||0} m`:'')));
-  return isPartition?`${Number(m.width)||0} × ${Number(m.height)||0} m`:(mt==='carry'?carrySize:'直接輸入');
+  if(isPartition) return `${Number(m.width)||0} × ${Number(m.height)||0} m${cnt>1?` ×${cnt}間`:''}`;
+  if(mt==='carry') return carrySize;
+  return cnt>1?`每間 ${Number(m.perQty)||''} ×${cnt}間`:'直接輸入';
 }
 function viewMeasurements(){
   const siteSelOpts=siteSelectOptions();
@@ -4289,6 +4300,7 @@ function viewMeasurements(){
       <div class="field" id="meas-width-field"><label>寬度（m）</label><input type="number" id="meas-width" min="0" step="0.01" style="width:95px"></div>
       <div class="field" id="meas-height-field"><label>高度（m）</label><input type="number" id="meas-height" min="0" step="0.01" style="width:95px"></div>
       <div class="field" id="meas-size-field" style="display:none;flex:1 1 220px;min-width:220px"><label>尺寸</label><input id="meas-size" placeholder="例：4尺×8尺、120×240" style="width:100%"></div>
+      <div class="field" id="meas-count-field"><label>間數（選填）</label><input type="number" id="meas-count" min="1" step="1" placeholder="1" style="width:90px"></div>
       <div class="field" style="flex:0 0 130px;min-width:130px"><label id="meas-qty-label">數量/面積</label><input type="number" id="meas-qty" min="0" step="0.01" style="width:100%"></div>
       <div class="field"><label>單價</label><input type="number" id="meas-price" min="0" step="1" style="width:120px"></div>
       <div class="field"><label>小計</label><div id="meas-subtotal" class="num" style="height:36px;display:flex;align-items:center;font-weight:700">$0</div></div>
