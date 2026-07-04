@@ -2634,6 +2634,7 @@ function bind(){
     if(count>1&&!isAutoArea&&measureType!=='carry'){ perQty=qty; qty=Math.round(qty*count*100)/100; } // 手動輸入：每間數量 × 間數 = 總數量（自動面積已含間數）
     state.measurements.push({id:uid(),date,site,item,unit,qty,unitPrice:price,note,measureType,count,perQty,sizeText:measureType==='carry'?sizeText.trim():'',width:measureType==='partition'&&!isNaN(width)&&width>0?width:null,height:measureType==='partition'&&!isNaN(height)&&height>0?height:null});
     measDraft=null;
+    measKeep={measureType,site,date}; // 送出後保留類型/案場/日期
     saveData(); render();
   };
   document.querySelectorAll('[data-del-meas]').forEach(b=>b.onclick=()=>{
@@ -3842,6 +3843,7 @@ function resyncSiteDeal(site){
 let dealSel={}; // 分潤清單勾選
 let measSel={}; // 計量明細匯出勾選
 let measEditId=null, measDraft=null; // 計量明細：編輯中的紀錄 / 複製帶入新增表單的草稿
+let measKeep=null; // 計量明細：記住上次新增的類型/案場/日期，送出後不歸零
 let costEditId=null; // 手動成本編輯中
 let siteSettingsOpen={}; // 案場設定展開狀態
 let siteCostDetailsOpen={}; // 案場成本明細展開狀態
@@ -4283,8 +4285,8 @@ function measurementSizeLabel(m){
   return cnt>1?`每間 ${Number(m.perQty)||''} ×${cnt}間`:'—';
 }
 function viewMeasurements(){
-  const siteSelOpts=siteSelectOptions(measDraft?measDraft.site:'');
-  const mdType=measDraft?(measDraft.measureType||'partition'):'partition';
+  const siteSelOpts=siteSelectOptions(measDraft?measDraft.site:(measKeep?measKeep.site:''));
+  const mdType=measDraft?(measDraft.measureType||'partition'):(measKeep?measKeep.measureType:'partition');
   const mdAutoArea=measDraft&&mdType==='partition'&&measDraft.unit==='㎡';
   const mdQty=measDraft?(mdAutoArea?'':(Number(measDraft.count)>1&&measDraft.perQty?measDraft.perQty:measDraft.qty)):'';
   const list=[...state.measurements].sort((a,b)=>(b.date||'').localeCompare(a.date||'')||(a.site||'').localeCompare(b.site||''));
@@ -4394,7 +4396,7 @@ function viewMeasurements(){
       <div class="field" style="flex:0 0 130px;min-width:130px"><label id="meas-qty-label">數量/面積</label><input type="number" id="meas-qty" value="${mdQty}" min="0" step="0.01" style="width:100%"></div>
       <div class="field"><label>單價</label><input type="number" id="meas-price" value="${measDraft?measDraft.unitPrice:''}" min="0" step="1" style="width:120px"></div>
       <div class="field"><label>小計</label><div id="meas-subtotal" class="num" style="height:36px;display:flex;align-items:center;font-weight:700">$0</div></div>
-      <div class="field"><label>日期</label><input type="date" id="meas-date" value="${new Date().toISOString().slice(0,10)}"></div>
+      <div class="field"><label>日期</label><input type="date" id="meas-date" value="${measKeep&&measKeep.date?esc(measKeep.date):new Date().toISOString().slice(0,10)}"></div>
       <div class="field" style="flex:1;min-width:150px"><label>備注</label><input id="meas-note" value="${measDraft?esc(measDraft.note||''):''}" placeholder="（選填）"></div>
     </div>
     <div class="row" style="margin-top:10px"><button class="btn" id="meas-add">＋ 新增</button></div>`:''}
