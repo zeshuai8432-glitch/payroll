@@ -2884,6 +2884,10 @@ function bind(){
 function printHTML(title, inner){
   // 移除舊浮層
   const old=document.getElementById('print-overlay'); if(old) old.remove();
+  // 全站 PDF 統一藍色系商用報告風；薪資明細單（paydoc）保留專屬加減項配色
+  const themed=inner.includes('class="paydoc"')||inner.includes('class="bluedoc"')
+    ?inner
+    :`<div class="bluedoc">${inner}<div class="foot"><span>本報表由系統自動產生</span><span>${new Date().toISOString().slice(0,10)}</span></div></div>`;
   const ov=document.createElement('div');
   ov.id='print-overlay';
   ov.innerHTML=`
@@ -2891,7 +2895,7 @@ function printHTML(title, inner){
       <button class="btn" id="po-print">列印 / 存成 PDF</button>
       <button class="act" id="po-close" style="padding:0 14px">關閉</button>
     </div>
-    <div class="pdoc">${inner}</div>`;
+    <div class="pdoc">${themed}</div>`;
   document.body.appendChild(ov);
   document.getElementById('po-print').onclick=()=>window.print();
   document.getElementById('po-close').onclick=()=>ov.remove();
@@ -3292,7 +3296,7 @@ function printBillingDoc(id){
       <button class="btn" id="po-print" style="margin-left:auto">列印 / 存成 PDF</button>
       <button class="act" id="po-close" style="padding:0 14px">關閉</button>
     </div>
-    <div class="pdoc">${inner}</div>`;
+    <div class="pdoc"><div class="bluedoc">${inner}</div></div>`;
   document.body.appendChild(ov);
   document.getElementById('po-print').onclick=()=>window.print();
   document.getElementById('po-close').onclick=()=>ov.remove();
@@ -3325,7 +3329,7 @@ function printBillingDocs(ids){
       <button class="btn" id="po-print" style="margin-left:auto">列印 / 存成 PDF</button>
       <button class="act" id="po-close" style="padding:0 14px">關閉</button>
     </div>
-    <div class="pdoc">${pages}</div>`;
+    <div class="pdoc"><div class="bluedoc">${pages}</div></div>`;
   document.body.appendChild(ov);
   document.getElementById('po-print').onclick=()=>window.print();
   document.getElementById('po-close').onclick=()=>ov.remove();
