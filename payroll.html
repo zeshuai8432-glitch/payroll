@@ -467,24 +467,9 @@
   <main class="main" id="body"></main>
 </div>
 
-<!-- Firebase (compat 版，直接用 script 標籤) -->
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<!-- 雲端改用 Firestore REST 直連（不再依賴會擋住載入的 gstatic 程式庫） -->
 <script>
-window.__fb = (function(){
-  try{
-    firebase.initializeApp({
-      apiKey: "AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8",
-      authDomain: "payroll-d1abe.firebaseapp.com",
-      projectId: "payroll-d1abe",
-      storageBucket: "payroll-d1abe.firebasestorage.app",
-      messagingSenderId: "443839333943",
-      appId: "1:443839333943:web:82df3e7641ceb6fa2021b2"
-    });
-    const db = firebase.firestore();
-    return { db: db, doc: db.collection('payroll').doc('main'), ok: true };
-  }catch(e){ console.error('Firebase 初始化失敗:', e); return { ok:false, err:e }; }
-})();
+window.__fb = { ok:false, err:'REST-only 模式' }; // 一律走 REST；不載入 firebase SDK
 </script>
 
 <script>
@@ -499,7 +484,7 @@ const FS_PROJECT = 'payroll-d1abe';
 const FS_KEY = 'AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
 const FS_DOC_BASE = 'https://firestore.googleapis.com/v1/projects/'+FS_PROJECT+'/databases/(default)/documents/payroll/';
 const FS_REST_URL = FS_DOC_BASE+'main?key='+FS_KEY;
-const APP_VERSION = 'v2026.07.05-autobackup';
+const APP_VERSION = 'v2026.07.05-restonly';
 let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], tools:[], locations:[], assets:[], advances:[], accounts:[], ledger:[], deals:[], billings:[], measurements:[], contracts:{}, costs:[], textMemory:{clients:[],companies:[]}, parkAccId:'', oweBonus:{}, minFund:'', tab:'entry' };
 let cloudStatus='連線中…';
 let localDirty=false, lastCloudTs=0;
@@ -1044,14 +1029,14 @@ async function diagCloud(){
   setCloud('診斷中…');
   const vEl=document.getElementById('app-version'); if(vEl){ vEl.textContent=APP_VERSION; vEl.style.display=''; }
   try{
-    if(!window.__fb||!window.__fb.ok){ setCloud('Firebase 未就緒：'+String(window.__fb&&window.__fb.err||'').slice(0,60)); return; }
-    const snap=await window.__fb.doc.get();
-    if(!snap.exists){ setCloud('Firebase 已連線，雲端尚無資料（第一次存檔後就會有）'); return; }
-    const cd=JSON.parse(snap.data().json);
-    const cloudSigCount=Object.keys(cd.billingSigs||{}).length;
-    const localSigCount=Object.keys(billingSigs).length;
-    setCloud(`✓ Firebase 連線正常｜本機簽名:${localSigCount} 雲端:${cloudSigCount}`);
-  }catch(e){ setCloud('診斷失敗：'+String(e).slice(0,70)); }
+    const t0=Date.now();
+    const j=await cloudGet();
+    const ms=Date.now()-t0;
+    if(!j||!j.ok||!j.data){ setCloud(`✓ 連線正常(${ms}ms)，雲端尚無資料`); return; }
+    const cd=JSON.parse(j.data);
+    const when=cd.savedAt?new Date(cd.savedAt).toLocaleString():'?';
+    setCloud(`✓ 雲端連線正常(${ms}ms)｜雲端存檔:${when}｜計量${(cd.measurements||[]).length}筆`);
+  }catch(e){ setCloud('診斷失敗：'+String(e&&e.message||e).slice(0,70)); }
 }
 function setCloud(s){ cloudStatus=s; const el=document.getElementById('cloud-status'); if(el) el.textContent=s; }
 
