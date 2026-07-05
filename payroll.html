@@ -495,8 +495,11 @@ const LS_SIGS_LOCKED = 'pm_billing_sigs_locked_v1';
 const LS_SIG_META    = 'pm_billing_sig_meta_v1';
 const LS_DIRTY       = 'pm_cloud_dirty_v1';
 const CLOUD_URL = 'https://script.google.com/macros/s/AKfycbyMPs38UNzAwX3bcD2n9nQBz0HofUW9qFweSOnmoySs8VW2bJYHn47RdyZLQ8bD8SNWTg/exec';
-const FS_REST_URL = 'https://firestore.googleapis.com/v1/projects/payroll-d1abe/databases/(default)/documents/payroll/main?key=AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
-const APP_VERSION = 'v2026.07.05-watchdog';
+const FS_PROJECT = 'payroll-d1abe';
+const FS_KEY = 'AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
+const FS_DOC_BASE = 'https://firestore.googleapis.com/v1/projects/'+FS_PROJECT+'/databases/(default)/documents/payroll/';
+const FS_REST_URL = FS_DOC_BASE+'main?key='+FS_KEY;
+const APP_VERSION = 'v2026.07.05-autobackup';
 let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], tools:[], locations:[], assets:[], advances:[], accounts:[], ledger:[], deals:[], billings:[], measurements:[], contracts:{}, costs:[], textMemory:{clients:[],companies:[]}, parkAccId:'', oweBonus:{}, minFund:'', tab:'entry' };
 let cloudStatus='連線中…';
 let localDirty=false, lastCloudTs=0;
@@ -860,6 +863,21 @@ async function cloudSet(payload){
     body:JSON.stringify({fields:{json:{stringValue:payload},savedAt:{integerValue:String(savedAt)}}})},15000);
   if(!r.ok) throw new Error('HTTP '+r.status);
 }
+// 歷史備份：把 payload 寫到另一個文件（10 分鐘一格 / 或指定 key），純安全網，失敗不影響主流程
+async function cloudBackup(payload, keyOverride){
+  const key=keyOverride||('hist-'+new Date().toISOString().slice(0,15).replace(/[:T]/g,'-'));
+  const savedAt=Date.now();
+  try{
+    if(window.__fb&&window.__fb.ok){
+      await withTimeout(window.__fb.db.collection('payroll').doc(key).set({json:payload,savedAt}),8000,'SDK 逾時');
+      return;
+    }
+  }catch(e){}
+  try{
+    await fetchT(FS_DOC_BASE+key+'?key='+FS_KEY,{method:'PATCH',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({fields:{json:{stringValue:payload},savedAt:{integerValue:String(savedAt)}}})},15000);
+  }catch(e){}
+}
 // 先讀本機快取（讓畫面秒開），再從雲端拉最新
 function loadLocal(){
   try { localDirty=localStorage.getItem(LS_DIRTY)==='1'; } catch(e){}
@@ -914,6 +932,14 @@ async function loadCloud(){
       // 照片 URL 永遠合併（各裝置各有自己上傳的照片）
       if(cloudData.billingPhotos) mergeCloudPhotos(cloudData.billingPhotos);
       if(!localDirty || cloudTs>=localTs){
+        // 若本機有尚未上傳的變更，套用雲端前先把本機備份起來（避免被雲端蓋掉就找不回）
+        if(localDirty){
+          try{
+            const localPayload=localRaw||JSON.stringify(packData());
+            cloudBackup(localPayload,'lostlocal-'+new Date().toISOString().slice(0,15).replace(/[:T]/g,'-'));
+            localStorage.setItem('pm_lost_local_v1', localPayload);
+          }catch(e){}
+        }
         // 雲端較新，套用；但本機較新的重點標記（flagAt）要保留並回推
         const keepFlags={}; (state.measurements||[]).forEach(m=>{ if(m.flagAt) keepFlags[m.id]={flag:m.flag,flagAt:m.flagAt}; });
         const keepSigs={...billingSigs}, keepLocked={...billingSigsLocked}, keepMeta={...billingSigMeta};
@@ -998,6 +1024,7 @@ async function pushCloud(){
     const payload=JSON.stringify(packData());
     try{ localStorage.setItem(LS,payload); }catch(e){}
     await cloudSet(payload);
+    cloudBackup(payload); // 成功後順手存一份歷史快照（非阻塞），日後可回溯
     localSigPending={}; localDirty=false; dirtyOther=false;
     try{ localStorage.removeItem(LS_DIRTY); }catch(e){}
     try{ lastCloudTs=Number((JSON.parse(payload)||{}).savedAt)||Date.now(); _lastCloudJson=payload; }catch(e){}
