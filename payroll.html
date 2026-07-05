@@ -253,6 +253,15 @@
   input:hover, select:hover { border-color: rgba(79,70,229,.4); background: #fff; }
   input:focus, select:focus { outline: none; border-color: var(--accent); background: #fff; box-shadow: 0 0 0 4px rgba(79,70,229,.13); }
   input[type=checkbox] { width: 18px; height: 18px; accent-color: var(--accent); }
+  textarea {
+    min-height: 40px; padding: 9px 14px;
+    border: 1.5px solid var(--line2); border-radius: 12px;
+    font-size: 14px; background: rgba(255,255,255,.9);
+    font-family: inherit; color: var(--ink); resize: vertical;
+    transition: border-color .18s, box-shadow .18s, background .18s;
+  }
+  textarea:hover { border-color: rgba(79,70,229,.4); background: #fff; }
+  textarea:focus { outline: none; border-color: var(--accent); background: #fff; box-shadow: 0 0 0 4px rgba(79,70,229,.13); }
 
   /* ── 統計數字卡片（彩色漸層） ── */
   .metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 16px; margin-bottom: 24px; }
@@ -602,6 +611,7 @@ function gongStr(hours){
 }
 function gongH(hours){ const h=Number(hours)||0; return `${gongStr(h)}<span style="color:var(--muted);font-size:11px">(${Math.round(h*10)/10}h)</span>`; }
 const esc = s => String(s==null?'':s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const escBr = s => esc(s).replace(/\n/g,'<br>'); // 備注顯示用：跳脫後保留換行
 let detailOpen={};
 const detailAttrs = (key, defaultOpen=false) => {
   const open=detailOpen[key]!==undefined?detailOpen[key]:defaultOpen;
@@ -3393,7 +3403,7 @@ function billingDocInner(id){
       <tbody>
         <tr><td>${esc(b.note||type)}</td><td>${esc(b.unit||'')}</td><td class="num">${b.qty!==undefined?b.qty:'—'}</td><td class="num">${b.unitPrice!==undefined?money(b.unitPrice):'—'}</td><td class="num">${money(amt)}</td></tr>
         <tr class="total-row"><td colspan="4">總金額</td><td class="num">${money(amt)}</td></tr>
-        ${b.remark?`<tr><td colspan="5" style="padding-top:8px;color:#555;font-size:13px">備注：${esc(b.remark)}</td></tr>`:''}
+        ${b.remark?`<tr><td colspan="5" style="padding-top:8px;color:#555;font-size:13px">備注：${escBr(b.remark)}</td></tr>`:''}
       </tbody></table>
     ${photoSec}
     <div class="sign">
@@ -4335,7 +4345,7 @@ function viewBillingAdd(){
             <div class="field"><label>小計</label><div id="bae-subtotal" class="num" style="height:36px;display:flex;align-items:center;font-weight:700">${money(billingAmount(b))}</div></div>
             <div class="field"><label>業主</label><input id="bae-client" list="client-memory-list" value="${esc(b.client||'')}" style="width:100px"></div>
             <div class="field" style="flex:1;min-width:180px"><label>說明（追加項目）</label><input id="bae-note" value="${esc(b.note||'')}" placeholder="例：追加防水工程"></div>
-            <div class="field" style="flex:1;min-width:150px"><label>備注</label><input id="bae-remark" value="${esc(b.remark||'')}" placeholder="其他備注"></div>
+            <div class="field" style="flex:1;min-width:150px"><label>備注（可換行）</label><textarea id="bae-remark" rows="2" placeholder="其他備注">${esc(b.remark||'')}</textarea></div>
             <div class="field"><label>收款狀態</label><select id="bae-settled"><option value="">未收款</option><option value="1" ${b.settled?'selected':''}>已收款</option></select></div>
           </div>
           <div style="display:flex;gap:8px;margin-top:8px">
@@ -4358,7 +4368,7 @@ function viewBillingAdd(){
             </div>
             ${billingLineMeta(b)?`<div style="font-size:12px;color:var(--muted);margin-top:2px">${billingLineMeta(b)}</div>`:''}
             ${b.note?`<div style="font-size:13px;color:var(--text);margin-top:4px;font-weight:500">${esc(b.note)}</div>`:''}
-            ${b.remark?`<div style="font-size:12px;color:var(--muted);margin-top:2px">${esc(b.remark)}</div>`:''}
+            ${b.remark?`<div style="font-size:12px;color:var(--muted);margin-top:2px">${escBr(b.remark)}</div>`:''}
           </div>
           <div style="display:flex;gap:4px;flex-wrap:wrap;flex-shrink:0">
             <button class="act ${b.settled?'':'muted'}" data-togglesettle="${b.id}" style="${b.settled?'color:var(--accent)':''}">${b.settled?'✓ 已收款':'未收款'}</button>
@@ -4420,7 +4430,7 @@ function viewBillingAdd(){
       <div class="field"><label>小計</label><div id="bna-subtotal" class="num" style="height:36px;display:flex;align-items:center;font-weight:700">${billingAddDraft?money((Number(billingAddDraft.qty)||0)*(Number(billingAddDraft.unitPrice)||0)):'$0'}</div></div>
       <div class="field"><label>業主</label><input id="bna-client" list="client-memory-list" placeholder="業主名稱" value="${billingAddDraft?esc(billingAddDraft.client):''}" style="width:110px"></div>
       <div class="field" style="flex:1;min-width:180px"><label>說明（追加項目）</label><input id="bna-note" placeholder="例：追加防水工程" value="${billingAddDraft?esc(billingAddDraft.note):''}"></div>
-      <div class="field" style="flex:1;min-width:150px"><label>備注</label><input id="bna-remark" placeholder="其他備注" value="${billingAddDraft?esc(billingAddDraft.remark):''}"></div>
+      <div class="field" style="flex:1;min-width:150px"><label>備注（可換行）</label><textarea id="bna-remark" rows="2" placeholder="其他備注">${billingAddDraft?esc(billingAddDraft.remark):''}</textarea></div>
       <div class="field"><label>收款狀態</label><select id="bna-settled"><option value="">未收款</option><option value="1" ${billingAddDraft&&billingAddDraft.settled?'selected':''}>已收款</option></select></div>
     </div>
     <div class="row" style="margin-top:10px"><button class="btn" id="bna-add">＋ 新增追加單</button></div>`:''}
@@ -4510,7 +4520,7 @@ function viewMeasurements(){
             ${m.measureType!=='carry'?`<div class="field"><label>間數</label><input type="number" id="me-count" value="${Number(m.count)||1}" min="1" step="1" style="width:75px"></div>`:''}
             <div class="field"><label>總數量</label><input type="number" id="me-qty" value="${m.qty}" min="0" step="0.01" style="width:95px"></div>
             <div class="field"><label>單價（可算式）</label><input id="me-price" value="${esc(m.priceExpr||String(m.unitPrice))}" style="width:110px"></div>
-            <div class="field" style="flex:1;min-width:140px"><label>備注</label><input id="me-note" value="${esc(m.note||'')}"></div>
+            <div class="field" style="flex:1;min-width:140px"><label>備注（可換行）</label><textarea id="me-note" rows="2">${esc(m.note||'')}</textarea></div>
           </div>
           <div style="display:flex;gap:8px;margin-top:8px;align-items:center">
             <button class="btn" id="meas-edit-ok" data-meid="${m.id}">儲存</button>
@@ -4529,7 +4539,7 @@ function viewMeasurements(){
         <td style="text-align:right">${(Number(m.qty)||0).toLocaleString()}</td>
         <td style="text-align:right">${money(Number(m.unitPrice)||0)}${m.priceExpr?`<div style="font-size:11px;color:var(--muted)">=${esc(m.priceExpr)}</div>`:''}</td>
         <td style="text-align:right;font-weight:700">${money(amt)}</td>
-        <td style="max-width:140px;color:var(--muted);font-size:12px">${esc(m.note||'')}</td>
+        <td style="max-width:140px;color:var(--muted);font-size:12px">${escBr(m.note||'')}</td>
         <td style="white-space:nowrap"><button class="act" data-flag-meas="${m.id}" title="重點標記：點擊循環 追加→待確認→業主指定→取消" style="padding:2px 8px;font-size:12px;${ff?`color:${ff.ink};background:${ff.bg}`:''}">★</button> <button class="act" data-copy-meas="${m.id}" style="padding:2px 10px;font-size:12px">複製</button> <button class="act" data-edit-meas="${m.id}" style="padding:2px 10px;font-size:12px">改</button> <button class="act danger" data-del-meas="${m.id}" style="padding:2px 10px;font-size:12px">刪</button></td>
       </tr>`;
     };
@@ -4595,7 +4605,7 @@ function viewMeasurements(){
       <div class="field"><label>單價（可算式）</label><input id="meas-price" value="${measDraft?esc(measDraft.priceExpr||String(measDraft.unitPrice)):''}" placeholder="1200 或 1200*1.1" style="width:130px"></div>
       <div class="field"><label>小計</label><div id="meas-subtotal" class="num" style="height:36px;display:flex;align-items:center;font-weight:700">$0</div></div>
       <div class="field"><label>日期</label><input type="date" id="meas-date" value="${measKeep&&measKeep.date?esc(measKeep.date):new Date().toISOString().slice(0,10)}"></div>
-      <div class="field" style="flex:1;min-width:150px"><label>備注</label><input id="meas-note" value="${measDraft?esc(measDraft.note||''):''}" placeholder="（選填）"></div>
+      <div class="field" style="flex:1;min-width:150px"><label>備注（可換行）</label><textarea id="meas-note" rows="2" placeholder="（選填）">${measDraft?esc(measDraft.note||''):''}</textarea></div>
     </div>
     <div class="row" style="margin-top:10px"><button class="btn" id="meas-add">＋ 新增</button></div>`:''}
   </div>
@@ -4622,7 +4632,7 @@ function exportMeasurementsPDF(selectedOnly=false){
         <td class="num">${(Number(m.qty)||0).toLocaleString()}</td>
         <td class="num">${money(Number(m.unitPrice)||0)}${measShowExpr&&m.priceExpr?`<div style="font-size:10px;color:#888">=${esc(m.priceExpr)}</div>`:''}</td>
         <td class="num">${money(amt)}</td>
-        <td>${esc(m.note||'')}</td>
+        <td>${escBr(m.note||'')}</td>
       </tr>`;
     };
     // 案場內依類型分段（隔間→天花板→搬運），各段有段落標題與小計
