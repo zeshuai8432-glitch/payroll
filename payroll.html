@@ -3120,9 +3120,31 @@ function loadImage(src){
     img.src=src;
   });
 }
-async function compressImageP(file,maxW=1000,quality=0.72,maxBytes=850000){
-  if(!file || !file.type || !file.type.startsWith('image/')) throw new Error('請選擇照片檔');
-  const src=await fileToDataURL(file);
+// HEIC（iPhone 高效率格式）自動轉檔：先試瀏覽器原生解碼，失敗再載入轉檔器
+function isHeicFile(file){
+  const t=(file.type||'').toLowerCase(), n=(file.name||'').toLowerCase();
+  return t.includes('heic')||t.includes('heif')||/\.hei[cf]$/.test(n);
+}
+let _heicLibP=null;
+function loadHeicLib(){
+  if(window.heic2any) return Promise.resolve();
+  if(_heicLibP) return _heicLibP;
+  _heicLibP=new Promise((resolve,reject)=>{
+    const s=document.createElement('script');
+    s.src='https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js';
+    s.onload=()=>resolve();
+    s.onerror=()=>{ _heicLibP=null; reject(new Error('HEIC 轉檔器載入失敗，請檢查網路')); };
+    document.head.appendChild(s);
+  });
+  return _heicLibP;
+}
+async function heicToJpegBlob(file){
+  await loadHeicLib();
+  const out=await window.heic2any({blob:file,toType:'image/jpeg',quality:0.85});
+  return Array.isArray(out)?out[0]:out;
+}
+async function compressBlobP(blob,maxW,quality,maxBytes){
+  const src=await fileToDataURL(blob);
   const img=await loadImage(src);
   let w0=img.naturalWidth||img.width, h0=img.naturalHeight||img.height;
   if(!w0||!h0) throw new Error('照片尺寸讀取失敗');
@@ -3139,6 +3161,20 @@ async function compressImageP(file,maxW=1000,quality=0.72,maxBytes=850000){
     if(q>0.48) q-=0.08; else wLimit=Math.round(wLimit*0.82);
   }
   return out;
+}
+async function compressImageP(file,maxW=1000,quality=0.72,maxBytes=850000){
+  if(!file) throw new Error('請選擇照片檔');
+  const looksImage=(file.type&&file.type.startsWith('image/'))||/\.(jpe?g|png|webp|gif|bmp|heic|heif)$/i.test(file.name||'');
+  if(!looksImage) throw new Error('請選擇照片檔');
+  try{
+    return await compressBlobP(file,maxW,quality,maxBytes); // 原生解碼（新版 Safari 可直接吃 HEIC）
+  }catch(e){
+    if(isHeicFile(file)){
+      const jpeg=await heicToJpegBlob(file); // 原生不行 → 轉檔器轉 JPG 再壓
+      return await compressBlobP(jpeg,maxW,quality,maxBytes);
+    }
+    throw e;
+  }
 }
 async function uploadBillingPhoto(file){
   const dataUrl=await compressImageP(file,1000,0.72,850000);
@@ -4310,7 +4346,7 @@ function viewBillingAdd(){
           ${thumbs}
           <label style="cursor:pointer;display:flex;align-items:center;gap:5px;padding:7px 12px;background:var(--bg);border:1.5px dashed var(--line2);border-radius:10px;font-size:12px;color:var(--muted);touch-action:manipulation">
             📷 ${photos.length?`繼續上傳 (${photos.length})`:'上傳施作照片'}
-            <input type="file" accept="image/jpeg,image/png,image/webp" multiple data-photoadd="${b.id}" style="display:none">
+            <input type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif,.heic,.heif" multiple data-photoadd="${b.id}" style="display:none">
           </label>
         </div>
       </div>`;
@@ -4643,7 +4679,7 @@ function viewBilling(){
       <td colspan="8" style="padding:5px 10px 8px">
         <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center">
           ${thumbs}
-          <label style="cursor:pointer;display:flex;align-items:center;gap:4px;padding:5px 10px;background:var(--surface);border:1px dashed var(--line2);border-radius:8px;font-size:12px;color:var(--muted)">📷 上傳施作照片<input type="file" accept="image/jpeg,image/png,image/webp" multiple data-photoadd="${b.id}" style="display:none"></label>
+          <label style="cursor:pointer;display:flex;align-items:center;gap:4px;padding:5px 10px;background:var(--surface);border:1px dashed var(--line2);border-radius:8px;font-size:12px;color:var(--muted)">📷 上傳施作照片<input type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif,.heic,.heif" multiple data-photoadd="${b.id}" style="display:none"></label>
         </div>
       </td>
     </tr>`;}).join('');
