@@ -430,7 +430,6 @@
   #print-overlay .bluedoc tr.flag-y td { background: #FEF3C7 !important; }
   #print-overlay .bluedoc tr.flag-r td { background: #FEE2E2 !important; }
   #print-overlay .bluedoc tr.flag-b td { background: #DBEAFE !important; }
-  #print-overlay .bluedoc tr.flag-g td { background: #DCFCE7 !important; }
   #print-overlay .bluedoc .foot { margin-top: 22px; padding-top: 8px; border-top: 2px solid #1E3A8A; font-size: 11px; color: #64748B; display: flex; justify-content: space-between; }
   @media print {
     body > .top, body > .layout { display: none !important; }
@@ -486,10 +485,12 @@ const LS_SIGS_LOCKED = 'pm_billing_sigs_locked_v1';
 const LS_SIG_META    = 'pm_billing_sig_meta_v1';
 const LS_DIRTY       = 'pm_cloud_dirty_v1';
 const CLOUD_URL = 'https://script.google.com/macros/s/AKfycbyMPs38UNzAwX3bcD2n9nQBz0HofUW9qFweSOnmoySs8VW2bJYHn47RdyZLQ8bD8SNWTg/exec';
-const APP_VERSION = 'v2026.07.03-firebase';
+const FS_REST_URL = 'https://firestore.googleapis.com/v1/projects/payroll-d1abe/databases/(default)/documents/payroll/main?key=AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
+const APP_VERSION = 'v2026.07.05-rest-fallback';
 let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], tools:[], locations:[], assets:[], advances:[], accounts:[], ledger:[], deals:[], billings:[], measurements:[], contracts:{}, costs:[], textMemory:{clients:[],companies:[]}, parkAccId:'', oweBonus:{}, minFund:'', tab:'entry' };
 let cloudStatus='連線中…';
 let localDirty=false, lastCloudTs=0;
+let dirtyOther=false; // 未上傳的變更中是否含「標記以外」的修改（決定衝突時能否自動合併）
 let entryDate='', entrySite='', entryEmp=''; // 登記出工：記住上次選的日期、案場、員工
 let entryOpenDates={}, entryEditId=null; // 出工紀錄分組收合狀態與正在編輯的紀錄
 let entryKind='work'; // 'work' | 'leave' | 'off'
@@ -816,17 +817,40 @@ function importBackup(file){
   reader.readAsText(file);
 }
 
+// 雲端讀寫：優先走 Firebase SDK，失敗自動改走 Firestore REST（避免 gstatic 被擋就整個癱掉）
+async function cloudGet(){
+  if(window.__fb&&window.__fb.ok){
+    try{
+      const snap=await window.__fb.doc.get();
+      return snap.exists?{ok:true,data:snap.data().json}:{ok:false};
+    }catch(e){ /* SDK 失敗，改走 REST */ }
+  }
+  const r=await fetch(FS_REST_URL);
+  if(r.status===404) return {ok:false};
+  if(!r.ok) throw new Error('HTTP '+r.status);
+  const d=await r.json();
+  const f=d.fields||{};
+  return {ok:!!(f.json&&f.json.stringValue),data:f.json?f.json.stringValue:null};
+}
+async function cloudSet(payload){
+  const savedAt=Date.now();
+  if(window.__fb&&window.__fb.ok){
+    try{ await window.__fb.doc.set({json:payload,savedAt}); return; }catch(e){ /* SDK 失敗，改走 REST */ }
+  }
+  const r=await fetch(FS_REST_URL,{method:'PATCH',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({fields:{json:{stringValue:payload},savedAt:{integerValue:String(savedAt)}}})});
+  if(!r.ok) throw new Error('HTTP '+r.status);
+}
 // 先讀本機快取（讓畫面秒開），再從雲端拉最新
 function loadLocal(){
   try { localDirty=localStorage.getItem(LS_DIRTY)==='1'; } catch(e){}
+  dirtyOther=localDirty; // 重新載入後無法區分先前變更類型，保守視為一般變更
   try { const raw=localStorage.getItem(LS); if(raw) applyData(JSON.parse(raw)); } catch(e){}
 }
 async function loadCloud(){
   setCloud('讀取雲端中…');
   try {
-    if(!window.__fb||!window.__fb.ok) throw new Error('Firebase 未就緒');
-    const snap=await window.__fb.doc.get();
-    const j = snap.exists ? {ok:true, data: snap.data().json} : {ok:false};
+    const j=await cloudGet();
     if(j&&j.ok&&j.data){
       const cloudData=JSON.parse(j.data);
       const localRaw=localStorage.getItem(LS);
@@ -838,27 +862,41 @@ async function loadCloud(){
       // 照片 URL 永遠合併（各裝置各有自己上傳的照片）
       if(cloudData.billingPhotos) mergeCloudPhotos(cloudData.billingPhotos);
       if(!localDirty || cloudTs>=localTs){
-        // 雲端較新，套用
+        // 雲端較新，套用；但本機較新的重點標記（flagAt）要保留並回推
+        const keepFlags={}; (state.measurements||[]).forEach(m=>{ if(m.flagAt) keepFlags[m.id]={flag:m.flag,flagAt:m.flagAt}; });
         const keepSigs={...billingSigs}, keepLocked={...billingSigsLocked}, keepMeta={...billingSigMeta};
         applyData(cloudData);
         Object.assign(billingSigs, keepSigs);
         Object.assign(billingSigsLocked, keepLocked);
         Object.assign(billingSigMeta, keepMeta);
-        try{localStorage.setItem(LS,j.data); localStorage.removeItem(LS_DIRTY); localDirty=false;}catch(e){} setCloud('已同步');
+        let flagBack=false;
+        (state.measurements||[]).forEach(m=>{ const lf=keepFlags[m.id]; if(lf&&Number(lf.flagAt)>(Number(m.flagAt)||0)){ m.flag=lf.flag; m.flagAt=lf.flagAt; flagBack=true; } });
+        if(flagBack){
+          // 本機標記較新：存合併結果並回推雲端
+          try{ localStorage.setItem(LS,JSON.stringify(packData())); localStorage.setItem(LS_DIRTY,'1'); }catch(e){}
+          localDirty=true;
+          if(saveTimer) clearTimeout(saveTimer);
+          saveTimer=setTimeout(pushCloud,500);
+          setCloud('已同步（本機標記回傳中…）');
+        } else {
+          try{localStorage.setItem(LS,j.data); localStorage.removeItem(LS_DIRTY); localDirty=false; dirtyOther=false;}catch(e){} setCloud('已同步');
+        }
       } else {
-        // 本機較新，推上雲端（此時 billingSigs 已含雲端簽名，不會漏掉）
+        // 本機較新：不覆蓋本機，但仍把雲端較新的標記合併進來
+        mergeMeasFlags(cloudData.measurements||[]);
         setCloud('本機有未上傳資料，未自動覆蓋雲端');
       }
       _lastCloudJson=j.data;
     } else { setCloud('雲端尚無資料'); }
-  } catch(e){ setCloud('雲端讀取失敗（顯示本機資料）'); }
+  } catch(e){ setCloud('雲端讀取失敗：'+String(e&&e.message||e).slice(0,60)); }
   render();
 }
 
 let saveTimer=null, saving=false, pendingSave=false;
-function saveData(){
-  // 本機立即存
+function saveData(kind){
+  // 本機立即存；kind==='flag' 表示這次變更只有重點標記（衝突時可自動合併）
   localDirty=true;
+  if(kind!=='flag') dirtyOther=true;
   try{ localStorage.setItem(LS_DIRTY,'1'); localStorage.setItem(LS, JSON.stringify(packData())); }catch(e){}
   // 雲端防抖動：300ms 內多次變更只送一次
   if(saveTimer) clearTimeout(saveTimer);
@@ -869,32 +907,45 @@ async function pushCloud(){
   if(saving){ pendingSave=true; return; }
   if(!localDirty && Object.keys(localSigPending).length===0){ setCloud('已同步'); return; }
   saving=true;
+  let adopted=false;
   try {
-    if(!window.__fb||!window.__fb.ok) throw new Error('Firebase 未就緒');
     // 推送前先讀雲端並合併簽名/照片，並用時間戳擋掉「雲端比較新」的情況（避免蓋掉別人剛存的）
     try{
-      const gsnap=await window.__fb.doc.get();
-      if(gsnap.exists){
-        const cd=JSON.parse(gsnap.data().json);
+      const g=await cloudGet();
+      if(g&&g.ok&&g.data){
+        const cd=JSON.parse(g.data);
         const cloudTs=Number(cd.savedAt)||0;
-        if(cloudTs>lastCloudTs){
-          lastCloudTs=cloudTs;
-          setCloud('雲端已有較新資料，請先重新整理');
-          saving=false;
-          return;
-        }
         applyCloudSigsBeforePush(cd.billingSigs||{}, cd.billingSigsLocked||{}, cd.billingSigMeta||{});
         if(cd.billingPhotos) mergeCloudPhotos(cd.billingPhotos);
+        if(cloudTs>lastCloudTs){
+          lastCloudTs=cloudTs;
+          if(!dirtyOther){
+            // 本機未上傳的只有重點標記：以雲端為底、套回較新的本機標記後照推，不再卡住
+            const keepFlags={}; (state.measurements||[]).forEach(m=>{ if(m.flagAt) keepFlags[m.id]={flag:m.flag,flagAt:m.flagAt}; });
+            const keepSigs={...billingSigs}, keepLocked={...billingSigsLocked}, keepMeta={...billingSigMeta};
+            applyData(cd);
+            Object.assign(billingSigs, keepSigs);
+            Object.assign(billingSigsLocked, keepLocked);
+            Object.assign(billingSigMeta, keepMeta);
+            (state.measurements||[]).forEach(m=>{ const lf=keepFlags[m.id]; if(lf&&Number(lf.flagAt)>(Number(m.flagAt)||0)){ m.flag=lf.flag; m.flagAt=lf.flagAt; } });
+            adopted=true;
+          } else {
+            setCloud('雲端已有較新資料，請按「↻ 重新整理」');
+            saving=false;
+            return;
+          }
+        }
       }
     }catch(e){}
     const payload=JSON.stringify(packData());
     try{ localStorage.setItem(LS,payload); }catch(e){}
-    await window.__fb.doc.set({ json: payload, savedAt: Date.now() });
-    localSigPending={}; localDirty=false;
+    await cloudSet(payload);
+    localSigPending={}; localDirty=false; dirtyOther=false;
     try{ localStorage.removeItem(LS_DIRTY); }catch(e){}
     try{ lastCloudTs=Number((JSON.parse(payload)||{}).savedAt)||Date.now(); _lastCloudJson=payload; }catch(e){}
     setCloud('已同步');
-  } catch(e){ setCloud('雲端儲存失敗：'+String(e).slice(0,50)); }
+    if(adopted) render(); // 有以雲端為底合併時，畫面同步更新
+  } catch(e){ setCloud('雲端儲存失敗：'+String(e&&e.message||e).slice(0,50)); }
   saving=false;
   if(pendingSave){ pendingSave=false; pushCloud(); }
 }
@@ -2674,8 +2725,9 @@ function bind(){
     const m=state.measurements.find(x=>x.id===b.dataset.flagMeas); if(!m) return;
     const cur=measFlagKey(m);
     const next=MEAS_FLAG_CYCLE[(MEAS_FLAG_CYCLE.indexOf(cur)+1)%MEAS_FLAG_CYCLE.length];
-    if(next) m.flag=next; else delete m.flag;
-    saveData(); render();
+    m.flag=next; // 取消時存空字串（保留 flagAt 才能把「取消」同步到其他裝置）
+    m.flagAt=Date.now();
+    saveData('flag'); render();
   });
   document.querySelectorAll('[data-copy-meas]').forEach(b=>b.onclick=()=>{
     const m=state.measurements.find(x=>x.id===b.dataset.copyMeas); if(!m) return;
@@ -4326,13 +4378,23 @@ function measTypeKey(m){
 const MEAS_TYPE_ORDER=[['partition','隔間'],['ceiling','天花板'],['carry','搬運'],['other','其他']];
 // 重點標記三色循環：黃=注意 → 紅=待確認 → 藍=業主指定 → 取消
 const MEAS_FLAGS={
-  y:{label:'注意',   bg:'#FEF3C7', ink:'#d97706'},
+  y:{label:'追加',   bg:'#FEF3C7', ink:'#d97706'},
   r:{label:'待確認', bg:'#FEE2E2', ink:'#dc2626'},
   b:{label:'業主指定', bg:'#DBEAFE', ink:'#2563EB'},
-  g:{label:'追加',   bg:'#DCFCE7', ink:'#16a34a'},
 };
-const MEAS_FLAG_CYCLE=['','y','r','b','g'];
-function measFlagKey(m){ return m.flag===true?'y':(MEAS_FLAGS[m.flag]?m.flag:''); } // 舊資料 true 視為黃
+const MEAS_FLAG_CYCLE=['','y','r','b'];
+function measFlagKey(m){ if(m.flag===true||m.flag==='g') return 'y'; return MEAS_FLAGS[m.flag]?m.flag:''; } // 舊資料 true/綠色 視為黃(追加)
+// 標記依 flagAt 時間戳雙向合併（同簽名檔邏輯），新的蓋舊的，取消(空字串)也會同步
+function mergeMeasFlags(cloudList){
+  let changed=false;
+  const byId={}; (cloudList||[]).forEach(c=>{ if(c&&c.id) byId[c.id]=c; });
+  (state.measurements||[]).forEach(l=>{
+    const c=byId[l.id]; if(!c) return;
+    const ca=Number(c.flagAt)||0, la=Number(l.flagAt)||0;
+    if(ca>la){ l.flag=c.flag; l.flagAt=c.flagAt; changed=true; }
+  });
+  return changed;
+}
 function measurementSizeLabel(m){
   const mt=m.measureType||'';
   const isPartition=mt==='partition'||(!mt&&m.width&&m.height);
@@ -4400,7 +4462,7 @@ function viewMeasurements(){
         <td style="text-align:right">${money(Number(m.unitPrice)||0)}${m.priceExpr?`<div style="font-size:11px;color:var(--muted)">=${esc(m.priceExpr)}</div>`:''}</td>
         <td style="text-align:right;font-weight:700">${money(amt)}</td>
         <td style="max-width:140px;color:var(--muted);font-size:12px">${esc(m.note||'')}</td>
-        <td style="white-space:nowrap"><button class="act" data-flag-meas="${m.id}" title="重點標記：點擊循環 注意→待確認→業主指定→追加→取消" style="padding:2px 8px;font-size:12px;${ff?`color:${ff.ink};background:${ff.bg}`:''}">★</button> <button class="act" data-copy-meas="${m.id}" style="padding:2px 10px;font-size:12px">複製</button> <button class="act" data-edit-meas="${m.id}" style="padding:2px 10px;font-size:12px">改</button> <button class="act danger" data-del-meas="${m.id}" style="padding:2px 10px;font-size:12px">刪</button></td>
+        <td style="white-space:nowrap"><button class="act" data-flag-meas="${m.id}" title="重點標記：點擊循環 追加→待確認→業主指定→取消" style="padding:2px 8px;font-size:12px;${ff?`color:${ff.ink};background:${ff.bg}`:''}">★</button> <button class="act" data-copy-meas="${m.id}" style="padding:2px 10px;font-size:12px">複製</button> <button class="act" data-edit-meas="${m.id}" style="padding:2px 10px;font-size:12px">改</button> <button class="act danger" data-del-meas="${m.id}" style="padding:2px 10px;font-size:12px">刪</button></td>
       </tr>`;
     };
     // 案場內依類型分段：隔間 → 天花板 → 搬運，各段有小計
@@ -5101,6 +5163,10 @@ window.addEventListener('beforeunload', ()=>{
 window.addEventListener('pagehide', ()=>flushCloudOnExit());
 document.addEventListener('visibilitychange', ()=>{
   if(document.visibilityState==='hidden') flushCloudOnExit();
+  else if(document.visibilityState==='visible'){
+    // 切回本頁自動拉雲端最新（本機無未上傳變更時才拉，避免蓋掉）
+    if(!localDirty&&!saving) loadCloud();
+  }
 });
 
 loadLocal(); loadPhotos(); loadSigs(); render(); loadCloud();
