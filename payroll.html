@@ -828,15 +828,23 @@ function importBackup(file){
   reader.readAsText(file);
 }
 
-// 雲端讀寫：優先走 Firebase SDK，失敗自動改走 Firestore REST（避免 gstatic 被擋就整個癱掉）
+// 雲端讀寫：優先走 Firebase SDK，失敗或逾時自動改走 Firestore REST（避免卡在「讀取雲端中」）
+function withTimeout(p,ms,msg){
+  return Promise.race([p,new Promise((_,rej)=>setTimeout(()=>rej(new Error(msg||'連線逾時')),ms))]);
+}
+function fetchT(url,opts={},ms=10000){
+  const ctrl=new AbortController();
+  const t=setTimeout(()=>ctrl.abort(),ms);
+  return fetch(url,{...opts,signal:ctrl.signal}).finally(()=>clearTimeout(t));
+}
 async function cloudGet(){
   if(window.__fb&&window.__fb.ok){
     try{
-      const snap=await window.__fb.doc.get();
+      const snap=await withTimeout(window.__fb.doc.get(),6000,'SDK 逾時');
       return snap.exists?{ok:true,data:snap.data().json}:{ok:false};
-    }catch(e){ /* SDK 失敗，改走 REST */ }
+    }catch(e){ /* SDK 失敗或逾時，改走 REST */ }
   }
-  const r=await fetch(FS_REST_URL);
+  const r=await fetchT(FS_REST_URL,{},10000);
   if(r.status===404) return {ok:false};
   if(!r.ok) throw new Error('HTTP '+r.status);
   const d=await r.json();
@@ -846,10 +854,10 @@ async function cloudGet(){
 async function cloudSet(payload){
   const savedAt=Date.now();
   if(window.__fb&&window.__fb.ok){
-    try{ await window.__fb.doc.set({json:payload,savedAt}); return; }catch(e){ /* SDK 失敗，改走 REST */ }
+    try{ await withTimeout(window.__fb.doc.set({json:payload,savedAt}),8000,'SDK 逾時'); return; }catch(e){ /* SDK 失敗或逾時，改走 REST */ }
   }
-  const r=await fetch(FS_REST_URL,{method:'PATCH',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({fields:{json:{stringValue:payload},savedAt:{integerValue:String(savedAt)}}})});
+  const r=await fetchT(FS_REST_URL,{method:'PATCH',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({fields:{json:{stringValue:payload},savedAt:{integerValue:String(savedAt)}}})},15000);
   if(!r.ok) throw new Error('HTTP '+r.status);
 }
 // 先讀本機快取（讓畫面秒開），再從雲端拉最新
