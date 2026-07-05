@@ -484,7 +484,7 @@ const FS_PROJECT = 'payroll-d1abe';
 const FS_KEY = 'AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
 const FS_DOC_BASE = 'https://firestore.googleapis.com/v1/projects/'+FS_PROJECT+'/databases/(default)/documents/payroll/';
 const FS_REST_URL = FS_DOC_BASE+'main?key='+FS_KEY;
-const APP_VERSION = 'v2026.07.05-fix';
+const APP_VERSION = 'v2026.07.05-merge';
 let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], tools:[], locations:[], assets:[], advances:[], accounts:[], ledger:[], deals:[], billings:[], measurements:[], contracts:{}, costs:[], textMemory:{clients:[],companies:[]}, parkAccId:'', oweBonus:{}, minFund:'', tab:'entry' };
 let cloudStatus='連線中…';
 let localDirty=false, lastCloudTs=0;
@@ -767,6 +767,33 @@ function packData(){
   });
   return {employees:state.employees,sites:state.sites,attendance:state.attendance,adjustments:state.adjustments,loans:state.loans,tools:state.tools,locations:state.locations,assets:state.assets,advances:state.advances,accounts:state.accounts,ledger:state.ledger,deals:state.deals,billings:state.billings,measurements:state.measurements,contracts:state.contracts,costs:state.costs,textMemory:state.textMemory,parkAccId:state.parkAccId,oweBonus:state.oweBonus,minFund:state.minFund,billingPhotos:photosSync,billingSigs:billingSigs,billingSigsLocked:billingSigsLocked,billingSigMeta:billingSigMeta,savedAt:Date.now()};
 }
+// 需要逐筆(依 id)合併的集合；deals 為衍生資料不合併，靠 resyncAllSiteDeals 重算
+const MERGE_COLLECTIONS=['employees','sites','attendance','adjustments','loans','tools','locations','assets','advances','accounts','ledger','billings','measurements','costs'];
+// union：以 base 為主，把 add 裡「base 沒有的 id」補進來；相同 id 不覆蓋（base 即較新的一方）
+function unionById(baseArr, addArr){
+  const map=new Map();
+  (baseArr||[]).forEach(r=>{ if(r&&r.id!=null) map.set(r.id,r); });
+  (addArr||[]).forEach(r=>{ if(r&&r.id!=null && !map.has(r.id)) map.set(r.id,r); });
+  return [...map.values()];
+}
+// 把雲端文件 cd 與本機逐筆合併：較新的一方當底，較舊那方只補「缺的筆數」，兩邊資料都不遺失
+function mergeCloudDoc(cd){
+  const localRaw=localStorage.getItem(LS);
+  const localTs=localRaw?((JSON.parse(localRaw)||{}).savedAt||0):0;
+  const cloudTs=Number(cd.savedAt)||0;
+  const keepLogs={}; MERGE_COLLECTIONS.forEach(k=>keepLogs[k]=(state[k]||[]).slice());
+  if(cloudTs>=localTs){
+    // 雲端較新：以雲端為底，補回本機獨有(尚未上傳)的筆數
+    applyData(cd); // 內含 resyncAllSiteDeals + 合併簽名/照片
+    MERGE_COLLECTIONS.forEach(k=>{ state[k]=unionById(state[k], keepLogs[k]); });
+  } else {
+    // 本機較新：以本機為底，補進雲端獨有(別台裝置新增)的筆數
+    MERGE_COLLECTIONS.forEach(k=>{ state[k]=unionById(state[k], cd[k]||[]); });
+    mergeBillingSigs(cd.billingSigs||{}, cd.billingSigsLocked||{}, cd.billingSigMeta||{});
+    if(cd.billingPhotos) mergeCloudPhotos(cd.billingPhotos);
+  }
+  try{ resyncAllSiteDeals(); }catch(e){} // 合併後重算財務，確保帳務正確
+}
 // 合併雲端照片 URL（去重、保留本機 base64 舊照片）
 function mergeCloudPhotos(cloudPhotos){
   Object.entries(cloudPhotos).forEach(([id,urls])=>{
@@ -908,55 +935,35 @@ async function loadCloud(){
     settled=true; clearTimeout(watchdog);
     if(j&&j.ok&&j.data){
       const cloudData=JSON.parse(j.data);
-      const localRaw=localStorage.getItem(LS);
-      const localTs=localRaw?((JSON.parse(localRaw)||{}).savedAt||0):0;
-      const cloudTs=cloudData.savedAt||0;
-      lastCloudTs=cloudTs;
-      // 簽名依 updatedAt 合併，避免舊測試簽名蓋掉較新的正式簽名
-      mergeBillingSigs(cloudData.billingSigs||{}, cloudData.billingSigsLocked||{}, cloudData.billingSigMeta||{});
-      // 照片 URL 永遠合併（各裝置各有自己上傳的照片）
-      if(cloudData.billingPhotos) mergeCloudPhotos(cloudData.billingPhotos);
-      if(!localDirty || cloudTs>=localTs){
-        // 若本機有尚未上傳的變更，套用雲端前先把本機備份起來（避免被雲端蓋掉就找不回）
-        if(localDirty){
-          try{
-            const localPayload=localRaw||JSON.stringify(packData());
-            cloudBackup(localPayload,'lostlocal-'+new Date().toISOString().slice(0,15).replace(/[:T]/g,'-'));
-            localStorage.setItem('pm_lost_local_v1', localPayload);
-          }catch(e){}
-        }
-        // 雲端較新，套用；但本機較新的重點標記（flagAt）要保留並回推
-        const keepFlags={}; (state.measurements||[]).forEach(m=>{ if(m.flagAt) keepFlags[m.id]={flag:m.flag,flagAt:m.flagAt}; });
-        const keepSigs={...billingSigs}, keepLocked={...billingSigsLocked}, keepMeta={...billingSigMeta};
-        applyData(cloudData);
-        Object.assign(billingSigs, keepSigs);
-        Object.assign(billingSigsLocked, keepLocked);
-        Object.assign(billingSigMeta, keepMeta);
-        let flagBack=false;
-        (state.measurements||[]).forEach(m=>{ const lf=keepFlags[m.id]; if(lf&&Number(lf.flagAt)>(Number(m.flagAt)||0)){ m.flag=lf.flag; m.flagAt=lf.flagAt; flagBack=true; } });
-        if(flagBack){
-          // 本機標記較新：存合併結果並回推雲端
-          try{ localStorage.setItem(LS,JSON.stringify(packData())); localStorage.setItem(LS_DIRTY,'1'); }catch(e){}
-          localDirty=true;
-          if(saveTimer) clearTimeout(saveTimer);
-          saveTimer=setTimeout(pushCloud,500);
-          setCloud('已同步（本機標記回傳中…）');
-        } else {
-          try{localStorage.setItem(LS,j.data); localStorage.removeItem(LS_DIRTY); localDirty=false; dirtyOther=false;}catch(e){} setCloud('已同步');
-        }
+      lastCloudTs=cloudData.savedAt||0;
+      const hadLocalChanges=localDirty;
+      // 保留本機較新的重點標記，合併後回填
+      const keepFlags={}; (state.measurements||[]).forEach(m=>{ if(m.flagAt) keepFlags[m.id]={flag:m.flag,flagAt:m.flagAt}; });
+      // 有未上傳變更先備份本機（保險，萬一合併有誤仍可救）
+      if(localDirty){
+        try{
+          const lp=localStorage.getItem(LS)||JSON.stringify(packData());
+          cloudBackup(lp,'lostlocal-'+new Date().toISOString().slice(0,15).replace(/[:T]/g,'-'));
+          localStorage.setItem('pm_lost_local_v1', lp);
+        }catch(e){}
+      }
+      mergeCloudDoc(cloudData); // 逐筆(依id)合併雲端＋本機，兩邊資料都保留、不互相覆蓋
+      // 回填本機較新的重點標記
+      (state.measurements||[]).forEach(m=>{ const lf=keepFlags[m.id]; if(lf&&Number(lf.flagAt)>(Number(m.flagAt)||0)){ m.flag=lf.flag; m.flagAt=lf.flagAt; } });
+      try{ localStorage.setItem(LS, JSON.stringify(packData())); }catch(e){}
+      if(hadLocalChanges){
+        // 我有未上傳資料 → 把合併後的完整版回推雲端，讓雲端也收到我的
+        localDirty=true;
+        if(saveTimer) clearTimeout(saveTimer);
+        saveTimer=setTimeout(pushCloud,400);
+        setCloud('已同步(合併回傳中…)');
       } else {
-        // 本機較新：不覆蓋本機，但仍把雲端較新的標記合併進來，並詢問是否上傳
-        mergeMeasFlags(cloudData.measurements||[]);
-        setCloud('本機有未上傳資料');
-        setTimeout(()=>{
-          if(confirm('這台裝置有尚未上傳的變更（本機資料比雲端新）。\n\n按【確定】把本機資料上傳到雲端（一般情況選這個）\n按【取消】先不上傳（下次重新整理會再詢問）')){
-            localDirty=true; pushCloud();
-          }
-        },200);
+        try{ localStorage.removeItem(LS_DIRTY); }catch(e){}
+        localDirty=false; dirtyOther=false;
+        setCloud('已同步');
       }
       _lastCloudJson=j.data;
-      // 雲端內容跟上次一樣就不重畫，避免打字/勾選中被洗掉
-      if(j.data!==prevCloudJson) safeRender();
+      safeRender();
     } else { setCloud('雲端尚無資料'); }
   } catch(e){ settled=true; clearTimeout(watchdog); setCloud('雲端讀取失敗：'+String(e&&e.message||e).slice(0,60)); }
 }
@@ -976,34 +983,18 @@ async function pushCloud(){
   if(saving){ pendingSave=true; return; }
   if(!localDirty && Object.keys(localSigPending).length===0){ setCloud('已同步'); return; }
   saving=true;
-  let adopted=false;
+  let merged=false;
   try {
-    // 推送前先讀雲端並合併簽名/照片，並用時間戳擋掉「雲端比較新」的情況（避免蓋掉別人剛存的）
+    // 推送前先讀雲端，把雲端已有的資料「逐筆合併」進本機，再寫回union → 誰也不會蓋掉誰
     try{
+      const keepFlags={}; (state.measurements||[]).forEach(m=>{ if(m.flagAt) keepFlags[m.id]={flag:m.flag,flagAt:m.flagAt}; });
       const g=await cloudGet();
       if(g&&g.ok&&g.data){
         const cd=JSON.parse(g.data);
-        const cloudTs=Number(cd.savedAt)||0;
         applyCloudSigsBeforePush(cd.billingSigs||{}, cd.billingSigsLocked||{}, cd.billingSigMeta||{});
-        if(cd.billingPhotos) mergeCloudPhotos(cd.billingPhotos);
-        if(cloudTs>lastCloudTs){
-          lastCloudTs=cloudTs;
-          if(!dirtyOther){
-            // 本機未上傳的只有重點標記：以雲端為底、套回較新的本機標記後照推，不再卡住
-            const keepFlags={}; (state.measurements||[]).forEach(m=>{ if(m.flagAt) keepFlags[m.id]={flag:m.flag,flagAt:m.flagAt}; });
-            const keepSigs={...billingSigs}, keepLocked={...billingSigsLocked}, keepMeta={...billingSigMeta};
-            applyData(cd);
-            Object.assign(billingSigs, keepSigs);
-            Object.assign(billingSigsLocked, keepLocked);
-            Object.assign(billingSigMeta, keepMeta);
-            (state.measurements||[]).forEach(m=>{ const lf=keepFlags[m.id]; if(lf&&Number(lf.flagAt)>(Number(m.flagAt)||0)){ m.flag=lf.flag; m.flagAt=lf.flagAt; } });
-            adopted=true;
-          } else {
-            setCloud('雲端已有較新資料，請按「↻ 重新整理」');
-            saving=false;
-            return;
-          }
-        }
+        mergeCloudDoc(cd); // 逐筆union合併
+        (state.measurements||[]).forEach(m=>{ const lf=keepFlags[m.id]; if(lf&&Number(lf.flagAt)>(Number(m.flagAt)||0)){ m.flag=lf.flag; m.flagAt=lf.flagAt; } });
+        merged=true;
       }
     }catch(e){}
     const payload=JSON.stringify(packData());
@@ -1014,7 +1005,7 @@ async function pushCloud(){
     try{ localStorage.removeItem(LS_DIRTY); }catch(e){}
     try{ lastCloudTs=Number((JSON.parse(payload)||{}).savedAt)||Date.now(); _lastCloudJson=payload; }catch(e){}
     setCloud('已同步');
-    if(adopted) safeRender(); // 有以雲端為底合併時，畫面同步更新（打字中則延後）
+    if(merged) safeRender(); // 合併後畫面同步更新（打字中則延後）
   } catch(e){ setCloud('雲端儲存失敗：'+String(e&&e.message||e).slice(0,50)); }
   saving=false;
   if(pendingSave){ pendingSave=false; pushCloud(); }
