@@ -401,7 +401,8 @@
   #print-overlay td.num, #print-overlay th.num { text-align: right; font-variant-numeric: tabular-nums; }
   #print-overlay .total-row td { font-weight: 700; background: #f6f7f5; }
   #print-overlay .sign { margin-top: 32px; font-size: 13px; display: flex; gap: 48px; }
-  #print-overlay .sign div { border-top: 1px solid #1f2421; padding-top: 6px; min-width: 160px; }
+  #print-overlay .sign > div { border-top: 1px solid #1f2421; padding-top: 6px; min-width: 160px; }
+  #print-overlay .sign > div div { border-top: none; padding-top: 0; min-width: 0; }
   #print-overlay .sub { font-size: 11px; color: #777; margin-top: 8px; }
   #print-overlay .sec { font-size: 13px; font-weight: 700; margin: 16px 0 6px; }
   #print-overlay h2.sec { font-size: 14px; margin: 18px 0 6px; padding-top: 10px; border-top: 1px solid #cfd2cd; }
