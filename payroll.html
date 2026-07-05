@@ -484,7 +484,7 @@ const FS_PROJECT = 'payroll-d1abe';
 const FS_KEY = 'AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
 const FS_DOC_BASE = 'https://firestore.googleapis.com/v1/projects/'+FS_PROJECT+'/databases/(default)/documents/payroll/';
 const FS_REST_URL = FS_DOC_BASE+'main?key='+FS_KEY;
-const APP_VERSION = 'v2026.07.05-count';
+const APP_VERSION = 'v2026.07.05-fix';
 let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], tools:[], locations:[], assets:[], advances:[], accounts:[], ledger:[], deals:[], billings:[], measurements:[], contracts:{}, costs:[], textMemory:{clients:[],companies:[]}, parkAccId:'', oweBonus:{}, minFund:'', tab:'entry' };
 let cloudStatus='連線中…';
 let localDirty=false, lastCloudTs=0;
@@ -894,20 +894,19 @@ document.addEventListener('focusout',()=>{
   },150);
 });
 let _loadCloudSeq=0;
+let _lastCloudJson=''; // 必須先宣告：loadCloud 第一次會讀它，未宣告會 ReferenceError 導致同步卡死
 async function loadCloud(){
   const myseq=++_loadCloudSeq;
-  setCloud('★開始#'+myseq);
+  setCloud('雲端同步中…');
   const prevCloudJson=_lastCloudJson;
   let settled=false;
   const watchdog=setTimeout(()=>{
-    if(!settled && myseq===_loadCloudSeq){ setCloud('★逾時#'+myseq+',顯示本機資料(可繼續用)'); }
+    if(!settled && myseq===_loadCloudSeq){ setCloud('雲端逾時,已顯示本機資料(可繼續使用)'); }
   },10000);
   try {
-    setCloud('★步驟1連線#'+myseq);
     const j=await cloudGet();
     settled=true; clearTimeout(watchdog);
     if(j&&j.ok&&j.data){
-      setCloud('★步驟2整理');
       const cloudData=JSON.parse(j.data);
       const localRaw=localStorage.getItem(LS);
       const localTs=localRaw?((JSON.parse(localRaw)||{}).savedAt||0):0;
@@ -917,7 +916,6 @@ async function loadCloud(){
       mergeBillingSigs(cloudData.billingSigs||{}, cloudData.billingSigsLocked||{}, cloudData.billingSigMeta||{});
       // 照片 URL 永遠合併（各裝置各有自己上傳的照片）
       if(cloudData.billingPhotos) mergeCloudPhotos(cloudData.billingPhotos);
-      setCloud('★步驟3套用');
       if(!localDirty || cloudTs>=localTs){
         // 若本機有尚未上傳的變更，套用雲端前先把本機備份起來（避免被雲端蓋掉就找不回）
         if(localDirty){
