@@ -848,8 +848,33 @@ function loadLocal(){
   dirtyOther=localDirty; // 重新載入後無法區分先前變更類型，保守視為一般變更
   try { const raw=localStorage.getItem(LS); if(raw) applyData(JSON.parse(raw)); } catch(e){}
 }
+// 使用者正在表單打字時不要整頁重畫（避免輸入到一半被洗掉）
+function userIsTyping(){
+  const el=document.activeElement;
+  if(!el) return false;
+  const tag=(el.tagName||'').toUpperCase();
+  if(tag==='TEXTAREA'||tag==='SELECT') return true;
+  if(tag==='INPUT'){
+    const t=(el.type||'').toLowerCase();
+    return ['checkbox','radio','button','file','submit','range'].indexOf(t)===-1;
+  }
+  return false;
+}
+let deferredRender=false;
+function safeRender(){
+  if(userIsTyping()){ deferredRender=true; return; }
+  render();
+}
+document.addEventListener('focusout',()=>{
+  if(!deferredRender) return;
+  setTimeout(()=>{ // 等焦點落定：若只是跳到下一個欄位就繼續延後
+    if(userIsTyping()) return;
+    if(deferredRender){ deferredRender=false; render(); }
+  },150);
+});
 async function loadCloud(){
   setCloud('讀取雲端中…');
+  const prevCloudJson=_lastCloudJson;
   try {
     const j=await cloudGet();
     if(j&&j.ok&&j.data){
@@ -893,9 +918,10 @@ async function loadCloud(){
         },200);
       }
       _lastCloudJson=j.data;
+      // 雲端內容跟上次一樣就不重畫，避免打字/勾選中被洗掉
+      if(j.data!==prevCloudJson) safeRender();
     } else { setCloud('雲端尚無資料'); }
   } catch(e){ setCloud('雲端讀取失敗：'+String(e&&e.message||e).slice(0,60)); }
-  render();
 }
 
 let saveTimer=null, saving=false, pendingSave=false;
@@ -950,7 +976,7 @@ async function pushCloud(){
     try{ localStorage.removeItem(LS_DIRTY); }catch(e){}
     try{ lastCloudTs=Number((JSON.parse(payload)||{}).savedAt)||Date.now(); _lastCloudJson=payload; }catch(e){}
     setCloud('已同步');
-    if(adopted) render(); // 有以雲端為底合併時，畫面同步更新
+    if(adopted) safeRender(); // 有以雲端為底合併時，畫面同步更新（打字中則延後）
   } catch(e){ setCloud('雲端儲存失敗：'+String(e&&e.message||e).slice(0,50)); }
   saving=false;
   if(pendingSave){ pendingSave=false; pushCloud(); }
