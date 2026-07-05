@@ -882,9 +882,14 @@ async function loadCloud(){
           try{localStorage.setItem(LS,j.data); localStorage.removeItem(LS_DIRTY); localDirty=false; dirtyOther=false;}catch(e){} setCloud('已同步');
         }
       } else {
-        // 本機較新：不覆蓋本機，但仍把雲端較新的標記合併進來
+        // 本機較新：不覆蓋本機，但仍把雲端較新的標記合併進來，並詢問是否上傳
         mergeMeasFlags(cloudData.measurements||[]);
-        setCloud('本機有未上傳資料，未自動覆蓋雲端');
+        setCloud('本機有未上傳資料');
+        setTimeout(()=>{
+          if(confirm('這台裝置有尚未上傳的變更（本機資料比雲端新）。\n\n按【確定】把本機資料上傳到雲端（一般情況選這個）\n按【取消】先不上傳（下次重新整理會再詢問）')){
+            localDirty=true; pushCloud();
+          }
+        },200);
       }
       _lastCloudJson=j.data;
     } else { setCloud('雲端尚無資料'); }
