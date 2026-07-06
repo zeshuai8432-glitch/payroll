@@ -485,7 +485,7 @@ const FS_PROJECT = 'payroll-d1abe';
 const FS_KEY = 'AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
 const FS_DOC_BASE = 'https://firestore.googleapis.com/v1/projects/'+FS_PROJECT+'/databases/(default)/documents/payroll/';
 const FS_REST_URL = FS_DOC_BASE+'main?key='+FS_KEY;
-const APP_VERSION = 'v2026.07.06-selectall';
+const APP_VERSION = 'v2026.07.06-bysite';
 let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], tools:[], locations:[], assets:[], advances:[], accounts:[], ledger:[], deals:[], billings:[], measurements:[], contracts:{}, costs:[], textMemory:{clients:[],companies:[]}, parkAccId:'', oweBonus:{}, minFund:'', tab:'entry' };
 let cloudStatus='連線中…';
 let localDirty=false, lastCloudTs=0;
@@ -496,6 +496,9 @@ let entryKind='work'; // 'work' | 'leave' | 'off'
 let entryNight=false;
 let entryLines=null; // 多案場輸入草稿：[{siteId,hours,overtime,night}]
 function ensureEntryLines(){ if(!Array.isArray(entryLines)||entryLines.length===0){ entryLines=[{siteId:'',hours:'8',overtime:'0',night:false}]; } }
+let entryByMode='emp'; // 'emp'=依員工·多案場 ; 'site'=依案場·多員工
+let entrySitePick='', entrySiteHours='8', entrySiteOt='0', entrySiteNight=false; // 依案場模式的共用欄位
+let entryEmpPick={}; // 依案場模式：勾選的員工 { empId:true }
 let payslipShowWorkDetails=false;
 
 const round = n => Math.round(n);
@@ -1339,13 +1342,33 @@ function viewEntry(){
       <button class="btn f-leave-only" id="f-add-leave" style="display:${entryKind!=='work'?'':'none'}">＋ 登記</button>
     </div>
     <div class="f-work-only" style="display:${entryKind==='work'?'':'none'}">
-      <div style="margin:6px 0 2px;font-size:13px;font-weight:600;color:var(--muted)">案場明細（可加多個）</div>
+      <div style="display:flex;gap:6px;margin:2px 0 12px;flex-wrap:wrap">
+        <button class="act" id="emode-emp" style="font-size:13px;padding:0 14px;height:34px;${entryByMode==='emp'?'background:#ede9fe;color:#4338ca;font-weight:700':''}">依員工·多案場</button>
+        <button class="act" id="emode-site" style="font-size:13px;padding:0 14px;height:34px;${entryByMode==='site'?'background:#ede9fe;color:#4338ca;font-weight:700':''}">依案場·多員工</button>
+      </div>
+      ${entryByMode==='emp'?`
+      <div style="margin:6px 0 2px;font-size:13px;font-weight:600;color:var(--muted)">案場明細（可加多個）— 上方選的「員工」跑這些案場</div>
       <div id="entry-lines">${linesHtml}</div>
       <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:10px">
         <button class="act" id="f-addline" style="border:1px solid var(--accent);border-radius:8px;padding:0 14px;height:38px;color:var(--accent)">＋ 再加案場</button>
         <button class="btn" id="f-add">✓ 全部登記</button>
         <button class="btn" id="f-allvac" style="background:var(--muted)">全員休假</button>
+      </div>`:`
+      <p class="sub" style="margin:0 0 8px">選一個案場、設好工時，勾選要登記的員工，一次全部登記（上方的「員工」欄在此模式不使用，日期共用）。</p>
+      <div class="row">
+        <div class="field" style="flex:1;min-width:150px"><label>案場</label><select id="es-site">${siteLineOpts(entrySitePick)}</select></div>
+        <div class="field"><label>工時</label><input type="number" id="es-hours" min="0" max="24" step="1" value="${entrySiteHours}" placeholder="可空" style="width:80px"></div>
+        <div class="field"><label>加班</label><input type="number" id="es-ot" min="0" max="12" step="1" value="${entrySiteOt}" style="width:70px"></div>
+        <div class="field"><label>過夜</label><div style="height:36px;display:flex;align-items:center"><input type="checkbox" id="es-night" ${entrySiteNight?'checked':''}></div></div>
       </div>
+      <div style="margin:8px 0 4px;font-size:13px;font-weight:600;color:var(--muted)">選擇員工（可多選）</div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px">
+        ${activeEmps.map(e=>`<label style="display:flex;align-items:center;gap:5px;padding:6px 12px;border:1.5px solid var(--line2);border-radius:10px;cursor:pointer;font-size:13px"><input type="checkbox" data-empick="${e.id}" ${entryEmpPick[e.id]?'checked':''} style="width:16px;height:16px">${esc(e.name)}</label>`).join('')}
+      </div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:12px">
+        <button class="act" id="es-selall" style="border:1px solid var(--accent);border-radius:8px;padding:0 14px;height:38px;color:var(--accent)">全選員工</button>
+        <button class="btn" id="es-add">✓ 登記勾選員工</button>
+      </div>`}
     </div>
     ${todayNote}`}
   </div>
@@ -1935,6 +1958,43 @@ function bind(){
     valid.forEach(v=>state.attendance.push({id:uid(),date,empId,siteId:v.siteId,hours:v.hours,overtime:v.overtime,night:v.night,dailyRate:emp.daily,kind:'work'}));
     entryDate=date; entryEmp=empId;
     // 送出後保留案場明細輸入值（登記下一個人常常是同案場同工時），不清空
+    resyncAllSiteDeals();
+    saveData(); render();
+  };
+  // 模式切換
+  const emEmp=document.getElementById('emode-emp'); if(emEmp) emEmp.onclick=()=>{ entryByMode='emp'; render(); };
+  const emSite=document.getElementById('emode-site'); if(emSite) emSite.onclick=()=>{ entryByMode='site'; render(); };
+  // 依案場·多員工：勾選狀態記憶
+  document.querySelectorAll('[data-empick]').forEach(cb=>cb.onchange=()=>{ if(cb.checked) entryEmpPick[cb.dataset.empick]=true; else delete entryEmpPick[cb.dataset.empick]; });
+  const esSelall=document.getElementById('es-selall');
+  if(esSelall) esSelall.onclick=()=>{
+    const boxes=[...document.querySelectorAll('[data-empick]')];
+    const allChecked=boxes.length>0 && boxes.every(cb=>cb.checked);
+    boxes.forEach(cb=>{ cb.checked=!allChecked; if(cb.checked) entryEmpPick[cb.dataset.empick]=true; else delete entryEmpPick[cb.dataset.empick]; });
+    esSelall.textContent=allChecked?'全選員工':'取消全選';
+  };
+  const esAdd=document.getElementById('es-add');
+  if(esAdd) esAdd.onclick=()=>{
+    const date=document.getElementById('f-date').value;
+    const siteId=document.getElementById('es-site').value;
+    const hoursRaw=String(document.getElementById('es-hours').value||'').trim();
+    const hours=hoursRaw===''?0:parseFloat(hoursRaw);
+    const overtime=parseFloat(document.getElementById('es-ot').value)||0;
+    const night=document.getElementById('es-night').checked;
+    const picked=[...document.querySelectorAll('[data-empick]:checked')].map(cb=>cb.dataset.empick);
+    if(!date||!siteId){ alert('請先選日期與案場'); return; }
+    if(isNaN(hours)||hours<0){ alert('工時請填 0 或正整數（只加班可留空）。'); return; }
+    if(!Number.isInteger(hours)){ alert('工時請填整數小時（例如 8、9）。'); return; }
+    if(hours===0 && overtime<=0 && !night){ alert('工時或加班至少填一個（或勾過夜）。'); return; }
+    if(picked.length===0){ alert('請至少勾選一位員工。'); return; }
+    const dupEmps=picked.filter(eid=>state.attendance.some(r=>r.empId===eid&&r.date===date&&r.siteId===siteId&&(!r.kind||r.kind==='work'))).map(eid=>empName(eid));
+    if(dupEmps.length>0){
+      if(!confirm(`${dupEmps.join('、')} 在 ${date} 已登記過「${siteName(siteId)}」。\n\n確定要再記一次（會變成多筆）嗎？`)) return;
+    }
+    picked.forEach(eid=>{ const emp=state.employees.find(e=>e.id===eid); if(emp) state.attendance.push({id:uid(),date,empId:eid,siteId,hours,overtime,night,dailyRate:emp.daily,kind:'work'}); });
+    entryDate=date;
+    entrySitePick=siteId; entrySiteHours=String(hours); entrySiteOt=String(overtime); entrySiteNight=night;
+    entryEmpPick={}; // 送出後清空員工勾選，案場/工時保留方便下一批
     resyncAllSiteDeals();
     saveData(); render();
   };
