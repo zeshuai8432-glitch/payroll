@@ -484,7 +484,7 @@ const FS_PROJECT = 'payroll-d1abe';
 const FS_KEY = 'AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
 const FS_DOC_BASE = 'https://firestore.googleapis.com/v1/projects/'+FS_PROJECT+'/databases/(default)/documents/payroll/';
 const FS_REST_URL = FS_DOC_BASE+'main?key='+FS_KEY;
-const APP_VERSION = 'v2026.07.05-merge';
+const APP_VERSION = 'v2026.07.06-itemwrap';
 let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], tools:[], locations:[], assets:[], advances:[], accounts:[], ledger:[], deals:[], billings:[], measurements:[], contracts:{}, costs:[], textMemory:{clients:[],companies:[]}, parkAccId:'', oweBonus:{}, minFund:'', tab:'entry' };
 let cloudStatus='連線中…';
 let localDirty=false, lastCloudTs=0;
@@ -4531,7 +4531,7 @@ function viewMeasurements(){
           <div style="font-size:12px;font-weight:700;color:#6366f1;margin-bottom:8px">編輯此筆</div>
           <div class="row" style="align-items:flex-end">
             <div class="field"><label>日期</label><input type="date" id="me-date" value="${esc(m.date||'')}"></div>
-            <div class="field" style="flex:1;min-width:140px"><label>項目</label><input id="me-item" value="${esc(m.item||'')}"></div>
+            <div class="field" style="flex:1;min-width:200px"><label>項目（可換行）</label><textarea id="me-item" rows="2">${esc(m.item||'')}</textarea></div>
             <div class="field"><label>單位</label><input id="me-unit" value="${esc(m.unit||'')}" style="width:80px"></div>
             ${isPart?`<div class="field"><label>寬(m)</label><input type="number" id="me-width" value="${m.width!=null?m.width:''}" min="0" step="0.01" style="width:85px"></div>
             <div class="field"><label>高(m)</label><input type="number" id="me-height" value="${m.height!=null?m.height:''}" min="0" step="0.01" style="width:85px"></div>`:''}
@@ -4552,7 +4552,7 @@ function viewMeasurements(){
       return `<tr${ff?` style="background:${ff.bg}"`:''}>
         <td style="text-align:center"><input type="checkbox" data-measpick-cb="${m.id}" ${measSel[m.id]?'checked':''} style="width:16px;height:16px"></td>
         <td>${esc(m.date||'')}</td>
-        <td style="max-width:160px">${ff?`<span style="color:${ff.ink};font-weight:700;font-size:11px">★${ff.label}</span> `:''}${esc(m.item||'')}</td>
+        <td style="max-width:280px;white-space:normal;word-break:break-word">${ff?`<span style="color:${ff.ink};font-weight:700;font-size:11px">★${ff.label}</span> `:''}${escBr(m.item||'')}</td>
         <td style="text-align:right">${esc(sizeLabel)}</td>
         <td style="text-align:center">${esc(m.unit||'')}</td>
         <td style="text-align:right">${(Number(m.qty)||0).toLocaleString()}</td>
@@ -4614,7 +4614,7 @@ function viewMeasurements(){
     ${formOpen.meas?`<div class="row" style="margin-top:8px">
       <div class="field"><label>類型</label><select id="meas-type" style="width:110px"><option value="partition" ${mdType==='partition'?'selected':''}>隔間</option><option value="ceiling" ${mdType==='ceiling'?'selected':''}>天花板</option><option value="carry" ${mdType==='carry'?'selected':''}>搬運</option></select></div>
       <div class="field" style="flex:1;min-width:150px"><label>案場</label><select id="meas-site">${siteSelOpts}</select></div>
-      <div class="field" style="flex:1;min-width:160px"><label id="meas-item-label">項目</label><input id="meas-item" value="${measDraft?esc(measDraft.item||''):''}" placeholder="例：貼磁磚、矽酸鈣板"></div>
+      <div class="field" style="flex:1;min-width:220px"><label id="meas-item-label">項目（可換行）</label><textarea id="meas-item" rows="2" placeholder="例：貼磁磚、矽酸鈣板（長說明可按 Enter 換行）">${measDraft?esc(measDraft.item||''):''}</textarea></div>
       <div class="field"><label>單位</label><input id="meas-unit" value="${measDraft?esc(measDraft.unit||'㎡'):'㎡'}" placeholder="㎡、坪、才、式" style="width:90px"></div>
       <div class="field" id="meas-width-field"><label>寬度（m）</label><input type="number" id="meas-width" value="${measDraft&&measDraft.width!=null?measDraft.width:''}" min="0" step="0.01" style="width:95px"></div>
       <div class="field" id="meas-height-field"><label>高度（m）</label><input type="number" id="meas-height" value="${measDraft&&measDraft.height!=null?measDraft.height:''}" min="0" step="0.01" style="width:95px"></div>
@@ -4645,7 +4645,7 @@ function exportMeasurementsPDF(selectedOnly=false){
       const fk=measFlagKey(m); const ff=fk?MEAS_FLAGS[fk]:null;
       return `<tr${fk?` class="flag-${fk}"`:''}>
         <td>${esc(m.date||'')}</td>
-        <td>${ff?`<span style="color:${ff.ink};font-weight:700;font-size:10px">★${ff.label}</span> `:''}${esc(m.item||'')}</td>
+        <td style="white-space:normal;word-break:break-word">${ff?`<span style="color:${ff.ink};font-weight:700;font-size:10px">★${ff.label}</span> `:''}${escBr(m.item||'')}</td>
         <td>${esc(measurementSizeLabel(m))}</td>
         <td>${esc(m.unit||'')}</td>
         <td class="num">${(Number(m.qty)||0).toLocaleString()}</td>
