@@ -446,6 +446,44 @@ function rememberDeletedPhoto(id,url){
   state.billingPhotoDeleted=state.billingPhotoDeleted||{};
   state.billingPhotoDeleted[id]=[...new Set([...(state.billingPhotoDeleted[id]||[]),url])];
 }
+// ── 逐筆(依id)合併，避免裝置互相整包覆蓋造成資料遺失 ──
+const MERGE_COLLECTIONS=['employees','sites','attendance','adjustments','loans','parkLedger','billings','measurements'];
+function unionById(baseArr, addArr){
+  const map=new Map();
+  (baseArr||[]).forEach(r=>{ if(r&&r.id!=null) map.set(r.id,r); });
+  (addArr||[]).forEach(r=>{ if(r&&r.id!=null && !map.has(r.id)) map.set(r.id,r); });
+  return [...map.values()];
+}
+function mergeDeletedTomb(cloudDel){
+  if(!cloudDel) return;
+  state.billingPhotoDeleted=state.billingPhotoDeleted||{};
+  Object.entries(cloudDel).forEach(([id,urls])=>{
+    state.billingPhotoDeleted[id]=[...new Set([...(state.billingPhotoDeleted[id]||[]),...(urls||[])])];
+  });
+}
+// 把雲端文件 cd 與本機逐筆合併：較新一方當底，較舊方只補「缺的筆數」，兩邊都不遺失
+function mergeCloudDoc(cd){
+  const localRaw=localStorage.getItem(LS);
+  const localTs=localRaw?Number((JSON.parse(localRaw)||{}).savedAt)||0:0;
+  const cloudTs=Number(cd.savedAt)||0;
+  const keepLogs={}; MERGE_COLLECTIONS.forEach(k=>keepLogs[k]=(state[k]||[]).slice());
+  const keepDel=JSON.parse(JSON.stringify(state.billingPhotoDeleted||{}));
+  if(cloudTs>=localTs){
+    applyData(cd); // 內含合併簽名/照片
+    MERGE_COLLECTIONS.forEach(k=>{ state[k]=unionById(state[k], keepLogs[k]); });
+    mergeDeletedTomb(keepDel); // 補回本機的照片刪除記號
+  } else {
+    MERGE_COLLECTIONS.forEach(k=>{ state[k]=unionById(state[k], cd[k]||[]); });
+    mergeBillingSigs(cd.billingSigs||{}, cd.billingSigsLocked||{}, cd.billingSigMeta||{});
+    mergeDeletedTomb(cd.billingPhotoDeleted);
+    if(cd.billingPhotos) mergeCloudPhotos(cd.billingPhotos);
+  }
+  // 依刪除記號再清一次照片（union 後可能被別台補回）
+  Object.entries(state.billingPhotoDeleted||{}).forEach(([id,urls])=>{
+    if(billingPhotos[id]){ const s=new Set(urls); billingPhotos[id]=billingPhotos[id].filter(u=>!s.has(u)); if(!billingPhotos[id].length) delete billingPhotos[id]; }
+  });
+  savePhotos();
+}
 function mergeBillingSigs(inSigs={}, inLocked={}, inMeta={}){
   Object.keys(inSigs||{}).forEach(id=>{
     if(localSigPending[id] && billingSigs[id]) return;
@@ -587,22 +625,19 @@ async function loadCloud(){
     const j=await res.json();
     if(j&&j.ok&&j.data){
       const cloudData=JSON.parse(j.data);
-      const localRaw=localStorage.getItem(LS);
-      const localTs=localRaw?Number((JSON.parse(localRaw)||{}).savedAt)||0:0;
-      const cloudTs=Number(cloudData.savedAt)||0;
-      lastCloudTs=cloudTs;
-      mergeBillingSigs(cloudData.billingSigs||{}, cloudData.billingSigsLocked||{}, cloudData.billingSigMeta||{});
-      if(cloudData.billingPhotos) mergeCloudPhotos(cloudData.billingPhotos);
-      if(!localDirty || cloudTs>=localTs){
-        const keepSigs={...billingSigs}, keepLocked={...billingSigsLocked}, keepMeta={...billingSigMeta};
-        applyData(cloudData);
-        Object.assign(billingSigs, keepSigs);
-        Object.assign(billingSigsLocked, keepLocked);
-        Object.assign(billingSigMeta, keepMeta);
-        try{localStorage.setItem(LS,j.data); localStorage.removeItem(LS_DIRTY); localDirty=false;}catch(e){}
-        setCloud('已同步');
+      lastCloudTs=Number(cloudData.savedAt)||0;
+      const hadLocal=localDirty;
+      mergeCloudDoc(cloudData); // 逐筆(依id)合併雲端＋本機，兩邊資料都保留、不互相覆蓋
+      try{ localStorage.setItem(LS, JSON.stringify(packData())); }catch(e){}
+      if(hadLocal){
+        // 我有未上傳資料 → 把合併後的完整版回推雲端
+        localDirty=true;
+        if(saveTimer) clearTimeout(saveTimer);
+        saveTimer=setTimeout(pushCloud,400);
+        setCloud('已同步(合併回傳中…)');
       } else {
-        setCloud('本機有未上傳資料，未自動覆蓋雲端');
+        try{ localStorage.removeItem(LS_DIRTY); localDirty=false; }catch(e){}
+        setCloud('已同步');
       }
     }
     else { setCloud('雲端尚無資料'); }
@@ -633,17 +668,9 @@ async function pushCloud(){
       const gj=await gr.json();
       if(gj&&gj.ok&&gj.data){
         const cd=JSON.parse(gj.data);
-        const cloudTs=Number(cd.savedAt)||0;
-        const localRaw=localStorage.getItem(LS);
-        const localTs=localRaw?Number((JSON.parse(localRaw)||{}).savedAt)||0:0;
-        if(cloudTs>lastCloudTs){
-          lastCloudTs=cloudTs;
-          setCloud('雲端已有較新資料，請先重新整理');
-          saving=false;
-          return;
-        }
         applyCloudSigsBeforePush(cd.billingSigs||{}, cd.billingSigsLocked||{}, cd.billingSigMeta||{});
-        if(cd.billingPhotos) mergeCloudPhotos(cd.billingPhotos);
+        mergeCloudDoc(cd); // 逐筆合併雲端已有資料，再寫回union → 不再拒推、也不會蓋掉別人
+        lastCloudTs=Number(cd.savedAt)||lastCloudTs;
       }
     }catch(e){}
     const payload=JSON.stringify(packData());
