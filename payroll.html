@@ -485,7 +485,7 @@ const FS_PROJECT = 'payroll-d1abe';
 const FS_KEY = 'AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
 const FS_DOC_BASE = 'https://firestore.googleapis.com/v1/projects/'+FS_PROJECT+'/databases/(default)/documents/payroll/';
 const FS_REST_URL = FS_DOC_BASE+'main?key='+FS_KEY;
-const APP_VERSION = 'v2026.07.06-photodel';
+const APP_VERSION = 'v2026.07.06-selectall';
 let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], tools:[], locations:[], assets:[], advances:[], accounts:[], ledger:[], deals:[], billings:[], measurements:[], contracts:{}, costs:[], textMemory:{clients:[],companies:[]}, parkAccId:'', oweBonus:{}, minFund:'', tab:'entry' };
 let cloudStatus='連線中…';
 let localDirty=false, lastCloudTs=0;
@@ -2902,6 +2902,14 @@ function bind(){
     const ids=[...document.querySelectorAll('[data-billcheck]:checked')].map(cb=>cb.dataset.billcheck);
     printBillingDocs(ids);
   });
+  document.querySelectorAll('[data-site-selectall]').forEach(b=>b.onclick=e=>{
+    e.stopPropagation();
+    const card=b.closest('.card'); if(!card) return;
+    const boxes=[...card.querySelectorAll('[data-billcheck]')];
+    const allChecked=boxes.length>0 && boxes.every(cb=>cb.checked);
+    boxes.forEach(cb=>{ cb.checked=!allChecked; }); // 全勾或全取消（就地切換，不重繪）
+    b.textContent=allChecked?'全選':'取消全選';
+  });
   document.querySelectorAll('[data-togglesettle]').forEach(b=>b.onclick=()=>{
     const bill=state.billings.find(x=>x.id===b.dataset.togglesettle);
     if(bill){
@@ -4444,7 +4452,8 @@ function viewBillingAdd(){
         </div>
         <div style="display:flex;gap:6px;flex-shrink:0">
           <button class="act" data-site-printall="${siteName}" style="font-size:12px;padding:0 10px;height:32px">全部列印</button>
-          ${open?`<button class="act" data-site-printsel="${siteName}" style="font-size:12px;padding:0 10px;height:32px">列印勾選</button>`:''}
+          ${open?`<button class="act" data-site-selectall="${siteName}" style="font-size:12px;padding:0 10px;height:32px">全選</button>
+          <button class="act" data-site-printsel="${siteName}" style="font-size:12px;padding:0 10px;height:32px">列印勾選</button>`:''}
         </div>
       </div>
       ${entries}
