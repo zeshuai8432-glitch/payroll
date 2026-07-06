@@ -484,7 +484,7 @@ const FS_PROJECT = 'payroll-d1abe';
 const FS_KEY = 'AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
 const FS_DOC_BASE = 'https://firestore.googleapis.com/v1/projects/'+FS_PROJECT+'/databases/(default)/documents/payroll/';
 const FS_REST_URL = FS_DOC_BASE+'main?key='+FS_KEY;
-const APP_VERSION = 'v2026.07.06-itemwrap';
+const APP_VERSION = 'v2026.07.06-fullphoto';
 let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], tools:[], locations:[], assets:[], advances:[], accounts:[], ledger:[], deals:[], billings:[], measurements:[], contracts:{}, costs:[], textMemory:{clients:[],companies:[]}, parkAccId:'', oweBonus:{}, minFund:'', tab:'entry' };
 let cloudStatus='連線中…';
 let localDirty=false, lastCloudTs=0;
@@ -3407,8 +3407,8 @@ function billingDocInner(id){
   const amt=billingAmount(b);
   const applyUnit=siteApplyUnit(b.site);
   const photoSec=photos.length?`<div class="sec">施作照片</div>
-    <div style="display:flex;flex-wrap:wrap;gap:10px;margin:8px 0 16px">
-      ${photos.map(url=>`<img src="${url}" style="width:180px;height:135px;object-fit:cover;border:1px solid #ddd;border-radius:4px">`).join('')}
+    <div style="display:flex;flex-direction:column;gap:12px;margin:8px 0 16px">
+      ${photos.map(url=>`<img src="${url}" style="max-width:100%;width:auto;max-height:640px;object-fit:contain;border:1px solid #ddd;border-radius:4px;page-break-inside:avoid;-webkit-print-color-adjust:exact">`).join('')}
     </div>`:'';
   const sig=billingSigs[id]||null;
   const signImgHtml=sig?`<img src="${sig}" style="display:block;height:72px;max-width:220px;margin-top:6px">`:'';
