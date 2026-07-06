@@ -485,8 +485,8 @@ const FS_PROJECT = 'payroll-d1abe';
 const FS_KEY = 'AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
 const FS_DOC_BASE = 'https://firestore.googleapis.com/v1/projects/'+FS_PROJECT+'/databases/(default)/documents/payroll/';
 const FS_REST_URL = FS_DOC_BASE+'main?key='+FS_KEY;
-const APP_VERSION = 'v2026.07.06-bysite';
-let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], tools:[], locations:[], assets:[], advances:[], accounts:[], ledger:[], deals:[], billings:[], measurements:[], contracts:{}, costs:[], textMemory:{clients:[],companies:[]}, parkAccId:'', oweBonus:{}, minFund:'', tab:'entry' };
+const APP_VERSION = 'v2026.07.06-deltomb';
+let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], tools:[], locations:[], assets:[], advances:[], accounts:[], ledger:[], deals:[], billings:[], measurements:[], contracts:{}, costs:[], textMemory:{clients:[],companies:[]}, parkAccId:'', oweBonus:{}, minFund:'', deletedIds:[], tab:'entry' };
 let cloudStatus='連線中…';
 let localDirty=false, lastCloudTs=0;
 let dirtyOther=false; // 未上傳的變更中是否含「標記以外」的修改（決定衝突時能否自動合併）
@@ -744,7 +744,7 @@ const taxBreakdownHtml = (d,c) => {
 
 function applyData(d){
   if(!d) return;
-  state.employees=d.employees||[]; state.sites=d.sites||[]; state.attendance=d.attendance||[]; state.adjustments=d.adjustments||[]; state.loans=d.loans||[]; state.tools=d.tools||[]; state.locations=d.locations||[]; state.assets=d.assets||[]; state.advances=d.advances||[]; state.accounts=d.accounts||[]; state.ledger=d.ledger||[]; state.deals=d.deals||[]; state.billings=d.billings||[]; state.measurements=d.measurements||[]; state.contracts=d.contracts||{}; state.costs=d.costs||[]; state.textMemory=d.textMemory||{clients:[],companies:[]}; state.parkAccId=d.parkAccId||''; state.oweBonus=d.oweBonus||{}; state.minFund=(d.minFund!==undefined?d.minFund:'');
+  state.employees=d.employees||[]; state.sites=d.sites||[]; state.attendance=d.attendance||[]; state.adjustments=d.adjustments||[]; state.loans=d.loans||[]; state.tools=d.tools||[]; state.locations=d.locations||[]; state.assets=d.assets||[]; state.advances=d.advances||[]; state.accounts=d.accounts||[]; state.ledger=d.ledger||[]; state.deals=d.deals||[]; state.billings=d.billings||[]; state.measurements=d.measurements||[]; state.contracts=d.contracts||{}; state.costs=d.costs||[]; state.textMemory=d.textMemory||{clients:[],companies:[]}; state.parkAccId=d.parkAccId||''; state.oweBonus=d.oweBonus||{}; state.minFund=(d.minFund!==undefined?d.minFund:''); state.deletedIds=d.deletedIds||[];
   state.employees.forEach(e=>{ if(e.active===undefined) e.active=true; });
   state.sites.forEach(s=>{
     if(s.parentSiteId){
@@ -770,35 +770,56 @@ function packData(){
     const driveUrls=(urls||[]).filter(u=>typeof u==='string'&&u.startsWith('http'));
     if(driveUrls.length) photosSync[id]=driveUrls;
   });
-  return {employees:state.employees,sites:state.sites,attendance:state.attendance,adjustments:state.adjustments,loans:state.loans,tools:state.tools,locations:state.locations,assets:state.assets,advances:state.advances,accounts:state.accounts,ledger:state.ledger,deals:state.deals,billings:state.billings,measurements:state.measurements,contracts:state.contracts,costs:state.costs,textMemory:state.textMemory,parkAccId:state.parkAccId,oweBonus:state.oweBonus,minFund:state.minFund,billingPhotos:photosSync,billingPhotosDeleted:billingPhotosDeleted,billingSigs:billingSigs,billingSigsLocked:billingSigsLocked,billingSigMeta:billingSigMeta,savedAt:Date.now()};
+  return {employees:state.employees,sites:state.sites,attendance:state.attendance,adjustments:state.adjustments,loans:state.loans,tools:state.tools,locations:state.locations,assets:state.assets,advances:state.advances,accounts:state.accounts,ledger:state.ledger,deals:state.deals,billings:state.billings,measurements:state.measurements,contracts:state.contracts,costs:state.costs,textMemory:state.textMemory,parkAccId:state.parkAccId,oweBonus:state.oweBonus,minFund:state.minFund,billingPhotos:photosSync,billingPhotosDeleted:billingPhotosDeleted,billingSigs:billingSigs,billingSigsLocked:billingSigsLocked,billingSigMeta:billingSigMeta,deletedIds:state.deletedIds||[],savedAt:Date.now()};
 }
 // 需要逐筆(依 id)合併的集合；deals 為衍生資料不合併，靠 resyncAllSiteDeals 重算
 const MERGE_COLLECTIONS=['employees','sites','attendance','adjustments','loans','tools','locations','assets','advances','accounts','ledger','billings','measurements','costs'];
-// union：以 base 為主，把 add 裡「base 沒有的 id」補進來；相同 id 不覆蓋（base 即較新的一方）
-function unionById(baseArr, addArr){
+// union：以 base 為主，把 add 裡「base 沒有的 id」補進來；相同 id 不覆蓋；已刪除(記號)的一律排除
+function unionById(baseArr, addArr, delSet){
+  const del=delSet||new Set(state.deletedIds||[]);
   const map=new Map();
-  (baseArr||[]).forEach(r=>{ if(r&&r.id!=null) map.set(r.id,r); });
-  (addArr||[]).forEach(r=>{ if(r&&r.id!=null && !map.has(r.id)) map.set(r.id,r); });
+  (baseArr||[]).forEach(r=>{ if(r&&r.id!=null && !del.has(r.id)) map.set(r.id,r); });
+  (addArr||[]).forEach(r=>{ if(r&&r.id!=null && !del.has(r.id) && !map.has(r.id)) map.set(r.id,r); });
   return [...map.values()];
 }
-// 把雲端文件 cd 與本機逐筆合併：較新的一方當底，較舊那方只補「缺的筆數」，兩邊資料都不遺失
+// ── 刪除記號(tombstone)：自動偵測哪些 id 被刪除，同步到各裝置，避免合併時被補回 ──
+let _prevIds=null;
+function collectIds(){ const s=new Set(); MERGE_COLLECTIONS.forEach(k=>(state[k]||[]).forEach(r=>{ if(r&&r.id!=null) s.add(r.id); })); return s; }
+function refreshPrevIds(){ _prevIds=collectIds(); }
+function recordDeletions(){ // 比對上次的 id 集合，消失的視為刪除，記入 deletedIds
+  const cur=collectIds();
+  if(_prevIds){
+    const del=new Set(state.deletedIds||[]);
+    _prevIds.forEach(id=>{ if(!cur.has(id)) del.add(id); });
+    state.deletedIds=[...del];
+  }
+  _prevIds=cur;
+}
+// 把雲端文件 cd 與本機逐筆合併：較新的一方當底，較舊那方只補「缺的筆數」；已刪除的不補回
 function mergeCloudDoc(cd){
   const localRaw=localStorage.getItem(LS);
   const localTs=localRaw?((JSON.parse(localRaw)||{}).savedAt||0):0;
   const cloudTs=Number(cd.savedAt)||0;
   const keepLogs={}; MERGE_COLLECTIONS.forEach(k=>keepLogs[k]=(state[k]||[]).slice());
+  const keepDelIds=(state.deletedIds||[]).slice();
   if(cloudTs>=localTs){
-    // 雲端較新：以雲端為底，補回本機獨有(尚未上傳)的筆數
-    applyData(cd); // 內含 resyncAllSiteDeals + 合併簽名/照片
-    MERGE_COLLECTIONS.forEach(k=>{ state[k]=unionById(state[k], keepLogs[k]); });
+    applyData(cd); // 內含 resyncAllSiteDeals + 合併簽名/照片（會把 deletedIds 設成雲端的）
+    state.deletedIds=[...new Set([...(state.deletedIds||[]),...keepDelIds])]; // 補回本機刪除記號
+    const del=new Set(state.deletedIds);
+    MERGE_COLLECTIONS.forEach(k=>{ state[k]=unionById(state[k], keepLogs[k], del); });
   } else {
-    // 本機較新：以本機為底，補進雲端獨有(別台裝置新增)的筆數
-    MERGE_COLLECTIONS.forEach(k=>{ state[k]=unionById(state[k], cd[k]||[]); });
+    state.deletedIds=[...new Set([...(state.deletedIds||[]),...(cd.deletedIds||[])])];
+    const del=new Set(state.deletedIds);
+    MERGE_COLLECTIONS.forEach(k=>{ state[k]=unionById(state[k], cd[k]||[], del); });
     mergeBillingSigs(cd.billingSigs||{}, cd.billingSigsLocked||{}, cd.billingSigMeta||{});
     mergeDeletedPhotos(cd.billingPhotosDeleted);
     if(cd.billingPhotos) mergeCloudPhotos(cd.billingPhotos);
   }
+  // 依刪除記號再清一次各集合（applyData 套用的雲端資料可能含已刪的）
+  const del=new Set(state.deletedIds||[]);
+  MERGE_COLLECTIONS.forEach(k=>{ state[k]=(state[k]||[]).filter(r=>!(r&&del.has(r.id))); });
   try{ resyncAllSiteDeals(); }catch(e){} // 合併後重算財務，確保帳務正確
+  refreshPrevIds();
 }
 // 合併雲端「已刪除照片」記號（union），並把已刪除的 url 從現有照片中清掉
 function mergeDeletedPhotos(cloudDeleted){
@@ -855,6 +876,7 @@ function importBackup(file){
       // 還原照片（含 base64）
       if(data._fullPhotos){ try{ billingPhotos=data._fullPhotos; savePhotos(); }catch(e){} }
       applyData(data);
+      refreshPrevIds(); // 還原視為新基準，避免被誤判為大量刪除
       saveData();        // 寫回本機並推雲端，讓三人同步到還原後的版本
       render();
       alert('已還原備份。資料已更新並同步。');
@@ -992,6 +1014,7 @@ async function loadCloud(){
 let saveTimer=null, saving=false, pendingSave=false;
 function saveData(kind){
   // 本機立即存；kind==='flag' 表示這次變更只有重點標記（衝突時可自動合併）
+  recordDeletions(); // 偵測本次是否有刪除，記入刪除記號（避免合併時被補回）
   localDirty=true;
   if(kind!=='flag') dirtyOther=true;
   try{ localStorage.setItem(LS_DIRTY,'1'); localStorage.setItem(LS, JSON.stringify(packData())); }catch(e){}
@@ -5363,7 +5386,7 @@ document.addEventListener('visibilitychange', ()=>{
 });
 
 (function(){ const v=document.getElementById('app-version'); if(v){ v.textContent=APP_VERSION; v.style.display=''; } })(); // 版本號常駐顯示，方便確認是否拿到新版
-loadLocal(); loadPhotos(); loadSigs(); render(); loadCloud();
+loadLocal(); loadPhotos(); loadSigs(); refreshPrevIds(); render(); loadCloud();
 </script>
 </body>
 </html>
