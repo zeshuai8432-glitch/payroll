@@ -574,9 +574,18 @@ function deleteSig(id){
 }
 const fileToDataURL = file => new Promise((resolve,reject)=>{ const r=new FileReader(); r.onload=()=>resolve(r.result); r.onerror=reject; r.readAsDataURL(file); });
 const loadImage = src => new Promise((resolve,reject)=>{ const img=new Image(); img.onload=()=>resolve(img); img.onerror=reject; img.src=src; });
-async function compressImageP(file,maxW=1000,quality=0.72,maxBytes=850000){
-  if(!file || !file.type || !file.type.startsWith('image/')) throw new Error('請選圖片檔');
-  const src=await fileToDataURL(file);
+// HEIC（iPhone 高效率格式）自動轉檔
+function isHeicFile(file){ const t=(file.type||'').toLowerCase(), n=(file.name||'').toLowerCase(); return t.includes('heic')||t.includes('heif')||/\.hei[cf]$/.test(n); }
+let _heicLibP=null;
+function loadHeicLib(){
+  if(window.heic2any) return Promise.resolve();
+  if(_heicLibP) return _heicLibP;
+  _heicLibP=new Promise((resolve,reject)=>{ const s=document.createElement('script'); s.src='https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js'; s.onload=()=>resolve(); s.onerror=()=>{ _heicLibP=null; reject(new Error('HEIC 轉檔器載入失敗')); }; document.head.appendChild(s); });
+  return _heicLibP;
+}
+async function heicToJpegBlob(file){ await loadHeicLib(); const out=await window.heic2any({blob:file,toType:'image/jpeg',quality:0.85}); return Array.isArray(out)?out[0]:out; }
+async function compressBlobP(blob,maxW,quality,maxBytes){
+  const src=await fileToDataURL(blob);
   const img=await loadImage(src);
   let w0=img.naturalWidth||img.width, h0=img.naturalHeight||img.height;
   if(!w0||!h0) throw new Error('照片讀取失敗');
@@ -591,6 +600,13 @@ async function compressImageP(file,maxW=1000,quality=0.72,maxBytes=850000){
     if(q>0.48) q-=0.08; else wLimit=Math.round(wLimit*0.82);
   }
   return out;
+}
+async function compressImageP(file,maxW=1000,quality=0.72,maxBytes=850000){
+  if(!file) throw new Error('請選圖片檔');
+  const looksImage=(file.type&&file.type.startsWith('image/'))||/\.(jpe?g|png|webp|gif|bmp|heic|heif)$/i.test(file.name||'');
+  if(!looksImage) throw new Error('請選圖片檔');
+  try{ return await compressBlobP(file,maxW,quality,maxBytes); } // 原生解碼（新版 Safari 可直接吃 HEIC）
+  catch(e){ if(isHeicFile(file)){ const jpeg=await heicToJpegBlob(file); return await compressBlobP(jpeg,maxW,quality,maxBytes); } throw e; }
 }
 async function uploadBillingPhoto(file){
   if(!CLOUD_URL) return fileToDataURL(file);
@@ -1871,7 +1887,7 @@ function viewMeasurements(){
 function buildBillingDocHTML(id){
   const b=state.billings.find(x=>x.id===id); if(!b) return '';
   const type=b.docType||'請款單', amount=billingAmount(b), photos=billingPhotos[id]||[], sig=billingSigs[id]||null;
-  const photoSec=photos.length?`<div class="sec">施作照片</div><div style="display:flex;gap:8px;flex-wrap:wrap">${photos.map(url=>`<img src="${photoDisplayUrl(url)}" style="width:180px;height:135px;object-fit:cover;border:1px solid #ddd;border-radius:4px">`).join('')}</div>`:'';
+  const photoSec=photos.length?`<div class="sec">施作照片</div><div style="display:flex;flex-direction:column;gap:12px;margin:8px 0 16px">${photos.map(url=>`<img src="${photoDisplayUrl(url)}" style="max-width:100%;width:auto;max-height:640px;object-fit:contain;border:1px solid #ddd;border-radius:4px;page-break-inside:avoid;-webkit-print-color-adjust:exact">`).join('')}</div>`:'';
   const signImg=sig?`<img src="${sig}" style="max-width:180px;max-height:70px;display:block;margin-top:4px">`:'';
   return `<h1>${esc(type)}</h1>
     <div class="meta">列印日：${new Date().toISOString().slice(0,10)}</div>
