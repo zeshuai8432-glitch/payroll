@@ -485,7 +485,7 @@ const FS_PROJECT = 'payroll-d1abe';
 const FS_KEY = 'AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
 const FS_DOC_BASE = 'https://firestore.googleapis.com/v1/projects/'+FS_PROJECT+'/databases/(default)/documents/payroll/';
 const FS_REST_URL = FS_DOC_BASE+'main?key='+FS_KEY;
-const APP_VERSION = 'v2026.07.06-deltomb';
+const APP_VERSION = 'v2026.07.07-loancash';
 let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], tools:[], locations:[], assets:[], advances:[], accounts:[], ledger:[], deals:[], billings:[], measurements:[], contracts:{}, costs:[], textMemory:{clients:[],companies:[]}, parkAccId:'', oweBonus:{}, minFund:'', deletedIds:[], tab:'entry' };
 let cloudStatus='連線中…';
 let localDirty=false, lastCloudTs=0;
@@ -2381,6 +2381,17 @@ function bind(){
     if(!confirm('刪除這筆借支？已扣除的紀錄不會跟著刪除。')) return;
     state.loans=state.loans.filter(l=>l.id!==b.dataset.delloan); saveData(); render();
   });
+  document.querySelectorAll('[data-loancash]').forEach(b=>b.onclick=()=>{
+    const loan=state.loans.find(l=>l.id===b.dataset.loancash); if(!loan) return;
+    const bal=loanBalance(loan);
+    const raw=prompt(`私下現金還款（不扣薪水）。\n目前未還 ${money(bal)}。\n輸入這次還的金額：`);
+    if(raw===null) return;
+    const amt=Math.min(parseFloat(raw), bal);
+    if(isNaN(amt)||amt<=0){ alert('請輸入正確金額'); return; }
+    if(!Array.isArray(loan.repayments)) loan.repayments=[];
+    loan.repayments.push({date:new Date().toISOString().slice(0,10),amount:amt});
+    saveData(); render();
+  });
   document.querySelectorAll('[data-repay]').forEach(b=>b.onclick=()=>{
     const loan=state.loans.find(l=>l.id===b.dataset.repay); if(!loan) return;
     const bal=loanBalance(loan);
@@ -3663,7 +3674,10 @@ function exportSitesPDF(){
 // ---- 借支 ----
 // 每筆借支已扣金額 = 所有「來源為此借支」的扣項調整加總
 function loanRepaid(loanId){
-  return state.adjustments.filter(a=>a.loanId===loanId && a.kind==='ded').reduce((s,a)=>s+(Number(a.amount)||0),0);
+  const bySalary=state.adjustments.filter(a=>a.loanId===loanId && a.kind==='ded').reduce((s,a)=>s+(Number(a.amount)||0),0);
+  const loan=state.loans.find(l=>l.id===loanId);
+  const byCash=loan&&Array.isArray(loan.repayments)?loan.repayments.reduce((s,r)=>s+(Number(r.amount)||0),0):0; // 私下現金還款（不扣薪）
+  return bySalary+byCash;
 }
 function loanBalance(loan){ return Math.max(0, (Number(loan.amount)||0) - loanRepaid(loan.id)); }
 // 本期是否已對此借支扣過款
@@ -3688,8 +3702,8 @@ function viewLoans(){
       <td class="num">${money(l.amount)}</td>
       <td class="num">${money(repaid)}（${pct}%）</td>
       <td class="num" style="font-weight:600;color:${done?'var(--accent)':'var(--danger)'}">${done?'已還清':money(bal)}</td>
-      <td>${esc(l.note||'')}</td>
-      <td><button class="act danger" data-delloan="${l.id}">刪</button></td>
+      <td>${esc(l.note||'')}${(l.repayments&&l.repayments.length)?`<div style="font-size:11px;color:var(--muted)">現金還款 ${l.repayments.length} 筆</div>`:''}</td>
+      <td style="white-space:nowrap">${done?'':`<button class="act" data-loancash="${l.id}" style="color:var(--accent)">現金還款</button> `}<button class="act danger" data-delloan="${l.id}">刪</button></td>
     </tr>`;
   }).join('');
   return `
