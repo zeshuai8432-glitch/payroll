@@ -1967,22 +1967,20 @@ function updateBraceFields() {
 
 // 查材料庫名稱（找不到就回傳代號）
 function matName(coll, id) { const m = (state.materials[coll] || []).find(x => x.id === id); return m ? m.name : (id || ''); }
-// 選骨架規格時自動搭配槽鐵與加強橫枝（以「名稱」比對，配合使用者自訂命名）
-// C41→U43,N19 ; C65→U67,N38
+// 數字規則自動搭配：槽鐵 = U(骨架號碼+2)；橫枝 ≤41→N19，其餘→N38
+// 例：C41→U43,N19 ; C65→U67,N38 ; C75→U77,N38 ; C92→U94,N38
+// 特殊不規則料（名稱沒數字或找不到對應槽鐵）不自動配，改由使用者手動選
 function autoPairStud() {
   const studSel = document.getElementById('p-stud-type'); if (!studSel) return;
   const stud = (state.materials.studs || []).find(s => s.id === studSel.value); if (!stud) return;
-  const has = (item, token) => item && ((item.name || '').includes(token) || item.id === token);
-  // 規則以「名稱或代號包含該字樣」比對，容許「C65 骨架」等帶後綴命名
-  const rules = [
-    { stud: 'C65', track: 'U67', brace: 'N38' },
-    { stud: 'C64', track: 'U64', brace: 'N38' },
-    { stud: 'C41', track: 'U43', brace: 'N19' },
-  ];
-  const rule = rules.find(r => has(stud, r.stud)); if (!rule) return;
-  const tk = (state.materials.tracks || []).find(t => has(t, rule.track));
+  const numMatch = (stud.name || stud.id || '').match(/(\d+)/); if (!numMatch) return;
+  const n = parseInt(numMatch[1]);
+  const trackToken = 'U' + (n + 2);
+  const braceToken = (n <= 41) ? 'N19' : 'N38';
+  const has = (item, token) => item && ((item.name || '').includes(token) || (item.id || '').includes(token));
+  const tk = (state.materials.tracks || []).find(t => has(t, trackToken));
   const tkSel = document.getElementById('p-track-type'); if (tk && tkSel) tkSel.value = tk.id;
-  const br = (state.materials.braces || []).find(b => has(b, rule.brace));
+  const br = (state.materials.braces || []).find(b => has(b, braceToken));
   const brSel = document.getElementById('p-brace-type'); if (br && brSel) { brSel.value = br.id; updateBraceFields(); }
 }
 
