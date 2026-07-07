@@ -2412,10 +2412,12 @@ function calcPartition(p) {
   // 加強橫枝
   let braces = 0;
   let bracePerRow = 0;
+  const braceLen = p.braceLength || 243;
+  let rawBraceCm = 0;
   if (p.braceType !== 'none' && p.braceType) {
-    const braceLen = p.braceLength || 243;
     bracePerRow = Math.ceil(W / braceLen);
     braces = bracePerRow * (p.braceRows || 1);
+    rawBraceCm = W * (p.braceRows || 1); // 原始總長（給全案合併用）
   }
 
   // 板材
@@ -2438,9 +2440,11 @@ function calcPartition(p) {
       if (rwSize) {
         const rwW = parseInt(rwSize[1]);
         const rwH = parseInt(rwSize[2]);
-        const piecesNeeded = Math.ceil(wallArea / (rwW * rwH));
-        const packs = Math.ceil(piecesNeeded / (rw.piecesPerPack || 4));
-        fill = { label: rw.name, qty: packs, unit: '包', piecesNeeded };
+        const rawPieces = wallArea / (rwW * rwH); // 原始片數（未進位）
+        const piecesNeeded = Math.ceil(rawPieces);
+        const perPack = rw.piecesPerPack || 4;
+        const packs = Math.ceil(piecesNeeded / perPack);
+        fill = { label: rw.name, qty: packs, unit: '包', piecesNeeded, rawPieces, perPack };
       }
     }
   } else if (p.fillType === 'glasswool') {
@@ -2449,7 +2453,7 @@ function calcPartition(p) {
       const rollArea = gw.rollSize; // m²
       const wallAreaM2 = wallArea / 10000;
       const rolls = Math.ceil(wallAreaM2 / rollArea);
-      fill = { label: gw.name, qty: rolls, unit: '捲' };
+      fill = { label: gw.name, qty: rolls, unit: '捲', rawM2: wallAreaM2, rollArea };
     }
   }
 
@@ -2490,7 +2494,7 @@ function calcPartition(p) {
     }
   }
 
-  return { studs, tracks, trackRaw, boards, boardsRaw: boardsRaw.toFixed(2), fill, braces, bracePerRow, totalPrice: totalPrice || 0, priceDetail };
+  return { studs, tracks, trackRaw, trackUnit, rawTrackCm: W * 2, boards, boardsRaw: boardsRaw.toFixed(2), boardsRawNum: boardsRaw, fill, braces, bracePerRow, braceLen, rawBraceCm, totalPrice: totalPrice || 0, priceDetail };
 }
 
 // ════════════════════════════════════
@@ -2514,6 +2518,21 @@ function renderResults() {
   const addTotal = (key, label, qty, unit) => {
     if (!totals[key]) totals[key] = { label, qty: 0, unit };
     totals[key].qty += qty;
+  };
+  // 可裁切材料：先加總「原始用量」，最後才進位一次（短牆共用零頭）
+  const pool = {};
+  const addPool = (key, label, unit, kind, raw, div) => {
+    if (!pool[key]) pool[key] = { label, unit, kind, raw: 0, div };
+    pool[key].raw += raw;
+  };
+  const finalizePool = () => { // 把各材料的原始用量進位，併入 totals
+    Object.entries(pool).forEach(([key, p]) => {
+      let qty;
+      if (p.kind === 'board') qty = Math.ceil(p.raw * 1.05); // 板材含5%損耗
+      else qty = Math.ceil(p.raw / p.div);                    // 支/包/捲：原始總量 ÷ 單位量
+      if (!totals[key]) totals[key] = { label: p.label, qty: 0, unit: p.unit };
+      totals[key].qty += qty;
+    });
   };
 
   let html = `
@@ -2543,20 +2562,23 @@ function renderResults() {
               <thead><tr><th>材料</th><th>數量</th><th>備註</th></tr></thead>
               <tbody>
                 <tr><td>${params.studType} 骨架</td><td class="qty">${r.studs} 支</td><td class="unit-cell">${params.studSpacing}cm 間距</td></tr>
-                <tr><td>${params.trackType} 槽鐵</td><td class="qty">${r.tracks} 支</td><td class="unit-cell">實際用量 ${r.trackRaw} m（上下各一排）</td></tr>
-                ${r.braces > 0 ? `<tr><td>${params.braceType} 加強橫枝 ${params.braceLength}cm</td><td class="qty">${r.braces} 支</td><td class="unit-cell">${params.braceRows}排 × ${r.bracePerRow}支/排</td></tr>` : ''}
-                <tr><td>${params.boardType === 'calcium' ? '矽酸鈣板' : '石膏板'} ${params.boardThickness}mm ${params.boardSize}尺</td><td class="qty">${r.boards} 片</td><td class="unit-cell">含5%損耗（淨算 ${r.boardsRaw} 片）</td></tr>
-                ${r.fill ? `<tr><td>${r.fill.label}</td><td class="qty">${r.fill.qty} ${r.fill.unit}</td><td class="unit-cell">${r.fill.piecesNeeded ? '需要 '+r.fill.piecesNeeded+' 片' : ''}</td></tr>` : ''}
+                <tr><td>${params.trackType} 槽鐵</td><td class="qty">${(r.rawTrackCm/r.trackUnit).toFixed(2)} 支</td><td class="unit-cell">原始用量 ${r.trackRaw} m（合併後看總表）</td></tr>
+                ${r.braces > 0 ? `<tr><td>${params.braceType} 加強橫枝 ${params.braceLength}cm</td><td class="qty">${(r.rawBraceCm/r.braceLen).toFixed(2)} 支</td><td class="unit-cell">${params.braceRows}排（原始用量）</td></tr>` : ''}
+                <tr><td>${params.boardType === 'calcium' ? '矽酸鈣板' : '石膏板'} ${params.boardThickness}mm ${params.boardSize}尺</td><td class="qty">${r.boardsRawNum.toFixed(2)} 片</td><td class="unit-cell">原始用量（總表才含5%損耗）</td></tr>
+                ${r.fill ? `<tr><td>${r.fill.label}</td><td class="qty">${(r.fill.rawPieces!=null ? r.fill.rawPieces/r.fill.perPack : r.fill.rawM2/r.fill.rollArea).toFixed(2)} ${r.fill.unit}</td><td class="unit-cell">原始用量（合併後看總表）</td></tr>` : ''}
               </tbody>
             </table>
             ${r.totalPrice > 0 ? `<div style="text-align:right;margin-top:6px;font-size:13px;color:var(--green);font-weight:600;">小計：$${r.totalPrice.toLocaleString()}</div>` : ''}
           </div>`;
-        addTotal(params.studType, params.studType + ' 骨架', r.studs, '支');
-        addTotal(params.trackType, params.trackType + ' 槽鐵', r.tracks, '支');
-        if (r.braces > 0) addTotal(params.braceType+'_'+params.braceLength, params.braceType+' 加強橫枝 '+params.braceLength+'cm', r.braces, '支');
+        addTotal(params.studType, params.studType + ' 骨架', r.studs, '支'); // 骨架為每支獨立，不併零頭
+        addPool(params.trackType, params.trackType + ' 槽鐵', '支', 'stick', r.rawTrackCm, r.trackUnit);
+        if (r.braces > 0) addPool(params.braceType+'_'+params.braceLength, params.braceType+' 加強橫枝 '+params.braceLength+'cm', '支', 'stick', r.rawBraceCm, r.braceLen);
         const boardKey = `${params.boardType}-${params.boardThickness}-${params.boardSize}`;
-        addTotal(boardKey, `${params.boardType === 'calcium' ? '矽酸鈣板' : '石膏板'} ${params.boardThickness}mm ${params.boardSize}尺`, r.boards, '片');
-        if (r.fill) addTotal(params.fillSpec || params.fillType, r.fill.label, r.fill.qty, r.fill.unit);
+        addPool(boardKey, `${params.boardType === 'calcium' ? '矽酸鈣板' : '石膏板'} ${params.boardThickness}mm ${params.boardSize}尺`, '片', 'board', r.boardsRawNum);
+        if (r.fill) {
+          if (r.fill.rawPieces != null) addPool(params.fillSpec || params.fillType, r.fill.label, r.fill.unit, 'pack', r.fill.rawPieces, r.fill.perPack);
+          else if (r.fill.rawM2 != null) addPool(params.fillSpec || params.fillType, r.fill.label, r.fill.unit, 'roll', r.fill.rawM2, r.fill.rollArea);
+        }
       }
 
       if (z.type === 'ceiling') {
@@ -2621,6 +2643,8 @@ function renderResults() {
     html += '</div></div>';
   });
   html += '</div>';
+
+  finalizePool(); // 可裁切材料：原始用量加總後才進位，併入 totals
 
   // 全案彙總
   if (Object.keys(totals).length) {
@@ -2761,6 +2785,18 @@ function printResults() {
     if (!totals[key]) totals[key] = { label, qty: 0, unit };
     totals[key].qty += qty;
   };
+  const pool = {};
+  const addP = (key, label, unit, kind, raw, div) => {
+    if (!pool[key]) pool[key] = { label, unit, kind, raw: 0, div };
+    pool[key].raw += raw;
+  };
+  const finalizePool = () => {
+    Object.entries(pool).forEach(([key, pp]) => {
+      const qty = pp.kind === 'board' ? Math.ceil(pp.raw * 1.05) : Math.ceil(pp.raw / pp.div);
+      if (!totals[key]) totals[key] = { label: pp.label, qty: 0, unit: pp.unit };
+      totals[key].qty += qty;
+    });
+  };
 
   let body = '';
   spaces.forEach(s => {
@@ -2774,16 +2810,20 @@ function printResults() {
         <table style="width:100%;border-collapse:collapse;font-size:12px;">
           <tr style="background:#f0f0f0;"><th style="border:1px solid #ccc;padding:4px 8px;text-align:left;">材料</th><th style="border:1px solid #ccc;padding:4px 8px;">數量</th><th style="border:1px solid #ccc;padding:4px 8px;">備註</th></tr>
           <tr><td style="border:1px solid #ccc;padding:4px 8px;">${params.studType} 骨架</td><td style="border:1px solid #ccc;padding:4px 8px;text-align:center;font-weight:700;">${r.studs} 支</td><td style="border:1px solid #ccc;padding:4px 8px;">${params.studSpacing}cm間距</td></tr>
-          <tr><td style="border:1px solid #ccc;padding:4px 8px;">${params.trackType} 槽鐵</td><td style="border:1px solid #ccc;padding:4px 8px;text-align:center;font-weight:700;">${r.tracks} 支</td><td style="border:1px solid #ccc;padding:4px 8px;">實際 ${r.trackRaw}m</td></tr>
-          <tr><td style="border:1px solid #ccc;padding:4px 8px;">${params.boardType==='calcium'?'矽酸鈣板':'石膏板'} ${params.boardThickness}mm ${params.boardSize}尺</td><td style="border:1px solid #ccc;padding:4px 8px;text-align:center;font-weight:700;">${r.boards} 片</td><td style="border:1px solid #ccc;padding:4px 8px;">含5%損耗</td></tr>
-          ${r.fill ? `<tr><td style="border:1px solid #ccc;padding:4px 8px;">${r.fill.label}</td><td style="border:1px solid #ccc;padding:4px 8px;text-align:center;font-weight:700;">${r.fill.qty} ${r.fill.unit}</td><td style="border:1px solid #ccc;padding:4px 8px;"></td></tr>` : ''}
+          <tr><td style="border:1px solid #ccc;padding:4px 8px;">${params.trackType} 槽鐵</td><td style="border:1px solid #ccc;padding:4px 8px;text-align:center;font-weight:700;">${(r.rawTrackCm/r.trackUnit).toFixed(2)} 支</td><td style="border:1px solid #ccc;padding:4px 8px;">原始 ${r.trackRaw}m</td></tr>
+          <tr><td style="border:1px solid #ccc;padding:4px 8px;">${params.boardType==='calcium'?'矽酸鈣板':'石膏板'} ${params.boardThickness}mm ${params.boardSize}尺</td><td style="border:1px solid #ccc;padding:4px 8px;text-align:center;font-weight:700;">${r.boardsRawNum.toFixed(2)} 片</td><td style="border:1px solid #ccc;padding:4px 8px;">原始用量</td></tr>
+          ${r.fill ? `<tr><td style="border:1px solid #ccc;padding:4px 8px;">${r.fill.label}</td><td style="border:1px solid #ccc;padding:4px 8px;text-align:center;font-weight:700;">${(r.fill.rawPieces!=null ? r.fill.rawPieces/r.fill.perPack : r.fill.rawM2/r.fill.rollArea).toFixed(2)} ${r.fill.unit}</td><td style="border:1px solid #ccc;padding:4px 8px;">原始用量</td></tr>` : ''}
         </table>
         ${r.totalPrice > 0 ? `<div style="text-align:right;font-size:11px;color:#2D7A4F;font-weight:600;margin-top:2px;">小計 $${r.totalPrice.toLocaleString()}</div>` : ''}</div>`;
         addT(params.studType, params.studType+' 骨架', r.studs, '支');
-        addT(params.trackType, params.trackType+' 槽鐵', r.tracks, '支');
+        addP(params.trackType, params.trackType+' 槽鐵', '支', 'stick', r.rawTrackCm, r.trackUnit);
+        if (r.braces > 0) addP(params.braceType+'_'+params.braceLength, params.braceType+' 加強橫枝 '+params.braceLength+'cm', '支', 'stick', r.rawBraceCm, r.braceLen);
         const bk = `${params.boardType}-${params.boardThickness}-${params.boardSize}`;
-        addT(bk, `${params.boardType==='calcium'?'矽酸鈣板':'石膏板'} ${params.boardThickness}mm ${params.boardSize}尺`, r.boards, '片');
-        if (r.fill) addT(params.fillSpec||params.fillType, r.fill.label, r.fill.qty, r.fill.unit);
+        addP(bk, `${params.boardType==='calcium'?'矽酸鈣板':'石膏板'} ${params.boardThickness}mm ${params.boardSize}尺`, '片', 'board', r.boardsRawNum);
+        if (r.fill) {
+          if (r.fill.rawPieces != null) addP(params.fillSpec||params.fillType, r.fill.label, r.fill.unit, 'pack', r.fill.rawPieces, r.fill.perPack);
+          else if (r.fill.rawM2 != null) addP(params.fillSpec||params.fillType, r.fill.label, r.fill.unit, 'roll', r.fill.rawM2, r.fill.rollArea);
+        }
       }
       if (z.type === 'ceiling') {
         const sysLabel = params.sys==='centipede'?'蜈蚣腳':'N38';
@@ -2815,6 +2855,8 @@ function printResults() {
       }
     });
   });
+
+  finalizePool(); // 可裁切材料合併零頭後才進位
 
   // 全案彙總表
   let totalTable = '';
