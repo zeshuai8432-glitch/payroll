@@ -1203,7 +1203,7 @@
 
         <hr class="divider">
         <div class="section-title">填塞物設定</div>
-        <div class="form-grid form-grid-3">
+        <div class="form-grid form-grid-2">
           <div class="field">
             <label>填塞物種類</label>
             <select id="p-fill-type">
@@ -1213,16 +1213,8 @@
             </select>
           </div>
           <div class="field" id="fill-spec-field" style="display:none;">
-            <label>規格</label>
+            <label>規格（已含厚度）</label>
             <select id="p-fill-spec"></select>
-          </div>
-          <div class="field" id="fill-thick-field" style="display:none;">
-            <label>厚度</label>
-            <select id="p-fill-thick">
-              <option value="25">25 mm</option>
-              <option value="50">50 mm</option>
-              <option value="75">75 mm</option>
-            </select>
           </div>
         </div>
       </div>
@@ -1897,7 +1889,6 @@ function openZoneModal(zoneId, spaceId) {
         document.getElementById('p-fill-type').value = zone.params.fillType;
         updateFillFields();
         if (zone.params.fillSpec) document.getElementById('p-fill-spec').value = zone.params.fillSpec;
-        if (zone.params.fillThick) document.getElementById('p-fill-thick').value = zone.params.fillThick;
       }
       if (zone.type === 'ceiling') {
         const cp = zone.params;
@@ -1980,7 +1971,7 @@ function autoPairStud() {
   const map = { C41: { track: 'U43', brace: 'N19' }, C65: { track: 'U67', brace: 'N38' } };
   const m = map[st]; if (!m) return;
   const tk = document.getElementById('p-track-type'); if (tk) tk.value = m.track;
-  const br = document.getElementById('p-brace-type'); if (br && br.value !== 'none') { br.value = m.brace; updateBraceFields(); }
+  const br = document.getElementById('p-brace-type'); if (br) { br.value = m.brace; updateBraceFields(); }
 }
 
 function updateBoardThicknessOptions() {
@@ -1998,9 +1989,7 @@ function updateBoardThicknessOptions() {
 function updateFillFields() {
   const type = document.getElementById('p-fill-type').value;
   const specField = document.getElementById('fill-spec-field');
-  const thickField = document.getElementById('fill-thick-field');
   specField.style.display = type !== 'none' ? '' : 'none';
-  thickField.style.display = type === 'glasswool' ? '' : 'none';
 
   const sel = document.getElementById('p-fill-spec');
   if (type === 'rockwool') {
@@ -2036,7 +2025,6 @@ function saveZone() {
       sides: state.sides,
       fillType: document.getElementById('p-fill-type').value,
       fillSpec: document.getElementById('p-fill-spec').value,
-      fillThick: document.getElementById('p-fill-thick').value,
     };
     zoneData.result = calcPartition(zoneData.params);
   }
