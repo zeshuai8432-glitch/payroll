@@ -2103,6 +2103,7 @@ function duplicateZone(spaceId, zoneId) {
 
 function renderZonesHTML(spaceId) {
   const zones = state.zones[spaceId] || [];
+  zones.forEach(recalcZone); // 用最新算法重算，卡片顯示才會有原始用量欄位
   if (!zones.length) {
     return '<div style="text-align:center;padding:20px;color:var(--text-3);font-size:13px;">尚無計算區塊，點擊「新增區塊」開始計算</div>';
   }
@@ -2112,14 +2113,19 @@ function renderZonesHTML(spaceId) {
     const r = z.result;
     let summary = '';
     if (r && z.type === 'partition') {
+      const tkRaw = r.rawTrackCm!=null ? (r.rawTrackCm/r.trackUnit).toFixed(2) : r.tracks;
+      const bdRaw = r.boardsRawNum!=null ? r.boardsRawNum.toFixed(2) : r.boards;
+      const brRaw = r.rawBraceCm ? (r.rawBraceCm/r.braceLen).toFixed(2) : 0;
+      const flRaw = r.fill ? (r.fill.rawPieces!=null ? (r.fill.rawPieces/r.fill.perPack) : (r.fill.rawM2!=null ? r.fill.rawM2/r.fill.rollArea : r.fill.qty)).toFixed(2) : 0;
       summary = `<div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:8px;font-size:12px;color:var(--text-2);">
         <span>骨架 <strong>${r.studs}</strong> 支</span>
-        <span>槽鐵 <strong>${r.tracks}</strong> 支</span>
-        ${r.braces > 0 ? `<span>加強橫枝 <strong>${r.braces}</strong> 支</span>` : ''}
-        <span>板材 <strong>${r.boards}</strong> 片</span>
-        ${r.fill ? `<span>填塞物 <strong>${r.fill.qty}</strong> ${r.fill.unit}</span>` : ''}
+        <span>槽鐵 <strong>${tkRaw}</strong> 支</span>
+        ${r.braces > 0 ? `<span>加強橫枝 <strong>${brRaw}</strong> 支</span>` : ''}
+        <span>板材 <strong>${bdRaw}</strong> 片</span>
+        ${r.fill ? `<span>填塞物 <strong>${flRaw}</strong> ${r.fill.unit}</span>` : ''}
         ${r.totalPrice ? `<span style="color:var(--green)">估價 <strong>$${r.totalPrice.toLocaleString()}</strong></span>` : ''}
-      </div>`;
+      </div>
+      <div style="font-size:11px;color:var(--text-3);margin-top:2px">單牆為原始用量（可能帶小數）；實際採購看「結果」的全案彙總</div>`;
     }
     if (r && z.type === 'ceiling') {
       const sysLabel = z.params.sys === 'centipede' ? '蜈蚣腳' : 'N38';
