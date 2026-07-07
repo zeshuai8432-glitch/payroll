@@ -1972,11 +1972,17 @@ function matName(coll, id) { const m = (state.materials[coll] || []).find(x => x
 function autoPairStud() {
   const studSel = document.getElementById('p-stud-type'); if (!studSel) return;
   const stud = (state.materials.studs || []).find(s => s.id === studSel.value); if (!stud) return;
-  const pairByName = { 'C41': { track: 'U43', brace: 'N19' }, 'C65': { track: 'U67', brace: 'N38' }, 'C64': { track: 'U64', brace: 'N38' } };
-  const m = pairByName[stud.name]; if (!m) return;
-  const tk = (state.materials.tracks || []).find(t => t.name === m.track);
+  const has = (item, token) => item && ((item.name || '').includes(token) || item.id === token);
+  // 規則以「名稱或代號包含該字樣」比對，容許「C65 骨架」等帶後綴命名
+  const rules = [
+    { stud: 'C65', track: 'U67', brace: 'N38' },
+    { stud: 'C64', track: 'U64', brace: 'N38' },
+    { stud: 'C41', track: 'U43', brace: 'N19' },
+  ];
+  const rule = rules.find(r => has(stud, r.stud)); if (!rule) return;
+  const tk = (state.materials.tracks || []).find(t => has(t, rule.track));
   const tkSel = document.getElementById('p-track-type'); if (tk && tkSel) tkSel.value = tk.id;
-  const br = (state.materials.braces || []).find(b => b.name === m.brace);
+  const br = (state.materials.braces || []).find(b => has(b, rule.brace));
   const brSel = document.getElementById('p-brace-type'); if (br && brSel) { brSel.value = br.id; updateBraceFields(); }
 }
 
