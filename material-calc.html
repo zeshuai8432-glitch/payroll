@@ -2500,6 +2500,16 @@ function calcPartition(p) {
 // ════════════════════════════════════
 // RESULTS
 // ════════════════════════════════════
+// 用最新算法重算某道牆的結果（避免用到舊版存下來的結果）
+function recalcZone(z){
+  if (!z || !z.params || !z.type) return;
+  if (z.type === 'partition') z.result = calcPartition(z.params);
+  else if (z.type === 'ceiling') z.result = calcCeiling(z.params);
+}
+function recalcActiveProject(){
+  const spaces = state.spaces[state.activeProjectId] || [];
+  spaces.forEach(s => (state.zones[s.id] || []).forEach(recalcZone));
+}
 function renderResults() {
   const el = document.getElementById('results-main');
   if (!state.activeProjectId) {
@@ -2509,6 +2519,7 @@ function renderResults() {
   }
   document.getElementById('results-no-project').style.display = 'none';
   el.style.display = 'block';
+  recalcActiveProject(); // 每次都用最新算法重算，既有的牆也套用新規則
 
   const p = state.projects.find(x => x.id === state.activeProjectId);
   const spaces = state.spaces[state.activeProjectId] || [];
@@ -2775,6 +2786,7 @@ function saveMaterials() {
 
 function printResults() {
   if (!state.activeProjectId) return;
+  recalcActiveProject(); // 用最新算法重算
   const p = state.projects.find(x => x.id === state.activeProjectId);
   const spaces = state.spaces[state.activeProjectId] || [];
   const now = new Date().toLocaleDateString('zh-TW');
