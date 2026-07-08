@@ -485,7 +485,7 @@ const FS_PROJECT = 'payroll-d1abe';
 const FS_KEY = 'AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
 const FS_DOC_BASE = 'https://firestore.googleapis.com/v1/projects/'+FS_PROJECT+'/databases/(default)/documents/payroll/';
 const FS_REST_URL = FS_DOC_BASE+'main?key='+FS_KEY;
-const APP_VERSION = 'v2026.07.07-loancash';
+const APP_VERSION = 'v2026.07.08-dealdedup';
 let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], tools:[], locations:[], assets:[], advances:[], accounts:[], ledger:[], deals:[], billings:[], measurements:[], contracts:{}, costs:[], textMemory:{clients:[],companies:[]}, parkAccId:'', oweBonus:{}, minFund:'', deletedIds:[], tab:'entry' };
 let cloudStatus='連線中…';
 let localDirty=false, lastCloudTs=0;
@@ -4134,7 +4134,21 @@ function siteCostForDeal(site){
   const opening=(site.type==='舊制')?0:(Number(site.opening)||0);
   return Math.round(wage+manual+opening);
 }
-function resyncAllSiteDeals(){ state.sites.forEach(s=>{ if(!(s.coop||s.type==='合作案')) resyncSiteDeal(s); }); }
+function resyncAllSiteDeals(){
+  // ① 去重：同一案場只能有一筆自動分潤。多裝置同步時，各台可能各自生成一筆（不同 id），
+  //    造成同一案場在帳戶被重複進帳。這裡以 autoSiteId 為準，只保留一筆。
+  const seen=new Set();
+  state.deals=state.deals.filter(d=>{
+    if(!d || !d.autoSiteId) return true;
+    if(seen.has(d.autoSiteId)) return false;
+    seen.add(d.autoSiteId); return true;
+  });
+  state.sites.forEach(s=>{ if(!(s.coop||s.type==='合作案')) resyncSiteDeal(s); });
+  // ② 清孤兒：autoDealId 指向已不存在的分潤（多裝置舊隨機 id 殘留的「分潤進帳」），
+  //    這些就是同一案場被重複算進公積金帳戶的來源，一律移除。
+  const dealIds=new Set(state.deals.map(d=>d.id));
+  state.ledger=state.ledger.filter(t=>!(t && t.autoDealId!=null && !dealIds.has(t.autoDealId)));
+}
 // 案場驅動：代工/公司分潤案場 → 自動維護「一個案場一筆分潤」，金額＝該案場總請款
 function resyncSiteDeal(site){
   // 合作案不走這裡（合作案在分潤頁用 coopSiteCalc 自動匯總）
@@ -4150,9 +4164,15 @@ function resyncSiteDeal(site){
     if(d){ state.ledger=state.ledger.filter(t=>t.autoDealId!==d.id); state.deals=state.deals.filter(x=>x.id!==d.id); }
     return;
   }
+  const stableId='site-'+site.id; // 固定 id＝以案場 id 為準，讓每台裝置對同一案場產生同一筆分潤
   if(!d){
-    d={id:uid(), autoSiteId:site.id, name:site.name, type:site.type||'代工', date:new Date().toISOString().slice(0,10), cost:0};
+    d={id:stableId, autoSiteId:site.id, name:site.name, type:site.type||'代工', date:new Date().toISOString().slice(0,10), cost:0};
     state.deals.push(d);
+  } else if(d.id!==stableId){
+    // 舊版用隨機 id 建立的自動分潤：多裝置各生一組 id，帳戶就被重複進帳。
+    // 遷移成固定 id，並清掉它舊 id 的自動進帳（下方 syncDealIncome 會重推正確的一筆）。
+    state.ledger=state.ledger.filter(t=>t.autoDealId!==d.id);
+    d.id=stableId;
   }
   d.name=site.name;
   d.type=site.type||'代工';
