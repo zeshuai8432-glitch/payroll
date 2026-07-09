@@ -485,7 +485,7 @@ const FS_PROJECT = 'payroll-d1abe';
 const FS_KEY = 'AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
 const FS_DOC_BASE = 'https://firestore.googleapis.com/v1/projects/'+FS_PROJECT+'/databases/(default)/documents/payroll/';
 const FS_REST_URL = FS_DOC_BASE+'main?key='+FS_KEY;
-const APP_VERSION = 'v2026.07.08-dealdedup';
+const APP_VERSION = 'v2026.07.08-dealdedup2';
 let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], tools:[], locations:[], assets:[], advances:[], accounts:[], ledger:[], deals:[], billings:[], measurements:[], contracts:{}, costs:[], textMemory:{clients:[],companies:[]}, parkAccId:'', oweBonus:{}, minFund:'', deletedIds:[], tab:'entry' };
 let cloudStatus='連線中…';
 let localDirty=false, lastCloudTs=0;
@@ -4143,7 +4143,19 @@ function resyncAllSiteDeals(){
     if(seen.has(d.autoSiteId)) return false;
     seen.add(d.autoSiteId); return true;
   });
-  state.sites.forEach(s=>{ if(!(s.coop||s.type==='合作案')) resyncSiteDeal(s); });
+  // 同名案場只讓第一個驅動自動分潤：多裝置同步可能產生兩筆同名案場，
+  // 而請款是「依案場名」歸戶，兩個同名案場會抓到同一筆請款，導致分潤結算重複兩筆。
+  const doneNames=new Set();
+  state.sites.forEach(s=>{
+    if(s.coop||s.type==='合作案') return;
+    if(doneNames.has(s.name)){
+      const dup=state.deals.find(x=>x.autoSiteId===s.id);
+      if(dup){ state.ledger=state.ledger.filter(t=>t.autoDealId!==dup.id); state.deals=state.deals.filter(x=>x.id!==dup.id); }
+      return;
+    }
+    doneNames.add(s.name);
+    resyncSiteDeal(s);
+  });
   // ② 清孤兒：autoDealId 指向已不存在的分潤（多裝置舊隨機 id 殘留的「分潤進帳」），
   //    這些就是同一案場被重複算進公積金帳戶的來源，一律移除。
   const dealIds=new Set(state.deals.map(d=>d.id));
