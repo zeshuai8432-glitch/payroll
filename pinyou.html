@@ -62,7 +62,7 @@ const LS='pinyou_data_v1';
 const TABS=[['dash','儀表板'],['proj','案場'],['exp','支出'],['inc','請款'],['co','通訊錄'],['set','設定']];
 let state=blank();
 let tab='dash';
-let expFilter='', incFilter='';
+let expFilter='', expItemFilter='', incFilter='';
 
 function blank(){ return {projects:[],expenses:[],incomes:[],companies:[],accounts:['東澤工程行','品佑工程有限公司','廣昕工程行'],items:[]}; }
 function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
@@ -190,7 +190,7 @@ function viewProj(){
 
 function viewExp(){
   const sites=allSiteNames(), items=itemNames();
-  const filtered=state.expenses.filter(x=>!expFilter||x.site===expFilter).sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+  const filtered=state.expenses.filter(x=>(!expFilter||x.site===expFilter)&&(!expItemFilter||x.item===expItemFilter)).sort((a,b)=>(b.date||'').localeCompare(a.date||''));
   const tot=filtered.reduce((s,x)=>s+num(x.amount),0);
   const rows=filtered.map(x=>`<tr>
       <td>${esc(x.date)}</td><td>${esc(x.site)}</td><td>${esc(x.item)}</td>
@@ -199,6 +199,7 @@ function viewExp(){
       <td class="num"><button class="act danger" data-exdel="${x.id}">刪</button></td>
     </tr>`).join('');
   const siteOpts=`<option value="">全部案場</option>`+sites.map(s=>`<option ${expFilter===s?'selected':''}>${esc(s)}</option>`).join('');
+  const itemOpts=`<option value="">全部項目</option>`+items.map(s=>`<option ${expItemFilter===s?'selected':''}>${esc(s)}</option>`).join('');
   return `<div class="card">
     <h2>新增支出</h2>
     <div class="row">
@@ -217,6 +218,8 @@ function viewExp(){
     <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
       <h2 style="margin:0">支出明細（${filtered.length}）</h2>
       <select id="e-filter" style="width:auto;height:34px">${siteOpts}</select>
+      <select id="e-item-filter" style="width:auto;height:34px">${itemOpts}</select>
+      ${(expFilter||expItemFilter)?'<button class="act" id="e-clearfilter">清除篩選</button>':''}
       <div style="margin-left:auto;font-weight:700">合計 <span style="color:var(--danger)">${money(tot)}</span></div>
     </div>
     ${filtered.length===0?'<div class="empty">尚無支出。</div>':`<div class="scroll"><table>
@@ -347,6 +350,8 @@ function bind(){
     save();
   });
   on('e-filter','onchange',e=>{ expFilter=e.target.value; render(); });
+  on('e-item-filter','onchange',e=>{ expItemFilter=e.target.value; render(); });
+  on('e-clearfilter','onclick',()=>{ expFilter=''; expItemFilter=''; render(); });
   document.querySelectorAll('[data-exdel]').forEach(b=>b.onclick=()=>{ if(confirm('刪除這筆支出？')){ state.expenses=state.expenses.filter(x=>x.id!==b.dataset.exdel); save(); } });
 
   // 請款
