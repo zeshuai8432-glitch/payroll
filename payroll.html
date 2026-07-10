@@ -452,7 +452,10 @@
     #print-overlay .pbar { display: none !important; }
     #sig-section { display: none !important; }
     @page { size: A4; margin: 16mm; }
+    /* 寬表報表（如薪資總表）改橫向列印，避免右側欄位被截掉 */
+    #print-overlay.landscape .pdoc { max-width: none; page: landscapePage; }
   }
+  @page landscapePage { size: A4 landscape; margin: 12mm; }
 </style>
 </head>
 <body>
@@ -490,7 +493,7 @@ const FS_PROJECT = 'payroll-d1abe';
 const FS_KEY = 'AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
 const FS_DOC_BASE = 'https://firestore.googleapis.com/v1/projects/'+FS_PROJECT+'/databases/(default)/documents/payroll/';
 const FS_REST_URL = FS_DOC_BASE+'main?key='+FS_KEY;
-const APP_VERSION = 'v2026.07.10-parkwage';
+const APP_VERSION = 'v2026.07.10-summaryland';
 let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], tools:[], locations:[], assets:[], advances:[], accounts:[], ledger:[], deals:[], billings:[], measurements:[], contracts:{}, costs:[], textMemory:{clients:[],companies:[]}, parkAccId:'', oweBonus:{}, minFund:'', deletedIds:[], tab:'entry' };
 let cloudStatus='連線中…';
 let localDirty=false, lastCloudTs=0;
@@ -3156,21 +3159,23 @@ function bind(){
 }
 
 // ---- PDF 匯出（以列印視窗產生，可存成 PDF 或直接列印）----
-function printHTML(title, inner){
+function printHTML(title, inner, opts){
   // 移除舊浮層
   const old=document.getElementById('print-overlay'); if(old) old.remove();
   // 全站 PDF 統一藍色系商用報告風；薪資明細單（paydoc）保留專屬加減項配色
   const themed=inner.includes('class="paydoc"')||inner.includes('class="bluedoc"')
     ?inner
     :`<div class="bluedoc">${inner}<div class="foot"><span>本報表由系統自動產生</span><span>${new Date().toISOString().slice(0,10)}</span></div></div>`;
+  const landscape=!!(opts&&opts.landscape);
   const ov=document.createElement('div');
   ov.id='print-overlay';
+  if(landscape) ov.classList.add('landscape');
   ov.innerHTML=`
     <div class="pbar">
       <button class="btn" id="po-print">列印 / 存成 PDF</button>
       <button class="act" id="po-close" style="padding:0 14px">關閉</button>
     </div>
-    <div class="pdoc">${themed}</div>`;
+    <div class="pdoc"${landscape?' style="max-width:1100px"':''}>${themed}</div>`;
   document.body.appendChild(ov);
   document.getElementById('po-print').onclick=()=>window.print();
   document.getElementById('po-close').onclick=()=>ov.remove();
@@ -3190,12 +3195,12 @@ function exportSummaryPDF(){
   }).join('');
   const inner=`<h1>薪資總表</h1>
     <div class="meta">計薪期間：${state.payFrom||'起始'} ～ ${state.payTo||'迄今'}　|　列印日期：${new Date().toISOString().slice(0,10)}　|　共 ${ids.length} 人</div>
-    <table><thead><tr><th>員工</th><th class="num">出勤天</th><th class="num">總工數</th><th class="num">基本工資</th><th class="num">加項</th><th class="num">扣項</th><th class="num">實發金額</th><th class="num">公司負擔（品佑結算）</th></tr></thead>
+    <table><thead><tr><th>員工</th><th class="num">出勤天</th><th class="num">總工數</th><th class="num">基本工資</th><th class="num">加項</th><th class="num">扣項</th><th class="num">實發金額</th><th class="num">公司負擔</th></tr></thead>
     <tbody>${rows}
       <tr class="total-row"><td>合計</td><td class="num"></td><td class="num"></td><td class="num">${money(gG)}</td><td class="num">${money(gA)}</td><td class="num">${money(gD)}</td><td class="num">${money(gN)}</td><td class="num">${money(gC)}</td></tr>
     </tbody></table>
-    <p class="sub">基本工資＝正常工時薪資；加項＝出差外宿津貼＋加班費＋手動加項；實發＝基本工資＋加項−扣項。公司負擔工資（品佑結算基準）＝實發＋借支扣還＝基本工資＋加項−非借支扣項；借支扣還是還品佑不算公司負擔，工具遺失／罰單等賠付公司的扣項會回歸東澤／廣昕。金額四捨五入至整數。</p>`;
-  printHTML('薪資總表 '+(state.payFrom||''), inner);
+    <p class="sub">基本工資＝正常工時薪資；加項＝出差外宿津貼＋加班費＋手動加項；實發＝基本工資＋加項−扣項。「公司負擔」＝公司負擔工資（品佑結算基準）＝實發＋借支扣還＝基本工資＋加項−非借支扣項；借支扣還是還品佑不算公司負擔，工具遺失／罰單等賠付公司的扣項會回歸東澤／廣昕。金額四捨五入至整數。</p>`;
+  printHTML('薪資總表 '+(state.payFrom||''), inner, {landscape:true});
 }
 
 // 一鍵：把本期「公司負擔工資」記成品佑帳戶的一筆支出（項目＝該期起算月日＋工資，例：0711工資）
@@ -5043,7 +5048,7 @@ function reconSection(key, from, to){
       return `<tr><td>${esc(empName(id))}</td><td class="num">${e.days.size}</td><td class="num">${money(e.gross)}</td><td class="num">${e.addTotal?money(e.addTotal):'-'}</td><td class="num">${e.dedTotal?money(e.dedTotal):'-'}</td><td class="num">${money(e.net)}</td><td class="num">${money(e.companyWage)}</td></tr>`;
     }).join('');
     return `<h2 class="sec">員工薪資總表（${rangeTxt}）</h2>
-      <table><thead><tr><th>員工</th><th class="num">出勤天</th><th class="num">基本工資</th><th class="num">加項</th><th class="num">扣項</th><th class="num">實發</th><th class="num">公司負擔（品佑結算）</th></tr></thead>
+      <table><thead><tr><th>員工</th><th class="num">出勤天</th><th class="num">基本工資</th><th class="num">加項</th><th class="num">扣項</th><th class="num">實發</th><th class="num">公司負擔</th></tr></thead>
       <tbody>${rows}<tr class="total-row"><td>合計</td><td class="num"></td><td class="num">${money(gG)}</td><td class="num">${money(gA)}</td><td class="num">${money(gD)}</td><td class="num">${money(gN)}</td><td class="num">${money(gC)}</td></tr></tbody></table>
       <p class="sub">公司負擔工資（品佑結算基準）＝實發＋借支扣還＝基本工資＋加項−非借支扣項。</p>`;
   }
