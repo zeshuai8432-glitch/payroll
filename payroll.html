@@ -262,6 +262,11 @@
   }
   textarea:hover { border-color: rgba(79,70,229,.4); background: #fff; }
   textarea:focus { outline: none; border-color: var(--accent); background: #fff; box-shadow: 0 0 0 4px rgba(79,70,229,.13); }
+  /* 觸控裝置（平板／手機）欄位字級至少 16px：iOS/iPadOS 聚焦小於 16px 的欄位會自動放大頁面，
+     造成版面亂跳、鍵盤看起來變小、打字卡卡。設 16px 可根治，桌機不受影響。 */
+  @media (pointer: coarse){
+    input, select, textarea { font-size: 16px; }
+  }
 
   /* ── 統計數字卡片（彩色漸層） ── */
   .metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 16px; margin-bottom: 24px; }
@@ -485,7 +490,7 @@ const FS_PROJECT = 'payroll-d1abe';
 const FS_KEY = 'AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
 const FS_DOC_BASE = 'https://firestore.googleapis.com/v1/projects/'+FS_PROJECT+'/databases/(default)/documents/payroll/';
 const FS_REST_URL = FS_DOC_BASE+'main?key='+FS_KEY;
-const APP_VERSION = 'v2026.07.08-dealdedup2';
+const APP_VERSION = 'v2026.07.08-tabletfont';
 let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], tools:[], locations:[], assets:[], advances:[], accounts:[], ledger:[], deals:[], billings:[], measurements:[], contracts:{}, costs:[], textMemory:{clients:[],companies:[]}, parkAccId:'', oweBonus:{}, minFund:'', deletedIds:[], tab:'entry' };
 let cloudStatus='連線中…';
 let localDirty=false, lastCloudTs=0;
