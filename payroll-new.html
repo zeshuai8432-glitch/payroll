@@ -1905,7 +1905,9 @@ function buildBillingDocHTML(id){
       <tr><th>單價</th><td class="num">${money(b.unitPrice||0)}</td><th>金額</th><td class="num">${money(amount)}</td></tr>
     </tbody></table>
     ${photoSec}
-    <div class="sign"><div>申請單位</div><div>業主簽收${signImg}</div></div>`;
+    ${type==='追加單'
+      ? `<div class="sign"><div>申請單位</div><div>現場工程師確認項目</div><div>業主簽收${signImg}</div></div>`
+      : `<div class="sign"><div>申請單位</div><div>業主簽收${signImg}</div></div>`}`;
 }
 function printBillingDoc(id){ const html=buildBillingDocHTML(id); if(html) printHTML('單據列印', html); }
 function printBillingDocs(ids){
