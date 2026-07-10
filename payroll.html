@@ -490,7 +490,7 @@ const FS_PROJECT = 'payroll-d1abe';
 const FS_KEY = 'AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
 const FS_DOC_BASE = 'https://firestore.googleapis.com/v1/projects/'+FS_PROJECT+'/databases/(default)/documents/payroll/';
 const FS_REST_URL = FS_DOC_BASE+'main?key='+FS_KEY;
-const APP_VERSION = 'v2026.07.10-twosign';
+const APP_VERSION = 'v2026.07.10-twosign2';
 let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], tools:[], locations:[], assets:[], advances:[], accounts:[], ledger:[], deals:[], billings:[], measurements:[], contracts:{}, costs:[], textMemory:{clients:[],companies:[]}, parkAccId:'', oweBonus:{}, minFund:'', deletedIds:[], tab:'entry' };
 let cloudStatus='連線中…';
 let localDirty=false, lastCloudTs=0;
@@ -2988,7 +2988,15 @@ function bind(){
       if(!confirm('此簽名已鎖定。\n確定要解鎖並重新簽名？')) return;
       unlockSig(id);
     }
-    openFullscreenSign(url=>{ saveSig(id,url); saveData(); pushCloud(); render(); });
+    openFullscreenSign(url=>{ saveSig(id,url); saveData(); pushCloud(); render(); }, '工程師簽名');
+  });
+  document.querySelectorAll('[data-billsign-so]').forEach(b=>b.onclick=()=>{
+    const key=b.dataset.billsignSo+'::so'; // 所長簽名，另存一個 key
+    if(billingSigsLocked[key]){
+      if(!confirm('此簽名已鎖定。\n確定要解鎖並重新簽名？')) return;
+      unlockSig(key);
+    }
+    openFullscreenSign(url=>{ saveSig(key,url); saveData(); pushCloud(); render(); }, '所長簽名');
   });
   document.querySelectorAll('[data-site-printall]').forEach(b=>b.onclick=e=>{
     e.stopPropagation();
@@ -4573,7 +4581,8 @@ function viewBillingAdd(){
             <button class="act" data-copy-add="${b.id}">複製</button>
             <button class="act" data-billedit-add="${b.id}">改</button>
             <button class="act" data-billprint="${b.id}">列印</button>
-            <button class="act" data-billsign="${b.id}" style="${billingSigs[b.id]?'color:var(--accent)':''}">${billingSigs[b.id]?(billingSigsLocked[b.id]?'🔒 已簽':'✍ 已簽'):'✍ 簽名'}</button>
+            <button class="act" data-billsign="${b.id}" style="${billingSigs[b.id]?'color:var(--accent)':''}">${billingSigs[b.id]?(billingSigsLocked[b.id]?'🔒 工程師':'✍ 工程師'):'✍ 工程師簽'}</button>
+            <button class="act" data-billsign-so="${b.id}" style="${billingSigs[b.id+'::so']?'color:var(--accent)':''}">${billingSigs[b.id+'::so']?(billingSigsLocked[b.id+'::so']?'🔒 所長':'✍ 所長'):'✍ 所長簽'}</button>
             <button class="act danger" data-delbill="${b.id}">刪</button>
           </div>
         </div>
