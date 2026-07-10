@@ -1,0 +1,402 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<title>品佑帳本</title>
+<style>
+  :root{
+    --accent:#4f46e5; --accent2:#6366f1; --ink:#1f2430; --muted:#6b7280;
+    --line:#e5e7eb; --line2:#d1d5db; --bg:#f5f6fb; --surface:#fff;
+    --ok:#059669; --danger:#dc2626; --warn:#d97706; --info:#2563eb;
+    --shadow:0 1px 3px rgba(79,70,229,.08),0 6px 20px rgba(79,70,229,.06);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang TC","Microsoft JhengHei",sans-serif;background:var(--bg);color:var(--ink);font-size:15px;line-height:1.5;-webkit-text-size-adjust:100%}
+  .top{position:sticky;top:0;z-index:20;background:linear-gradient(120deg,#4f46e5,#6366f1);color:#fff;padding:12px 16px;display:flex;align-items:center;gap:12px;box-shadow:0 2px 12px rgba(79,70,229,.25)}
+  .top h1{font-size:17px;margin:0;font-weight:700;letter-spacing:.5px}
+  .top .bal{margin-left:auto;text-align:right;font-size:12px;opacity:.9}
+  .top .bal b{display:block;font-size:16px;font-weight:700}
+  nav{position:sticky;top:0;z-index:15;display:flex;overflow-x:auto;background:var(--surface);border-bottom:1px solid var(--line);-webkit-overflow-scrolling:touch}
+  nav button{flex:0 0 auto;border:none;background:none;padding:12px 16px;font-size:14px;font-weight:600;color:var(--muted);cursor:pointer;border-bottom:2.5px solid transparent;white-space:nowrap}
+  nav button.on{color:var(--accent);border-bottom-color:var(--accent)}
+  main{max-width:1100px;margin:0 auto;padding:16px}
+  .card{background:var(--surface);border-radius:16px;padding:16px;box-shadow:var(--shadow);margin-bottom:16px}
+  .card h2{font-size:15px;margin:0 0 12px;font-weight:700}
+  .metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:16px}
+  .metric{background:var(--surface);border-radius:14px;padding:14px 16px;box-shadow:var(--shadow)}
+  .metric .l{font-size:11px;color:var(--muted);font-weight:700;letter-spacing:.4px}
+  .metric .v{font-size:20px;font-weight:700;margin-top:3px}
+  .metric.accent{background:linear-gradient(120deg,#4f46e5,#6366f1);color:#fff}
+  .metric.accent .l{color:#fff;opacity:.85}
+  .row{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end}
+  .field{display:flex;flex-direction:column;gap:4px}
+  .field label{font-size:11px;font-weight:700;color:var(--muted);letter-spacing:.3px}
+  input,select,textarea{height:40px;padding:0 12px;border:1.5px solid var(--line2);border-radius:10px;font-size:14px;font-family:inherit;color:var(--ink);background:#fff;width:100%}
+  textarea{height:auto;padding:9px 12px;resize:vertical}
+  input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(79,70,229,.13)}
+  @media (pointer:coarse){ input,select,textarea{font-size:16px} }
+  .btn{height:40px;padding:0 18px;border:none;border-radius:10px;background:var(--accent);color:#fff;font-size:14px;font-weight:700;cursor:pointer}
+  .btn:disabled{opacity:.5}
+  .act{height:34px;padding:0 12px;border:1px solid var(--line2);border-radius:8px;background:#fff;color:var(--ink);font-size:13px;cursor:pointer}
+  .act.danger{color:var(--danger);border-color:#fecaca}
+  .act.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{padding:9px 10px;text-align:left;border-bottom:1px solid var(--line)}
+  th{font-size:11px;color:var(--muted);font-weight:700;background:#fafafe;white-space:nowrap}
+  td.num,th.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+  tr.total td{font-weight:700;background:#f4f4fd;border-top:2px solid var(--line2)}
+  .empty{text-align:center;color:var(--muted);padding:36px 0;font-size:14px}
+  .tag{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:700;background:#eef2ff;color:var(--accent)}
+  .pos{color:var(--ok)} .neg{color:var(--danger)}
+  .sub{font-size:12px;color:var(--muted);margin:0 0 12px}
+  .bar{height:7px;border-radius:4px;background:var(--line);overflow:hidden;margin-top:5px}
+  .bar>i{display:block;height:100%;background:var(--accent)}
+</style>
+<div class="top">
+  <h1>品佑帳本</h1>
+  <div class="bal"><span id="bal-l">帳面淨額</span><b id="bal-v">—</b></div>
+</div>
+<nav id="nav"></nav>
+<main id="app"></main>
+<script>
+const LS='pinyou_data_v1';
+const TABS=[['dash','儀表板'],['proj','案場'],['exp','支出'],['inc','請款'],['co','通訊錄'],['set','設定']];
+let state=blank();
+let tab='dash';
+let expFilter='', incFilter='';
+
+function blank(){ return {projects:[],expenses:[],incomes:[],companies:[],accounts:['東澤工程行','品佑工程有限公司','廣昕工程行'],items:[]}; }
+function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
+function money(n){ n=Math.round(Number(n)||0); return (n<0?'-':'')+'$'+Math.abs(n).toLocaleString('en-US'); }
+function pct(n){ return (Number(n)||0*1).toLocaleString('en-US',{style:'percent',maximumFractionDigits:1}); }
+function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function today(){ return new Date().toISOString().slice(0,10); }
+function num(v){ const n=parseFloat(v); return isNaN(n)?0:n; }
+
+function load(){ try{ const r=localStorage.getItem(LS); if(r){ state=Object.assign(blank(),JSON.parse(r)); } }catch(e){} }
+function save(){ try{ localStorage.setItem(LS,JSON.stringify(state)); }catch(e){} render(); }
+
+// ---- 衍生計算 ----
+function siteIncome(name){ return state.incomes.filter(x=>x.site===name).reduce((s,x)=>s+num(x.amount),0); }
+function siteExpense(name){ return state.expenses.filter(x=>x.site===name).reduce((s,x)=>s+num(x.amount),0); }
+function projCalc(p){
+  const income=num(p.billed), expense=siteExpense(p.name); // 已請款＝案場手動欄位（與 Excel 一致）；累積支出＝支出明細自動加總
+  const retain=num(p.contract)*num(p.retainPct);
+  const progress=num(p.contract)?income/num(p.contract):0;
+  const unbilled=num(p.contract)-retain-income;
+  const profit=num(p.contract)-expense;
+  return {income,expense,retain,progress,unbilled,profit};
+}
+// 所有出現過的案場名（案場清單 + 支出/請款有用到的）
+function allSiteNames(){
+  const s=new Set(state.projects.map(p=>p.name));
+  state.expenses.forEach(x=>x.site&&s.add(x.site));
+  state.incomes.forEach(x=>x.site&&s.add(x.site));
+  return [...s];
+}
+function itemNames(){
+  const s=new Set(state.items||[]);
+  state.expenses.forEach(x=>x.item&&s.add(x.item));
+  return [...s];
+}
+
+function setBalance(){
+  const billed=state.projects.reduce((s,p)=>s+num(p.billed),0);
+  const exp=state.expenses.reduce((s,x)=>s+num(x.amount),0);
+  const el=document.getElementById('bal-v'); if(el) el.textContent=money(billed-exp);
+  const l=document.getElementById('bal-l'); if(l) l.textContent='已請款−支出';
+}
+
+// ================= 各頁 =================
+function viewDash(){
+  const projs=state.projects;
+  const totContract=projs.reduce((s,p)=>s+num(p.contract),0);
+  const totIncome=projs.reduce((s,p)=>s+num(p.billed),0);
+  const totExpense=state.expenses.reduce((s,x)=>s+num(x.amount),0);
+  const totProfit=projs.reduce((s,p)=>s+projCalc(p).profit,0);
+
+  const metrics=`<div class="metrics">
+    <div class="metric"><div class="l">案場數</div><div class="v">${projs.length}</div></div>
+    <div class="metric"><div class="l">合約總額</div><div class="v">${money(totContract)}</div></div>
+    <div class="metric"><div class="l">已請款總額</div><div class="v" style="color:var(--info)">${money(totIncome)}</div></div>
+    <div class="metric"><div class="l">累積支出總額</div><div class="v" style="color:var(--danger)">${money(totExpense)}</div></div>
+    <div class="metric accent"><div class="l">已請款−支出</div><div class="v">${money(totIncome-totExpense)}</div></div>
+  </div>`;
+
+  // 各入款帳號收款
+  const byAcc={};
+  state.incomes.forEach(x=>{ const a=x.account||'（未指定）'; byAcc[a]=(byAcc[a]||0)+num(x.amount); });
+  const incLogTot=state.incomes.reduce((s,x)=>s+num(x.amount),0);
+  const accRows=Object.entries(byAcc).sort((a,b)=>b[1]-a[1]).map(([a,v])=>`<tr><td>${esc(a)}</td><td class="num">${money(v)}</td></tr>`).join('');
+  const accCard=Object.keys(byAcc).length?`<div class="card"><h2>各帳戶收款（依請款明細）</h2><p class="sub">此為「請款明細」逐筆記錄依入款帳號的加總，供對帳用（可能與案場「已請款」不同，因請款明細不一定每筆都登記）。</p><div class="scroll"><table><thead><tr><th>入款帳號</th><th class="num">收款</th></tr></thead><tbody>${accRows}<tr class="total"><td>合計</td><td class="num">${money(incLogTot)}</td></tr></tbody></table></div></div>`:'';
+
+  // 案場進度表
+  let projRows=projs.map(p=>{ const c=projCalc(p);
+    return `<tr>
+      <td>${esc(p.name)}${p.untaxed?'<span class="tag" style="background:#fef3c7;color:#92400e;margin-left:4px">未稅</span>':''}${p.note?`<div style="font-size:11px;color:var(--muted)">${esc(p.note)}</div>`:''}</td>
+      <td class="num">${money(p.contract)}</td>
+      <td class="num">${c.retain?money(c.retain):'—'}</td>
+      <td class="num" style="color:var(--info)">${money(c.income)}</td>
+      <td class="num">${num(p.contract)?pct(c.progress):'—'}<div class="bar"><i style="width:${Math.min(100,Math.max(0,c.progress*100))}%"></i></div></td>
+      <td class="num ${c.unbilled<0?'neg':''}">${money(c.unbilled)}</td>
+      <td class="num" style="color:var(--danger)">${money(c.expense)}</td>
+      <td class="num ${c.profit<0?'neg':'pos'}" style="font-weight:700">${money(c.profit)}</td>
+    </tr>`;
+  }).join('');
+  const projCard=`<div class="card"><h2>案場請款進度</h2>${projs.length===0?'<div class="empty">尚無案場。到「案場」分頁新增，或到「設定」匯入資料。</div>':`<div class="scroll"><table>
+    <thead><tr><th>案場</th><th class="num">簽約金</th><th class="num">保留款</th><th class="num">已請款</th><th class="num">已請進度</th><th class="num">未請領餘額</th><th class="num">累積支出</th><th class="num">預計剩餘利潤</th></tr></thead>
+    <tbody>${projRows}<tr class="total"><td>合計</td><td class="num">${money(totContract)}</td><td class="num"></td><td class="num">${money(totIncome)}</td><td class="num"></td><td class="num"></td><td class="num">${money(totExpense)}</td><td class="num">${money(totProfit)}</td></tr></tbody></table></div>
+    <p class="sub" style="margin-top:8px">保留款＝簽約金×保留比率；已請進度＝已請款÷簽約金；未請領餘額＝簽約金−保留款−已請款；預計剩餘利潤＝簽約金−累積支出。</p>`}</div>`;
+
+  // 支出分類
+  const byItem={};
+  state.expenses.forEach(x=>{ const k=x.item||'（未分類）'; byItem[k]=(byItem[k]||0)+num(x.amount); });
+  const itemRows=Object.entries(byItem).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`<tr><td>${esc(k)}</td><td class="num">${money(v)}</td></tr>`).join('');
+  const itemCard=Object.keys(byItem).length?`<div class="card"><h2>支出分類（依項目名稱）</h2><div class="scroll"><table><thead><tr><th>項目</th><th class="num">加總</th></tr></thead><tbody>${itemRows}<tr class="total"><td>合計</td><td class="num">${money(totExpense)}</td></tr></tbody></table></div></div>`:'';
+
+  return metrics+projCard+accCard+itemCard;
+}
+
+function viewProj(){
+  const rows=state.projects.map(p=>{ const c=projCalc(p);
+    return `<tr>
+      <td>${esc(p.name)}${p.untaxed?'<span class="tag" style="background:#fef3c7;color:#92400e;margin-left:4px">未稅</span>':''}${p.note?`<div style="font-size:11px;color:var(--muted)">${esc(p.note)}</div>`:''}</td>
+      <td class="num">${money(p.contract)}</td>
+      <td class="num">${(num(p.retainPct)*100).toLocaleString()}%</td>
+      <td class="num" style="color:var(--info)">${money(c.income)}</td>
+      <td class="num" style="color:var(--danger)">${money(c.expense)}</td>
+      <td class="num ${c.profit<0?'neg':'pos'}">${money(c.profit)}</td>
+      <td class="num"><button class="act" data-pedit="${p.id}">改</button> <button class="act danger" data-pdel="${p.id}">刪</button></td>
+    </tr>`;
+  }).join('');
+  return `<div class="card">
+    <h2>新增案場</h2>
+    <div class="row">
+      <div class="field" style="flex:2;min-width:160px"><label>案場名稱</label><input id="p-name" placeholder="例：大巨蛋5F"></div>
+      <div class="field" style="flex:1;min-width:120px"><label>簽約金（含稅）</label><input id="p-contract" type="number" inputmode="numeric" placeholder="0"></div>
+      <div class="field"><label>未稅</label><select id="p-untaxed"><option value="">否</option><option value="1">是（未稅）</option></select></div>
+      <div class="field" style="min-width:110px"><label>已請款</label><input id="p-billed" type="number" inputmode="numeric" placeholder="0"></div>
+      <div class="field" style="min-width:100px"><label>保留款比率 %</label><input id="p-retain" type="number" inputmode="decimal" placeholder="0" step="1"></div>
+      <div class="field" style="flex:1;min-width:120px"><label>備註</label><input id="p-note" placeholder="選填"></div>
+      <button class="btn" id="p-add">＋ 新增</button>
+    </div>
+  </div>
+  <div class="card"><h2>案場清單（${state.projects.length}）</h2>${state.projects.length===0?'<div class="empty">尚無案場。</div>':`<div class="scroll"><table>
+    <thead><tr><th>案場</th><th class="num">簽約金</th><th class="num">保留%</th><th class="num">已請款</th><th class="num">累積支出</th><th class="num">剩餘利潤</th><th></th></tr></thead>
+    <tbody>${rows}</tbody></table></div>`}</div>`;
+}
+
+function viewExp(){
+  const sites=allSiteNames(), items=itemNames();
+  const filtered=state.expenses.filter(x=>!expFilter||x.site===expFilter).sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+  const tot=filtered.reduce((s,x)=>s+num(x.amount),0);
+  const rows=filtered.map(x=>`<tr>
+      <td>${esc(x.date)}</td><td>${esc(x.site)}</td><td>${esc(x.item)}</td>
+      <td class="num" style="color:var(--danger)">${money(x.amount)}</td>
+      <td>${esc(x.method||'')}</td><td>${esc(x.note||'')}</td>
+      <td class="num"><button class="act danger" data-exdel="${x.id}">刪</button></td>
+    </tr>`).join('');
+  const siteOpts=`<option value="">全部案場</option>`+sites.map(s=>`<option ${expFilter===s?'selected':''}>${esc(s)}</option>`).join('');
+  return `<div class="card">
+    <h2>新增支出</h2>
+    <div class="row">
+      <div class="field"><label>日期</label><input id="e-date" type="date" value="${today()}"></div>
+      <div class="field" style="flex:1;min-width:130px"><label>案場</label><input id="e-site" list="dl-sites" placeholder="案場"></div>
+      <div class="field" style="flex:1;min-width:120px"><label>項目名稱</label><input id="e-item" list="dl-items" placeholder="工資/材料/五金…"></div>
+      <div class="field" style="min-width:110px"><label>金額</label><input id="e-amount" type="number" inputmode="numeric" placeholder="0"></div>
+      <div class="field"><label>付款方式</label><input id="e-method" placeholder="選填"></div>
+      <div class="field" style="flex:1;min-width:110px"><label>備註</label><input id="e-note" placeholder="選填"></div>
+      <button class="btn" id="e-add">＋ 新增</button>
+    </div>
+    <datalist id="dl-sites">${sites.map(s=>`<option value="${esc(s)}">`).join('')}</datalist>
+    <datalist id="dl-items">${items.map(s=>`<option value="${esc(s)}">`).join('')}</datalist>
+  </div>
+  <div class="card">
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
+      <h2 style="margin:0">支出明細（${filtered.length}）</h2>
+      <select id="e-filter" style="width:auto;height:34px">${siteOpts}</select>
+      <div style="margin-left:auto;font-weight:700">合計 <span style="color:var(--danger)">${money(tot)}</span></div>
+    </div>
+    ${filtered.length===0?'<div class="empty">尚無支出。</div>':`<div class="scroll"><table>
+    <thead><tr><th>日期</th><th>案場</th><th>項目</th><th class="num">金額</th><th>付款</th><th>備註</th><th></th></tr></thead>
+    <tbody>${rows}</tbody></table></div>`}
+  </div>`;
+}
+
+function viewInc(){
+  const sites=allSiteNames();
+  const filtered=state.incomes.filter(x=>!incFilter||x.site===incFilter).sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+  const tot=filtered.reduce((s,x)=>s+num(x.amount),0);
+  const rows=filtered.map(x=>`<tr>
+      <td>${esc(x.date)}</td><td>${esc(x.site)}</td>
+      <td class="num" style="color:var(--info)">${money(x.amount)}</td>
+      <td>${esc(x.method||'')}</td><td>${esc(x.account||'')}</td><td>${esc(x.note||'')}</td>
+      <td class="num"><button class="act danger" data-indel="${x.id}">刪</button></td>
+    </tr>`).join('');
+  const accOpts=state.accounts.map(a=>`<option value="${esc(a)}">${esc(a)}</option>`).join('');
+  const siteOpts=`<option value="">全部案場</option>`+sites.map(s=>`<option ${incFilter===s?'selected':''}>${esc(s)}</option>`).join('');
+  return `<div class="card">
+    <h2>新增請款</h2>
+    <div class="row">
+      <div class="field"><label>日期</label><input id="i-date" type="date" value="${today()}"></div>
+      <div class="field" style="flex:1;min-width:130px"><label>案場</label><input id="i-site" list="dl-sites2" placeholder="案場"></div>
+      <div class="field" style="min-width:110px"><label>請款金額</label><input id="i-amount" type="number" inputmode="numeric" placeholder="0"></div>
+      <div class="field"><label>請款方式</label><input id="i-method" placeholder="匯款/支票"></div>
+      <div class="field" style="min-width:150px"><label>入款帳號</label><select id="i-account"><option value="">（未指定）</option>${accOpts}</select></div>
+      <div class="field" style="flex:1;min-width:110px"><label>備註</label><input id="i-note" placeholder="選填"></div>
+      <button class="btn" id="i-add">＋ 新增</button>
+    </div>
+    <datalist id="dl-sites2">${sites.map(s=>`<option value="${esc(s)}">`).join('')}</datalist>
+  </div>
+  <div class="card">
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
+      <h2 style="margin:0">請款明細（${filtered.length}）</h2>
+      <select id="i-filter" style="width:auto;height:34px">${siteOpts}</select>
+      <div style="margin-left:auto;font-weight:700">合計 <span style="color:var(--info)">${money(tot)}</span></div>
+    </div>
+    ${filtered.length===0?'<div class="empty">尚無請款。</div>':`<div class="scroll"><table>
+    <thead><tr><th>日期</th><th>案場</th><th class="num">金額</th><th>方式</th><th>入款帳號</th><th>備註</th><th></th></tr></thead>
+    <tbody>${rows}</tbody></table></div>`}
+  </div>`;
+}
+
+function viewCo(){
+  const rows=state.companies.map(c=>`<tr>
+      <td>${esc(c.name)}</td><td>${esc(c.taxId||'')}</td><td>${esc(c.contact||'')}</td><td>${esc(c.addr||'')}</td>
+      <td class="num"><button class="act danger" data-codel="${c.id}">刪</button></td>
+    </tr>`).join('');
+  return `<div class="card">
+    <h2>新增公司</h2>
+    <div class="row">
+      <div class="field" style="flex:2;min-width:160px"><label>公司名稱</label><input id="c-name" placeholder="公司名稱"></div>
+      <div class="field"><label>統一編號</label><input id="c-tax" placeholder="選填"></div>
+      <div class="field" style="flex:1;min-width:140px"><label>聯絡人</label><input id="c-contact" placeholder="選填"></div>
+      <div class="field" style="flex:2;min-width:180px"><label>地址</label><input id="c-addr" placeholder="選填"></div>
+      <button class="btn" id="c-add">＋ 新增</button>
+    </div>
+  </div>
+  <div class="card"><h2>通訊錄（${state.companies.length}）</h2>${state.companies.length===0?'<div class="empty">尚無公司。</div>':`<div class="scroll"><table>
+    <thead><tr><th>公司名稱</th><th>統編</th><th>聯絡人</th><th>地址</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`}</div>`;
+}
+
+function viewSet(){
+  const accRows=state.accounts.map((a,i)=>`<tr><td>${esc(a)}</td><td class="num"><button class="act danger" data-accdel="${i}">刪</button></td></tr>`).join('');
+  return `<div class="card">
+    <h2>入款帳號</h2>
+    <div class="row" style="margin-bottom:10px"><div class="field" style="flex:1;min-width:160px"><label>新增帳號</label><input id="acc-name" placeholder="例：品佑工程有限公司"></div><button class="btn" id="acc-add">＋ 新增</button></div>
+    <div class="scroll"><table><tbody>${accRows||'<tr><td class="empty">尚無</td></tr>'}</tbody></table></div>
+  </div>
+  <div class="card">
+    <h2>匯入 / 匯出 / 備份</h2>
+    <p class="sub">資料只存在這台裝置的瀏覽器。定期「匯出備份」保存；換裝置時把備份檔「匯入」進來。</p>
+    <div class="row" style="margin-bottom:12px">
+      <button class="btn" id="exp-json">⬇ 匯出備份（下載 JSON）</button>
+      <label class="act" style="display:inline-flex;align-items:center;cursor:pointer">⬆ 匯入檔案<input id="imp-file" type="file" accept=".json,application/json" style="display:none"></label>
+    </div>
+    <div class="field"><label>或貼上 JSON 匯入</label><textarea id="imp-text" rows="4" placeholder='把備份或匯入檔內容貼在這裡'></textarea></div>
+    <div class="row" style="margin-top:8px">
+      <button class="act on" id="imp-merge">合併匯入（保留現有）</button>
+      <button class="act" id="imp-replace">取代匯入（清掉現有）</button>
+    </div>
+  </div>
+  <div class="card">
+    <h2 style="color:var(--danger)">清空</h2>
+    <p class="sub">清空這台裝置的所有品佑帳本資料（無法復原，請先匯出備份）。</p>
+    <button class="act danger" id="wipe">清空全部資料</button>
+  </div>`;
+}
+
+// ================= render / bind =================
+function render(){
+  document.getElementById('nav').innerHTML=TABS.map(([k,t])=>`<button class="${tab===k?'on':''}" data-tab="${k}">${t}</button>`).join('');
+  const v={dash:viewDash,proj:viewProj,exp:viewExp,inc:viewInc,co:viewCo,set:viewSet}[tab];
+  document.getElementById('app').innerHTML=v();
+  setBalance();
+  bind();
+}
+function bind(){
+  document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{ tab=b.dataset.tab; window.scrollTo(0,0); render(); });
+
+  const on=(id,ev,fn)=>{ const el=document.getElementById(id); if(el) el[ev]=fn; };
+
+  // 案場
+  on('p-add','onclick',()=>{
+    const name=document.getElementById('p-name').value.trim(); if(!name){ alert('請填案場名稱'); return; }
+    state.projects.push({id:uid(),name,contract:num(document.getElementById('p-contract').value),untaxed:document.getElementById('p-untaxed').value==='1',billed:num(document.getElementById('p-billed').value),retainPct:num(document.getElementById('p-retain').value)/100,note:document.getElementById('p-note').value.trim()});
+    save();
+  });
+  document.querySelectorAll('[data-pdel]').forEach(b=>b.onclick=()=>{ const p=state.projects.find(x=>x.id===b.dataset.pdel); if(confirm(`刪除案場「${p?p.name:''}」？（不會刪它的支出/請款）`)){ state.projects=state.projects.filter(x=>x.id!==b.dataset.pdel); save(); } });
+  document.querySelectorAll('[data-pedit]').forEach(b=>b.onclick=()=>{
+    const p=state.projects.find(x=>x.id===b.dataset.pedit); if(!p) return;
+    const name=prompt('案場名稱',p.name); if(name===null) return;
+    const contract=prompt('簽約金（含稅）',p.contract); if(contract===null) return;
+    const billed=prompt('已請款',num(p.billed)); if(billed===null) return;
+    const retain=prompt('保留款比率 %（例 10）',num(p.retainPct)*100); if(retain===null) return;
+    const note=prompt('備註',p.note||''); if(note===null) return;
+    p.name=name.trim(); p.contract=num(contract); p.billed=num(billed); p.retainPct=num(retain)/100; p.note=note.trim(); save();
+  });
+
+  // 支出
+  on('e-add','onclick',()=>{
+    const amount=num(document.getElementById('e-amount').value);
+    const site=document.getElementById('e-site').value.trim();
+    if(!site||amount<=0){ alert('請填案場與金額'); return; }
+    state.expenses.push({id:uid(),date:document.getElementById('e-date').value||today(),site,item:document.getElementById('e-item').value.trim(),amount,method:document.getElementById('e-method').value.trim(),note:document.getElementById('e-note').value.trim()});
+    save();
+  });
+  on('e-filter','onchange',e=>{ expFilter=e.target.value; render(); });
+  document.querySelectorAll('[data-exdel]').forEach(b=>b.onclick=()=>{ if(confirm('刪除這筆支出？')){ state.expenses=state.expenses.filter(x=>x.id!==b.dataset.exdel); save(); } });
+
+  // 請款
+  on('i-add','onclick',()=>{
+    const amount=num(document.getElementById('i-amount').value);
+    const site=document.getElementById('i-site').value.trim();
+    if(!site||amount<=0){ alert('請填案場與金額'); return; }
+    state.incomes.push({id:uid(),date:document.getElementById('i-date').value||today(),site,amount,method:document.getElementById('i-method').value.trim(),account:document.getElementById('i-account').value,note:document.getElementById('i-note').value.trim()});
+    save();
+  });
+  on('i-filter','onchange',e=>{ incFilter=e.target.value; render(); });
+  document.querySelectorAll('[data-indel]').forEach(b=>b.onclick=()=>{ if(confirm('刪除這筆請款？')){ state.incomes=state.incomes.filter(x=>x.id!==b.dataset.indel); save(); } });
+
+  // 公司
+  on('c-add','onclick',()=>{
+    const name=document.getElementById('c-name').value.trim(); if(!name){ alert('請填公司名稱'); return; }
+    state.companies.push({id:uid(),name,taxId:document.getElementById('c-tax').value.trim(),contact:document.getElementById('c-contact').value.trim(),addr:document.getElementById('c-addr').value.trim(),note:''});
+    save();
+  });
+  document.querySelectorAll('[data-codel]').forEach(b=>b.onclick=()=>{ if(confirm('刪除這間公司？')){ state.companies=state.companies.filter(x=>x.id!==b.dataset.codel); save(); } });
+
+  // 設定
+  on('acc-add','onclick',()=>{ const v=document.getElementById('acc-name').value.trim(); if(v&&!state.accounts.includes(v)){ state.accounts.push(v); save(); } });
+  document.querySelectorAll('[data-accdel]').forEach(b=>b.onclick=()=>{ state.accounts.splice(Number(b.dataset.accdel),1); save(); });
+  on('exp-json','onclick',()=>downloadJSON());
+  on('imp-file','onchange',e=>{ const f=e.target.files[0]; if(!f) return; const r=new FileReader(); r.onload=()=>doImport(r.result,false); r.readAsText(f); });
+  on('imp-merge','onclick',()=>doImport(document.getElementById('imp-text').value,true));
+  on('imp-replace','onclick',()=>doImport(document.getElementById('imp-text').value,false));
+  on('wipe','onclick',()=>{ if(confirm('確定清空全部資料？無法復原。')){ state=blank(); save(); } });
+}
+
+function downloadJSON(){
+  const blob=new Blob([JSON.stringify(state,null,1)],{type:'application/json'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+  a.download='品佑帳本備份_'+today()+'.json'; a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+}
+function doImport(text,merge){
+  let d; try{ d=JSON.parse(text); }catch(e){ alert('讀不到 JSON，請確認內容或檔案正確。'); return; }
+  if(typeof d!=='object'||d===null){ alert('格式不對。'); return; }
+  const cols=['projects','expenses','incomes','companies'];
+  if(!merge){
+    if(!confirm('取代匯入會清掉現有資料，改成匯入的內容。確定？')) return;
+    state=Object.assign(blank(),{accounts:d.accounts&&d.accounts.length?d.accounts:blank().accounts,items:d.items||[]});
+    cols.forEach(k=>{ state[k]=Array.isArray(d[k])?d[k].map(r=>Object.assign({id:uid()},r)):[]; });
+  } else {
+    const seen={}; cols.forEach(k=>{ seen[k]=new Set(state[k].map(r=>r.id)); });
+    cols.forEach(k=>{ (Array.isArray(d[k])?d[k]:[]).forEach(r=>{ const rec=Object.assign({},r); if(!rec.id||seen[k].has(rec.id)) rec.id=uid(); state[k].push(rec); }); });
+    (d.accounts||[]).forEach(a=>{ if(!state.accounts.includes(a)) state.accounts.push(a); });
+  }
+  save();
+  alert(`匯入完成：案場 ${state.projects.length}、支出 ${state.expenses.length}、請款 ${state.incomes.length}、公司 ${state.companies.length}`);
+}
+
+load(); render();
+</script>
