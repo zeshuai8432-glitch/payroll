@@ -493,7 +493,7 @@ const FS_PROJECT = 'payroll-d1abe';
 const FS_KEY = 'AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
 const FS_DOC_BASE = 'https://firestore.googleapis.com/v1/projects/'+FS_PROJECT+'/databases/(default)/documents/payroll/';
 const FS_REST_URL = FS_DOC_BASE+'main?key='+FS_KEY;
-const APP_VERSION = 'v2026.07.10-slipname';
+const APP_VERSION = 'v2026.07.10-snap11';
 let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], tools:[], locations:[], assets:[], advances:[], accounts:[], ledger:[], deals:[], billings:[], measurements:[], contracts:{}, costs:[], textMemory:{clients:[],companies:[]}, parkAccId:'', oweBonus:{}, minFund:'', deletedIds:[], tab:'entry' };
 let cloudStatus='連線中…';
 let localDirty=false, lastCloudTs=0;
@@ -3212,7 +3212,9 @@ function postParkWage(){
   if(amount<=0){ alert('本期公司負擔工資為 0，沒有可記入的金額。'); return; }
   // 發薪日＝計薪迄日的隔天（例：計薪到 7/10 → 隔天 7/11 發，記「0711工資」）
   const nextDay=iso=>{ const d=new Date(iso+'T00:00:00'); d.setDate(d.getDate()+1); return d.toISOString().slice(0,10); };
-  const payday=state.payTo?nextDay(state.payTo):new Date().toISOString().slice(0,10);
+  // 落在某月 11 號前後三天（8～14）內就一律歸到該月 11 號，避免忘記按或期間微調時項目/日期跑掉
+  const snap11=iso=>{ const d=new Date(iso+'T00:00:00'); if(d.getDate()>=8&&d.getDate()<=14) d.setDate(11); return d.toISOString().slice(0,10); };
+  const payday=snap11(state.payTo?nextDay(state.payTo):new Date().toISOString().slice(0,10));
   const note=payday.slice(5,7)+payday.slice(8,10)+'工資'; // 例：0711工資
   const date=payday;
   const tag=(state.payFrom||'')+'~'+(state.payTo||'');
