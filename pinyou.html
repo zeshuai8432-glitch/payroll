@@ -62,7 +62,7 @@ const LS='pinyou_data_v1';
 const TABS=[['dash','儀表板'],['proj','案場'],['exp','支出'],['inc','請款'],['co','通訊錄'],['set','設定']];
 let state=blank();
 let tab='dash';
-let expFilter='', expItemFilter='', incFilter='';
+let expFilter='', expItemFilter='', incFilter='', expEditId=null;
 
 function blank(){ return {projects:[],expenses:[],incomes:[],companies:[],accounts:['東澤工程行','品佑工程有限公司','廣昕工程行'],items:[]}; }
 function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
@@ -192,12 +192,26 @@ function viewExp(){
   const sites=allSiteNames(), items=itemNames();
   const filtered=state.expenses.filter(x=>(!expFilter||x.site===expFilter)&&(!expItemFilter||x.item===expItemFilter)).sort((a,b)=>(b.date||'').localeCompare(a.date||''));
   const tot=filtered.reduce((s,x)=>s+num(x.amount),0);
-  const rows=filtered.map(x=>`<tr>
+  const rows=filtered.map(x=>{
+    if(expEditId===x.id){
+      const ist='height:34px;padding:0 8px';
+      return `<tr style="background:var(--bg)">
+        <td><input id="ee-date" type="date" value="${x.date||''}" style="${ist}"></td>
+        <td><input id="ee-site" list="dl-sites" value="${esc(x.site)}" style="${ist}"></td>
+        <td><input id="ee-item" list="dl-items" value="${esc(x.item)}" style="${ist}"></td>
+        <td><input id="ee-amount" type="number" inputmode="numeric" value="${x.amount}" style="${ist};text-align:right"></td>
+        <td><input id="ee-method" value="${esc(x.method||'')}" style="${ist}"></td>
+        <td><input id="ee-note" value="${esc(x.note||'')}" style="${ist}"></td>
+        <td class="num" style="white-space:nowrap"><button class="act on" data-exeditok="${x.id}">存</button> <button class="act" data-exeditcancel="1">取消</button></td>
+      </tr>`;
+    }
+    return `<tr>
       <td>${esc(x.date)}</td><td>${esc(x.site)}</td><td>${esc(x.item)}</td>
       <td class="num" style="color:var(--danger)">${money(x.amount)}</td>
       <td>${esc(x.method||'')}</td><td>${esc(x.note||'')}</td>
-      <td class="num"><button class="act danger" data-exdel="${x.id}">刪</button></td>
-    </tr>`).join('');
+      <td class="num" style="white-space:nowrap"><button class="act" data-exedit="${x.id}">改</button> <button class="act danger" data-exdel="${x.id}">刪</button></td>
+    </tr>`;
+  }).join('');
   const siteOpts=`<option value="">全部案場</option>`+sites.map(s=>`<option ${expFilter===s?'selected':''}>${esc(s)}</option>`).join('');
   const itemOpts=`<option value="">全部項目</option>`+items.map(s=>`<option ${expItemFilter===s?'selected':''}>${esc(s)}</option>`).join('');
   return `<div class="card">
@@ -220,6 +234,7 @@ function viewExp(){
       <select id="e-filter" style="width:auto;height:34px">${siteOpts}</select>
       <select id="e-item-filter" style="width:auto;height:34px">${itemOpts}</select>
       ${(expFilter||expItemFilter)?'<button class="act" id="e-clearfilter">清除篩選</button>':''}
+      <button class="act" id="e-rename" title="把某個項目名稱一次全部改掉，用來整理混亂的名稱">項目批次改名</button>
       <div style="margin-left:auto;font-weight:700">合計 <span style="color:var(--danger)">${money(tot)}</span></div>
     </div>
     ${filtered.length===0?'<div class="empty">尚無支出。</div>':`<div class="scroll"><table>
@@ -352,7 +367,29 @@ function bind(){
   on('e-filter','onchange',e=>{ expFilter=e.target.value; render(); });
   on('e-item-filter','onchange',e=>{ expItemFilter=e.target.value; render(); });
   on('e-clearfilter','onclick',()=>{ expFilter=''; expItemFilter=''; render(); });
+  on('e-rename','onclick',()=>{
+    const names=itemNames().sort();
+    const from=prompt('要整理的「項目名稱」（打完整）。目前有：\n'+names.join('、')); if(from===null) return;
+    const f=from.trim(); const cnt=state.expenses.filter(x=>x.item===f).length;
+    if(!cnt){ alert(`找不到項目「${f}」的支出。`); return; }
+    const to=prompt(`把「${f}」（共 ${cnt} 筆）改成？`,f); if(to===null) return;
+    state.expenses.forEach(x=>{ if(x.item===f) x.item=to.trim(); });
+    if(expItemFilter===f) expItemFilter=to.trim();
+    save(); alert(`已把 ${cnt} 筆「${f}」改成「${to.trim()}」。`);
+  });
   document.querySelectorAll('[data-exdel]').forEach(b=>b.onclick=()=>{ if(confirm('刪除這筆支出？')){ state.expenses=state.expenses.filter(x=>x.id!==b.dataset.exdel); save(); } });
+  document.querySelectorAll('[data-exedit]').forEach(b=>b.onclick=()=>{ expEditId=b.dataset.exedit; render(); });
+  document.querySelectorAll('[data-exeditcancel]').forEach(b=>b.onclick=()=>{ expEditId=null; render(); });
+  document.querySelectorAll('[data-exeditok]').forEach(b=>b.onclick=()=>{
+    const x=state.expenses.find(e=>e.id===b.dataset.exeditok); if(!x) return;
+    x.date=document.getElementById('ee-date').value||x.date;
+    x.site=document.getElementById('ee-site').value.trim();
+    x.item=document.getElementById('ee-item').value.trim();
+    x.amount=num(document.getElementById('ee-amount').value);
+    x.method=document.getElementById('ee-method').value.trim();
+    x.note=document.getElementById('ee-note').value.trim();
+    expEditId=null; save();
+  });
 
   // 請款
   on('i-add','onclick',()=>{
