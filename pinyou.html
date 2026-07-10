@@ -155,7 +155,13 @@ function viewDash(){
   const itemRows=Object.entries(byItem).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`<tr><td>${esc(k)}</td><td class="num">${money(v)}</td></tr>`).join('');
   const itemCard=Object.keys(byItem).length?`<div class="card"><h2>支出分類（依項目名稱）</h2><div class="scroll"><table><thead><tr><th>項目</th><th class="num">加總</th></tr></thead><tbody>${itemRows}<tr class="total"><td>合計</td><td class="num">${money(totExpense)}</td></tr></tbody></table></div></div>`:'';
 
-  return metrics+projCard+accCard+itemCard;
+  // 各帳戶支出（依出帳帳號）
+  const byAccExp={};
+  state.expenses.forEach(x=>{ const a=x.account||'（未指定）'; byAccExp[a]=(byAccExp[a]||0)+num(x.amount); });
+  const accExpRows=Object.entries(byAccExp).sort((a,b)=>b[1]-a[1]).map(([a,v])=>`<tr><td>${esc(a)}</td><td class="num" style="color:var(--danger)">${money(v)}</td></tr>`).join('');
+  const accExpCard=Object.keys(byAccExp).length?`<div class="card"><h2>各帳戶支出（依出帳帳號）</h2><p class="sub">每筆支出記的「出帳帳號」加總，看各公司帳號實際付出多少。</p><div class="scroll"><table><thead><tr><th>出帳帳號</th><th class="num">支出</th></tr></thead><tbody>${accExpRows}<tr class="total"><td>合計</td><td class="num">${money(totExpense)}</td></tr></tbody></table></div></div>`:'';
+
+  return metrics+projCard+accCard+accExpCard+itemCard;
 }
 
 function viewProj(){
@@ -188,6 +194,7 @@ function viewProj(){
     <tbody>${rows}</tbody></table></div>`}</div>`;
 }
 
+function acctOptions(sel){ return '<option value="">（未指定）</option>'+state.accounts.map(a=>`<option ${sel===a?'selected':''}>${esc(a)}</option>`).join(''); }
 function viewExp(){
   const sites=allSiteNames(), items=itemNames();
   const filtered=state.expenses.filter(x=>(!expFilter||x.site===expFilter)&&(!expItemFilter||x.item===expItemFilter)).sort((a,b)=>(b.date||'').localeCompare(a.date||''));
@@ -200,6 +207,7 @@ function viewExp(){
         <td><input id="ee-site" list="dl-sites" value="${esc(x.site)}" style="${ist}"></td>
         <td><input id="ee-item" list="dl-items" value="${esc(x.item)}" style="${ist}"></td>
         <td><input id="ee-amount" type="number" inputmode="numeric" value="${x.amount}" style="${ist};text-align:right"></td>
+        <td><select id="ee-account" style="${ist}">${acctOptions(x.account||'')}</select></td>
         <td><input id="ee-method" value="${esc(x.method||'')}" style="${ist}"></td>
         <td><input id="ee-note" value="${esc(x.note||'')}" style="${ist}"></td>
         <td class="num" style="white-space:nowrap"><button class="act on" data-exeditok="${x.id}">存</button> <button class="act" data-exeditcancel="1">取消</button></td>
@@ -208,6 +216,7 @@ function viewExp(){
     return `<tr>
       <td>${esc(x.date)}</td><td>${esc(x.site)}</td><td>${esc(x.item)}</td>
       <td class="num" style="color:var(--danger)">${money(x.amount)}</td>
+      <td>${esc(x.account||'')}</td>
       <td>${esc(x.method||'')}</td><td>${esc(x.note||'')}</td>
       <td class="num" style="white-space:nowrap"><button class="act" data-exedit="${x.id}">改</button> <button class="act danger" data-exdel="${x.id}">刪</button></td>
     </tr>`;
@@ -221,6 +230,7 @@ function viewExp(){
       <div class="field" style="flex:1;min-width:130px"><label>案場</label><input id="e-site" list="dl-sites" placeholder="案場"></div>
       <div class="field" style="flex:1;min-width:120px"><label>項目名稱</label><input id="e-item" list="dl-items" placeholder="工資/材料/五金…"></div>
       <div class="field" style="min-width:110px"><label>金額</label><input id="e-amount" type="number" inputmode="numeric" placeholder="0"></div>
+      <div class="field" style="min-width:140px"><label>出帳帳號</label><select id="e-account">${acctOptions('')}</select></div>
       <div class="field"><label>付款方式</label><input id="e-method" placeholder="選填"></div>
       <div class="field" style="flex:1;min-width:110px"><label>備註</label><input id="e-note" placeholder="選填"></div>
       <button class="btn" id="e-add">＋ 新增</button>
@@ -238,7 +248,7 @@ function viewExp(){
       <div style="margin-left:auto;font-weight:700">合計 <span style="color:var(--danger)">${money(tot)}</span></div>
     </div>
     ${filtered.length===0?'<div class="empty">尚無支出。</div>':`<div class="scroll"><table>
-    <thead><tr><th>日期</th><th>案場</th><th>項目</th><th class="num">金額</th><th>付款</th><th>備註</th><th></th></tr></thead>
+    <thead><tr><th>日期</th><th>案場</th><th>項目</th><th class="num">金額</th><th>出帳帳號</th><th>付款</th><th>備註</th><th></th></tr></thead>
     <tbody>${rows}</tbody></table></div>`}
   </div>`;
 }
@@ -361,7 +371,7 @@ function bind(){
     const amount=num(document.getElementById('e-amount').value);
     const site=document.getElementById('e-site').value.trim();
     if(!site||amount<=0){ alert('請填案場與金額'); return; }
-    state.expenses.push({id:uid(),date:document.getElementById('e-date').value||today(),site,item:document.getElementById('e-item').value.trim(),amount,method:document.getElementById('e-method').value.trim(),note:document.getElementById('e-note').value.trim()});
+    state.expenses.push({id:uid(),date:document.getElementById('e-date').value||today(),site,item:document.getElementById('e-item').value.trim(),amount,account:document.getElementById('e-account').value,method:document.getElementById('e-method').value.trim(),note:document.getElementById('e-note').value.trim()});
     save();
   });
   on('e-filter','onchange',e=>{ expFilter=e.target.value; render(); });
@@ -386,6 +396,7 @@ function bind(){
     x.site=document.getElementById('ee-site').value.trim();
     x.item=document.getElementById('ee-item').value.trim();
     x.amount=num(document.getElementById('ee-amount').value);
+    x.account=document.getElementById('ee-account').value;
     x.method=document.getElementById('ee-method').value.trim();
     x.note=document.getElementById('ee-note').value.trim();
     expEditId=null; save();
