@@ -490,7 +490,7 @@ const FS_PROJECT = 'payroll-d1abe';
 const FS_KEY = 'AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
 const FS_DOC_BASE = 'https://firestore.googleapis.com/v1/projects/'+FS_PROJECT+'/databases/(default)/documents/payroll/';
 const FS_REST_URL = FS_DOC_BASE+'main?key='+FS_KEY;
-const APP_VERSION = 'v2026.07.10-companywage';
+const APP_VERSION = 'v2026.07.10-parkwage';
 let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], tools:[], locations:[], assets:[], advances:[], accounts:[], ledger:[], deals:[], billings:[], measurements:[], contracts:{}, costs:[], textMemory:{clients:[],companies:[]}, parkAccId:'', oweBonus:{}, minFund:'', deletedIds:[], tab:'entry' };
 let cloudStatus='連線中…';
 let localDirty=false, lastCloudTs=0;
@@ -1571,6 +1571,7 @@ function viewPayroll(){
       <div style="display:flex;gap:8px">
         <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);white-space:nowrap"><input type="checkbox" id="payslip-workdetails" ${payslipShowWorkDetails?'checked':''} style="width:15px;height:15px">明細單顯示出工明細</label>
         ${partnerIds.length?`<button class="act" id="toggle-partners" style="padding:0 12px;height:36px">${state.showPartners?'隱藏股東':'顯示股東'}</button>`:''}
+        <button class="act" id="post-park-wage" ${rows===''?'disabled style="opacity:.5"':'style="border:1px solid var(--accent);color:var(--accent)"'}>記入品佑支出</button>
         <button class="btn" id="export-summary" ${rows===''?'disabled style="opacity:.5"':''}>匯出總表 PDF</button>
       </div>
     </div>
@@ -1876,6 +1877,7 @@ function bind(){
   };
   document.querySelectorAll('[data-deladj]').forEach(b=>b.onclick=()=>{ if(!confirm('確定刪除這筆加扣項？')) return; state.adjustments=state.adjustments.filter(a=>a.id!==b.dataset.deladj); saveData(); render(); });
   const es=document.getElementById('export-summary'); if(es) es.onclick=()=>exportSummaryPDF();
+  const ppw=document.getElementById('post-park-wage'); if(ppw) ppw.onclick=()=>postParkWage();
   const ed=document.getElementById('export-deals'); if(ed) ed.onclick=()=>exportDealsPDF();
   const eds=document.getElementById('export-deals-sel'); if(eds) eds.onclick=()=>exportDealsPDF(true);
   const rbi=document.getElementById('rebuild-income'); if(rbi) rbi.onclick=()=>{
@@ -3194,6 +3196,25 @@ function exportSummaryPDF(){
     </tbody></table>
     <p class="sub">基本工資＝正常工時薪資；加項＝出差外宿津貼＋加班費＋手動加項；實發＝基本工資＋加項−扣項。公司負擔工資（品佑結算基準）＝實發＋借支扣還＝基本工資＋加項−非借支扣項；借支扣還是還品佑不算公司負擔，工具遺失／罰單等賠付公司的扣項會回歸東澤／廣昕。金額四捨五入至整數。</p>`;
   printHTML('薪資總表 '+(state.payFrom||''), inner);
+}
+
+// 一鍵：把本期「公司負擔工資」記成品佑帳戶的一筆支出（項目＝該期起算月日＋工資，例：0711工資）
+function postParkWage(){
+  if(!state.parkAccId){ alert('尚未指定品佑帳戶。\n請到「品佑帳戶結算」頁選「哪個帳戶是品佑代支出」後再試。'); return; }
+  const byEmp=buildPayroll(state.payFrom,state.payTo);
+  const isPartner=id=>{ const e=state.employees.find(x=>x.id===id); return e&&e.partner; };
+  const amount=Math.round(Object.keys(byEmp).filter(id=>!isPartner(id)).reduce((s,id)=>s+byEmp[id].companyWage,0));
+  if(amount<=0){ alert('本期公司負擔工資為 0，沒有可記入的金額。'); return; }
+  const period=state.payFrom||state.payTo||new Date().toISOString().slice(0,10);
+  const note=period.slice(5,7)+period.slice(8,10)+'工資'; // MMDD工資，取該期起算日（11號）
+  const date=state.payTo||new Date().toISOString().slice(0,10);
+  const tag=(state.payFrom||'')+'~'+(state.payTo||'');
+  const dup=state.ledger.find(t=>t.payrollWage===tag && t.accId===state.parkAccId);
+  if(dup && !confirm(`這個計薪期間（${tag}）已經記過一筆「${dup.note}」${money(dup.amount)}。\n\n要再新增一筆嗎？`)) return;
+  if(!dup && !confirm(`要把本期「公司負擔工資」記入品佑支出嗎？\n\n項目：${note}\n金額：${money(amount)}\n帳戶：${accountName(state.parkAccId)}（支出）\n日期：${date}`)) return;
+  state.ledger.push({id:uid(),date,accId:state.parkAccId,kind:'out',amount,note,payrollWage:tag});
+  saveData(); pushCloud(); render();
+  alert(`已記入品佑支出：${note} ${money(amount)}\n可到「公積金帳戶」查看或刪除。`);
 }
 
 function exportPayslipPDF(empId){
