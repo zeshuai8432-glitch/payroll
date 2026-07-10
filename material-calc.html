@@ -2740,19 +2740,81 @@ function renderMaterials() {
   `;
 }
 
+// ── 材料庫：長條料（骨架/槽鐵/加強）以「名稱」母子分組顯示 ──
+const matGroupOpen = new Set();
+const MAT_GROUP_KEYS = ['studs','tracks','braces'];
+const MAT_TONES = ['#1d4ed8','#0f766e','#7c3aed','#b45309','#be123c','#047857','#0369a1','#c2410c','#9333ea','#0891b2','#65a30d','#db2777'];
+function matHash(s){ s=String(s||''); let h=0; for(let i=0;i<s.length;i++) h=(h*31+s.charCodeAt(i))>>>0; return h; }
+function matTone(name){ return MAT_TONES[matHash(name)%MAT_TONES.length]; }
+function matCssSafe(s){ return String(s).replace(/[^a-zA-Z0-9]/g,'_'); }
+function matJsAttr(s){ return String(s==null?'':s).replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'&quot;'); }
+function toggleMatGroup(gid){ if(matGroupOpen.has(gid)) matGroupOpen.delete(gid); else matGroupOpen.add(gid); renderMaterials(); }
+function renameMatGroup(key, oldName){
+  const nv = prompt('修改材料名稱（會套用到底下所有長度）', oldName);
+  if(nv===null) return; const name=nv.trim(); if(!name || name===oldName) return;
+  (state.materials[key]||[]).forEach(m=>{ if(m.name===oldName) m.name=name; });
+  matGroupOpen.delete(key+'_'+matCssSafe(oldName)); matGroupOpen.add(key+'_'+matCssSafe(name));
+  saveUserData(); renderMaterials();
+}
+function addLengthToGroup(key, name){
+  const lv = prompt('新增長度（cm）', '300'); if(lv===null) return;
+  const len = parseInt(lv)||0; if(len<=0) return;
+  state.materials[key].push({ id:'custom_'+Date.now(), name, length:len, unit:'支', price:0, custom:true });
+  matGroupOpen.add(key+'_'+matCssSafe(name)); saveUserData(); renderMaterials();
+}
+function matSectionWrap(title, key, headers, rows, showAdd) {
+  const addBtn = showAdd ? `<button class="btn btn-secondary btn-sm" onclick="addCustomMaterial('${key}')">＋ 新增材料</button>` : '';
+  return `
+    <div class="material-category">
+      <div class="card-header">
+        <div><div class="card-title">${title}</div></div>
+        ${addBtn}
+      </div>
+      <table class="material-table">
+        <thead><tr>${headers.map(h => `<th>${h}</th>`).join('')}<th></th></tr></thead>
+        <tbody id="mat-tbody-${key}">${rows}</tbody>
+      </table>
+    </div>`;
+}
+
 function materialSection(title, key, headers) {
   const items = state.materials[key] || [];
+  const colCount = headers.length + 1;
   let rows = '';
 
+  if (MAT_GROUP_KEYS.includes(key)) {
+    const groups = {}; const order = [];
+    items.forEach((item, i) => { const nm = item.name || '（未命名）'; if(!groups[nm]){ groups[nm]=[]; order.push(nm); } groups[nm].push({item, i}); });
+    order.forEach(nm => {
+      const list = groups[nm];
+      const gid = key + '_' + matCssSafe(nm);
+      const open = matGroupOpen.has(gid);
+      const tone = matTone(nm);
+      const na = matJsAttr(nm);
+      rows += `<tr onclick="toggleMatGroup('${gid}')" style="cursor:pointer;background:#f7f9fc">
+        <td colspan="${colCount}" style="border-left:4px solid ${tone}">
+          <span style="display:inline-block;width:14px;color:#999">${open?'▾':'▸'}</span>
+          <strong style="color:${tone}">${esc(nm)}</strong>
+          <span style="color:#999;font-size:12px;margin-left:6px">${list.length} 種長度</span>
+          <button class="btn btn-sm" style="float:right" onclick="event.stopPropagation();renameMatGroup('${key}','${na}')">改名</button>
+        </td></tr>`;
+      if (open) {
+        list.forEach(({item, i}) => {
+          rows += `<tr>
+            <td style="padding-left:24px;color:#999;">↳ 長度</td>
+            <td><input type="number" value="${item.length}" onchange="state.materials['${key}'][${i}].length=+this.value;saveUserData()" style="width:80px;"></td>
+            <td><input type="number" value="${item.price}" onchange="state.materials['${key}'][${i}].price=+this.value;saveUserData()" style="width:80px;"></td>
+            <td><button class="btn btn-danger btn-sm" onclick="removeMaterial('${key}',${i})">刪</button></td>
+          </tr>`;
+        });
+        rows += `<tr><td colspan="${colCount}" style="padding-left:24px;"><button class="btn btn-secondary btn-sm" onclick="addLengthToGroup('${key}','${na}')">＋ 長度</button></td></tr>`;
+      }
+    });
+    return matSectionWrap(title, key, headers, rows, true);
+  }
+
   items.forEach((item, i) => {
-    if (key === 'studs' || key === 'tracks' || key === 'braces') {
-      rows += `<tr>
-        <td><input type="text" value="${esc(item.name)}" onchange="state.materials['${key}'][${i}].name=this.value;saveUserData()" style="width:140px;"></td>
-        <td><input type="number" value="${item.length}" onchange="state.materials['${key}'][${i}].length=+this.value;saveUserData()" style="width:80px;"></td>
-        <td><input type="number" value="${item.price}" onchange="state.materials['${key}'][${i}].price=+this.value;saveUserData()" style="width:80px;"></td>
-        <td><button class="btn btn-danger btn-sm" onclick="removeMaterial('${key}',${i})">刪除</button></td>
-      </tr>`;
-    } else if (key === 'boards') {
+    if (key === 'boards') {
       rows += `<tr>
         <td>${esc(item.name)}</td>
         <td><input type="number" value="${item.price}" onchange="state.materials['${key}'][${i}].price=+this.value;saveUserData()" style="width:80px;"></td>
@@ -2787,33 +2849,22 @@ function materialSection(title, key, headers) {
     }
   });
 
-  const addBtn = (key === 'studs' || key === 'tracks') ?
-    `<button class="btn btn-secondary btn-sm" onclick="addCustomMaterial('${key}')">＋ 新增規格</button>` : '';
-
-  return `
-    <div class="material-category">
-      <div class="card-header">
-        <div>
-          <div class="card-title">${title}</div>
-        </div>
-        ${addBtn}
-      </div>
-      <table class="material-table">
-        <thead><tr>${headers.map(h => `<th>${h}</th>`).join('')}<th></th></tr></thead>
-        <tbody id="mat-tbody-${key}">${rows}</tbody>
-      </table>
-    </div>`;
+  return matSectionWrap(title, key, headers, rows, false);
 }
 
 function addCustomMaterial(key) {
-  const name = prompt('請輸入規格名稱（例：C64 骨架）');
+  const name = prompt('新增材料名稱（例：C64 骨架）');
   if (!name) return;
-  state.materials[key].push({ id: 'custom_' + Date.now(), name, length: 300, unit: '支', price: 0, custom: true });
+  const lv = prompt('第一個長度（cm）', '300');
+  const len = parseInt(lv) || 300;
+  state.materials[key].push({ id: 'custom_' + Date.now(), name: name.trim(), length: len, unit: '支', price: 0, custom: true });
+  matGroupOpen.add(key + '_' + matCssSafe(name.trim()));
   renderMaterials();
 }
 
 function removeMaterial(key, idx) {
   state.materials[key].splice(idx, 1);
+  saveUserData();
   renderMaterials();
 }
 
