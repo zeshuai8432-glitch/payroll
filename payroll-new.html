@@ -703,10 +703,12 @@ async function pushCloud(){
   if(saving){ pendingSave=true; return; }
   if(!localDirty && Object.keys(localSigPending).length===0){ setCloud('已同步'); return; }
   saving=true;
+  let payloadKB=0, getOK=false; // 診斷用：資料大小、讀取是否也失敗
   try {
     try{
       const gr=await fetch(CLOUD_URL,{method:'GET'});
       const gj=await gr.json();
+      getOK=true;
       if(gj&&gj.ok&&gj.data){
         const cd=JSON.parse(gj.data);
         applyCloudSigsBeforePush(cd.billingSigs||{}, cd.billingSigsLocked||{}, cd.billingSigMeta||{});
@@ -716,7 +718,7 @@ async function pushCloud(){
     }catch(e){}
     const payload=JSON.stringify(packData());
     try{ localStorage.setItem(LS,payload); }catch(e){}
-    const kb=Math.round(payload.length/1024);
+    payloadKB=Math.round(payload.length/1024);
     const pr=await fetch(CLOUD_URL, {method:'POST', body: payload});
     // 先取純文字再嘗試解析，讓 GAS 回錯誤頁(HTML)時也能顯示真正原因（狀態碼/資料大小）
     let pj=null; const rawText=await pr.text();
@@ -729,9 +731,9 @@ async function pushCloud(){
     } else if(pj){
       setCloud('推送失敗：'+String(pj.error||'未知錯誤').slice(0,60));
     } else {
-      setCloud(`雲端回應異常 HTTP${pr.status}・資料${kb}KB（GAS未回JSON，多為容量/配額）`);
+      setCloud(`雲端回應異常 HTTP${pr.status}・資料${payloadKB}KB（GAS未回JSON，多為容量/配額）`);
     }
-  } catch(e){ setCloud('雲端儲存失敗：'+String((e&&e.message)||e).slice(0,50)); }
+  } catch(e){ setCloud('雲端儲存失敗：'+String((e&&e.message)||e).slice(0,28)+`・資料${payloadKB}KB・讀取${getOK?'OK':'也失敗'}`); }
   saving=false;
   if(pendingSave){ pendingSave=false; pushCloud(); }
 }
