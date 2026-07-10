@@ -490,7 +490,7 @@ const FS_PROJECT = 'payroll-d1abe';
 const FS_KEY = 'AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
 const FS_DOC_BASE = 'https://firestore.googleapis.com/v1/projects/'+FS_PROJECT+'/databases/(default)/documents/payroll/';
 const FS_REST_URL = FS_DOC_BASE+'main?key='+FS_KEY;
-const APP_VERSION = 'v2026.07.08-tabletfont';
+const APP_VERSION = 'v2026.07.08-addsign';
 let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], tools:[], locations:[], assets:[], advances:[], accounts:[], ledger:[], deals:[], billings:[], measurements:[], contracts:{}, costs:[], textMemory:{clients:[],companies:[]}, parkAccId:'', oweBonus:{}, minFund:'', deletedIds:[], tab:'entry' };
 let cloudStatus='連線中…';
 let localDirty=false, lastCloudTs=0;
@@ -3560,8 +3560,11 @@ function billingDocInner(id){
     ${photoSec}
     <div class="sign">
       <div>申請單位${applyUnit?`<div style="font-size:13px;font-weight:400;margin-top:10px">${esc(applyUnit)}</div>`:''}</div>
-      <div>審核</div>
-      <div>業主簽收${signImgHtml}</div>
+      ${type==='追加單'
+        ? `<div>現場工程師確認項目${signImgHtml}</div>
+      <div>所長：</div>`
+        : `<div>審核</div>
+      <div>業主簽收${signImgHtml}</div>`}
     </div>`;
 }
 
