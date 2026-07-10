@@ -493,7 +493,7 @@ const FS_PROJECT = 'payroll-d1abe';
 const FS_KEY = 'AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
 const FS_DOC_BASE = 'https://firestore.googleapis.com/v1/projects/'+FS_PROJECT+'/databases/(default)/documents/payroll/';
 const FS_REST_URL = FS_DOC_BASE+'main?key='+FS_KEY;
-const APP_VERSION = 'v2026.07.10-snap11';
+const APP_VERSION = 'v2026.07.10-advnet';
 let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], tools:[], locations:[], assets:[], advances:[], accounts:[], ledger:[], deals:[], billings:[], measurements:[], contracts:{}, costs:[], textMemory:{clients:[],companies:[]}, parkAccId:'', oweBonus:{}, minFund:'', deletedIds:[], tab:'entry' };
 let cloudStatus='連線中…';
 let localDirty=false, lastCloudTs=0;
@@ -2538,7 +2538,7 @@ function bind(){
   document.querySelectorAll('[data-postpick]').forEach(b=>b.onclick=()=>{
     const [pid,accId]=b.dataset.postpick.split('::');
     const byEmp=buildPayroll(advFrom,advTo);
-    const wage=byEmp[pid]?byEmp[pid].gross:0;
+    const wage=byEmp[pid]?byEmp[pid].net:0; // 與卡片顯示的「應領」一致（實發＝基本工資＋加項−扣項），先前誤用 gross 導致入帳金額不符
     const advTotal=state.advances.filter(a=>a.empId===pid && (!advFrom||a.date>=advFrom) && (!advTo||a.date<=advTo)).reduce((s,a)=>s+(Number(a.amount)||0),0);
     const due=wage+advTotal;
     if(due<=0){ advPosting=null; render(); return; }
@@ -5062,7 +5062,7 @@ function reconSection(key, from, to){
     const byEmp=buildPayroll(from,to);
     if(partners.length===0) return '';
     const rows=partners.map(p=>{
-      const wage=byEmp[p.id]?byEmp[p.id].gross:0;
+      const wage=byEmp[p.id]?byEmp[p.id].net:0; // 與代墊款卡片、入帳一致（實發）
       const adv=state.advances.filter(a=>a.empId===p.id&&inRange(a.date)).reduce((s,a)=>s+(Number(a.amount)||0),0);
       return `<tr><td>${esc(p.name)}</td><td class="num">${money(wage)}</td><td class="num">${money(adv)}</td><td class="num" style="font-weight:700">${money(wage+adv)}</td></tr>`;
     }).join('');
