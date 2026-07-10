@@ -716,17 +716,22 @@ async function pushCloud(){
     }catch(e){}
     const payload=JSON.stringify(packData());
     try{ localStorage.setItem(LS,payload); }catch(e){}
+    const kb=Math.round(payload.length/1024);
     const pr=await fetch(CLOUD_URL, {method:'POST', body: payload});
-    const pj=await pr.json();
+    // 先取純文字再嘗試解析，讓 GAS 回錯誤頁(HTML)時也能顯示真正原因（狀態碼/資料大小）
+    let pj=null; const rawText=await pr.text();
+    try{ pj=JSON.parse(rawText); }catch(_){}
     if(pj&&pj.ok){
       localSigPending={}; localDirty=false;
       try{ localStorage.removeItem(LS_DIRTY); }catch(e){}
       try{ lastCloudTs=Number((JSON.parse(payload)||{}).savedAt)||Date.now(); }catch(e){}
       setCloud('已同步');
+    } else if(pj){
+      setCloud('推送失敗：'+String(pj.error||'未知錯誤').slice(0,60));
     } else {
-      setCloud('推送失敗：'+String((pj&&pj.error)||'未知錯誤').slice(0,60));
+      setCloud(`雲端回應異常 HTTP${pr.status}・資料${kb}KB（GAS未回JSON，多為容量/配額）`);
     }
-  } catch(e){ setCloud('雲端儲存失敗（已存本機）'); }
+  } catch(e){ setCloud('雲端儲存失敗：'+String((e&&e.message)||e).slice(0,50)); }
   saving=false;
   if(pendingSave){ pendingSave=false; pushCloud(); }
 }
