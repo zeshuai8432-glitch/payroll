@@ -493,7 +493,7 @@ const FS_PROJECT = 'payroll-d1abe';
 const FS_KEY = 'AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
 const FS_DOC_BASE = 'https://firestore.googleapis.com/v1/projects/'+FS_PROJECT+'/databases/(default)/documents/payroll/';
 const FS_REST_URL = FS_DOC_BASE+'main?key='+FS_KEY;
-const APP_VERSION = 'v2026.07.10-paydaynote';
+const APP_VERSION = 'v2026.07.10-slipname';
 let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], tools:[], locations:[], assets:[], advances:[], accounts:[], ledger:[], deals:[], billings:[], measurements:[], contracts:{}, costs:[], textMemory:{clients:[],companies:[]}, parkAccId:'', oweBonus:{}, minFund:'', deletedIds:[], tab:'entry' };
 let cloudStatus='連線中…';
 let localDirty=false, lastCloudTs=0;
@@ -3270,7 +3270,8 @@ function exportPayslipPDF(empId){
       <tr class="total-row"><td colspan="5">基本工資小計</td><td class="num">${money(e.gross)}</td></tr>
     </tbody></table>`:'';
   const inner=`<div class="paydoc"><h1>薪資明細單</h1>
-    <div class="meta">員工：${esc(empName(empId))}　|　計薪期間：${state.payFrom||'起始'} ～ ${state.payTo||'迄今'}　|　出勤 ${e.days.size} 天 / ${gongStr(e.hours)}</div>
+    <div style="font-size:23px;font-weight:800;color:#1f3a5f;letter-spacing:1px;margin:6px 0 8px">${esc(empName(empId))}</div>
+    <div class="meta">計薪期間：${state.payFrom||'起始'} ～ ${state.payTo||'迄今'}　|　出勤 ${e.days.size} 天 / ${gongStr(e.hours)}</div>
     ${workDetailSection}
     <div class="sec add-sec">${showWorkDetails?'二':'一'}、加項</div>
     <table><thead><tr><th>項目</th><th>備註</th><th class="num">金額</th></tr></thead>
