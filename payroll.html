@@ -490,7 +490,7 @@ const FS_PROJECT = 'payroll-d1abe';
 const FS_KEY = 'AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
 const FS_DOC_BASE = 'https://firestore.googleapis.com/v1/projects/'+FS_PROJECT+'/databases/(default)/documents/payroll/';
 const FS_REST_URL = FS_DOC_BASE+'main?key='+FS_KEY;
-const APP_VERSION = 'v2026.07.08-addsign';
+const APP_VERSION = 'v2026.07.10-twosign';
 let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], tools:[], locations:[], assets:[], advances:[], accounts:[], ledger:[], deals:[], billings:[], measurements:[], contracts:{}, costs:[], textMemory:{clients:[],companies:[]}, parkAccId:'', oweBonus:{}, minFund:'', deletedIds:[], tab:'entry' };
 let cloudStatus='連線中…';
 let localDirty=false, lastCloudTs=0;
@@ -3378,8 +3378,8 @@ async function uploadBillingPhoto(file){
   return j.url;
 }
 
-// 全版面簽名畫布（業主補充用）
-function openFullscreenSign(onSaved){
+// 全版面簽名畫布（業主／工程師／所長共用）；title 可指定簽名人抬頭
+function openFullscreenSign(onSaved, title){
   const fs=document.createElement('div');
   fs.id='sig-fs';
   fs.style='position:fixed;inset:0;z-index:10001;background:#fff;display:flex;flex-direction:column;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;overscroll-behavior:none;touch-action:none';
@@ -3387,7 +3387,7 @@ function openFullscreenSign(onSaved){
   const DPR=Math.min(window.devicePixelRatio||1,3);
   fs.innerHTML=`
     <div style="height:56px;display:flex;align-items:center;padding:0 10px;gap:6px;border-bottom:1px solid #e0e0e0;flex-shrink:0;background:#fff;user-select:none;-webkit-user-select:none">
-      <div style="font-size:15px;font-weight:700;flex:1;color:#1f2421">業主簽名</div>
+      <div style="font-size:15px;font-weight:700;flex:1;color:#1f2421">${title||'業主簽名'}</div>
       <button id="fs-mode" style="height:36px;padding:0 14px;border:none;background:#ede9fe;color:#4338ca;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap">✏ 筆簽</button>
       <button id="fs-erase" style="height:36px;padding:0 14px;border:none;background:rgba(100,116,139,.08);color:#475569;font-size:13px;cursor:pointer">橡皮擦</button>
       <button id="fs-clear" style="height:36px;padding:0 14px;border:none;background:rgba(100,116,139,.08);color:#475569;font-size:13px;cursor:pointer">清除</button>
@@ -3545,6 +3545,8 @@ function billingDocInner(id){
     </div>`:'';
   const sig=billingSigs[id]||null;
   const signImgHtml=sig?`<img src="${sig}" style="display:block;height:72px;max-width:220px;margin-top:6px">`:'';
+  const soSig=billingSigs[id+'::so']||null; // 所長簽名（追加單專用，另存一個 key）
+  const soSignImgHtml=soSig?`<img src="${soSig}" style="display:block;height:72px;max-width:220px;margin-top:6px">`:'';
   return `<h1>${esc(type)}</h1>
     <div class="meta">日期：${esc(b.date||'')}　|　案場：${esc(siteDisplayLabel(b.site)||'')}</div>
     <table><tbody>
@@ -3562,7 +3564,7 @@ function billingDocInner(id){
       <div>申請單位${applyUnit?`<div style="font-size:13px;font-weight:400;margin-top:10px">${esc(applyUnit)}</div>`:''}</div>
       ${type==='追加單'
         ? `<div>現場工程師確認項目${signImgHtml}</div>
-      <div>所長：</div>`
+      <div>所長：${soSignImgHtml}</div>`
         : `<div>審核</div>
       <div>業主簽收${signImgHtml}</div>`}
     </div>`;
@@ -3571,19 +3573,22 @@ function billingDocInner(id){
 // 列印單張追加單 / 請款單（含業主簽名）
 function printBillingDoc(id){
   const b=state.billings.find(x=>x.id===id); if(!b) return;
-  const sig=billingSigs[id]||null;
+  const isAdd=(b.docType||'請款單')==='追加單';
   const inner=billingDocInner(id);
+
+  // 一個簽名控制項：key＝簽名儲存鍵，label＝簽名人抬頭（追加單有工程師＋所長兩個）
+  const signCtl=(key,label)=> billingSigs[key]
+    ? `<span style="color:#16a34a;font-size:13px;font-weight:600">✓ ${label}已簽</span>
+       <button class="act muted sig-resign" data-sigkey="${key}" style="font-size:12px;padding:0 10px">重新簽</button>`
+    : `<button class="btn sig-sign" data-sigkey="${key}" data-siglabel="${label}" style="background:#fef3c7;color:#92400e;border-color:#fde68a;padding:0 14px;font-size:14px">✍ ${label}簽名</button>`;
+  const controls = isAdd ? signCtl(id,'工程師')+signCtl(id+'::so','所長') : signCtl(id,'業主');
 
   const old=document.getElementById('print-overlay'); if(old) old.remove();
   const ov=document.createElement('div');
   ov.id='print-overlay';
   ov.innerHTML=`
     <div class="pbar">
-      ${sig
-        ?`<span style="color:#16a34a;font-size:13px;font-weight:600">✓ 已簽核</span>
-          <button id="sig-resign" class="act muted" style="font-size:12px;padding:0 10px">重新簽名</button>`
-        :`<button id="sig-fullscreen-btn" class="btn" style="background:#fef3c7;color:#92400e;border-color:#fde68a;padding:0 16px;font-size:14px">✍ 請業主簽名</button>`
-      }
+      ${controls}
       <button class="btn" id="po-print" style="margin-left:auto">列印 / 存成 PDF</button>
       <button class="act" id="po-close" style="padding:0 14px">關閉</button>
     </div>
@@ -3591,16 +3596,18 @@ function printBillingDoc(id){
   document.body.appendChild(ov);
   document.getElementById('po-print').onclick=()=>window.print();
   document.getElementById('po-close').onclick=()=>ov.remove();
-  const resignBtn=document.getElementById('sig-resign');
-  if(resignBtn) resignBtn.onclick=()=>{
-    if(billingSigsLocked[id]){
+  ov.querySelectorAll('.sig-sign').forEach(btn=>btn.onclick=()=>{
+    const key=btn.dataset.sigkey, label=btn.dataset.siglabel;
+    openFullscreenSign(dataUrl=>{ saveSig(key,dataUrl); saveData(); pushCloud(); render(); printBillingDoc(id); }, label+'簽名');
+  });
+  ov.querySelectorAll('.sig-resign').forEach(btn=>btn.onclick=()=>{
+    const key=btn.dataset.sigkey;
+    if(billingSigsLocked[key]){
       if(!confirm('此簽名已鎖定。\n確定要解鎖並重新簽名？')) return;
-      unlockSig(id);
+      unlockSig(key);
     }
-    deleteSig(id); render(); printBillingDoc(id);
-  };
-  const fsBtn=document.getElementById('sig-fullscreen-btn');
-  if(fsBtn) fsBtn.onclick=()=>openFullscreenSign(dataUrl=>{ saveSig(id,dataUrl); saveData(); pushCloud(); render(); printBillingDoc(id); });
+    deleteSig(key); render(); printBillingDoc(id);
+  });
   ov.scrollTop=0;
 }
 
