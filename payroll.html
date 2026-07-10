@@ -490,7 +490,7 @@ const FS_PROJECT = 'payroll-d1abe';
 const FS_KEY = 'AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
 const FS_DOC_BASE = 'https://firestore.googleapis.com/v1/projects/'+FS_PROJECT+'/databases/(default)/documents/payroll/';
 const FS_REST_URL = FS_DOC_BASE+'main?key='+FS_KEY;
-const APP_VERSION = 'v2026.07.10-twosign2';
+const APP_VERSION = 'v2026.07.10-companywage';
 let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], tools:[], locations:[], assets:[], advances:[], accounts:[], ledger:[], deals:[], billings:[], measurements:[], contracts:{}, costs:[], textMemory:{clients:[],companies:[]}, parkAccId:'', oweBonus:{}, minFund:'', deletedIds:[], tab:'entry' };
 let cloudStatus='連線中…';
 let localDirty=false, lastCloudTs=0;
@@ -1461,6 +1461,11 @@ function buildPayroll(from,to){
     e.addTotal=e.manualAddTotal+e.systemAddTotal;
     e.dedTotal=e.deds.reduce((s,a)=>s+(Number(a.amount)||0),0);
     e.net=e.gross+e.addTotal-e.dedTotal;
+    // 借支扣還（還品佑）＝有 loanId 或標籤為「借支扣還」；其餘扣項（工具遺失/罰單/其他）歸東澤廣昕回收
+    e.loanDedTotal=e.deds.filter(a=>a.loanId||a.label==='借支扣還').reduce((s,a)=>s+(Number(a.amount)||0),0);
+    e.otherDedTotal=e.dedTotal-e.loanDedTotal;
+    // 公司（東澤/廣昕）負擔工資＝基本工資＋加項−非借支扣項＝實發＋借支扣還
+    e.companyWage=e.net+e.loanDedTotal;
   });
   return byEmp;
 }
@@ -1475,6 +1480,8 @@ function viewPayroll(){
   // 總額只算一般員工
   const grossSum=empIds.reduce((s,id)=>s+byEmp[id].gross,0);
   const netSum=empIds.reduce((s,id)=>s+byEmp[id].net,0);
+  const companySum=empIds.reduce((s,id)=>s+byEmp[id].companyWage,0);   // 公司(東澤/廣昕)負擔工資合計＝品佑結算基準
+  const otherDedSum=empIds.reduce((s,id)=>s+byEmp[id].otherDedTotal,0); // 賠付公司類扣項合計（工具/罰單/其他）
 
   const rowFor=(id,partner)=>{ const e=byEmp[id]; const emp=state.employees.find(x=>x.id===id);
     if(partner){
@@ -1483,14 +1490,19 @@ function viewPayroll(){
         <td class="num">${money(e.gross)}</td>
         <td class="num" colspan="2" style="text-align:center;font-style:italic">由代墊款發放</td>
         <td class="num">—</td>
+        <td class="num">—</td>
         <td></td></tr>`;
     }
+    const dedBreak=(e.loanDedTotal>0&&e.otherDedTotal>0)
+      ? `<div style="font-size:10px;color:var(--muted)">借支 ${money(e.loanDedTotal)}・賠付 ${money(e.otherDedTotal)}</div>`
+      : (e.otherDedTotal>0&&e.loanDedTotal===0 ? `<div style="font-size:10px;color:var(--muted)">賠付公司</div>` : '');
     return `<tr><td>${esc(empName(id))}${emp&&!emp.active?'<span class="tag">已停用</span>':''}</td>
       <td class="num">${e.days.size}</td><td class="num">${gongStr(e.hours)}</td>
       <td class="num">${money(e.gross)}</td>
       <td class="num" style="color:var(--accent)">${e.addTotal?'+'+money(e.addTotal):'—'}</td>
-      <td class="num" style="color:var(--danger)">${e.dedTotal?'−'+money(e.dedTotal):'—'}</td>
+      <td class="num" style="color:var(--danger)">${e.dedTotal?'−'+money(e.dedTotal):'—'}${dedBreak}</td>
       <td class="num" style="font-weight:600">${money(e.net)}</td>
+      <td class="num" style="font-weight:600;color:var(--accent)">${money(e.companyWage)}</td>
       <td><button class="act" data-payslip="${id}">明細單</button></td></tr>`;
   };
   let rows=empIds.map(id=>rowFor(id,false)).join('');
@@ -1551,6 +1563,7 @@ function viewPayroll(){
     <div class="metric"><div class="l">員工數</div><div class="v">${empIds.length}${partnerIds.length?`<span style="font-size:12px;color:var(--muted)"> +${partnerIds.length}股東</span>`:''}</div></div>
     <div class="metric"><div class="l">基本工資</div><div class="v" style="font-size:20px">${money(grossSum)}</div></div>
     <div class="metric"><div class="l">實發總額</div><div class="v">${money(netSum)}</div></div>
+    <div class="metric" style="background:var(--accent);color:#fff"><div class="l" style="color:#fff;opacity:.85">公司負擔工資（品佑結算基準）</div><div class="v" style="font-size:20px">${money(companySum)}${otherDedSum>0?`<span style="font-size:11px;opacity:.85"> 已扣賠付 ${money(otherDedSum)}</span>`:''}</div></div>
   </div>
   <div class="card">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;gap:8px;flex-wrap:wrap">
@@ -1563,9 +1576,9 @@ function viewPayroll(){
     </div>
     ${rows===''?'<div class="empty">此區間內尚無可計算的薪資。</div>':`
     <div class="scroll"><table>
-      <thead><tr><th>員工</th><th class="num">出勤天</th><th class="num">總工數</th><th class="num">基本工資</th><th class="num">加項</th><th class="num">扣項</th><th class="num">實發金額</th><th></th></tr></thead>
+      <thead><tr><th>員工</th><th class="num">出勤天</th><th class="num">總工數</th><th class="num">基本工資</th><th class="num">加項</th><th class="num">扣項</th><th class="num">實發金額</th><th class="num">公司負擔<br><span style="font-weight:400;font-size:9px">品佑結算</span></th><th></th></tr></thead>
       <tbody>${rows}</tbody></table></div>
-    <p class="sub" style="margin:10px 0 0">實發總額與員工數只計一般員工。股東工資計入案場成本，但從「代墊款」分頁發放，不在此重複發。基本工資＝正常工時薪資；加項＝出差外宿津貼＋加班費＋手動加項；實發＝基本工資＋加項−扣項。</p>`}
+    <p class="sub" style="margin:10px 0 0">實發總額與員工數只計一般員工。股東工資計入案場成本，但從「代墊款」分頁發放，不在此重複發。基本工資＝正常工時薪資；加項＝出差外宿津貼＋加班費＋手動加項；實發＝基本工資＋加項−扣項。<b>公司負擔工資（品佑結算基準）＝實發＋借支扣還＝基本工資＋加項−非借支扣項</b>：借支扣還是還品佑，不算公司負擔；工具遺失／罰單等賠付公司的扣項會回歸東澤／廣昕，從公司負擔扣掉。</p>`}
   </div>
   ${loanDebtRows===''?'':`<div class="card" style="border-color:var(--danger)">
     <div style="font-size:14px;font-weight:600;margin-bottom:4px;color:var(--danger)">借支超過本期薪資</div>
@@ -3167,19 +3180,19 @@ function exportSummaryPDF(){
   const isPartner=id=>{ const e=state.employees.find(x=>x.id===id); return e&&e.partner; };
   const ids=Object.keys(byEmp).filter(id=>!isPartner(id)).sort((a,b)=>byEmp[b].net-byEmp[a].net);
   if(ids.length===0) return;
-  let gG=0,gA=0,gD=0,gN=0;
-  const rows=ids.map(id=>{ const e=byEmp[id]; gG+=e.gross;gA+=e.addTotal;gD+=e.dedTotal;gN+=e.net;
+  let gG=0,gA=0,gD=0,gN=0,gC=0;
+  const rows=ids.map(id=>{ const e=byEmp[id]; gG+=e.gross;gA+=e.addTotal;gD+=e.dedTotal;gN+=e.net;gC+=e.companyWage;
     return `<tr><td>${esc(empName(id))}</td><td class="num">${e.days.size}</td><td class="num">${gongStr(e.hours)}</td>
       <td class="num">${money(e.gross)}</td><td class="num">${e.addTotal?money(e.addTotal):'-'}</td>
-      <td class="num">${e.dedTotal?money(e.dedTotal):'-'}</td><td class="num">${money(e.net)}</td></tr>`;
+      <td class="num">${e.dedTotal?money(e.dedTotal):'-'}</td><td class="num">${money(e.net)}</td><td class="num">${money(e.companyWage)}</td></tr>`;
   }).join('');
   const inner=`<h1>薪資總表</h1>
     <div class="meta">計薪期間：${state.payFrom||'起始'} ～ ${state.payTo||'迄今'}　|　列印日期：${new Date().toISOString().slice(0,10)}　|　共 ${ids.length} 人</div>
-    <table><thead><tr><th>員工</th><th class="num">出勤天</th><th class="num">總工數</th><th class="num">基本工資</th><th class="num">加項</th><th class="num">扣項</th><th class="num">實發金額</th></tr></thead>
+    <table><thead><tr><th>員工</th><th class="num">出勤天</th><th class="num">總工數</th><th class="num">基本工資</th><th class="num">加項</th><th class="num">扣項</th><th class="num">實發金額</th><th class="num">公司負擔（品佑結算）</th></tr></thead>
     <tbody>${rows}
-      <tr class="total-row"><td>合計</td><td class="num"></td><td class="num"></td><td class="num">${money(gG)}</td><td class="num">${money(gA)}</td><td class="num">${money(gD)}</td><td class="num">${money(gN)}</td></tr>
+      <tr class="total-row"><td>合計</td><td class="num"></td><td class="num"></td><td class="num">${money(gG)}</td><td class="num">${money(gA)}</td><td class="num">${money(gD)}</td><td class="num">${money(gN)}</td><td class="num">${money(gC)}</td></tr>
     </tbody></table>
-    <p class="sub">基本工資＝正常工時薪資；加項＝出差外宿津貼＋加班費＋手動加項；實發＝基本工資＋加項−扣項。金額四捨五入至整數。</p>`;
+    <p class="sub">基本工資＝正常工時薪資；加項＝出差外宿津貼＋加班費＋手動加項；實發＝基本工資＋加項−扣項。公司負擔工資（品佑結算基準）＝實發＋借支扣還＝基本工資＋加項−非借支扣項；借支扣還是還品佑不算公司負擔，工具遺失／罰單等賠付公司的扣項會回歸東澤／廣昕。金額四捨五入至整數。</p>`;
   printHTML('薪資總表 '+(state.payFrom||''), inner);
 }
 
@@ -5004,13 +5017,14 @@ function reconSection(key, from, to){
     const isP=id=>{ const e=state.employees.find(x=>x.id===id); return e&&e.partner; };
     const ids=Object.keys(byEmp).filter(id=>!isP(id)).sort((a,b)=>byEmp[b].net-byEmp[a].net);
     if(ids.length===0) return '';
-    let gG=0,gA=0,gD=0,gN=0;
-    const rows=ids.map(id=>{ const e=byEmp[id]; gG+=e.gross;gA+=e.addTotal;gD+=e.dedTotal;gN+=e.net;
-      return `<tr><td>${esc(empName(id))}</td><td class="num">${e.days.size}</td><td class="num">${money(e.gross)}</td><td class="num">${e.addTotal?money(e.addTotal):'-'}</td><td class="num">${e.dedTotal?money(e.dedTotal):'-'}</td><td class="num">${money(e.net)}</td></tr>`;
+    let gG=0,gA=0,gD=0,gN=0,gC=0;
+    const rows=ids.map(id=>{ const e=byEmp[id]; gG+=e.gross;gA+=e.addTotal;gD+=e.dedTotal;gN+=e.net;gC+=e.companyWage;
+      return `<tr><td>${esc(empName(id))}</td><td class="num">${e.days.size}</td><td class="num">${money(e.gross)}</td><td class="num">${e.addTotal?money(e.addTotal):'-'}</td><td class="num">${e.dedTotal?money(e.dedTotal):'-'}</td><td class="num">${money(e.net)}</td><td class="num">${money(e.companyWage)}</td></tr>`;
     }).join('');
     return `<h2 class="sec">員工薪資總表（${rangeTxt}）</h2>
-      <table><thead><tr><th>員工</th><th class="num">出勤天</th><th class="num">基本工資</th><th class="num">加項</th><th class="num">扣項</th><th class="num">實發</th></tr></thead>
-      <tbody>${rows}<tr class="total-row"><td>合計</td><td class="num"></td><td class="num">${money(gG)}</td><td class="num">${money(gA)}</td><td class="num">${money(gD)}</td><td class="num">${money(gN)}</td></tr></tbody></table>`;
+      <table><thead><tr><th>員工</th><th class="num">出勤天</th><th class="num">基本工資</th><th class="num">加項</th><th class="num">扣項</th><th class="num">實發</th><th class="num">公司負擔（品佑結算）</th></tr></thead>
+      <tbody>${rows}<tr class="total-row"><td>合計</td><td class="num"></td><td class="num">${money(gG)}</td><td class="num">${money(gA)}</td><td class="num">${money(gD)}</td><td class="num">${money(gN)}</td><td class="num">${money(gC)}</td></tr></tbody></table>
+      <p class="sub">公司負擔工資（品佑結算基準）＝實發＋借支扣還＝基本工資＋加項−非借支扣項。</p>`;
   }
   if(key==='advances'){
     const partners=state.employees.filter(e=>e.partner);
