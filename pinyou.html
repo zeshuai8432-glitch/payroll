@@ -78,8 +78,10 @@ function save(){ try{ localStorage.setItem(LS,JSON.stringify(state)); }catch(e){
 // ---- 衍生計算 ----
 function siteIncome(name){ return state.incomes.filter(x=>x.site===name).reduce((s,x)=>s+num(x.amount),0); }
 function siteExpense(name){ return state.expenses.filter(x=>x.site===name).reduce((s,x)=>s+num(x.amount),0); }
+function projOpening(p){ return num(p.openingBilled!=null?p.openingBilled:p.billed); } // 相容舊 billed 欄位
 function projCalc(p){
-  const income=num(p.billed), expense=siteExpense(p.name); // 已請款＝案場手動欄位（與 Excel 一致）；累積支出＝支出明細自動加總
+  // 已請款＝期初已請款(手動) ＋ 該案場請款明細加總（自動連動）；累積支出＝支出明細加總
+  const income=projOpening(p)+siteIncome(p.name), expense=siteExpense(p.name);
   const retain=num(p.contract)*num(p.retainPct);
   const progress=num(p.contract)?income/num(p.contract):0;
   const unbilled=num(p.contract)-retain-income;
@@ -100,7 +102,7 @@ function itemNames(){
 }
 
 function setBalance(){
-  const billed=state.projects.reduce((s,p)=>s+num(p.billed),0);
+  const billed=state.projects.reduce((s,p)=>s+projOpening(p),0)+state.incomes.reduce((s,x)=>s+num(x.amount),0);
   const exp=state.expenses.reduce((s,x)=>s+num(x.amount),0);
   const el=document.getElementById('bal-v'); if(el) el.textContent=money(billed-exp);
   const l=document.getElementById('bal-l'); if(l) l.textContent='已請款−支出';
@@ -110,7 +112,7 @@ function setBalance(){
 function viewDash(){
   const projs=state.projects;
   const totContract=projs.reduce((s,p)=>s+num(p.contract),0);
-  const totIncome=projs.reduce((s,p)=>s+num(p.billed),0);
+  const totIncome=projs.reduce((s,p)=>s+projCalc(p).income,0);
   const totExpense=state.expenses.reduce((s,x)=>s+num(x.amount),0);
   const totProfit=projs.reduce((s,p)=>s+projCalc(p).profit,0);
 
@@ -145,7 +147,7 @@ function viewDash(){
   const projCard=`<div class="card"><h2>案場請款進度</h2>${projs.length===0?'<div class="empty">尚無案場。到「案場」分頁新增，或到「設定」匯入資料。</div>':`<div class="scroll"><table>
     <thead><tr><th>案場</th><th class="num">簽約金</th><th class="num">保留款</th><th class="num">已請款</th><th class="num">已請進度</th><th class="num">未請領餘額</th><th class="num">累積支出</th><th class="num">預計剩餘利潤</th></tr></thead>
     <tbody>${projRows}<tr class="total"><td>合計</td><td class="num">${money(totContract)}</td><td class="num"></td><td class="num">${money(totIncome)}</td><td class="num"></td><td class="num"></td><td class="num">${money(totExpense)}</td><td class="num">${money(totProfit)}</td></tr></tbody></table></div>
-    <p class="sub" style="margin-top:8px">保留款＝簽約金×保留比率；已請進度＝已請款÷簽約金；未請領餘額＝簽約金−保留款−已請款；預計剩餘利潤＝簽約金−累積支出。</p>`}</div>`;
+    <p class="sub" style="margin-top:8px"><b>已請款＝案場「期初已請款」＋該案場的請款明細加總</b>（在「請款」頁登一筆，這裡會自動加上去）。保留款＝簽約金×保留比率；已請進度＝已請款÷簽約金；未請領餘額＝簽約金−保留款−已請款；預計剩餘利潤＝簽約金−累積支出。</p>`}</div>`;
 
   // 支出分類
   const byItem={};
@@ -174,11 +176,12 @@ function viewProj(){
       <div class="field" style="flex:2;min-width:160px"><label>案場名稱</label><input id="p-name" placeholder="例：大巨蛋5F"></div>
       <div class="field" style="flex:1;min-width:120px"><label>簽約金（含稅）</label><input id="p-contract" type="number" inputmode="numeric" placeholder="0"></div>
       <div class="field"><label>未稅</label><select id="p-untaxed"><option value="">否</option><option value="1">是（未稅）</option></select></div>
-      <div class="field" style="min-width:110px"><label>已請款</label><input id="p-billed" type="number" inputmode="numeric" placeholder="0"></div>
+      <div class="field" style="min-width:120px"><label>期初已請款</label><input id="p-opening" type="number" inputmode="numeric" placeholder="0"></div>
       <div class="field" style="min-width:100px"><label>保留款比率 %</label><input id="p-retain" type="number" inputmode="decimal" placeholder="0" step="1"></div>
       <div class="field" style="flex:1;min-width:120px"><label>備註</label><input id="p-note" placeholder="選填"></div>
       <button class="btn" id="p-add">＋ 新增</button>
     </div>
+    <p class="sub" style="margin:10px 0 0">「期初已請款」放這個案場之前累積已請的金額（不用逐筆）；之後在「請款」頁登的每一筆，會自動加到這個案場的已請款。清單「已請款」欄顯示的是兩者相加。</p>
   </div>
   <div class="card"><h2>案場清單（${state.projects.length}）</h2>${state.projects.length===0?'<div class="empty">尚無案場。</div>':`<div class="scroll"><table>
     <thead><tr><th>案場</th><th class="num">簽約金</th><th class="num">保留%</th><th class="num">已請款</th><th class="num">累積支出</th><th class="num">剩餘利潤</th><th></th></tr></thead>
@@ -321,7 +324,7 @@ function bind(){
   // 案場
   on('p-add','onclick',()=>{
     const name=document.getElementById('p-name').value.trim(); if(!name){ alert('請填案場名稱'); return; }
-    state.projects.push({id:uid(),name,contract:num(document.getElementById('p-contract').value),untaxed:document.getElementById('p-untaxed').value==='1',billed:num(document.getElementById('p-billed').value),retainPct:num(document.getElementById('p-retain').value)/100,note:document.getElementById('p-note').value.trim()});
+    state.projects.push({id:uid(),name,contract:num(document.getElementById('p-contract').value),untaxed:document.getElementById('p-untaxed').value==='1',openingBilled:num(document.getElementById('p-opening').value),retainPct:num(document.getElementById('p-retain').value)/100,note:document.getElementById('p-note').value.trim()});
     save();
   });
   document.querySelectorAll('[data-pdel]').forEach(b=>b.onclick=()=>{ const p=state.projects.find(x=>x.id===b.dataset.pdel); if(confirm(`刪除案場「${p?p.name:''}」？（不會刪它的支出/請款）`)){ state.projects=state.projects.filter(x=>x.id!==b.dataset.pdel); save(); } });
@@ -329,10 +332,10 @@ function bind(){
     const p=state.projects.find(x=>x.id===b.dataset.pedit); if(!p) return;
     const name=prompt('案場名稱',p.name); if(name===null) return;
     const contract=prompt('簽約金（含稅）',p.contract); if(contract===null) return;
-    const billed=prompt('已請款',num(p.billed)); if(billed===null) return;
+    const opening=prompt('期初已請款（不含下面「請款」頁登記的明細，明細會自動加上去）',projOpening(p)); if(opening===null) return;
     const retain=prompt('保留款比率 %（例 10）',num(p.retainPct)*100); if(retain===null) return;
     const note=prompt('備註',p.note||''); if(note===null) return;
-    p.name=name.trim(); p.contract=num(contract); p.billed=num(billed); p.retainPct=num(retain)/100; p.note=note.trim(); save();
+    p.name=name.trim(); p.contract=num(contract); p.openingBilled=num(opening); delete p.billed; p.retainPct=num(retain)/100; p.note=note.trim(); save();
   });
 
   // 支出
