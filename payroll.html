@@ -493,7 +493,7 @@ const FS_PROJECT = 'payroll-d1abe';
 const FS_KEY = 'AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
 const FS_DOC_BASE = 'https://firestore.googleapis.com/v1/projects/'+FS_PROJECT+'/databases/(default)/documents/payroll/';
 const FS_REST_URL = FS_DOC_BASE+'main?key='+FS_KEY;
-const APP_VERSION = 'v2026.07.10-summaryland';
+const APP_VERSION = 'v2026.07.10-paydaynote';
 let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], tools:[], locations:[], assets:[], advances:[], accounts:[], ledger:[], deals:[], billings:[], measurements:[], contracts:{}, costs:[], textMemory:{clients:[],companies:[]}, parkAccId:'', oweBonus:{}, minFund:'', deletedIds:[], tab:'entry' };
 let cloudStatus='連線中…';
 let localDirty=false, lastCloudTs=0;
@@ -3210,9 +3210,11 @@ function postParkWage(){
   const isPartner=id=>{ const e=state.employees.find(x=>x.id===id); return e&&e.partner; };
   const amount=Math.round(Object.keys(byEmp).filter(id=>!isPartner(id)).reduce((s,id)=>s+byEmp[id].companyWage,0));
   if(amount<=0){ alert('本期公司負擔工資為 0，沒有可記入的金額。'); return; }
-  const period=state.payFrom||state.payTo||new Date().toISOString().slice(0,10);
-  const note=period.slice(5,7)+period.slice(8,10)+'工資'; // MMDD工資，取該期起算日（11號）
-  const date=state.payTo||new Date().toISOString().slice(0,10);
+  // 發薪日＝計薪迄日的隔天（例：計薪到 7/10 → 隔天 7/11 發，記「0711工資」）
+  const nextDay=iso=>{ const d=new Date(iso+'T00:00:00'); d.setDate(d.getDate()+1); return d.toISOString().slice(0,10); };
+  const payday=state.payTo?nextDay(state.payTo):new Date().toISOString().slice(0,10);
+  const note=payday.slice(5,7)+payday.slice(8,10)+'工資'; // 例：0711工資
+  const date=payday;
   const tag=(state.payFrom||'')+'~'+(state.payTo||'');
   const dup=state.ledger.find(t=>t.payrollWage===tag && t.accId===state.parkAccId);
   if(dup && !confirm(`這個計薪期間（${tag}）已經記過一筆「${dup.note}」${money(dup.amount)}。\n\n要再新增一筆嗎？`)) return;
