@@ -72,8 +72,8 @@
 const LS='pinyou_data_v1';
 const LS_CLOUD='pinyou_cloud_url';
 const LS_DIRTY='pinyou_dirty';
-const MERGE=['projects','expenses','incomes','companies','quotes','invoices','myCompanies'];
-const TABS=[['dash','儀表板'],['proj','案場'],['exp','支出'],['inc','請款'],['quote','報價單'],['invoice','請款單'],['co','通訊錄'],['set','設定']];
+const MERGE=['projects','expenses','incomes','companies','quotes','invoices','purchases','myCompanies'];
+const TABS=[['dash','儀表板'],['proj','案場'],['exp','支出'],['inc','請款'],['quote','報價單'],['invoice','請款單'],['purchase','採購單'],['co','通訊錄'],['set','設定']];
 let state=blank();
 let tab='dash';
 let expFilter='', expItemFilter='', incFilter='', expEditId=null;
@@ -82,11 +82,11 @@ const DEFAULT_CLOUD_URL='https://script.google.com/macros/s/AKfycbxFLYgepJcn4-Sw
 let cloudUrl=localStorage.getItem(LS_CLOUD)||DEFAULT_CLOUD_URL;
 let cloudStatus='', saving=false, pendingSave=false, saveTimer=null, localDirty=false, _prevIds=null;
 
-function blank(){ return {projects:[],expenses:[],incomes:[],companies:[],accounts:['東澤工程行','品佑工程有限公司','廣昕工程行'],items:[],quotes:[],invoices:[],myCompanies:[
+function blank(){ return {projects:[],expenses:[],incomes:[],companies:[],accounts:['東澤工程行','品佑工程有限公司','廣昕工程行'],items:[],myCompanies:[
   {id:'c-py',name:'品佑工程有限公司',taxId:'',addr:'',tel:'',bank:''},
   {id:'c-dz',name:'東澤工程行',taxId:'',addr:'',tel:'',bank:''},
   {id:'c-gx',name:'廣昕工程行',taxId:'',addr:'',tel:'',bank:''}
-],deletedIds:[]}; }
+],quotes:[],invoices:[],purchases:[],deletedIds:[]}; }
 function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
 function money(n){ n=Math.round(Number(n)||0); return (n<0?'-':'')+'$'+Math.abs(n).toLocaleString('en-US'); }
 function pct(n){ return (Number(n)||0*1).toLocaleString('en-US',{style:'percent',maximumFractionDigits:1}); }
@@ -94,7 +94,7 @@ function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;'
 function today(){ return new Date().toISOString().slice(0,10); }
 function num(v){ const n=parseFloat(v); return isNaN(n)?0:n; }
 
-function packData(){ return {projects:state.projects,expenses:state.expenses,incomes:state.incomes,companies:state.companies,accounts:state.accounts,items:state.items||[],quotes:state.quotes||[],invoices:state.invoices||[],myCompanies:state.myCompanies||[],deletedIds:state.deletedIds||[],savedAt:Date.now()}; }
+function packData(){ return {projects:state.projects,expenses:state.expenses,incomes:state.incomes,companies:state.companies,accounts:state.accounts,items:state.items||[],quotes:state.quotes||[],invoices:state.invoices||[],purchases:state.purchases||[],myCompanies:state.myCompanies||[],deletedIds:state.deletedIds||[],savedAt:Date.now()}; }
 function load(){ try{ const r=localStorage.getItem(LS); if(r){ state=Object.assign(blank(),JSON.parse(r)); } }catch(e){} localDirty=!!localStorage.getItem(LS_DIRTY); _prevIds=collectIds(); }
 function save(){
   recordDeletions();
@@ -387,8 +387,12 @@ function viewInc(){
 }
 
 // ================= 報價單 / 請款單 =================
-const DOC_META={ quote:{label:'報價單',prefix:'Q',arr:'quotes'}, invoice:{label:'請款單',prefix:'I',arr:'invoices'} };
-function findDoc(id){ return (state.quotes||[]).concat(state.invoices||[]).find(d=>d.id===id); }
+const DOC_META={
+  quote:{label:'報價單',prefix:'Q',arr:'quotes',party:'客戶'},
+  invoice:{label:'請款單',prefix:'I',arr:'invoices',party:'客戶',settleLabel:'收款',link:'income'},
+  purchase:{label:'採購單',prefix:'P',arr:'purchases',party:'廠商',settleLabel:'付款',link:'expense'}
+};
+function findDoc(id){ return (state.quotes||[]).concat(state.invoices||[],state.purchases||[]).find(d=>d.id===id); }
 function docCalc(doc){
   const sub=(doc.lines||[]).reduce((s,l)=>s+num(l.qty)*num(l.price),0);
   const rate=num(doc.taxPct)/100;
@@ -402,7 +406,7 @@ function nextDocNo(type){
   const n=(state[m.arr]||[]).filter(d=>(d.no||'').indexOf(m.prefix+ymd)===0).length+1;
   return m.prefix+ymd+'-'+String(n).padStart(2,'0');
 }
-function newDraft(type){ return {type,id:null,no:nextDocNo(type),date:today(),issuerId:(state.myCompanies[0]||{}).id||'',client:'',site:'',taxMode:'exclusive',taxPct:5,lines:[{item:'',unit:'式',qty:1,price:0}],note:'',validDays:30}; }
+function newDraft(type){ return {type,id:null,no:nextDocNo(type),date:today(),issuerId:(state.myCompanies[0]||{}).id||'',client:'',site:'',taxMode:'exclusive',taxPct:5,lines:[{item:'',unit:'式',qty:1,price:0}],note:'',validDays:30,expItem:'材料'}; }
 function readDocDraftFromForm(){
   if(!docDraft) return;
   const g=id=>document.getElementById(id);
@@ -414,6 +418,7 @@ function readDocDraftFromForm(){
   if(g('d-taxpct')) docDraft.taxPct=num(g('d-taxpct').value);
   if(g('d-note')) docDraft.note=g('d-note').value;
   if(g('d-valid')) docDraft.validDays=num(g('d-valid').value);
+  if(g('d-expitem')) docDraft.expItem=g('d-expitem').value;
   (docDraft.lines||[]).forEach((l,i)=>{
     const gi=id=>document.getElementById(id+i);
     if(gi('dl-item')) l.item=gi('dl-item').value;
@@ -422,17 +427,25 @@ function readDocDraftFromForm(){
     if(gi('dl-price')) l.price=num(gi('dl-price').value);
   });
 }
-function toggleInvoiceSettled(id){
-  const inv=(state.invoices||[]).find(x=>x.id===id); if(!inv) return;
-  const c=docCalc(inv);
-  if(!inv.settled){
-    inv.settled=true; inv.settledDate=today();
-    const issuer=state.myCompanies.find(x=>x.id===inv.issuerId)||{};
-    const rec={id:uid(),date:today(),site:inv.site||'',amount:c.total,method:'',account:issuer.name||'',note:'請款單 '+inv.no,fromInvoice:inv.id};
-    state.incomes.push(rec); inv.incomeId=rec.id;
+function toggleDocSettled(id){
+  const doc=findDoc(id); if(!doc) return;
+  const m=DOC_META[doc.type]; if(!m.link) return;
+  const c=docCalc(doc);
+  const issuer=state.myCompanies.find(x=>x.id===doc.issuerId)||{};
+  const linkId=doc.linkId||doc.incomeId; // 相容舊欄位
+  if(!doc.settled){
+    doc.settled=true; doc.settledDate=today();
+    if(m.link==='income'){
+      const rec={id:uid(),date:today(),site:doc.site||'',amount:c.total,method:'',account:issuer.name||'',note:'請款單 '+doc.no,fromDoc:doc.id};
+      state.incomes.push(rec); doc.linkId=rec.id;
+    } else { // expense（採購單）
+      const rec={id:uid(),date:today(),site:doc.site||'',item:doc.expItem||'材料',amount:c.total,account:issuer.name||'',method:'',note:'採購單 '+doc.no+(doc.client?'·'+doc.client:''),fromDoc:doc.id};
+      state.expenses.push(rec); doc.linkId=rec.id;
+    }
   } else {
-    inv.settled=false;
-    if(inv.incomeId){ state.incomes=state.incomes.filter(x=>x.id!==inv.incomeId); delete inv.incomeId; }
+    doc.settled=false;
+    if(linkId){ state.incomes=state.incomes.filter(x=>x.id!==linkId); state.expenses=state.expenses.filter(x=>x.id!==linkId); }
+    delete doc.linkId; delete doc.incomeId;
   }
   save();
 }
@@ -456,7 +469,7 @@ function viewDoc(type){
       <div class="row">
         <div class="field"><label>日期</label><input id="d-date" type="date" value="${d.date}"></div>
         <div class="field" style="min-width:170px"><label>開單公司</label><select id="d-issuer">${state.myCompanies.map(cc=>`<option value="${cc.id}" ${d.issuerId===cc.id?'selected':''}>${esc(cc.name)}</option>`).join('')}</select></div>
-        <div class="field" style="flex:1;min-width:150px"><label>客戶</label><input id="d-client" list="dl-clients" value="${esc(d.client)}" placeholder="客戶名稱"></div>
+        <div class="field" style="flex:1;min-width:150px"><label>${m.party}</label><input id="d-client" list="dl-clients" value="${esc(d.client)}" placeholder="${m.party}名稱"></div>
         <div class="field" style="flex:1;min-width:130px"><label>案場（選填）</label><input id="d-site" list="dl-psites" value="${esc(d.site)}"></div>
       </div>
       <div class="row" style="margin-top:8px">
@@ -467,6 +480,7 @@ function viewDoc(type){
         </select></div>
         <div class="field" style="width:88px"><label>稅率 %</label><input id="d-taxpct" type="number" value="${d.taxPct}" step="1"></div>
         ${type==='quote'?`<div class="field" style="width:120px"><label>報價有效天</label><input id="d-valid" type="number" value="${d.validDays||30}"></div>`:''}
+        ${type==='purchase'?`<div class="field" style="min-width:130px"><label>付款後記為支出項目</label><input id="d-expitem" list="dl-items2" value="${esc(d.expItem||'材料')}"></div>`:''}
       </div>
       <div class="scroll" style="margin-top:10px"><table>
         <thead><tr><th>品項</th><th>單位</th><th class="num">數量</th><th class="num">單價</th><th class="num">小計</th><th></th></tr></thead>
@@ -479,7 +493,7 @@ function viewDoc(type){
   }
   const listRows=arr.slice().sort((a,b)=>(b.date||'').localeCompare(a.date||'')||(b.no||'').localeCompare(a.no||'')).map(d=>{
     const c=docCalc(d);
-    const settleCell=type==='invoice'?`<button class="act ${d.settled?'on':''}" data-doc-settle="${d.id}">${d.settled?'✓ 已收款':'未收款'}</button> `:'';
+    const settleCell=m.link?`<button class="act ${d.settled?'on':''}" data-doc-settle="${d.id}">${d.settled?'✓ 已'+m.settleLabel:'未'+m.settleLabel}</button> `:'';
     return `<tr><td>${esc(d.no||'')}</td><td>${esc(d.date||'')}</td><td>${esc(d.client||'')}</td><td>${esc(d.site||'')}</td>
       <td class="num">${money(c.total)}</td>
       <td class="num" style="white-space:nowrap">${settleCell}<button class="act" data-doc-print="${d.id}">列印</button> <button class="act" data-doc-copy="${d.id}">複製</button> <button class="act" data-doc-edit="${d.id}">改</button> <button class="act danger" data-doc-del="${d.id}">刪</button></td></tr>`;
@@ -488,7 +502,8 @@ function viewDoc(type){
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px"><h2 style="margin:0">${m.label}（${arr.length}）</h2>${docDraft&&docDraft.type===type?'':`<button class="btn" id="d-new">＋ 開新${m.label}</button>`}</div>
     ${arr.length===0?`<div class="empty">尚無${m.label}。</div>`:`<div class="scroll"><table><thead><tr><th>單號</th><th>日期</th><th>客戶</th><th>案場</th><th class="num">總計</th><th></th></tr></thead><tbody>${listRows}</tbody></table></div>`}
   </div>`;
-  return editor+listCard+`<datalist id="dl-clients">${clientList}</datalist><datalist id="dl-psites">${siteList}</datalist>`;
+  const itemList2=itemNames().map(s=>`<option value="${esc(s)}">`).join('');
+  return editor+listCard+`<datalist id="dl-clients">${clientList}</datalist><datalist id="dl-psites">${siteList}</datalist><datalist id="dl-items2">${itemList2}</datalist>`;
 }
 function printDoc(id){
   const doc=findDoc(id); if(!doc) return;
@@ -506,13 +521,13 @@ function printDoc(id){
       <div style="text-align:right"><div style="font-size:26px;font-weight:800;letter-spacing:6px;color:#1E3A8A">${m.label}</div>
         <div style="font-size:12px;color:#555">單號：${esc(doc.no||'')}</div><div style="font-size:12px;color:#555">日期：${esc(doc.date||'')}</div></div>
     </div>
-    <table style="margin-bottom:6px"><tbody><tr><th style="width:64px">客戶</th><td>${esc(doc.client||'')}</td><th style="width:64px">案場</th><td>${esc(doc.site||'')}</td></tr></tbody></table>
+    <table style="margin-bottom:6px"><tbody><tr><th style="width:64px">${m.party}</th><td>${esc(doc.client||'')}</td><th style="width:64px">案場</th><td>${esc(doc.site||'')}</td></tr></tbody></table>
     <table><thead><tr><th style="width:36px">項次</th><th>品項</th><th style="width:54px">單位</th><th class="num">數量</th><th class="num">單價</th><th class="num">小計</th></tr></thead>
       <tbody>${rows}${taxLines}<tr class="total"><td colspan="5" class="num" style="font-weight:700">${totalLabel}</td><td class="num" style="font-weight:700">${money(c.total)}</td></tr></tbody></table>
     ${issuer.bank?`<div style="margin-top:12px;font-size:13px"><b>匯款帳號：</b>${esc(issuer.bank)}</div>`:''}
     ${doc.note?`<div style="margin-top:8px;font-size:13px;white-space:pre-wrap"><b>備註：</b>${esc(doc.note)}</div>`:''}
     ${doc.type==='quote'&&doc.validDays?`<div style="margin-top:8px;font-size:12px;color:#555">本報價有效期 ${doc.validDays} 天。</div>`:''}
-    <div style="margin-top:36px;display:flex;gap:60px"><div style="border-top:1px solid #333;padding-top:6px;min-width:190px">客戶簽章</div><div style="border-top:1px solid #333;padding-top:6px;min-width:190px">${esc(issuer.name||'')}</div></div>
+    <div style="margin-top:36px;display:flex;gap:60px"><div style="border-top:1px solid #333;padding-top:6px;min-width:190px">${m.party}簽章</div><div style="border-top:1px solid #333;padding-top:6px;min-width:190px">${esc(issuer.name||'')}</div></div>
   </div>`;
   printHTMLDoc(m.label+' '+doc.no, inner);
 }
@@ -596,7 +611,7 @@ function viewSet(){
 // ================= render / bind =================
 function render(){
   document.getElementById('nav').innerHTML=TABS.map(([k,t])=>`<button class="${tab===k?'on':''}" data-tab="${k}">${t}</button>`).join('');
-  const v={dash:viewDash,proj:viewProj,exp:viewExp,inc:viewInc,quote:()=>viewDoc('quote'),invoice:()=>viewDoc('invoice'),co:viewCo,set:viewSet}[tab];
+  const v={dash:viewDash,proj:viewProj,exp:viewExp,inc:viewInc,quote:()=>viewDoc('quote'),invoice:()=>viewDoc('invoice'),purchase:()=>viewDoc('purchase'),co:viewCo,set:viewSet}[tab];
   document.getElementById('app').innerHTML=v();
   setBalance();
   bind();
@@ -701,9 +716,9 @@ function bind(){
   });
   document.querySelectorAll('[data-doc-edit]').forEach(b=>b.onclick=()=>{ const d=findDoc(b.dataset.docEdit); if(d){ docDraft=JSON.parse(JSON.stringify(d)); render(); } });
   document.querySelectorAll('[data-doc-copy]').forEach(b=>b.onclick=()=>{ const d=findDoc(b.dataset.docCopy); if(d){ docDraft=JSON.parse(JSON.stringify(d)); docDraft.id=null; docDraft.no=nextDocNo(docDraft.type); docDraft.date=today(); docDraft.settled=false; delete docDraft.incomeId; render(); } });
-  document.querySelectorAll('[data-doc-del]').forEach(b=>b.onclick=()=>{ const d=findDoc(b.dataset.docDel); if(d&&confirm(`刪除 ${d.no}？`)){ if(d.incomeId) state.incomes=state.incomes.filter(x=>x.id!==d.incomeId); state.quotes=(state.quotes||[]).filter(x=>x.id!==d.id); state.invoices=(state.invoices||[]).filter(x=>x.id!==d.id); save(); } });
+  document.querySelectorAll('[data-doc-del]').forEach(b=>b.onclick=()=>{ const d=findDoc(b.dataset.docDel); if(d&&confirm(`刪除 ${d.no}？`)){ const lk=d.linkId||d.incomeId; if(lk){ state.incomes=state.incomes.filter(x=>x.id!==lk); state.expenses=state.expenses.filter(x=>x.id!==lk); } state.quotes=(state.quotes||[]).filter(x=>x.id!==d.id); state.invoices=(state.invoices||[]).filter(x=>x.id!==d.id); state.purchases=(state.purchases||[]).filter(x=>x.id!==d.id); save(); } });
   document.querySelectorAll('[data-doc-print]').forEach(b=>b.onclick=()=>printDoc(b.dataset.docPrint));
-  document.querySelectorAll('[data-doc-settle]').forEach(b=>b.onclick=()=>toggleInvoiceSettled(b.dataset.docSettle));
+  document.querySelectorAll('[data-doc-settle]').forEach(b=>b.onclick=()=>toggleDocSettled(b.dataset.docSettle));
   on('acc-add','onclick',()=>{ const v=document.getElementById('acc-name').value.trim(); if(v&&!state.accounts.includes(v)){ state.accounts.push(v); save(); } });
   document.querySelectorAll('[data-accdel]').forEach(b=>b.onclick=()=>{ state.accounts.splice(Number(b.dataset.accdel),1); save(); });
   on('exp-json','onclick',()=>downloadJSON());
