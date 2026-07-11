@@ -156,6 +156,7 @@ function mergeCloudDoc(cd){
   const cloudTs=Number(cd.savedAt)||0;
   const keep={}; MERGE.forEach(k=>keep[k]=(state[k]||[]).slice());
   const keepDel=(state.deletedIds||[]).slice();
+  const cloudIds=new Set(); MERGE.forEach(k=>(Array.isArray(cd[k])?cd[k]:[]).forEach(r=>{ if(r&&r.id!=null) cloudIds.add(r.id); }));
   if(cloudTs>=localTs){
     MERGE.forEach(k=>{ state[k]=Array.isArray(cd[k])?cd[k]:[]; });
     state.deletedIds=[...new Set([...(cd.deletedIds||[]),...keepDel])];
@@ -170,6 +171,10 @@ function mergeCloudDoc(cd){
   }
   const del=new Set(state.deletedIds||[]);
   MERGE.forEach(k=>{ state[k]=(state[k]||[]).filter(r=>!(r&&del.has(r.id))); });
+  // 自癒：本機有、但雲端沒有（且未被刪除）的紀錄 → 標記為待上傳，稍後回推雲端，避免本機獨有資料被留在單機
+  let localExtra=false;
+  MERGE.forEach(k=>(keep[k]||[]).forEach(r=>{ if(r&&r.id!=null&&!cloudIds.has(r.id)&&!del.has(r.id)) localExtra=true; }));
+  if(localExtra){ localDirty=true; try{ localStorage.setItem(LS_DIRTY,'1'); }catch(e){} }
   _prevIds=collectIds();
 }
 async function loadCloud(){
@@ -629,7 +634,8 @@ function viewSet(){
   return `<div class="card">
     <h2>雲端同步</h2>
     <p class="sub">已內建雲端，多裝置自動同步（不用設定）。目前狀態：<b>${esc(cloudStatus||(cloudUrl?'—':'本機模式'))}</b></p>
-    ${cloudUrl?'<button class="act" id="cloud-sync">立即同步</button>':''}
+    ${cloudUrl?'<button class="act" id="cloud-sync">立即同步</button> <button class="act" id="cloud-force">強制上傳（合併）</button>':''}
+    <p class="sub" style="margin-top:6px">若某台裝置的紀錄沒出現在其他裝置，請在「有那筆資料」的裝置按「強制上傳（合併）」，它會先讀雲端再把本機獨有的紀錄併回雲端，不會蓋掉別台的資料。</p>
   </div>
   <div class="card">
     <h2>公司資料（開單抬頭）</h2>
@@ -765,6 +771,7 @@ function bind(){
 
   // 設定
   on('cloud-sync','onclick',()=>{ if(cloudUrl){ setStatus('同步中…'); loadCloud(); } });
+  on('cloud-force','onclick',()=>{ if(cloudUrl){ localDirty=true; try{ localStorage.setItem(LS_DIRTY,'1'); }catch(e){} setStatus('強制上傳中…'); pushCloud(); } });
   // 公司資料
   on('myco-save','onclick',()=>{ state.myCompanies.forEach((c,i)=>{ const g=id=>document.getElementById(id+i); if(g('mc-name')) c.name=g('mc-name').value.trim(); if(g('mc-tax')) c.taxId=g('mc-tax').value.trim(); if(g('mc-addr')) c.addr=g('mc-addr').value.trim(); if(g('mc-tel')) c.tel=g('mc-tel').value.trim(); if(g('mc-bankname')) c.bankName=g('mc-bankname').value.trim(); if(g('mc-bankbranch')) c.bankBranch=g('mc-bankbranch').value.trim(); if(g('mc-bankacctname')) c.bankAcctName=g('mc-bankacctname').value.trim(); if(g('mc-bankacctno')) c.bankAcctNo=g('mc-bankacctno').value.trim(); }); save(); alert('公司資料已儲存'); });
   on('myco-add','onclick',()=>{ state.myCompanies.push({id:uid(),name:'新公司',taxId:'',addr:'',tel:'',bank:''}); save(); });
@@ -819,6 +826,8 @@ function doImport(text,merge){
 load(); render();
 setStatus(cloudUrl?'連線中…':'本機模式');
 if(cloudUrl) loadCloud();
-window.addEventListener('pagehide',()=>{ if(cloudUrl&&localDirty){ try{ const p=JSON.stringify(packData()); if(navigator.sendBeacon) navigator.sendBeacon(cloudUrl,p); else fetch(cloudUrl,{method:'POST',body:p,keepalive:true}); }catch(e){} } });
+// 離開頁面時「不」盲目覆蓋雲端（sendBeacon 無法先讀取合併，會把另一台裝置剛新增的紀錄洗掉）。
+// 未存變更已用 LS_DIRTY 記在本機，下次開啟或切回前景時 loadCloud→pushCloud 會安全合併回推。
+window.addEventListener('pagehide',()=>{ if(cloudUrl&&localDirty){ try{ localStorage.setItem(LS_DIRTY,'1'); localStorage.setItem(LS,JSON.stringify(packData())); }catch(e){} } });
 window.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='visible'&&cloudUrl&&!saving) loadCloud(); });
 </script>
