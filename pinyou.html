@@ -67,7 +67,8 @@ const TABS=[['dash','儀表板'],['proj','案場'],['exp','支出'],['inc','請�
 let state=blank();
 let tab='dash';
 let expFilter='', expItemFilter='', incFilter='', expEditId=null;
-let cloudUrl=localStorage.getItem(LS_CLOUD)||'';
+const DEFAULT_CLOUD_URL='https://script.google.com/macros/s/AKfycbxFLYgepJcn4-Sw_BvgTb-jUijDaSmRSfMkdfrnlwrVgDzDxE65KidWbao3Bq6ooL7q/exec';
+let cloudUrl=localStorage.getItem(LS_CLOUD)||DEFAULT_CLOUD_URL;
 let cloudStatus='', saving=false, pendingSave=false, saveTimer=null, localDirty=false, _prevIds=null;
 
 function blank(){ return {projects:[],expenses:[],incomes:[],companies:[],accounts:['東澤工程行','品佑工程有限公司','廣昕工程行'],items:[],deletedIds:[]}; }
