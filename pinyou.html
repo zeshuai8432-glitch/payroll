@@ -449,6 +449,14 @@ function toggleDocSettled(id){
   }
   save();
 }
+function saveDocDraft(){
+  readDocDraftFromForm(); const d=docDraft; if(!d) return null; const arr=DOC_META[d.type].arr;
+  if(!d.lines.some(l=>num(l.qty)*num(l.price)>0)){ alert('請至少填一筆有金額的明細'); return null; }
+  if(d.id){ const i=state[arr].findIndex(x=>x.id===d.id); if(i>=0) state[arr][i]=Object.assign({},d); }
+  else { d.id=uid(); state[arr].push(Object.assign({},d)); }
+  const savedId=d.id; docDraft=null; save();
+  return savedId;
+}
 function viewDoc(type){
   const m=DOC_META[type], arr=state[m.arr]||[];
   const clientList=state.companies.map(c=>`<option value="${esc(c.name)}">`).join('');
@@ -488,7 +496,7 @@ function viewDoc(type){
       <button class="act" id="d-addline" style="margin-top:8px">＋ 新增一列</button>
       <div class="field" style="margin-top:10px"><label>備註 / 付款條件</label><textarea id="d-note" rows="2" placeholder="選填">${esc(d.note||'')}</textarea></div>
       <div style="text-align:right;margin-top:10px;font-size:14px">${d.taxMode==='none'?'':`未稅 ${money(c.net)}　稅(${d.taxPct}%) ${money(c.tax)}　`}<b style="font-size:19px">總計 ${money(c.total)}</b></div>
-      <div class="row" style="margin-top:10px"><button class="btn" id="d-save">儲存</button><button class="act" id="d-cancel">取消</button></div>
+      <div class="row" style="margin-top:10px"><button class="btn" id="d-save">儲存</button><button class="btn" id="d-saveprint" style="background:var(--ok)">儲存並匯出 PDF</button><button class="act" id="d-cancel">取消</button></div>
     </div>`;
   }
   const listRows=arr.slice().sort((a,b)=>(b.date||'').localeCompare(a.date||'')||(b.no||'').localeCompare(a.no||'')).map(d=>{
@@ -496,7 +504,7 @@ function viewDoc(type){
     const settleCell=m.link?`<button class="act ${d.settled?'on':''}" data-doc-settle="${d.id}">${d.settled?'✓ 已'+m.settleLabel:'未'+m.settleLabel}</button> `:'';
     return `<tr><td>${esc(d.no||'')}</td><td>${esc(d.date||'')}</td><td>${esc(d.client||'')}</td><td>${esc(d.site||'')}</td>
       <td class="num">${money(c.total)}</td>
-      <td class="num" style="white-space:nowrap">${settleCell}<button class="act" data-doc-print="${d.id}">列印</button> <button class="act" data-doc-copy="${d.id}">複製</button> <button class="act" data-doc-edit="${d.id}">改</button> <button class="act danger" data-doc-del="${d.id}">刪</button></td></tr>`;
+      <td class="num" style="white-space:nowrap">${settleCell}<button class="act" data-doc-print="${d.id}" style="color:var(--accent)">列印/PDF</button> <button class="act" data-doc-copy="${d.id}">複製</button> <button class="act" data-doc-edit="${d.id}">改</button> <button class="act danger" data-doc-del="${d.id}">刪</button></td></tr>`;
   }).join('');
   const listCard=`<div class="card">
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px"><h2 style="margin:0">${m.label}（${arr.length}）</h2>${docDraft&&docDraft.type===type?'':`<button class="btn" id="d-new">＋ 開新${m.label}</button>`}</div>
@@ -707,13 +715,8 @@ function bind(){
   on('d-taxpct','onchange',()=>{ readDocDraftFromForm(); render(); });
   document.querySelectorAll('[data-dline-del]').forEach(b=>b.onclick=()=>{ readDocDraftFromForm(); docDraft.lines.splice(Number(b.dataset.dlineDel),1); if(!docDraft.lines.length) docDraft.lines.push({item:'',unit:'式',qty:1,price:0}); render(); });
   document.querySelectorAll('[id^="dl-qty"],[id^="dl-price"]').forEach(el=>el.onchange=()=>{ readDocDraftFromForm(); render(); });
-  on('d-save','onclick',()=>{
-    readDocDraftFromForm(); const d=docDraft, arr=DOC_META[d.type].arr;
-    if(!d.lines.some(l=>num(l.qty)*num(l.price)>0)){ alert('請至少填一筆有金額的明細'); return; }
-    if(d.id){ const i=state[arr].findIndex(x=>x.id===d.id); if(i>=0) state[arr][i]=Object.assign({},d); }
-    else { d.id=uid(); state[arr].push(Object.assign({},d)); }
-    docDraft=null; save();
-  });
+  on('d-save','onclick',()=>{ saveDocDraft(); });
+  on('d-saveprint','onclick',()=>{ const id=saveDocDraft(); if(id) printDoc(id); });
   document.querySelectorAll('[data-doc-edit]').forEach(b=>b.onclick=()=>{ const d=findDoc(b.dataset.docEdit); if(d){ docDraft=JSON.parse(JSON.stringify(d)); render(); } });
   document.querySelectorAll('[data-doc-copy]').forEach(b=>b.onclick=()=>{ const d=findDoc(b.dataset.docCopy); if(d){ docDraft=JSON.parse(JSON.stringify(d)); docDraft.id=null; docDraft.no=nextDocNo(docDraft.type); docDraft.date=today(); docDraft.settled=false; delete docDraft.incomeId; render(); } });
   document.querySelectorAll('[data-doc-del]').forEach(b=>b.onclick=()=>{ const d=findDoc(b.dataset.docDel); if(d&&confirm(`刪除 ${d.no}？`)){ const lk=d.linkId||d.incomeId; if(lk){ state.incomes=state.incomes.filter(x=>x.id!==lk); state.expenses=state.expenses.filter(x=>x.id!==lk); } state.quotes=(state.quotes||[]).filter(x=>x.id!==d.id); state.invoices=(state.invoices||[]).filter(x=>x.id!==d.id); state.purchases=(state.purchases||[]).filter(x=>x.id!==d.id); save(); } });
