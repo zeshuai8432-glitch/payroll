@@ -53,18 +53,24 @@
 </style>
 <div class="top">
   <h1>品佑帳本</h1>
+  <span id="cloud-status" style="font-size:11px;opacity:.85;margin-left:10px;white-space:nowrap;max-width:40vw;overflow:hidden;text-overflow:ellipsis"></span>
   <div class="bal"><span id="bal-l">帳面淨額</span><b id="bal-v">—</b></div>
 </div>
 <nav id="nav"></nav>
 <main id="app"></main>
 <script>
 const LS='pinyou_data_v1';
+const LS_CLOUD='pinyou_cloud_url';
+const LS_DIRTY='pinyou_dirty';
+const MERGE=['projects','expenses','incomes','companies'];
 const TABS=[['dash','儀表板'],['proj','案場'],['exp','支出'],['inc','請款'],['co','通訊錄'],['set','設定']];
 let state=blank();
 let tab='dash';
 let expFilter='', expItemFilter='', incFilter='', expEditId=null;
+let cloudUrl=localStorage.getItem(LS_CLOUD)||'';
+let cloudStatus='', saving=false, pendingSave=false, saveTimer=null, localDirty=false, _prevIds=null;
 
-function blank(){ return {projects:[],expenses:[],incomes:[],companies:[],accounts:['東澤工程行','品佑工程有限公司','廣昕工程行'],items:[]}; }
+function blank(){ return {projects:[],expenses:[],incomes:[],companies:[],accounts:['東澤工程行','品佑工程有限公司','廣昕工程行'],items:[],deletedIds:[]}; }
 function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
 function money(n){ n=Math.round(Number(n)||0); return (n<0?'-':'')+'$'+Math.abs(n).toLocaleString('en-US'); }
 function pct(n){ return (Number(n)||0*1).toLocaleString('en-US',{style:'percent',maximumFractionDigits:1}); }
@@ -72,8 +78,77 @@ function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;'
 function today(){ return new Date().toISOString().slice(0,10); }
 function num(v){ const n=parseFloat(v); return isNaN(n)?0:n; }
 
-function load(){ try{ const r=localStorage.getItem(LS); if(r){ state=Object.assign(blank(),JSON.parse(r)); } }catch(e){} }
-function save(){ try{ localStorage.setItem(LS,JSON.stringify(state)); }catch(e){} render(); }
+function packData(){ return {projects:state.projects,expenses:state.expenses,incomes:state.incomes,companies:state.companies,accounts:state.accounts,items:state.items||[],deletedIds:state.deletedIds||[],savedAt:Date.now()}; }
+function load(){ try{ const r=localStorage.getItem(LS); if(r){ state=Object.assign(blank(),JSON.parse(r)); } }catch(e){} localDirty=!!localStorage.getItem(LS_DIRTY); _prevIds=collectIds(); }
+function save(){
+  recordDeletions();
+  localDirty=true;
+  try{ localStorage.setItem(LS_DIRTY,'1'); localStorage.setItem(LS,JSON.stringify(packData())); }catch(e){}
+  render();
+  if(cloudUrl){ setStatus('儲存中…'); if(saveTimer) clearTimeout(saveTimer); saveTimer=setTimeout(pushCloud,400); }
+}
+// ---- 雲端同步（Google Apps Script，Drive 儲存；逐筆合併、防資料遺失）----
+function setStatus(s){ cloudStatus=s; const el=document.getElementById('cloud-status'); if(el) el.textContent=(cloudUrl?'☁ ':'')+s; }
+function safeRender(){ const a=document.activeElement; if(a&&/^(INPUT|SELECT|TEXTAREA)$/.test(a.tagName)) return; render(); }
+function collectIds(){ const s=new Set(); MERGE.forEach(k=>(state[k]||[]).forEach(r=>{ if(r&&r.id!=null) s.add(r.id); })); return s; }
+function recordDeletions(){ const cur=collectIds(); if(_prevIds){ const del=new Set(state.deletedIds||[]); _prevIds.forEach(id=>{ if(!cur.has(id)) del.add(id); }); state.deletedIds=[...del]; } _prevIds=cur; }
+function unionById(base,add,del){ const map=new Map(); (base||[]).forEach(r=>{ if(r&&r.id!=null&&!del.has(r.id)) map.set(r.id,r); }); (add||[]).forEach(r=>{ if(r&&r.id!=null&&!del.has(r.id)&&!map.has(r.id)) map.set(r.id,r); }); return [...map.values()]; }
+function mergeCloudDoc(cd){
+  const localTs=Number((JSON.parse(localStorage.getItem(LS)||'{}')||{}).savedAt)||0;
+  const cloudTs=Number(cd.savedAt)||0;
+  const keep={}; MERGE.forEach(k=>keep[k]=(state[k]||[]).slice());
+  const keepDel=(state.deletedIds||[]).slice();
+  if(cloudTs>=localTs){
+    MERGE.forEach(k=>{ state[k]=Array.isArray(cd[k])?cd[k]:[]; });
+    state.deletedIds=[...new Set([...(cd.deletedIds||[]),...keepDel])];
+    (cd.accounts||[]).forEach(a=>{ if(!state.accounts.includes(a)) state.accounts.unshift(a); });
+    const del=new Set(state.deletedIds);
+    MERGE.forEach(k=>{ state[k]=unionById(state[k],keep[k],del); });
+  } else {
+    state.deletedIds=[...new Set([...(state.deletedIds||[]),...(cd.deletedIds||[])])];
+    const del=new Set(state.deletedIds);
+    MERGE.forEach(k=>{ state[k]=unionById(state[k],cd[k]||[],del); });
+    (cd.accounts||[]).forEach(a=>{ if(!state.accounts.includes(a)) state.accounts.push(a); });
+  }
+  const del=new Set(state.deletedIds||[]);
+  MERGE.forEach(k=>{ state[k]=(state[k]||[]).filter(r=>!(r&&del.has(r.id))); });
+  _prevIds=collectIds();
+}
+async function loadCloud(){
+  if(!cloudUrl) { setStatus('本機模式'); return; }
+  setStatus('讀取雲端中…');
+  try{
+    const r=await fetch(cloudUrl,{method:'GET'});
+    const txt=await r.text(); let j=null; try{ j=JSON.parse(txt); }catch(_){}
+    if(!j){ setStatus(`雲端回應異常 HTTP${r.status}（GAS未回JSON）`); return; }
+    if(j.ok && j.data){
+      mergeCloudDoc(JSON.parse(j.data));
+      try{ localStorage.setItem(LS,JSON.stringify(packData())); }catch(e){}
+      safeRender();
+      if(localDirty){ setStatus('已同步（回傳中…）'); pushCloud(); } else setStatus('已同步');
+    } else { setStatus('雲端尚無資料'); if(localDirty) pushCloud(); }
+  }catch(e){ setStatus('雲端讀取失敗：'+String((e&&e.message)||e).slice(0,26)); }
+}
+async function pushCloud(){
+  if(!cloudUrl) return;
+  if(saving){ pendingSave=true; return; }
+  if(!localDirty){ setStatus('已同步'); return; }
+  saving=true;
+  let kb=0, getOK=false;
+  try{
+    try{ const gr=await fetch(cloudUrl,{method:'GET'}); const gt=await gr.text(); const gj=JSON.parse(gt); getOK=true; if(gj&&gj.ok&&gj.data) mergeCloudDoc(JSON.parse(gj.data)); }catch(e){}
+    const payload=JSON.stringify(packData());
+    try{ localStorage.setItem(LS,payload); }catch(e){}
+    kb=Math.round(payload.length/1024);
+    const pr=await fetch(cloudUrl,{method:'POST',body:payload});
+    let pj=null; const txt=await pr.text(); try{ pj=JSON.parse(txt); }catch(_){}
+    if(pj&&pj.ok){ localDirty=false; try{ localStorage.removeItem(LS_DIRTY); }catch(e){} setStatus('已同步'); safeRender(); }
+    else if(pj){ setStatus('推送失敗：'+String(pj.error||'').slice(0,40)); }
+    else { setStatus(`雲端回應異常 HTTP${pr.status}・資料${kb}KB`); }
+  }catch(e){ setStatus('儲存失敗：'+String((e&&e.message)||e).slice(0,22)+`・資料${kb}KB・讀取${getOK?'OK':'也失敗'}`); }
+  saving=false;
+  if(pendingSave){ pendingSave=false; pushCloud(); }
+}
 
 // ---- 衍生計算 ----
 function siteIncome(name){ return state.incomes.filter(x=>x.site===name).reduce((s,x)=>s+num(x.amount),0); }
@@ -312,6 +387,16 @@ function viewCo(){
 function viewSet(){
   const accRows=state.accounts.map((a,i)=>`<tr><td>${esc(a)}</td><td class="num"><button class="act danger" data-accdel="${i}">刪</button></td></tr>`).join('');
   return `<div class="card">
+    <h2>雲端同步</h2>
+    <p class="sub">貼上你的 Google Apps Script 網址即可多裝置共用；留空＝只存本機。網址只存這台裝置，不會寫進公開網頁。</p>
+    <div class="row">
+      <div class="field" style="flex:1;min-width:240px"><label>雲端網址（GAS /exec）</label><input id="cloud-url" placeholder="https://script.google.com/macros/s/.../exec" value="${esc(cloudUrl)}"></div>
+      <button class="btn" id="cloud-save">儲存並連線</button>
+      ${cloudUrl?'<button class="act" id="cloud-sync">立即同步</button>':''}
+    </div>
+    <p class="sub" style="margin-top:8px">目前狀態：<b>${esc(cloudStatus||(cloudUrl?'—':'本機模式'))}</b></p>
+  </div>
+  <div class="card">
     <h2>入款帳號</h2>
     <div class="row" style="margin-bottom:10px"><div class="field" style="flex:1;min-width:160px"><label>新增帳號</label><input id="acc-name" placeholder="例：品佑工程有限公司"></div><button class="btn" id="acc-add">＋ 新增</button></div>
     <div class="scroll"><table><tbody>${accRows||'<tr><td class="empty">尚無</td></tr>'}</tbody></table></div>
@@ -422,6 +507,14 @@ function bind(){
   document.querySelectorAll('[data-codel]').forEach(b=>b.onclick=()=>{ if(confirm('刪除這間公司？')){ state.companies=state.companies.filter(x=>x.id!==b.dataset.codel); save(); } });
 
   // 設定
+  on('cloud-save','onclick',()=>{
+    cloudUrl=document.getElementById('cloud-url').value.trim();
+    try{ localStorage.setItem(LS_CLOUD,cloudUrl); }catch(e){}
+    if(cloudUrl){ localDirty=true; try{ localStorage.setItem(LS_DIRTY,'1'); }catch(e){} setStatus('連線中…'); loadCloud(); }
+    else setStatus('本機模式');
+    render();
+  });
+  on('cloud-sync','onclick',()=>{ if(cloudUrl){ setStatus('同步中…'); loadCloud(); } });
   on('acc-add','onclick',()=>{ const v=document.getElementById('acc-name').value.trim(); if(v&&!state.accounts.includes(v)){ state.accounts.push(v); save(); } });
   document.querySelectorAll('[data-accdel]').forEach(b=>b.onclick=()=>{ state.accounts.splice(Number(b.dataset.accdel),1); save(); });
   on('exp-json','onclick',()=>downloadJSON());
@@ -455,4 +548,8 @@ function doImport(text,merge){
 }
 
 load(); render();
+setStatus(cloudUrl?'連線中…':'本機模式');
+if(cloudUrl) loadCloud();
+window.addEventListener('pagehide',()=>{ if(cloudUrl&&localDirty){ try{ const p=JSON.stringify(packData()); if(navigator.sendBeacon) navigator.sendBeacon(cloudUrl,p); else fetch(cloudUrl,{method:'POST',body:p,keepalive:true}); }catch(e){} } });
+window.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='visible'&&cloudUrl&&!saving) loadCloud(); });
 </script>
