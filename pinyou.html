@@ -127,7 +127,12 @@ async function loadCloud(){
       try{ localStorage.setItem(LS,JSON.stringify(packData())); }catch(e){}
       safeRender();
       if(localDirty){ setStatus('已同步（回傳中…）'); pushCloud(); } else setStatus('已同步');
-    } else { setStatus('雲端尚無資料'); if(localDirty) pushCloud(); }
+    } else {
+      // 雲端還沒資料：若本機有資料就上傳當底（不管有沒有未存變更）
+      const hasLocal=MERGE.some(k=>(state[k]||[]).length>0);
+      if(hasLocal){ localDirty=true; setStatus('雲端無資料，正在上傳本機…'); pushCloud(); }
+      else setStatus('雲端尚無資料（本機也是空的）');
+    }
   }catch(e){ setStatus('雲端讀取失敗：'+String((e&&e.message)||e).slice(0,26)); }
 }
 async function pushCloud(){
