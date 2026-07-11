@@ -394,13 +394,8 @@ function viewSet(){
   const accRows=state.accounts.map((a,i)=>`<tr><td>${esc(a)}</td><td class="num"><button class="act danger" data-accdel="${i}">刪</button></td></tr>`).join('');
   return `<div class="card">
     <h2>雲端同步</h2>
-    <p class="sub">貼上你的 Google Apps Script 網址即可多裝置共用；留空＝只存本機。網址只存這台裝置，不會寫進公開網頁。</p>
-    <div class="row">
-      <div class="field" style="flex:1;min-width:240px"><label>雲端網址（GAS /exec）</label><input id="cloud-url" placeholder="https://script.google.com/macros/s/.../exec" value="${esc(cloudUrl)}"></div>
-      <button class="btn" id="cloud-save">儲存並連線</button>
-      ${cloudUrl?'<button class="act" id="cloud-sync">立即同步</button>':''}
-    </div>
-    <p class="sub" style="margin-top:8px">目前狀態：<b>${esc(cloudStatus||(cloudUrl?'—':'本機模式'))}</b></p>
+    <p class="sub">已內建雲端，多裝置自動同步（不用設定）。目前狀態：<b>${esc(cloudStatus||(cloudUrl?'—':'本機模式'))}</b></p>
+    ${cloudUrl?'<button class="act" id="cloud-sync">立即同步</button>':''}
   </div>
   <div class="card">
     <h2>入款帳號</h2>
@@ -513,13 +508,6 @@ function bind(){
   document.querySelectorAll('[data-codel]').forEach(b=>b.onclick=()=>{ if(confirm('刪除這間公司？')){ state.companies=state.companies.filter(x=>x.id!==b.dataset.codel); save(); } });
 
   // 設定
-  on('cloud-save','onclick',()=>{
-    cloudUrl=document.getElementById('cloud-url').value.trim();
-    try{ localStorage.setItem(LS_CLOUD,cloudUrl); }catch(e){}
-    if(cloudUrl){ localDirty=true; try{ localStorage.setItem(LS_DIRTY,'1'); }catch(e){} setStatus('連線中…'); loadCloud(); }
-    else setStatus('本機模式');
-    render();
-  });
   on('cloud-sync','onclick',()=>{ if(cloudUrl){ setStatus('同步中…'); loadCloud(); } });
   on('acc-add','onclick',()=>{ const v=document.getElementById('acc-name').value.trim(); if(v&&!state.accounts.includes(v)){ state.accounts.push(v); save(); } });
   document.querySelectorAll('[data-accdel]').forEach(b=>b.onclick=()=>{ state.accounts.splice(Number(b.dataset.accdel),1); save(); });
