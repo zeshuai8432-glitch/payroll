@@ -64,6 +64,7 @@
   #print-overlay .pdoc .dh-info td:first-child{color:#9ca3af}
   #print-overlay .pdoc .party{display:flex;gap:44px;flex-wrap:wrap;padding:2px 0 14px;border-bottom:1px solid #e5e7eb;margin-bottom:16px;font-size:14px}
   #print-overlay .pdoc .party .lbl{color:#9ca3af;margin-right:10px;font-size:12px}
+  #print-overlay .pdoc .itemsc{overflow-x:auto}
   #print-overlay .pdoc table.items{width:100%;border-collapse:collapse;font-size:13px}
   #print-overlay .pdoc table.items th{border:none;border-bottom:2px solid #1E3A8A;color:#1E3A8A;font-weight:700;padding:8px 8px;text-align:left;font-size:12px;letter-spacing:.3px}
   #print-overlay .pdoc table.items td{border:none;border-bottom:1px solid #eceff3;padding:9px 8px;vertical-align:top}
@@ -84,7 +85,22 @@
   #print-overlay .pdoc .note b{color:#111827}
   #print-overlay .pdoc .sign{margin-top:48px;display:flex;gap:56px}
   #print-overlay .pdoc .sign > div{flex:1;max-width:240px;border-top:1px solid #9ca3af;padding-top:7px;color:#6b7280;font-size:12px}
-  @media print{ body>*:not(#print-overlay){display:none!important} #print-overlay{position:static;padding:0;overflow:visible;background:#fff} #print-overlay .pbar{display:none!important} #print-overlay .pdoc{max-width:none;box-shadow:none;padding:0;border-radius:0} @page{size:A4;margin:16mm} }
+  /* 手機：改為單欄自適應，避免擠壓變形（存 PDF 仍為正常 A4 版面） */
+  @media screen and (max-width:640px){
+    #print-overlay{padding:10px}
+    #print-overlay .pdoc{width:auto;max-width:100%;padding:20px 16px}
+    #print-overlay .pdoc .dh{flex-direction:column;gap:8px}
+    #print-overlay .pdoc .dh-title{text-align:left;font-size:23px}
+    #print-overlay .pdoc .dh-info{margin-left:0}
+    #print-overlay .pdoc .dh-info td{padding:2px 16px 2px 0;text-align:left}
+    #print-overlay .pdoc .party{gap:6px 40px}
+    #print-overlay .pdoc table.items{min-width:480px}
+    #print-overlay .pdoc .itemsc{border:1px solid #eef1f6;border-radius:8px}
+    #print-overlay .pdoc .sumwrap{margin-top:4px}
+    #print-overlay .pdoc table.sum{width:100%;min-width:0}
+    #print-overlay .pdoc .bankblk{width:100%;min-width:0;box-sizing:border-box}
+  }
+  @media print{ body>*:not(#print-overlay){display:none!important} #print-overlay{position:static;padding:0;overflow:visible;background:#fff} #print-overlay .pbar{display:none!important} #print-overlay .pdoc{max-width:none;width:auto;box-shadow:none;padding:0;border-radius:0;zoom:1} #print-overlay .pdoc .itemsc{overflow:visible;border:none} #print-overlay .pdoc table.items{min-width:0} @page{size:A4;margin:16mm} }
 </style>
 <div class="top">
   <h1>品佑帳本</h1>
@@ -571,7 +587,7 @@ function printDoc(id){
       </div>
     </div>
     <div class="party"><div><span class="lbl">${m.party}</span><b>${esc(doc.client||'')}</b></div>${doc.site?`<div><span class="lbl">案場</span>${esc(doc.site)}</div>`:''}</div>
-    <table class="items"><thead><tr><th class="c-no">#</th><th>品項</th><th class="c-unit">單位</th><th class="num">數量</th><th class="num">單價</th><th class="num">小計</th></tr></thead><tbody>${rows}</tbody></table>
+    <div class="itemsc"><table class="items"><thead><tr><th class="c-no">#</th><th>品項</th><th class="c-unit">單位</th><th class="num">數量</th><th class="num">單價</th><th class="num">小計</th></tr></thead><tbody>${rows}</tbody></table></div>
     <div class="sumwrap"><table class="sum">${sumRows}</table></div>
     ${bankInfoHtml(issuer)}
     ${doc.note?`<div class="note"><b>備註：</b>${escBr(doc.note)}</div>`:''}
