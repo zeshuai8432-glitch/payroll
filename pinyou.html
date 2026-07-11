@@ -513,6 +513,18 @@ function viewDoc(type){
   const itemList2=itemNames().map(s=>`<option value="${esc(s)}">`).join('');
   return editor+listCard+`<datalist id="dl-clients">${clientList}</datalist><datalist id="dl-psites">${siteList}</datalist><datalist id="dl-items2">${itemList2}</datalist>`;
 }
+function bankInfoHtml(c){
+  const bank=[c.bankName,c.bankBranch].filter(Boolean).join(' ');
+  const hasStruct=bank||c.bankAcctName||c.bankAcctNo;
+  if(hasStruct){
+    return `<div style="margin-top:12px;font-size:13px;border-top:1px dashed #94a3b8;padding-top:8px"><b>匯款資訊</b>
+      ${bank?`<div>銀行：${esc(bank)}</div>`:''}
+      ${c.bankAcctName?`<div>戶名：${esc(c.bankAcctName)}</div>`:''}
+      ${c.bankAcctNo?`<div>帳號：${esc(c.bankAcctNo)}</div>`:''}</div>`;
+  }
+  if(c.bank) return `<div style="margin-top:12px;font-size:13px"><b>匯款帳號：</b>${esc(c.bank)}</div>`; // 相容舊的單一欄位
+  return '';
+}
 function printDoc(id){
   const doc=findDoc(id); if(!doc) return;
   const m=DOC_META[doc.type], c=docCalc(doc);
@@ -532,7 +544,7 @@ function printDoc(id){
     <table style="margin-bottom:6px"><tbody><tr><th style="width:64px">${m.party}</th><td>${esc(doc.client||'')}</td><th style="width:64px">案場</th><td>${esc(doc.site||'')}</td></tr></tbody></table>
     <table><thead><tr><th style="width:36px">項次</th><th>品項</th><th style="width:54px">單位</th><th class="num">數量</th><th class="num">單價</th><th class="num">小計</th></tr></thead>
       <tbody>${rows}${taxLines}<tr class="total"><td colspan="5" class="num" style="font-weight:700">${totalLabel}</td><td class="num" style="font-weight:700">${money(c.total)}</td></tr></tbody></table>
-    ${issuer.bank?`<div style="margin-top:12px;font-size:13px"><b>匯款帳號：</b>${esc(issuer.bank)}</div>`:''}
+    ${bankInfoHtml(issuer)}
     ${doc.note?`<div style="margin-top:8px;font-size:13px;white-space:pre-wrap"><b>備註：</b>${esc(doc.note)}</div>`:''}
     ${doc.type==='quote'&&doc.validDays?`<div style="margin-top:8px;font-size:12px;color:#555">本報價有效期 ${doc.validDays} 天。</div>`:''}
     <div style="margin-top:36px;display:flex;gap:60px"><div style="border-top:1px solid #333;padding-top:6px;min-width:190px">${m.party}簽章</div><div style="border-top:1px solid #333;padding-top:6px;min-width:190px">${esc(issuer.name||'')}</div></div>
@@ -586,7 +598,12 @@ function viewSet(){
       <div class="row" style="margin-top:6px">
         <div class="field" style="flex:2;min-width:200px"><label>地址</label><input id="mc-addr${i}" value="${esc(c.addr||'')}"></div>
         <div class="field" style="min-width:130px"><label>電話</label><input id="mc-tel${i}" value="${esc(c.tel||'')}"></div>
-        <div class="field" style="flex:2;min-width:200px"><label>匯款帳號</label><input id="mc-bank${i}" value="${esc(c.bank||'')}" placeholder="銀行/分行/戶名/帳號"></div>
+      </div>
+      <div class="row" style="margin-top:6px">
+        <div class="field" style="min-width:130px"><label>匯款銀行</label><input id="mc-bankname${i}" value="${esc(c.bankName||'')}" placeholder="例：台灣銀行"></div>
+        <div class="field" style="min-width:110px"><label>分行</label><input id="mc-bankbranch${i}" value="${esc(c.bankBranch||'')}" placeholder="例：三民分行"></div>
+        <div class="field" style="flex:1;min-width:150px"><label>戶名</label><input id="mc-bankacctname${i}" value="${esc(c.bankAcctName||'')}"></div>
+        <div class="field" style="min-width:150px"><label>帳號</label><input id="mc-bankacctno${i}" value="${esc(c.bankAcctNo||'')}"></div>
       </div>
     </div>`).join('')}
     <div class="row"><button class="btn" id="myco-save">儲存公司資料</button><button class="act" id="myco-add">＋ 新增公司</button></div>
@@ -704,7 +721,7 @@ function bind(){
   // 設定
   on('cloud-sync','onclick',()=>{ if(cloudUrl){ setStatus('同步中…'); loadCloud(); } });
   // 公司資料
-  on('myco-save','onclick',()=>{ state.myCompanies.forEach((c,i)=>{ const g=id=>document.getElementById(id+i); if(g('mc-name')) c.name=g('mc-name').value.trim(); if(g('mc-tax')) c.taxId=g('mc-tax').value.trim(); if(g('mc-addr')) c.addr=g('mc-addr').value.trim(); if(g('mc-tel')) c.tel=g('mc-tel').value.trim(); if(g('mc-bank')) c.bank=g('mc-bank').value.trim(); }); save(); alert('公司資料已儲存'); });
+  on('myco-save','onclick',()=>{ state.myCompanies.forEach((c,i)=>{ const g=id=>document.getElementById(id+i); if(g('mc-name')) c.name=g('mc-name').value.trim(); if(g('mc-tax')) c.taxId=g('mc-tax').value.trim(); if(g('mc-addr')) c.addr=g('mc-addr').value.trim(); if(g('mc-tel')) c.tel=g('mc-tel').value.trim(); if(g('mc-bankname')) c.bankName=g('mc-bankname').value.trim(); if(g('mc-bankbranch')) c.bankBranch=g('mc-bankbranch').value.trim(); if(g('mc-bankacctname')) c.bankAcctName=g('mc-bankacctname').value.trim(); if(g('mc-bankacctno')) c.bankAcctNo=g('mc-bankacctno').value.trim(); }); save(); alert('公司資料已儲存'); });
   on('myco-add','onclick',()=>{ state.myCompanies.push({id:uid(),name:'新公司',taxId:'',addr:'',tel:'',bank:''}); save(); });
   document.querySelectorAll('[data-myco-del]').forEach(b=>b.onclick=()=>{ if(state.myCompanies.length<=1){ alert('至少保留一家公司'); return; } if(confirm('刪除這家公司？')){ state.myCompanies=state.myCompanies.filter(x=>x.id!==b.dataset.mycoDel); save(); } });
   // 報價單 / 請款單
