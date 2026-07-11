@@ -50,6 +50,16 @@
   .sub{font-size:12px;color:var(--muted);margin:0 0 12px}
   .bar{height:7px;border-radius:4px;background:var(--line);overflow:hidden;margin-top:5px}
   .bar>i{display:block;height:100%;background:var(--accent)}
+  /* 列印單據 */
+  #print-overlay{position:fixed;inset:0;background:#fff;z-index:9999;overflow:auto;padding:20px}
+  #print-overlay .pbar{position:sticky;top:0;background:#fff;display:flex;gap:10px;justify-content:flex-end;padding-bottom:12px;border-bottom:1px solid var(--line);margin-bottom:16px}
+  #print-overlay .pdoc{max-width:820px;margin:0 auto;color:#1f2937}
+  #print-overlay .pdoc table{width:100%;border-collapse:collapse;font-size:13px;margin:6px 0}
+  #print-overlay .pdoc th,#print-overlay .pdoc td{border:1px solid #cbd5e1;padding:7px 9px;text-align:left}
+  #print-overlay .pdoc th{background:#eef2ff;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  #print-overlay .pdoc td.num,#print-overlay .pdoc th.num{text-align:right;font-variant-numeric:tabular-nums}
+  #print-overlay .pdoc tr.total td{background:#eff6ff;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  @media print{ body>*:not(#print-overlay){display:none!important} #print-overlay{position:static;padding:0;overflow:visible} #print-overlay .pbar{display:none!important} @page{size:A4;margin:14mm} }
 </style>
 <div class="top">
   <h1>品佑帳本</h1>
@@ -62,16 +72,21 @@
 const LS='pinyou_data_v1';
 const LS_CLOUD='pinyou_cloud_url';
 const LS_DIRTY='pinyou_dirty';
-const MERGE=['projects','expenses','incomes','companies'];
-const TABS=[['dash','儀表板'],['proj','案場'],['exp','支出'],['inc','請款'],['co','通訊錄'],['set','設定']];
+const MERGE=['projects','expenses','incomes','companies','quotes','invoices','myCompanies'];
+const TABS=[['dash','儀表板'],['proj','案場'],['exp','支出'],['inc','請款'],['quote','報價單'],['invoice','請款單'],['co','通訊錄'],['set','設定']];
 let state=blank();
 let tab='dash';
 let expFilter='', expItemFilter='', incFilter='', expEditId=null;
+let docDraft=null; // 編輯中的報價單/請款單草稿
 const DEFAULT_CLOUD_URL='https://script.google.com/macros/s/AKfycbxFLYgepJcn4-Sw_BvgTb-jUijDaSmRSfMkdfrnlwrVgDzDxE65KidWbao3Bq6ooL7q/exec';
 let cloudUrl=localStorage.getItem(LS_CLOUD)||DEFAULT_CLOUD_URL;
 let cloudStatus='', saving=false, pendingSave=false, saveTimer=null, localDirty=false, _prevIds=null;
 
-function blank(){ return {projects:[],expenses:[],incomes:[],companies:[],accounts:['東澤工程行','品佑工程有限公司','廣昕工程行'],items:[],deletedIds:[]}; }
+function blank(){ return {projects:[],expenses:[],incomes:[],companies:[],accounts:['東澤工程行','品佑工程有限公司','廣昕工程行'],items:[],quotes:[],invoices:[],myCompanies:[
+  {id:'c-py',name:'品佑工程有限公司',taxId:'',addr:'',tel:'',bank:''},
+  {id:'c-dz',name:'東澤工程行',taxId:'',addr:'',tel:'',bank:''},
+  {id:'c-gx',name:'廣昕工程行',taxId:'',addr:'',tel:'',bank:''}
+],deletedIds:[]}; }
 function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
 function money(n){ n=Math.round(Number(n)||0); return (n<0?'-':'')+'$'+Math.abs(n).toLocaleString('en-US'); }
 function pct(n){ return (Number(n)||0*1).toLocaleString('en-US',{style:'percent',maximumFractionDigits:1}); }
@@ -79,7 +94,7 @@ function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;'
 function today(){ return new Date().toISOString().slice(0,10); }
 function num(v){ const n=parseFloat(v); return isNaN(n)?0:n; }
 
-function packData(){ return {projects:state.projects,expenses:state.expenses,incomes:state.incomes,companies:state.companies,accounts:state.accounts,items:state.items||[],deletedIds:state.deletedIds||[],savedAt:Date.now()}; }
+function packData(){ return {projects:state.projects,expenses:state.expenses,incomes:state.incomes,companies:state.companies,accounts:state.accounts,items:state.items||[],quotes:state.quotes||[],invoices:state.invoices||[],myCompanies:state.myCompanies||[],deletedIds:state.deletedIds||[],savedAt:Date.now()}; }
 function load(){ try{ const r=localStorage.getItem(LS); if(r){ state=Object.assign(blank(),JSON.parse(r)); } }catch(e){} localDirty=!!localStorage.getItem(LS_DIRTY); _prevIds=collectIds(); }
 function save(){
   recordDeletions();
@@ -371,6 +386,145 @@ function viewInc(){
   </div>`;
 }
 
+// ================= 報價單 / 請款單 =================
+const DOC_META={ quote:{label:'報價單',prefix:'Q',arr:'quotes'}, invoice:{label:'請款單',prefix:'I',arr:'invoices'} };
+function findDoc(id){ return (state.quotes||[]).concat(state.invoices||[]).find(d=>d.id===id); }
+function docCalc(doc){
+  const sub=(doc.lines||[]).reduce((s,l)=>s+num(l.qty)*num(l.price),0);
+  const rate=num(doc.taxPct)/100;
+  let tax=0, net=sub, total=sub;
+  if(doc.taxMode==='exclusive'){ tax=Math.round(sub*rate); net=sub; total=sub+tax; }
+  else if(doc.taxMode==='inclusive'){ net=Math.round(sub/(1+rate)); tax=sub-net; total=sub; }
+  return {sub, net, tax, total};
+}
+function nextDocNo(type){
+  const m=DOC_META[type], ymd=today().replace(/-/g,'');
+  const n=(state[m.arr]||[]).filter(d=>(d.no||'').indexOf(m.prefix+ymd)===0).length+1;
+  return m.prefix+ymd+'-'+String(n).padStart(2,'0');
+}
+function newDraft(type){ return {type,id:null,no:nextDocNo(type),date:today(),issuerId:(state.myCompanies[0]||{}).id||'',client:'',site:'',taxMode:'exclusive',taxPct:5,lines:[{item:'',unit:'式',qty:1,price:0}],note:'',validDays:30}; }
+function readDocDraftFromForm(){
+  if(!docDraft) return;
+  const g=id=>document.getElementById(id);
+  if(g('d-date')) docDraft.date=g('d-date').value||docDraft.date;
+  if(g('d-issuer')) docDraft.issuerId=g('d-issuer').value;
+  if(g('d-client')) docDraft.client=g('d-client').value;
+  if(g('d-site')) docDraft.site=g('d-site').value;
+  if(g('d-taxmode')) docDraft.taxMode=g('d-taxmode').value;
+  if(g('d-taxpct')) docDraft.taxPct=num(g('d-taxpct').value);
+  if(g('d-note')) docDraft.note=g('d-note').value;
+  if(g('d-valid')) docDraft.validDays=num(g('d-valid').value);
+  (docDraft.lines||[]).forEach((l,i)=>{
+    const gi=id=>document.getElementById(id+i);
+    if(gi('dl-item')) l.item=gi('dl-item').value;
+    if(gi('dl-unit')) l.unit=gi('dl-unit').value;
+    if(gi('dl-qty')) l.qty=num(gi('dl-qty').value);
+    if(gi('dl-price')) l.price=num(gi('dl-price').value);
+  });
+}
+function toggleInvoiceSettled(id){
+  const inv=(state.invoices||[]).find(x=>x.id===id); if(!inv) return;
+  const c=docCalc(inv);
+  if(!inv.settled){
+    inv.settled=true; inv.settledDate=today();
+    const issuer=state.myCompanies.find(x=>x.id===inv.issuerId)||{};
+    const rec={id:uid(),date:today(),site:inv.site||'',amount:c.total,method:'',account:issuer.name||'',note:'請款單 '+inv.no,fromInvoice:inv.id};
+    state.incomes.push(rec); inv.incomeId=rec.id;
+  } else {
+    inv.settled=false;
+    if(inv.incomeId){ state.incomes=state.incomes.filter(x=>x.id!==inv.incomeId); delete inv.incomeId; }
+  }
+  save();
+}
+function viewDoc(type){
+  const m=DOC_META[type], arr=state[m.arr]||[];
+  const clientList=state.companies.map(c=>`<option value="${esc(c.name)}">`).join('');
+  const siteList=state.projects.map(p=>`<option value="${esc(p.name)}">`).join('');
+  let editor='';
+  if(docDraft && docDraft.type===type){
+    const d=docDraft, c=docCalc(d);
+    const lineRows=d.lines.map((l,i)=>`<tr>
+      <td><input id="dl-item${i}" value="${esc(l.item||'')}" placeholder="品項" style="min-width:120px"></td>
+      <td><input id="dl-unit${i}" value="${esc(l.unit||'')}" style="width:60px"></td>
+      <td><input id="dl-qty${i}" type="number" inputmode="decimal" value="${l.qty}" style="width:78px;text-align:right"></td>
+      <td><input id="dl-price${i}" type="number" inputmode="numeric" value="${l.price}" style="width:110px;text-align:right"></td>
+      <td class="num">${money(num(l.qty)*num(l.price))}</td>
+      <td class="num"><button class="act danger" data-dline-del="${i}">刪</button></td>
+    </tr>`).join('');
+    editor=`<div class="card">
+      <h2>${d.id?'編輯':'開新'}${m.label}　<span class="tag">${esc(d.no)}</span></h2>
+      <div class="row">
+        <div class="field"><label>日期</label><input id="d-date" type="date" value="${d.date}"></div>
+        <div class="field" style="min-width:170px"><label>開單公司</label><select id="d-issuer">${state.myCompanies.map(cc=>`<option value="${cc.id}" ${d.issuerId===cc.id?'selected':''}>${esc(cc.name)}</option>`).join('')}</select></div>
+        <div class="field" style="flex:1;min-width:150px"><label>客戶</label><input id="d-client" list="dl-clients" value="${esc(d.client)}" placeholder="客戶名稱"></div>
+        <div class="field" style="flex:1;min-width:130px"><label>案場（選填）</label><input id="d-site" list="dl-psites" value="${esc(d.site)}"></div>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <div class="field" style="min-width:160px"><label>稅別</label><select id="d-taxmode">
+          <option value="exclusive" ${d.taxMode==='exclusive'?'selected':''}>未稅（外加稅）</option>
+          <option value="inclusive" ${d.taxMode==='inclusive'?'selected':''}>含稅（內含稅）</option>
+          <option value="none" ${d.taxMode==='none'?'selected':''}>免稅／不計稅</option>
+        </select></div>
+        <div class="field" style="width:88px"><label>稅率 %</label><input id="d-taxpct" type="number" value="${d.taxPct}" step="1"></div>
+        ${type==='quote'?`<div class="field" style="width:120px"><label>報價有效天</label><input id="d-valid" type="number" value="${d.validDays||30}"></div>`:''}
+      </div>
+      <div class="scroll" style="margin-top:10px"><table>
+        <thead><tr><th>品項</th><th>單位</th><th class="num">數量</th><th class="num">單價</th><th class="num">小計</th><th></th></tr></thead>
+        <tbody>${lineRows}</tbody></table></div>
+      <button class="act" id="d-addline" style="margin-top:8px">＋ 新增一列</button>
+      <div class="field" style="margin-top:10px"><label>備註 / 付款條件</label><textarea id="d-note" rows="2" placeholder="選填">${esc(d.note||'')}</textarea></div>
+      <div style="text-align:right;margin-top:10px;font-size:14px">${d.taxMode==='none'?'':`未稅 ${money(c.net)}　稅(${d.taxPct}%) ${money(c.tax)}　`}<b style="font-size:19px">總計 ${money(c.total)}</b></div>
+      <div class="row" style="margin-top:10px"><button class="btn" id="d-save">儲存</button><button class="act" id="d-cancel">取消</button></div>
+    </div>`;
+  }
+  const listRows=arr.slice().sort((a,b)=>(b.date||'').localeCompare(a.date||'')||(b.no||'').localeCompare(a.no||'')).map(d=>{
+    const c=docCalc(d);
+    const settleCell=type==='invoice'?`<button class="act ${d.settled?'on':''}" data-doc-settle="${d.id}">${d.settled?'✓ 已收款':'未收款'}</button> `:'';
+    return `<tr><td>${esc(d.no||'')}</td><td>${esc(d.date||'')}</td><td>${esc(d.client||'')}</td><td>${esc(d.site||'')}</td>
+      <td class="num">${money(c.total)}</td>
+      <td class="num" style="white-space:nowrap">${settleCell}<button class="act" data-doc-print="${d.id}">列印</button> <button class="act" data-doc-copy="${d.id}">複製</button> <button class="act" data-doc-edit="${d.id}">改</button> <button class="act danger" data-doc-del="${d.id}">刪</button></td></tr>`;
+  }).join('');
+  const listCard=`<div class="card">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px"><h2 style="margin:0">${m.label}（${arr.length}）</h2>${docDraft&&docDraft.type===type?'':`<button class="btn" id="d-new">＋ 開新${m.label}</button>`}</div>
+    ${arr.length===0?`<div class="empty">尚無${m.label}。</div>`:`<div class="scroll"><table><thead><tr><th>單號</th><th>日期</th><th>客戶</th><th>案場</th><th class="num">總計</th><th></th></tr></thead><tbody>${listRows}</tbody></table></div>`}
+  </div>`;
+  return editor+listCard+`<datalist id="dl-clients">${clientList}</datalist><datalist id="dl-psites">${siteList}</datalist>`;
+}
+function printDoc(id){
+  const doc=findDoc(id); if(!doc) return;
+  const m=DOC_META[doc.type], c=docCalc(doc);
+  const issuer=state.myCompanies.find(x=>x.id===doc.issuerId)||{};
+  const rows=doc.lines.map((l,i)=>`<tr><td class="num">${i+1}</td><td>${esc(l.item||'')}</td><td>${esc(l.unit||'')}</td><td class="num">${num(l.qty)}</td><td class="num">${money(l.price)}</td><td class="num">${money(num(l.qty)*num(l.price))}</td></tr>`).join('');
+  const taxLines=doc.taxMode==='none'?'':`<tr><td colspan="5" class="num">未稅小計</td><td class="num">${money(c.net)}</td></tr><tr><td colspan="5" class="num">營業稅（${doc.taxPct}%）</td><td class="num">${money(c.tax)}</td></tr>`;
+  const totalLabel=doc.taxMode==='inclusive'?'總計（含稅）':doc.taxMode==='exclusive'?'總計（含稅）':'總計（免稅）';
+  const inner=`<div class="pdoc">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid #1E3A8A;padding-bottom:10px;margin-bottom:14px">
+      <div><div style="font-size:22px;font-weight:800;color:#1E3A8A">${esc(issuer.name||'')}</div>
+        ${issuer.taxId?`<div style="font-size:12px;color:#555">統一編號：${esc(issuer.taxId)}</div>`:''}
+        ${issuer.addr?`<div style="font-size:12px;color:#555">${esc(issuer.addr)}</div>`:''}
+        ${issuer.tel?`<div style="font-size:12px;color:#555">電話：${esc(issuer.tel)}</div>`:''}</div>
+      <div style="text-align:right"><div style="font-size:26px;font-weight:800;letter-spacing:6px;color:#1E3A8A">${m.label}</div>
+        <div style="font-size:12px;color:#555">單號：${esc(doc.no||'')}</div><div style="font-size:12px;color:#555">日期：${esc(doc.date||'')}</div></div>
+    </div>
+    <table style="margin-bottom:6px"><tbody><tr><th style="width:64px">客戶</th><td>${esc(doc.client||'')}</td><th style="width:64px">案場</th><td>${esc(doc.site||'')}</td></tr></tbody></table>
+    <table><thead><tr><th style="width:36px">項次</th><th>品項</th><th style="width:54px">單位</th><th class="num">數量</th><th class="num">單價</th><th class="num">小計</th></tr></thead>
+      <tbody>${rows}${taxLines}<tr class="total"><td colspan="5" class="num" style="font-weight:700">${totalLabel}</td><td class="num" style="font-weight:700">${money(c.total)}</td></tr></tbody></table>
+    ${issuer.bank?`<div style="margin-top:12px;font-size:13px"><b>匯款帳號：</b>${esc(issuer.bank)}</div>`:''}
+    ${doc.note?`<div style="margin-top:8px;font-size:13px;white-space:pre-wrap"><b>備註：</b>${esc(doc.note)}</div>`:''}
+    ${doc.type==='quote'&&doc.validDays?`<div style="margin-top:8px;font-size:12px;color:#555">本報價有效期 ${doc.validDays} 天。</div>`:''}
+    <div style="margin-top:36px;display:flex;gap:60px"><div style="border-top:1px solid #333;padding-top:6px;min-width:190px">客戶簽章</div><div style="border-top:1px solid #333;padding-top:6px;min-width:190px">${esc(issuer.name||'')}</div></div>
+  </div>`;
+  printHTMLDoc(m.label+' '+doc.no, inner);
+}
+function printHTMLDoc(title, inner){
+  const old=document.getElementById('print-overlay'); if(old) old.remove();
+  const ov=document.createElement('div'); ov.id='print-overlay';
+  ov.innerHTML=`<div class="pbar"><button class="btn" id="po-print">列印 / 存 PDF</button><button class="act" id="po-close">關閉</button></div>${inner}`;
+  document.body.appendChild(ov);
+  document.getElementById('po-print').onclick=()=>window.print();
+  document.getElementById('po-close').onclick=()=>ov.remove();
+  ov.scrollTop=0;
+}
 function viewCo(){
   const rows=state.companies.map(c=>`<tr>
       <td>${esc(c.name)}</td><td>${esc(c.taxId||'')}</td><td>${esc(c.contact||'')}</td><td>${esc(c.addr||'')}</td>
@@ -396,6 +550,23 @@ function viewSet(){
     <h2>雲端同步</h2>
     <p class="sub">已內建雲端，多裝置自動同步（不用設定）。目前狀態：<b>${esc(cloudStatus||(cloudUrl?'—':'本機模式'))}</b></p>
     ${cloudUrl?'<button class="act" id="cloud-sync">立即同步</button>':''}
+  </div>
+  <div class="card">
+    <h2>公司資料（開單抬頭）</h2>
+    <p class="sub">報價單／請款單上方會印出這裡的公司抬頭與匯款帳號。填好後按下方「儲存公司資料」。</p>
+    ${state.myCompanies.map((c,i)=>`<div style="border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:10px">
+      <div class="row">
+        <div class="field" style="flex:1;min-width:160px"><label>公司名稱</label><input id="mc-name${i}" value="${esc(c.name||'')}"></div>
+        <div class="field" style="min-width:120px"><label>統一編號</label><input id="mc-tax${i}" value="${esc(c.taxId||'')}"></div>
+        <button class="act danger" data-myco-del="${c.id}" style="align-self:flex-end;height:40px">刪</button>
+      </div>
+      <div class="row" style="margin-top:6px">
+        <div class="field" style="flex:2;min-width:200px"><label>地址</label><input id="mc-addr${i}" value="${esc(c.addr||'')}"></div>
+        <div class="field" style="min-width:130px"><label>電話</label><input id="mc-tel${i}" value="${esc(c.tel||'')}"></div>
+        <div class="field" style="flex:2;min-width:200px"><label>匯款帳號</label><input id="mc-bank${i}" value="${esc(c.bank||'')}" placeholder="銀行/分行/戶名/帳號"></div>
+      </div>
+    </div>`).join('')}
+    <div class="row"><button class="btn" id="myco-save">儲存公司資料</button><button class="act" id="myco-add">＋ 新增公司</button></div>
   </div>
   <div class="card">
     <h2>入款帳號</h2>
@@ -425,7 +596,7 @@ function viewSet(){
 // ================= render / bind =================
 function render(){
   document.getElementById('nav').innerHTML=TABS.map(([k,t])=>`<button class="${tab===k?'on':''}" data-tab="${k}">${t}</button>`).join('');
-  const v={dash:viewDash,proj:viewProj,exp:viewExp,inc:viewInc,co:viewCo,set:viewSet}[tab];
+  const v={dash:viewDash,proj:viewProj,exp:viewExp,inc:viewInc,quote:()=>viewDoc('quote'),invoice:()=>viewDoc('invoice'),co:viewCo,set:viewSet}[tab];
   document.getElementById('app').innerHTML=v();
   setBalance();
   bind();
@@ -509,6 +680,30 @@ function bind(){
 
   // 設定
   on('cloud-sync','onclick',()=>{ if(cloudUrl){ setStatus('同步中…'); loadCloud(); } });
+  // 公司資料
+  on('myco-save','onclick',()=>{ state.myCompanies.forEach((c,i)=>{ const g=id=>document.getElementById(id+i); if(g('mc-name')) c.name=g('mc-name').value.trim(); if(g('mc-tax')) c.taxId=g('mc-tax').value.trim(); if(g('mc-addr')) c.addr=g('mc-addr').value.trim(); if(g('mc-tel')) c.tel=g('mc-tel').value.trim(); if(g('mc-bank')) c.bank=g('mc-bank').value.trim(); }); save(); alert('公司資料已儲存'); });
+  on('myco-add','onclick',()=>{ state.myCompanies.push({id:uid(),name:'新公司',taxId:'',addr:'',tel:'',bank:''}); save(); });
+  document.querySelectorAll('[data-myco-del]').forEach(b=>b.onclick=()=>{ if(state.myCompanies.length<=1){ alert('至少保留一家公司'); return; } if(confirm('刪除這家公司？')){ state.myCompanies=state.myCompanies.filter(x=>x.id!==b.dataset.mycoDel); save(); } });
+  // 報價單 / 請款單
+  on('d-new','onclick',()=>{ docDraft=newDraft(tab); render(); });
+  on('d-addline','onclick',()=>{ readDocDraftFromForm(); docDraft.lines.push({item:'',unit:'式',qty:1,price:0}); render(); });
+  on('d-cancel','onclick',()=>{ docDraft=null; render(); });
+  on('d-taxmode','onchange',()=>{ readDocDraftFromForm(); render(); });
+  on('d-taxpct','onchange',()=>{ readDocDraftFromForm(); render(); });
+  document.querySelectorAll('[data-dline-del]').forEach(b=>b.onclick=()=>{ readDocDraftFromForm(); docDraft.lines.splice(Number(b.dataset.dlineDel),1); if(!docDraft.lines.length) docDraft.lines.push({item:'',unit:'式',qty:1,price:0}); render(); });
+  document.querySelectorAll('[id^="dl-qty"],[id^="dl-price"]').forEach(el=>el.onchange=()=>{ readDocDraftFromForm(); render(); });
+  on('d-save','onclick',()=>{
+    readDocDraftFromForm(); const d=docDraft, arr=DOC_META[d.type].arr;
+    if(!d.lines.some(l=>num(l.qty)*num(l.price)>0)){ alert('請至少填一筆有金額的明細'); return; }
+    if(d.id){ const i=state[arr].findIndex(x=>x.id===d.id); if(i>=0) state[arr][i]=Object.assign({},d); }
+    else { d.id=uid(); state[arr].push(Object.assign({},d)); }
+    docDraft=null; save();
+  });
+  document.querySelectorAll('[data-doc-edit]').forEach(b=>b.onclick=()=>{ const d=findDoc(b.dataset.docEdit); if(d){ docDraft=JSON.parse(JSON.stringify(d)); render(); } });
+  document.querySelectorAll('[data-doc-copy]').forEach(b=>b.onclick=()=>{ const d=findDoc(b.dataset.docCopy); if(d){ docDraft=JSON.parse(JSON.stringify(d)); docDraft.id=null; docDraft.no=nextDocNo(docDraft.type); docDraft.date=today(); docDraft.settled=false; delete docDraft.incomeId; render(); } });
+  document.querySelectorAll('[data-doc-del]').forEach(b=>b.onclick=()=>{ const d=findDoc(b.dataset.docDel); if(d&&confirm(`刪除 ${d.no}？`)){ if(d.incomeId) state.incomes=state.incomes.filter(x=>x.id!==d.incomeId); state.quotes=(state.quotes||[]).filter(x=>x.id!==d.id); state.invoices=(state.invoices||[]).filter(x=>x.id!==d.id); save(); } });
+  document.querySelectorAll('[data-doc-print]').forEach(b=>b.onclick=()=>printDoc(b.dataset.docPrint));
+  document.querySelectorAll('[data-doc-settle]').forEach(b=>b.onclick=()=>toggleInvoiceSettled(b.dataset.docSettle));
   on('acc-add','onclick',()=>{ const v=document.getElementById('acc-name').value.trim(); if(v&&!state.accounts.includes(v)){ state.accounts.push(v); save(); } });
   document.querySelectorAll('[data-accdel]').forEach(b=>b.onclick=()=>{ state.accounts.splice(Number(b.dataset.accdel),1); save(); });
   on('exp-json','onclick',()=>downloadJSON());
