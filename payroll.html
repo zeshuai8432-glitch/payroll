@@ -783,6 +783,14 @@ const measBilledDiffForKey = key => {
   const billed=state.billings.filter(b=>canonSiteKey(b.site)===key).reduce((s,b)=>s+billingAmount(b),0);
   return {meas, billed, diff:meas-billed};
 };
+// 外包樓層的單據：錢是付給外部工班的 → 收款按鈕顯示「已付款」比較直覺
+const isOutsourcedBill = b => {
+  const sp=splitSiteValue(b&&b.site);
+  if(sp.sub){ const p=state.sites.find(x=>x.name===sp.parent); return p?subSiteType(p,sp.sub)==='外包':false; }
+  const rec=state.sites.find(x=>x.name===sp.parent);
+  return !!(rec&&rec.parentSiteId&&rec.type==='外包');
+};
+const settleLabels = b => isOutsourcedBill(b)?{on:'✓ 已付款',off:'未付款'}:{on:'✓ 已收款',off:'未收款'};
 // 自動分潤的請款基準：母案場＝開給業主的已收款；子案場＝自己的工程款（「母 / 子」＋相容以子本名開的）
 const dealBillBasisForSite = site => {
   if(site.parentSiteId){
@@ -5168,7 +5176,7 @@ function viewBillingReq(){
             ${b.note?`<div style="font-size:13px;color:var(--text);margin-top:4px;font-weight:500">${esc(b.note)}</div>`:''}
           </div>
           <div style="display:flex;gap:4px;flex-wrap:wrap;flex-shrink:0">
-            <button class="act ${b.settled?'':'muted'}" data-togglesettle="${b.id}" style="${b.settled?'color:var(--accent)':''}">${b.settled?'✓ 已收款':'未收款'}</button>
+            <button class="act ${b.settled?'':'muted'}" data-togglesettle="${b.id}" style="${b.settled?'color:var(--accent)':''}">${b.settled?settleLabels(b).on:settleLabels(b).off}</button>
             ${isCoopSiteValue(b.site)?`<button class="act" data-copy-req="${b.id}">複製內容</button>`:''}
             <button class="act" data-billprint="${b.id}">列印</button>
             <button class="act danger" data-delbill="${b.id}">刪</button>
@@ -5327,7 +5335,7 @@ function viewBillingAdd(){
                 ${subSiteTag(b.site)}
                 ${b.client?`<span style="font-size:12px;color:var(--muted)">${esc(b.client)}</span>`:''}
                 ${billingSigs[b.id]?`<span style="font-size:11px;background:#dcfce7;color:#16a34a;border-radius:6px;padding:2px 8px;font-weight:700">${billingSigsLocked[b.id]?'🔒':'✓'} 已簽核</span>`:''}
-                <span class="tag" style="${b.settled?'background:#e3efe9;color:var(--accent)':'background:var(--bg);color:var(--muted)'}">${b.settled?'✓ 已收款':'未收款'}</span>
+                <span class="tag" style="${b.settled?'background:#e3efe9;color:var(--accent)':'background:var(--bg);color:var(--muted)'}">${b.settled?settleLabels(b).on:settleLabels(b).off}</span>
               </div>
               ${!combined&&billingLineMeta(b)?`<div style="font-size:12px;color:var(--muted);margin-top:2px">${billingLineMeta(b)}</div>`:''}
               ${b.note?`<div style="font-size:13px;color:var(--text);margin-top:4px;font-weight:500">${esc(b.note)}</div>`:''}
@@ -5404,7 +5412,7 @@ function viewBillingAdd(){
             ${mergePicker}
           </div>
           <div style="display:flex;gap:4px;flex-wrap:wrap;flex-shrink:0">
-            <button class="act ${b.settled?'':'muted'}" data-togglesettle="${b.id}" style="${b.settled?'color:var(--accent)':''}">${b.settled?'✓ 已收款':'未收款'}</button>
+            <button class="act ${b.settled?'':'muted'}" data-togglesettle="${b.id}" style="${b.settled?'color:var(--accent)':''}">${b.settled?settleLabels(b).on:settleLabels(b).off}</button>
             <button class="act" data-mergestart="${b.id}" title="金額分攤到同案場一或多張追加單，本單內帳保留">分攤→</button>
             ${ms>0?`<button class="act" data-wraptoggle="${b.id}" title="加總：分攤入直接加進對外金額。內含：本單是對外包裝單，分攤入視為內容物不加總，對外＝本單計算式" style="${b.wrapAlloc?'color:#1d4ed8;border:1px solid #1d4ed8;border-radius:6px':''}">${b.wrapAlloc?'內含模式':'分攤入：加總'}</button>`:''}
             <button class="act" data-printamt="${b.id}" title="對外開單金額（議價/含併入時蓋過計算式）">${(b.printAmount!=null&&b.printAmount!=='')?'改對外金額':'設對外金額'}</button>
@@ -5775,7 +5783,7 @@ function viewBilling(){
       <td><span class="tag" style="${typeStyle}">${esc(docType)}</span> ${esc(b.date||'')} ${subSiteTag(b.site)}</td>
       <td class="num">${money(billingAmount(b))}</td>
       <td>${esc(b.method||'')}</td><td>${esc(b.client||'')}</td>
-      <td><button class="act ${b.settled?'':'muted'}" data-togglesettle="${b.id}" data-fromtrack="1" style="${b.settled?'color:var(--accent)':''}">${b.settled?'✓ 已收款':'未收款'}</button></td>
+      <td><button class="act ${b.settled?'':'muted'}" data-togglesettle="${b.id}" data-fromtrack="1" style="${b.settled?'color:var(--accent)':''}">${b.settled?settleLabels(b).on:settleLabels(b).off}</button></td>
       <td>${esc(b.note||'')}</td>
       <td><button class="act" data-billprint="${b.id}">列印</button> <button class="act" data-billedit="${b.id}">改</button> <button class="act danger" data-delbill="${b.id}">刪</button></td>
     </tr>
