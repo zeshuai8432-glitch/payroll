@@ -739,11 +739,14 @@ const siteDisplayLabel = value => {
   const p=splitSiteValue(value);
   return p.sub?`${p.parent} / ${p.sub}`:p.parent;
 };
+// 案場名稱智慧排序：中文照筆劃、數字照大小（4F→5F→9F→10F，不會 10F 排在 4F 前）
+const siteNameCompare=(a,b)=>String(a||'').localeCompare(String(b||''),'zh-Hant',{numeric:true});
 function siteSelectOptions(selected=''){
-  return `<option value="">（選案場）</option>`+state.sites.filter(s=>s.active!==false&&!s.parentSiteId).map(s=>{
+  const parents=state.sites.filter(s=>s.active!==false&&!s.parentSiteId).slice().sort((a,b)=>siteNameCompare(a.name,b.name));
+  return `<option value="">（選案場）</option>`+parents.map(s=>{
     const label=siteTypeLabel(s.name);
     const parentOpt=`<option value="${esc(s.name)}" ${selected===s.name?'selected':''}>${esc(s.name)}${label?`（${esc(label)}）`:''}</option>`;
-    const subOpts=subSitesOf(s).map(sub=>{
+    const subOpts=subSitesOf(s).slice().sort(siteNameCompare).map(sub=>{
       const child=childSiteFor(s,sub);
       const val=child?child.name:siteOptionValue(s.name,sub);
       const type=subSiteType(s,sub);
@@ -1413,7 +1416,7 @@ function refreshEntryTodayNote(){
 function viewEntry(){
   const activeEmps=state.employees.filter(e=>e.active);
   const empOpts=activeEmps.map(e=>`<option value="${e.id}">${esc(e.name)}（日薪 ${e.daily}）</option>`).join('');
-  const activeSites=state.sites.filter(s=>s.active!==false && !s.coop);
+  const activeSites=state.sites.filter(s=>s.active!==false && !s.coop).slice().sort((a,b)=>siteNameCompare(siteDisplayName(a),siteDisplayName(b)));
   const siteOpts=activeSites.map(s=>`<option value="${s.id}">${esc(siteDisplayName(s))}</option>`).join('');
   const needEmp=activeEmps.length===0, needSite=activeSites.length===0;
   const noSetup=needEmp||needSite;
