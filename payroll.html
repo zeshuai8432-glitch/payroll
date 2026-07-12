@@ -495,7 +495,7 @@ const FS_KEY = 'AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
 const FS_DOC_BASE = 'https://firestore.googleapis.com/v1/projects/'+FS_PROJECT+'/databases/(default)/documents/payroll/';
 const FS_REST_URL = FS_DOC_BASE+'main?key='+FS_KEY;
 const APP_VERSION = 'v2026.07.12-rescue';
-let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], tools:[], locations:[], assets:[], advances:[], accounts:[], ledger:[], deals:[], billings:[], measurements:[], contracts:{}, costs:[], textMemory:{clients:[],companies:[]}, parkAccId:'', oweBonus:{}, minFund:'', payrollSnapshots:[], deletedIds:[], resurrected:{ids:[],at:0}, tab:'dash' };
+let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], tools:[], locations:[], assets:[], advances:[], accounts:[], ledger:[], deals:[], billings:[], measurements:[], contracts:{}, costs:[], textMemory:{clients:[],companies:[]}, parkAccId:'', oweBonus:{}, minFund:'', payrollSnapshots:[], yearIncomeAdj:[], deletedIds:[], resurrected:{ids:[],at:0}, tab:'dash' };
 let cloudStatus='連線中…';
 let localDirty=false, lastCloudTs=0;
 let dirtyOther=false; // 未上傳的變更中是否含「標記以外」的修改（決定衝突時能否自動合併）
@@ -832,7 +832,7 @@ const taxBreakdownHtml = (d,c) => {
 
 function applyData(d){
   if(!d) return;
-  state.employees=d.employees||[]; state.sites=d.sites||[]; state.attendance=d.attendance||[]; state.adjustments=d.adjustments||[]; state.loans=d.loans||[]; state.tools=d.tools||[]; state.locations=d.locations||[]; state.assets=d.assets||[]; state.advances=d.advances||[]; state.accounts=d.accounts||[]; state.ledger=d.ledger||[]; state.deals=d.deals||[]; state.billings=d.billings||[]; state.measurements=d.measurements||[]; state.contracts=d.contracts||{}; state.costs=d.costs||[]; state.textMemory=d.textMemory||{clients:[],companies:[]}; state.parkAccId=d.parkAccId||''; state.oweBonus=d.oweBonus||{}; state.minFund=(d.minFund!==undefined?d.minFund:''); state.payrollSnapshots=d.payrollSnapshots||[]; state.deletedIds=d.deletedIds||[]; if(d.resurrected&&Array.isArray(d.resurrected.ids)) state.resurrected={ids:d.resurrected.ids,at:Number(d.resurrected.at)||0}; else if(!state.resurrected) state.resurrected={ids:[],at:0};
+  state.employees=d.employees||[]; state.sites=d.sites||[]; state.attendance=d.attendance||[]; state.adjustments=d.adjustments||[]; state.loans=d.loans||[]; state.tools=d.tools||[]; state.locations=d.locations||[]; state.assets=d.assets||[]; state.advances=d.advances||[]; state.accounts=d.accounts||[]; state.ledger=d.ledger||[]; state.deals=d.deals||[]; state.billings=d.billings||[]; state.measurements=d.measurements||[]; state.contracts=d.contracts||{}; state.costs=d.costs||[]; state.textMemory=d.textMemory||{clients:[],companies:[]}; state.parkAccId=d.parkAccId||''; state.oweBonus=d.oweBonus||{}; state.minFund=(d.minFund!==undefined?d.minFund:''); state.payrollSnapshots=d.payrollSnapshots||[]; state.yearIncomeAdj=d.yearIncomeAdj||[]; state.deletedIds=d.deletedIds||[]; if(d.resurrected&&Array.isArray(d.resurrected.ids)) state.resurrected={ids:d.resurrected.ids,at:Number(d.resurrected.at)||0}; else if(!state.resurrected) state.resurrected={ids:[],at:0};
   state.employees.forEach(e=>{ if(e.active===undefined) e.active=true; });
   state.sites.forEach(s=>{
     if(s.parentSiteId){
@@ -859,10 +859,10 @@ function packData(){
     const driveUrls=(urls||[]).filter(u=>typeof u==='string'&&u.startsWith('http'));
     if(driveUrls.length) photosSync[id]=driveUrls;
   });
-  return {employees:state.employees,sites:state.sites,attendance:state.attendance,adjustments:state.adjustments,loans:state.loans,tools:state.tools,locations:state.locations,assets:state.assets,advances:state.advances,accounts:state.accounts,ledger:state.ledger,deals:state.deals,billings:state.billings,measurements:state.measurements,contracts:state.contracts,costs:state.costs,textMemory:state.textMemory,parkAccId:state.parkAccId,oweBonus:state.oweBonus,minFund:state.minFund,payrollSnapshots:state.payrollSnapshots,resurrected:state.resurrected||{ids:[],at:0},billingPhotos:photosSync,billingPhotosDeleted:billingPhotosDeleted,billingSigs:billingSigs,billingSigsLocked:billingSigsLocked,billingSigMeta:billingSigMeta,deletedIds:state.deletedIds||[],savedAt:Date.now()};
+  return {employees:state.employees,sites:state.sites,attendance:state.attendance,adjustments:state.adjustments,loans:state.loans,tools:state.tools,locations:state.locations,assets:state.assets,advances:state.advances,accounts:state.accounts,ledger:state.ledger,deals:state.deals,billings:state.billings,measurements:state.measurements,contracts:state.contracts,costs:state.costs,textMemory:state.textMemory,parkAccId:state.parkAccId,oweBonus:state.oweBonus,minFund:state.minFund,payrollSnapshots:state.payrollSnapshots,yearIncomeAdj:state.yearIncomeAdj||[],resurrected:state.resurrected||{ids:[],at:0},billingPhotos:photosSync,billingPhotosDeleted:billingPhotosDeleted,billingSigs:billingSigs,billingSigsLocked:billingSigsLocked,billingSigMeta:billingSigMeta,deletedIds:state.deletedIds||[],savedAt:Date.now()};
 }
 // 需要逐筆(依 id)合併的集合；deals 為衍生資料不合併，靠 resyncAllSiteDeals 重算
-const MERGE_COLLECTIONS=['employees','sites','attendance','adjustments','loans','tools','locations','assets','advances','accounts','ledger','billings','measurements','costs','payrollSnapshots'];
+const MERGE_COLLECTIONS=['employees','sites','attendance','adjustments','loans','tools','locations','assets','advances','accounts','ledger','billings','measurements','costs','payrollSnapshots','yearIncomeAdj'];
 // union：以 base 為主，把 add 裡「base 沒有的 id」補進來；相同 id 不覆蓋；已刪除(記號)的一律排除
 function unionById(baseArr, addArr, delSet){
   const del=delSet||new Set(state.deletedIds||[]);
@@ -1415,10 +1415,11 @@ function foldBtn(key, label){
 function tabsBar(){
   const groups=[
     ['總覽',[['dash','首頁總覽'],['search','全域搜尋']]],
-    ['薪資作業',[['entry','登記出工'],['payroll','員工薪資']]],
-    ['財務管理',[['loans','借支管理'],['tools','工具管理'],['advances','代墊款'],['accounts','公積金帳戶'],['deals','分潤結算'],['billing','請款追蹤'],['yearend','年度總結'],['yearincome','年度收入'],['parkacc','品佑帳戶結算'],['recon','對帳匯出']]],
-    ['單據',[['billingReq','請款單'],['billingAdd','追加單'],['meas','計量明細']]],
-    ['設定',[['sites','案場成本'+(pyFound&&pyFound.length?` 🔺${pyFound.length}`:'')],['manage','員工/案場']]],
+    ['日常',[['entry','登記出工'],['meas','計量明細'],['tools','工具管理']]],
+    ['薪資',[['payroll','員工薪資'],['loans','借支管理'],['advances','代墊款'],['yearincome','年度收入']]],
+    ['請款',[['billingReq','請款單'],['billingAdd','追加單'],['billing','請款追蹤']]],
+    ['結算',[['deals','分潤結算'],['accounts','公積金帳戶'],['parkacc','品佑帳戶結算'],['yearend','年度總結'],['recon','對帳匯出']]],
+    ['案場管理',[['sites','案場成本'+(pyFound&&pyFound.length?` 🔺${pyFound.length}`:'')],['manage','員工/案場']]],
   ];
   return groups.map(([label,items])=>`
     <div class="nav-group">
@@ -2357,6 +2358,25 @@ function bind(){
   const yiYear=document.getElementById('yi-year'); if(yiYear) yiYear.onchange=()=>{ const v=parseInt(yiYear.value,10); if(v>=2000&&v<=2100){ yearIncomeYear=v; render(); } };
   const yiPdf=document.getElementById('yi-pdf'); if(yiPdf) yiPdf.onclick=()=>printYearIncome();
   const yiCsv=document.getElementById('yi-csv'); if(yiCsv) yiCsv.onclick=()=>exportYearIncomeCSV();
+  // 年度收入：點格子手動補登（系統啟用前的舊資料）
+  document.querySelectorAll('[data-yiedit]').forEach(td=>td.onclick=()=>{
+    const parts=td.dataset.yiedit.split('::'); const empId=parts[0]; const mi=+parts[1]; const month=mi+1;
+    const aid=`yi-${empId}-${yearIncomeYear}-${month}`;
+    state.yearIncomeAdj=state.yearIncomeAdj||[];
+    const cur=state.yearIncomeAdj.find(a=>a.id===aid);
+    const data=yearIncomeData(yearIncomeYear);
+    const row=data.emps.find(x=>x.id===empId);
+    const sys=(row?(Number(row.months[mi])||0):0)-((cur&&Number(cur.amount))||0);
+    const v=prompt(`${empName(empId)}　${yearIncomeYear}年${month}月（計薪 ${month===1?12:month-1}/11～${month}/10）手動補登\n系統計算：${money(sys)}${cur?`　目前補登：${money(cur.amount)}`:''}\n補登金額會「加在」系統計算之上（給系統啟用前沒資料的月份用）。\n\n輸入金額，留空＝清除補登：`, cur?cur.amount:'');
+    if(v==null) return;
+    const t=String(v).replace(/[,$\s]/g,'');
+    if(t===''){ if(cur){ state.yearIncomeAdj=state.yearIncomeAdj.filter(a=>a.id!==aid); saveData(); render(); } return; }
+    const amt=Math.round(parseFloat(t));
+    if(isNaN(amt)){ alert('金額不對，已取消。'); return; }
+    if(cur) cur.amount=amt;
+    else { state.deletedIds=(state.deletedIds||[]).filter(x=>x!==aid); state.yearIncomeAdj.push({id:aid, empId, year:yearIncomeYear, month, amount:amt}); }
+    saveData(); render();
+  });
   document.querySelectorAll('[data-toggle-form]').forEach(b=>b.onclick=()=>{ const k=b.dataset.toggleForm; formOpen[k]=!formOpen[k]; render(); });
 
   const pf=document.getElementById('pay-from'); if(pf) pf.onchange=()=>{ state.payFrom=pf.value; render(); };
@@ -6063,19 +6083,31 @@ function exportRecon(){
 let yearIncomeYear=new Date().getFullYear();
 function yearIncomeData(year){
   const isPartner=id=>{ const e=state.employees.find(x=>x.id===id); return e&&e.partner; };
+  const fmt=x=>`${x.getFullYear()}-${String(x.getMonth()+1).padStart(2,'0')}-${String(x.getDate()).padStart(2,'0')}`;
   const byId={}; const monthTotals=Array(12).fill(0);
+  const ensure=id=>byId[id]=byId[id]||{id,name:empName(id),months:Array(12).fill(0),manual:Array(12).fill(null),total:0};
   for(let m=0;m<12;m++){
-    const mm=String(m+1).padStart(2,'0');
-    const from=`${year}-${mm}-01`;
-    const last=new Date(year,m+1,0).getDate();
-    const to=`${year}-${mm}-${String(last).padStart(2,'0')}`;
+    // 「m+1月」＝計薪週期（m月11日～m+1月10日），跟員工薪資頁同一套（例：7月欄＝6/11～7/10 的 0711工資）
+    const from=fmt(new Date(year, m-1, 11));
+    const to=fmt(new Date(year, m, 10));
     const be=buildPayroll(from,to);
     Object.keys(be).forEach(id=>{ if(isPartner(id)) return; const e=be[id]; const net=Number(e.net)||0;
       if(net===0 && e.days.size===0 && e.addTotal===0 && e.dedTotal===0) return;
-      byId[id]=byId[id]||{id,name:empName(id),months:Array(12).fill(0),total:0};
-      byId[id].months[m]+=net; byId[id].total+=net; monthTotals[m]+=net;
+      const row=ensure(id);
+      row.months[m]+=net; row.total+=net; monthTotals[m]+=net;
     });
   }
+  // 手動補登（系統啟用前沒資料的月份，點表格格子輸入）
+  (state.yearIncomeAdj||[]).forEach(a=>{
+    if(!a||Number(a.year)!==Number(year)) return;
+    const m=Number(a.month)-1; if(!(m>=0&&m<12)) return;
+    if(isPartner(a.empId)) return;
+    const row=ensure(a.empId);
+    const amt=Number(a.amount)||0;
+    row.months[m]+=amt; row.manual[m]=amt; row.total+=amt; monthTotals[m]+=amt;
+  });
+  // 在職員工就算整年沒資料也列出，才有格子可以點著補登
+  state.employees.filter(e=>e.active&&!e.partner).forEach(e=>ensure(e.id));
   const emps=Object.values(byId).sort((a,b)=>b.total-a.total);
   const grand=emps.reduce((s,e)=>s+e.total,0);
   return {emps,monthTotals,grand};
@@ -6087,10 +6119,10 @@ function printYearIncome(){
   const rows=data.emps.map(e=>`<tr><td>${esc(e.name)}</td>${e.months.map(v=>`<td class="num">${v?money(v):'-'}</td>`).join('')}<td class="num" style="font-weight:700">${money(e.total)}</td></tr>`).join('');
   const totalRow=`<tr class="total-row"><td>合計</td>${data.monthTotals.map(v=>`<td class="num">${v?money(v):'-'}</td>`).join('')}<td class="num">${money(data.grand)}</td></tr>`;
   const inner=`<h1>員工年度收入彙總 ${yearIncomeYear}</h1>
-    <div class="meta">依實發金額（每月按出勤日期歸月）　|　列印日期：${new Date().toISOString().slice(0,10)}　|　共 ${data.emps.length} 人</div>
+    <div class="meta">各月＝計薪週期（前月11日～當月10日）實發金額　|　列印日期：${new Date().toISOString().slice(0,10)}　|　共 ${data.emps.length} 人</div>
     <table><thead><tr><th>員工</th>${mHead}<th class="num">全年合計</th></tr></thead>
     <tbody>${rows}${totalRow}</tbody></table>
-    <p class="sub">各月金額＝該月出勤日期落點的實發薪資（基本工資＋加項−扣項）。含借支扣還等調整項；此為實際發放金額彙總。</p>`;
+    <p class="sub">各月金額＝該計薪週期（前月11日～當月10日）的實發薪資（基本工資＋加項−扣項），與員工薪資頁一致；含手動補登的歷史月份。</p>`;
   printHTML('員工年度收入 '+yearIncomeYear, inner, {landscape:true});
 }
 function exportYearIncomeCSV(){
@@ -6114,7 +6146,7 @@ function exportYearIncomeCSV(){
 function viewYearIncome(){
   const data=yearIncomeData(yearIncomeYear);
   const mHead=Array.from({length:12},(_,i)=>`<th class="num">${i+1}月</th>`).join('');
-  const rows=data.emps.map(e=>`<tr><td data-label="員工">${esc(e.name)}</td>${e.months.map((v,i)=>`<td class="num" data-label="${i+1}月">${v?money(v):'-'}</td>`).join('')}<td class="num" data-label="全年合計" style="font-weight:700">${money(e.total)}</td></tr>`).join('');
+  const rows=data.emps.map(e=>`<tr><td data-label="員工">${esc(e.name)}</td>${e.months.map((v,i)=>`<td class="num" data-label="${i+1}月" data-yiedit="${e.id}::${i}" style="cursor:pointer" title="點擊手動補登／修改這個月">${v?money(v):'-'}${e.manual&&e.manual[i]!=null?'<span style="font-size:9px;color:#1d4ed8"> ✎</span>':''}</td>`).join('')}<td class="num" data-label="全年合計" style="font-weight:700">${money(e.total)}</td></tr>`).join('');
   const totalRow=data.emps.length?`<tr class="total-row"><td>合計</td>${data.monthTotals.map(v=>`<td class="num">${v?money(v):'-'}</td>`).join('')}<td class="num">${money(data.grand)}</td></tr>`:'';
   return `
   <div class="card">
@@ -6126,7 +6158,7 @@ function viewYearIncome(){
         <button class="act" id="yi-next" style="height:34px;padding:0 12px">後一年 ›</button>
       </div>
     </div>
-    <p class="sub" style="margin:6px 0 0">每位員工整年實發薪資，按月拆開（依出勤日期歸月）。給員工對帳或報稅參考。</p>
+    <p class="sub" style="margin:6px 0 0">每位員工整年實發薪資。<b>各月＝計薪週期</b>（例：7月欄＝6/11～7/10），跟「員工薪資」頁的本期數字一致。<b>點任一格子可手動補登</b>系統啟用前的舊資料（藍色 ✎ 標記，會加進合計並同步各裝置）。</p>
     <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
       <button class="btn" id="yi-pdf" ${data.emps.length?'':'disabled style="opacity:.5"'}>匯出 PDF</button>
       <button class="act" id="yi-csv" ${data.emps.length?'':'disabled style="opacity:.5"'} style="border:1px solid var(--accent);color:var(--accent)">匯出 CSV（Excel）</button>
