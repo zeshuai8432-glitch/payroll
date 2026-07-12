@@ -2826,7 +2826,16 @@ function bind(){
   });
   document.querySelectorAll('[data-toggle]').forEach(b=>b.onclick=()=>{ const e=state.employees.find(x=>x.id===b.dataset.toggle); if(e){ e.active=!e.active; saveData(); render(); } });
   document.querySelectorAll('[data-partner]').forEach(b=>b.onclick=()=>{ const e=state.employees.find(x=>x.id===b.dataset.partner); if(e){ e.partner=!e.partner; saveData(); render(); } });
-  document.querySelectorAll('[data-delemp]').forEach(b=>b.onclick=()=>{ const e=state.employees.find(x=>x.id===b.dataset.delemp); if(!confirm(`確定刪除員工「${e?esc(e.name):''}」？`)) return; state.employees=state.employees.filter(e=>e.id!==b.dataset.delemp); saveData(); render(); });
+  document.querySelectorAll('[data-delemp]').forEach(b=>b.onclick=()=>{
+    const e=state.employees.find(x=>x.id===b.dataset.delemp); if(!e) return;
+    const adjN=state.adjustments.filter(a=>a.empId===e.id).length;
+    const loanN=state.loans.filter(l=>l.empId===e.id).length;
+    const advN=state.advances.filter(a=>a.empId===e.id).length;
+    const parts=[adjN?`加扣項 ${adjN} 筆`:'',loanN?`借支 ${loanN} 筆`:'',advN?`代墊款 ${advN} 筆`:''].filter(Boolean);
+    const extra=parts.length?`\n\n他名下還有${parts.join('、')}，那些紀錄會保留、名字顯示為「（已移除）」，仍可自行刪除。`:'';
+    if(!confirm(`確定刪除員工「${e.name}」？${extra}`)) return;
+    state.employees=state.employees.filter(x=>x.id!==b.dataset.delemp); saveData(); render();
+  });
   document.querySelectorAll('[data-renemp]').forEach(b=>b.onclick=()=>{
     const e=state.employees.find(x=>x.id===b.dataset.renemp); if(!e)return;
     const cell=b.closest('td');
@@ -3015,7 +3024,33 @@ function bind(){
     if(miss.length){ if(!confirm(`這個案場還沒設定：${miss.join('、')}。\n仍可先建立，但分潤的獎金歸屬／自動進帳可能不完整，記得之後到案場設定補上。\n\n要直接建立嗎？`)) return; }
     state.sites.push(site); saveData(); render();
   };
-  document.querySelectorAll('[data-delsite]').forEach(b=>b.onclick=()=>{ const s=state.sites.find(x=>x.id===b.dataset.delsite); if(!confirm(`確定刪除案場「${s?esc(s.name):''}」？`)) return; state.sites=state.sites.filter(s=>s.id!==b.dataset.delsite); saveData(); render(); });
+  document.querySelectorAll('[data-delsite]').forEach(b=>b.onclick=()=>{
+    const s=state.sites.find(x=>x.id===b.dataset.delsite); if(!s) return;
+    // 盤點連動資料，刪之前講清楚，不留看不到又刪不掉的孤兒
+    const myCosts=state.costs.filter(c=>c.siteId===s.id);
+    const children=state.sites.filter(x=>x.parentSiteId===s.id);
+    const hasName=v=>v===s.name||String(v||'').startsWith(s.name+' / ');
+    const billN=(state.billings||[]).filter(x=>hasName(x.site)).length;
+    const measN=(state.measurements||[]).filter(x=>hasName(x.site)).length;
+    const costIds=new Set(myCosts.map(c=>c.id));
+    const hasReimbTx=state.ledger.some(t=>t&&t.reimbCostId&&costIds.has(t.reimbCostId));
+    const lines=[];
+    if(myCosts.length) lines.push(`・成本明細 ${myCosts.length} 筆會一併刪除${hasReimbTx?'（含報銷在品佑帳戶的支出）':''}`);
+    if(children.length) lines.push(`・${children.length} 個子案場會解除掛靠、變回獨立案場（請款/計量改記在子案場名下）`);
+    if(billN||measN) lines.push(`・請款 ${billN} 筆／計量 ${measN} 筆按案場名保留，不會刪除`);
+    lines.push('・這個案場的自動分潤與帳戶進帳會一併移除');
+    if(!confirm(`確定刪除案場「${s.name}」？\n\n${lines.join('\n')}`)) return;
+    if(hasReimbTx) state.ledger=state.ledger.filter(t=>!(t&&t.reimbCostId&&costIds.has(t.reimbCostId)));
+    state.costs=state.costs.filter(c=>c.siteId!==s.id);
+    children.forEach(ch=>{ // 同「拉出」邏輯：請款/計量從「母 / 子」改記子案場名，子案場才接得回去
+      const val=siteOptionValue(s.name,ch.name);
+      (state.billings||[]).forEach(x=>{ if(x.site===val) x.site=ch.name; });
+      (state.measurements||[]).forEach(x=>{ if(x.site===val) x.site=ch.name; });
+      ch.parentSiteId=''; ch.parentSiteName='';
+    });
+    state.sites=state.sites.filter(x=>x.id!==s.id);
+    resyncAllSiteDeals(); saveData(); render();
+  });
   document.querySelectorAll('[data-togglecoop]').forEach(b=>b.onclick=()=>{
     const s=state.sites.find(x=>x.id===b.dataset.togglecoop); if(!s) return;
     if(!s.coop){
@@ -3063,7 +3098,7 @@ function bind(){
   document.querySelectorAll('[data-reimb]').forEach(b=>b.onclick=()=>{
     const c=state.costs.find(x=>x.id===b.dataset.reimb); if(!c) return;
     const pn=({dz:'東澤',gx:'廣昕',py:'品佑'})[c.payer]||c.payer||'—';
-    const hasPark=!!state.parkAccId;
+    const hasPark=!!state.parkAccId&&state.accounts.some(a=>a.id===state.parkAccId); // 帳戶要真的還在，才不會把報銷寫進幽靈帳戶
     const extra=hasPark?`・品佑帳戶會記一筆支出 ${money(c.amount)}（摘要：${esc(c.item||'報銷')}）`:'・（尚未設定品佑帳戶，這次只標記報銷、不記品佑支出。可到「品佑帳戶結算」設定後再用）';
     if(!confirm(`報銷這筆？\n\n・${siteName(c.siteId)||''}　${esc(c.item||'')}　${money(c.amount)}\n・原墊付人：${pn} → 改為品佑\n${extra}\n\n確定報銷？`)) return;
     c.origPayer=c.payer;
@@ -3306,8 +3341,20 @@ function bind(){
     saveData(); render();
   };
   document.querySelectorAll('[data-delacc]').forEach(b=>b.onclick=()=>{
-    const a=state.accounts.find(x=>x.id===b.dataset.delacc); if(!confirm(`確定刪除帳戶「${a?esc(a.name):''}」？`)) return;
-    state.accounts=state.accounts.filter(a=>a.id!==b.dataset.delacc); saveData(); render();
+    const a=state.accounts.find(x=>x.id===b.dataset.delacc); if(!a) return;
+    // 帳戶可能被案場設定／分潤／品佑結算指到：刪除時一併解除，之後的自動進帳、報銷才不會寫進幽靈帳戶
+    const refSites=state.sites.filter(s=>s.siteAcc===a.id);
+    const refDeals=state.deals.filter(d=>d.moneyAcc===a.id);
+    const isPark=state.parkAccId===a.id;
+    const refs=[];
+    if(refSites.length) refs.push(`・${refSites.length} 個案場的「錢進哪個帳戶」指到它（會改回未指定）`);
+    if(refDeals.length) refs.push(`・${refDeals.length} 筆分潤的入帳帳戶指到它（會改回未指定）`);
+    if(isPark) refs.push('・它是「品佑帳戶結算」指定的帳戶（會改回未選）');
+    if(!confirm(`確定刪除帳戶「${a.name}」？${refs.length?'\n\n'+refs.join('\n'):''}`)) return;
+    refSites.forEach(s=>{ s.siteAcc=''; });
+    refDeals.forEach(d=>{ d.moneyAcc=''; syncDealIncome(d); });
+    if(isPark) state.parkAccId='';
+    state.accounts=state.accounts.filter(x=>x.id!==a.id); saveData(); render();
   });
   document.querySelectorAll('[data-editopen]').forEach(b=>b.onclick=()=>{
     const a=state.accounts.find(x=>x.id===b.dataset.editopen); if(!a) return;
@@ -3338,7 +3385,13 @@ function bind(){
     }
     if(t&&t.autoDealId){ alert('這筆是分潤「錢進哪個帳戶」自動產生的進帳。請到「分潤結算」改該筆的帳戶或刪除分潤來移除，別在這裡刪，以免帳對不上。'); return; }
     if(t&&t.fromDeal){ alert('這筆是分潤結算入帳產生的，請到「分潤結算」按該案場的「撤銷」來移除，以免帳對不上。'); return; }
-    if(t&&t.fromAdvance){ alert('這筆是代墊款入帳產生的，請到「代墊款」按該股東的「撤銷入帳」來移除。'); return; }
+    if(t&&t.fromAdvance){
+      const pid=String(t.fromAdvance).split('|')[1]||'';
+      const p=state.employees.find(e=>e.id===pid);
+      if(p&&p.partner){ alert('這筆是代墊款入帳產生的，請到「代墊款」按該股東的「撤銷入帳」來移除。'); return; }
+      if(!confirm('這筆是代墊款入帳產生的，但對應的股東已被刪除或取消股東身分，代墊款頁已看不到「撤銷入帳」鈕（孤兒紀錄）。\n\n直接刪除這筆？')) return;
+      state.ledger=state.ledger.filter(x=>x.id!==t.id); saveData(); render(); return;
+    }
     if(!confirm('確定刪除這筆收支？')) return;
     state.ledger=state.ledger.filter(t=>t.id!==b.dataset.delledger); saveData(); render();
   });
@@ -3729,7 +3782,9 @@ function bind(){
     saveData(); render();
   };
   document.querySelectorAll('[data-del-meas]').forEach(b=>b.onclick=()=>{
-    if(!confirm('確定刪除這筆計量明細？')) return;
+    const m=state.measurements.find(x=>x.id===b.dataset.delMeas);
+    const linked=m&&m.billedTo&&state.billings.some(x=>x.id===m.billedTo);
+    if(!confirm(linked?'這筆計量已帶入請款單。\n刪除計量不會動到請款單（請款金額照舊），計量與已開請款的差額會出現落差。確定刪除？':'確定刪除這筆計量明細？')) return;
     state.measurements=state.measurements.filter(m=>m.id!==b.dataset.delMeas);
     saveData(); render();
   });
@@ -3920,7 +3975,11 @@ function bind(){
   });
   document.querySelectorAll('[data-delbill]').forEach(b=>b.onclick=()=>{
     const bill=state.billings.find(x=>x.id===b.dataset.delbill);
-    if(!confirm('確定刪除這筆請款？')) return;
+    // 有內帳單分攤進這張單 → 刪除時自動撤銷那些分攤，金額退回原單，不留「目標已刪」的懸空金額
+    const srcs=bill?state.billings.filter(x=>x.id!==bill.id&&Array.isArray(x.allocOut)&&x.allocOut.some(a=>a&&a.to===bill.id)):[];
+    const inSum=srcs.reduce((s,x)=>s+x.allocOut.reduce((t,a)=>t+((a&&a.to===bill.id)?(Number(a.amount)||0):0),0),0);
+    if(!confirm(`確定刪除這筆請款？${srcs.length?`\n\n有 ${srcs.length} 筆內帳單分攤進這張單（共 ${money(inSum)}）。\n刪除後那些分攤會自動撤銷，金額退回原單、恢復正常顯示。`:''}`)) return;
+    srcs.forEach(x=>{ x.allocOut=x.allocOut.filter(a=>!(a&&a.to===bill.id)); if(!x.allocOut.length) delete x.allocOut; });
     const siteName=bill?bill.site:null;
     state.billings=state.billings.filter(x=>x.id!==b.dataset.delbill);
     // 重算該案場分潤（找得到案場就 resync）
@@ -5175,6 +5234,16 @@ function resyncAllSiteDeals(){
   const tombs=new Set(state.deletedIds||[]);
   const costIds=new Set((state.costs||[]).map(c=>c&&c.id));
   state.ledger=state.ledger.filter(t=>!(t && t.reimbCostId && !costIds.has(t.reimbCostId) && tombs.has(t.reimbCostId)));
+  // ④ 清自動分潤孤兒：案場已刪，它的自動分潤（無刪除鈕）與「分潤進帳」會卡成幽靈帳 → 一併移除。
+  //    自動分潤是衍生資料、每次合併後重算，這裡只動 autoSiteId 的，不會誤殺手動分潤。
+  if((state.sites||[]).length){
+    const siteIds=new Set(state.sites.map(s=>s&&s.id));
+    const ghost=new Set((state.deals||[]).filter(d=>d&&d.autoSiteId&&!siteIds.has(d.autoSiteId)).map(d=>d.id));
+    if(ghost.size){
+      state.deals=state.deals.filter(d=>!ghost.has(d.id));
+      state.ledger=state.ledger.filter(t=>!(t&&ghost.has(t.autoDealId)));
+    }
+  }
 }
 // 案場驅動：代工/公司分潤案場 → 自動維護「一個案場一筆分潤」，金額＝該案場總請款
 function resyncSiteDeal(site){
