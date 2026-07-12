@@ -1416,7 +1416,8 @@ function refreshEntryTodayNote(){
 function viewEntry(){
   const activeEmps=state.employees.filter(e=>e.active);
   const empOpts=activeEmps.map(e=>`<option value="${e.id}">${esc(e.name)}（日薪 ${e.daily}）</option>`).join('');
-  const activeSites=state.sites.filter(s=>s.active!==false && !s.coop).slice().sort((a,b)=>siteNameCompare(siteDisplayName(a),siteDisplayName(b)));
+  // 出工選單排除「外包」樓層：外包是外部工班做的，自家出工記在那裡工資會漏出分潤鏈
+  const activeSites=state.sites.filter(s=>s.active!==false && !s.coop && s.type!=='外包').slice().sort((a,b)=>siteNameCompare(siteDisplayName(a),siteDisplayName(b)));
   const siteOpts=activeSites.map(s=>`<option value="${s.id}">${esc(siteDisplayName(s))}</option>`).join('');
   const needEmp=activeEmps.length===0, needSite=activeSites.length===0;
   const noSetup=needEmp||needSite;
