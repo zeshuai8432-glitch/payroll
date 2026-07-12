@@ -488,13 +488,17 @@ const LS_PHOTOS_DEL = 'pm_billing_photos_deleted_v1';
 const LS_SIGS        = 'pm_billing_sigs_v1';
 const LS_SIGS_LOCKED = 'pm_billing_sigs_locked_v1';
 const LS_SIG_META    = 'pm_billing_sig_meta_v1';
+const LS_SIG_PENDING = 'pm_billing_sig_pending_v1';
 const LS_DIRTY       = 'pm_cloud_dirty_v1';
+const LS_BACKUP_AT   = 'pm_cloud_backup_at_v1';
 const CLOUD_URL = 'https://script.google.com/macros/s/AKfycbyMPs38UNzAwX3bcD2n9nQBz0HofUW9qFweSOnmoySs8VW2bJYHn47RdyZLQ8bD8SNWTg/exec';
 const FS_PROJECT = 'payroll-d1abe';
 const FS_KEY = 'AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
-const FS_DOC_BASE = 'https://firestore.googleapis.com/v1/projects/'+FS_PROJECT+'/databases/(default)/documents/payroll/';
+const FS_ROOT = 'https://firestore.googleapis.com/v1/projects/'+FS_PROJECT+'/databases/(default)/documents/';
+const FS_DOC_BASE = FS_ROOT+'payroll/';
+const FS_SIG_BASE = FS_ROOT+'payrollSignatures/';
 const FS_REST_URL = FS_DOC_BASE+'main?key='+FS_KEY;
-const APP_VERSION = 'v2026.07.12b-alloc+outsource+link';
+const APP_VERSION = 'v2026.07.12c-sync-safe';
 let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], tools:[], locations:[], assets:[], advances:[], accounts:[], ledger:[], deals:[], billings:[], measurements:[], contracts:{}, costs:[], textMemory:{clients:[],companies:[]}, parkAccId:'', oweBonus:{}, minFund:'', payrollSnapshots:[], yearIncomeAdj:[], deletedIds:[], resurrected:{ids:[],at:0}, tab:'dash' };
 let cloudStatus='連線中…';
 let localDirty=false, lastCloudTs=0;
@@ -512,6 +516,10 @@ let payslipShowWorkDetails=false;
 
 const round = n => Math.round(n);
 const money = n => '$' + round(n).toLocaleString();
+const localISODate = (value=new Date()) => {
+  const d=value instanceof Date?value:new Date(value);
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+};
 // 計算式金額（數量×單價 或 金額欄）＝這張單自己的帳面值
 const rawBillingAmount = b => {
   const qty=Number(b&&b.qty), up=Number(b&&b.unitPrice);
@@ -605,8 +613,8 @@ function bindMeasSubtotal(){
     if(qtyLabel) qtyLabel.textContent=isCarry?'數量':(isAutoArea?'數量/面積':(cnt>1?'每間數量':'數量'));
     if(unit){
       unit.placeholder=isCarry?'趟、車、包、式':'㎡、坪、工、M、式';
-      if(isCarry&&unit.value==='㎡') unit.value='趟';
-      if(!isCarry&&unit.value==='趟') unit.value='㎡';
+      if(isCarry&&unit.value==='㎡') unit.value='';
+      if(isPartition&&unit.value==='') unit.value='㎡';
     }
     if(isAutoArea){
       const w=parseFloat(width&&width.value), h=parseFloat(height&&height.value);
@@ -708,27 +716,30 @@ function renameSubSite(parent, oldName, newName){
   const oldVal=siteOptionValue(parent.name,oldName);
   const newVal=siteOptionValue(parent.name,next);
   const child=childSiteFor(parent,oldName);
+  const legacyNameUnique=state.sites.filter(x=>x.name===oldName).length===1;
   parent.subSites=current.map(x=>x===oldName?next:x);
   if(parent.subSiteTypes&&parent.subSiteTypes[oldName]!==undefined){
     parent.subSiteTypes[next]=parent.subSiteTypes[oldName];
     delete parent.subSiteTypes[oldName];
   }
   if(child) child.name=next;
-  (state.billings||[]).forEach(x=>{ if(x.site===oldVal) x.site=newVal; if(child&&x.site===oldName) x.site=next; });
-  (state.measurements||[]).forEach(x=>{ if(x.site===oldVal) x.site=newVal; if(child&&x.site===oldName) x.site=next; });
+  (state.billings||[]).forEach(x=>{ if(x.site===oldVal||(child&&legacyNameUnique&&x.site===oldName)) x.site=newVal; });
+  (state.measurements||[]).forEach(x=>{ if(x.site===oldVal||(child&&legacyNameUnique&&x.site===oldName)) x.site=newVal; });
   (state.costs||[]).forEach(x=>{ if(x.siteId===parent.id&&x.subSite===oldName) x.subSite=next; });
   return true;
 }
 const siteOptionValue = (siteName, subName='') => subName?`${siteName} / ${subName}`:siteName;
 const splitSiteValue = value => {
   const raw=String(value||'');
-  const direct=state.sites.find(s=>s.name===raw);
-  if(direct) return {parent:raw, sub:''};
+  // 先辨識完整「母 / 子」值，避免不同母案場的同名樓層被第一個同名案場攔截。
   const hit=state.sites.find(s=>subSitesOf(s).some(sub=>siteOptionValue(s.name,sub)===raw));
   if(hit){
     const prefix=hit.name+' / ';
     return {parent:hit.name, sub:raw.startsWith(prefix)?raw.slice(prefix.length):''};
   }
+  const direct=state.sites.find(s=>s.name===raw);
+  if(direct&&direct.parentSiteId){ const p=parentSiteOf(direct); if(p) return {parent:p.name,sub:direct.name}; }
+  if(direct) return {parent:raw, sub:''};
   return {parent:raw, sub:''};
 };
 const parentSiteName = value => splitSiteValue(value).parent || '（未填案場）';
@@ -748,9 +759,9 @@ function siteSelectOptions(selected=''){
     const parentOpt=`<option value="${esc(s.name)}" ${selected===s.name?'selected':''}>${esc(s.name)}${label?`（${esc(label)}）`:''}</option>`;
     const subOpts=subSitesOf(s).slice().sort(siteNameCompare).map(sub=>{
       const child=childSiteFor(s,sub);
-      const val=child?child.name:siteOptionValue(s.name,sub);
+      const val=siteOptionValue(s.name,sub);
       const type=subSiteType(s,sub);
-      return `<option value="${esc(val)}" ${selected===val?'selected':''}>　↳ ${esc(sub)}${type?`（${esc(type)}）`:''}</option>`;
+      return `<option value="${esc(val)}" ${selected===val||(child&&selected===child.name)?'selected':''}>　↳ ${esc(sub)}${type?`（${esc(type)}）`:''}</option>`;
     }).join('');
     return parentOpt+subOpts;
   }).join('');
@@ -845,6 +856,15 @@ function applyData(d){
       }
     }
   });
+  // 舊版曾把子案場只存成「10F」。名稱唯一時可安全升級成「母案場 / 10F」；
+  // 若真的有同名舊案場則不猜測，避免自動搬錯帳。
+  state.sites.filter(s=>s.parentSiteId).forEach(child=>{
+    const parent=parentSiteOf(child);
+    if(!parent||state.sites.filter(x=>x.name===child.name).length!==1) return;
+    const canonical=siteOptionValue(parent.name,child.name);
+    (state.billings||[]).forEach(x=>{ if(x.site===child.name) x.site=canonical; });
+    (state.measurements||[]).forEach(x=>{ if(x.site===child.name) x.site=canonical; });
+  });
   try{ migrateBillingMerges(); }catch(e){}
   try{ resyncAllSiteDeals(); }catch(e){}
   mergeBillingSigs(d.billingSigs||{}, d.billingSigsLocked||{}, d.billingSigMeta||{});
@@ -859,22 +879,46 @@ function packData(){
     const driveUrls=(urls||[]).filter(u=>typeof u==='string'&&u.startsWith('http'));
     if(driveUrls.length) photosSync[id]=driveUrls;
   });
-  return {employees:state.employees,sites:state.sites,attendance:state.attendance,adjustments:state.adjustments,loans:state.loans,tools:state.tools,locations:state.locations,assets:state.assets,advances:state.advances,accounts:state.accounts,ledger:state.ledger,deals:state.deals,billings:state.billings,measurements:state.measurements,contracts:state.contracts,costs:state.costs,textMemory:state.textMemory,parkAccId:state.parkAccId,oweBonus:state.oweBonus,minFund:state.minFund,payrollSnapshots:state.payrollSnapshots,yearIncomeAdj:state.yearIncomeAdj||[],resurrected:state.resurrected||{ids:[],at:0},billingPhotos:photosSync,billingPhotosDeleted:billingPhotosDeleted,billingSigs:billingSigs,billingSigsLocked:billingSigsLocked,billingSigMeta:billingSigMeta,deletedIds:state.deletedIds||[],savedAt:Date.now()};
+  return {employees:state.employees,sites:state.sites,attendance:state.attendance,adjustments:state.adjustments,loans:state.loans,tools:state.tools,locations:state.locations,assets:state.assets,advances:state.advances,accounts:state.accounts,ledger:state.ledger,deals:state.deals,billings:state.billings,measurements:state.measurements,contracts:state.contracts,costs:state.costs,textMemory:state.textMemory,parkAccId:state.parkAccId,oweBonus:state.oweBonus,minFund:state.minFund,payrollSnapshots:state.payrollSnapshots,yearIncomeAdj:state.yearIncomeAdj||[],resurrected:state.resurrected||{ids:[],at:0},billingPhotos:photosSync,billingPhotosDeleted:billingPhotosDeleted,deletedIds:state.deletedIds||[],savedAt:Date.now()};
 }
-// 需要逐筆(依 id)合併的集合；deals 為衍生資料不合併，靠 resyncAllSiteDeals 重算
-const MERGE_COLLECTIONS=['employees','sites','attendance','adjustments','loans','tools','locations','assets','advances','accounts','ledger','billings','measurements','costs','payrollSnapshots','yearIncomeAdj'];
-// union：以 base 為主，把 add 裡「base 沒有的 id」補進來；相同 id 不覆蓋；已刪除(記號)的一律排除
-function unionById(baseArr, addArr, delSet){
+// 所有以 id 儲存的資料都逐筆合併；自動分潤仍會在合併後重算，手動分潤則能保留下來。
+const MERGE_COLLECTIONS=['employees','sites','attendance','adjustments','loans','tools','locations','assets','advances','accounts','ledger','deals','billings','measurements','costs','payrollSnapshots','yearIncomeAdj'];
+const recordUpdatedAt = (r, fallback=0) => Number(r&&r.updatedAt)||Number(fallback)||0;
+const recordComparable = r => {
+  if(!r||typeof r!=='object') return '';
+  const copy={...r}; delete copy.updatedAt;
+  return JSON.stringify(copy);
+};
+// 相同 id 依每筆 updatedAt 決定；舊資料沒有 updatedAt 時才退回整份文件時間。
+function mergeById(baseArr, addArr, delSet, baseTs=0, addTs=0){
   const del=delSet||new Set(state.deletedIds||[]);
   const map=new Map();
-  (baseArr||[]).forEach(r=>{ if(r&&r.id!=null && !del.has(r.id)) map.set(r.id,r); });
-  (addArr||[]).forEach(r=>{ if(r&&r.id!=null && !del.has(r.id) && !map.has(r.id)) map.set(r.id,r); });
+  (baseArr||[]).forEach(r=>{ if(r&&r.id!=null&&!del.has(r.id)) map.set(r.id,r); });
+  (addArr||[]).forEach(r=>{
+    if(!r||r.id==null||del.has(r.id)) return;
+    const old=map.get(r.id);
+    if(!old||recordUpdatedAt(r,addTs)>recordUpdatedAt(old,baseTs)) map.set(r.id,r);
+  });
   return [...map.values()];
 }
 // ── 刪除記號(tombstone)：自動偵測哪些 id 被刪除，同步到各裝置，避免合併時被補回 ──
-let _prevIds=null;
+let _prevIds=null, _recordBaseline=null;
 function collectIds(){ const s=new Set(); MERGE_COLLECTIONS.forEach(k=>(state[k]||[]).forEach(r=>{ if(r&&r.id!=null) s.add(r.id); })); return s; }
-function refreshPrevIds(){ _prevIds=collectIds(); }
+function refreshRecordBaseline(){
+  _recordBaseline={};
+  MERGE_COLLECTIONS.forEach(k=>{ const m=new Map(); (state[k]||[]).forEach(r=>{ if(r&&r.id!=null) m.set(r.id,recordComparable(r)); }); _recordBaseline[k]=m; });
+}
+function refreshPrevIds(){ _prevIds=collectIds(); refreshRecordBaseline(); }
+function stampRecordChanges(forceAll=false){
+  const now=Date.now();
+  MERGE_COLLECTIONS.forEach(k=>{
+    const old=_recordBaseline&&_recordBaseline[k];
+    (state[k]||[]).forEach(r=>{
+      if(!r||r.id==null) return;
+      if(forceAll||!old||!old.has(r.id)||old.get(r.id)!==recordComparable(r)) r.updatedAt=now;
+    });
+  });
+}
 function recordDeletions(){ // 比對上次的 id 集合，消失的視為刪除，記入 deletedIds
   const cur=collectIds();
   if(_prevIds){
@@ -908,11 +952,11 @@ function mergeCloudDoc(cd){
     applyData(cd); // 內含 resyncAllSiteDeals + 合併簽名/照片（會把 deletedIds 設成雲端的）
     state.deletedIds=purgeDel([...new Set([...(state.deletedIds||[]),...keepDelIds])]); // 補回本機刪除記號（救回的除外）
     const del=new Set(state.deletedIds);
-    MERGE_COLLECTIONS.forEach(k=>{ state[k]=unionById(state[k], keepLogs[k], del); });
+    MERGE_COLLECTIONS.forEach(k=>{ state[k]=mergeById(state[k], keepLogs[k], del, cloudTs, localTs); });
   } else {
     state.deletedIds=purgeDel([...new Set([...(state.deletedIds||[]),...(cd.deletedIds||[])])]);
     const del=new Set(state.deletedIds);
-    MERGE_COLLECTIONS.forEach(k=>{ state[k]=unionById(state[k], cd[k]||[], del); });
+    MERGE_COLLECTIONS.forEach(k=>{ state[k]=mergeById(state[k], cd[k]||[], del, localTs, cloudTs); });
     mergeBillingSigs(cd.billingSigs||{}, cd.billingSigsLocked||{}, cd.billingSigMeta||{});
     mergeDeletedPhotos(cd.billingPhotosDeleted);
     if(cd.billingPhotos) mergeCloudPhotos(cd.billingPhotos);
@@ -986,6 +1030,7 @@ function importBackup(file){
       state.resurrected={ids:rIds,at:Date.now()};
       const rSet=new Set(rIds);
       state.deletedIds=(state.deletedIds||[]).filter(id=>!rSet.has(id));
+      stampRecordChanges(true); // 還原是使用者明確選擇，整份備份應優先於雲端舊值
       refreshPrevIds(); // 還原視為新基準，避免被誤判為大量刪除
       saveData();        // 寫回本機並推雲端，讓三人同步到還原後的版本
       render();
@@ -1112,39 +1157,110 @@ async function cloudGet(){
   if(window.__fb&&window.__fb.ok){
     try{
       const snap=await withTimeout(window.__fb.doc.get(),6000,'SDK 逾時');
-      return snap.exists?{ok:true,data:snap.data().json}:{ok:false};
+      const updateTime=snap.updateTime&&snap.updateTime.toDate?snap.updateTime.toDate().toISOString():'';
+      return snap.exists?{ok:true,data:snap.data().json,updateTime}:{ok:false,updateTime:''};
     }catch(e){ /* SDK 失敗或逾時，改走 REST */ }
   }
   const r=await fetchT(FS_REST_URL,{},10000);
-  if(r.status===404) return {ok:false};
+  if(r.status===404) return {ok:false,updateTime:''};
   if(!r.ok) throw new Error('HTTP '+r.status);
   const d=await r.json();
   const f=d.fields||{};
-  return {ok:!!(f.json&&f.json.stringValue),data:f.json?f.json.stringValue:null};
+  return {ok:!!(f.json&&f.json.stringValue),data:f.json?f.json.stringValue:null,updateTime:d.updateTime||''};
 }
-async function cloudSet(payload){
+async function cloudSet(payload, expectedVersion){
+  const bytes=typeof TextEncoder!=='undefined'?new TextEncoder().encode(payload).length:payload.length;
+  if(bytes>900000) throw new Error(`主資料已達 ${Math.round(bytes/1024)}KB，接近雲端上限，請先匯出備份並整理舊資料`);
   const savedAt=Date.now();
-  if(window.__fb&&window.__fb.ok){
+  if(window.__fb&&window.__fb.ok&&expectedVersion===undefined){
     try{ await withTimeout(window.__fb.doc.set({json:payload,savedAt}),8000,'SDK 逾時'); return; }catch(e){ /* SDK 失敗或逾時，改走 REST */ }
   }
-  const r=await fetchT(FS_REST_URL,{method:'PATCH',headers:{'Content-Type':'application/json'},
+  let url=FS_REST_URL;
+  if(expectedVersion===false) url+='&currentDocument.exists=false';
+  else if(expectedVersion) url+='&currentDocument.updateTime='+encodeURIComponent(expectedVersion);
+  const r=await fetchT(url,{method:'PATCH',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({fields:{json:{stringValue:payload},savedAt:{integerValue:String(savedAt)}}})},15000);
-  if(!r.ok) throw new Error('HTTP '+r.status);
+  if(!r.ok){
+    const detail=await r.text().catch(()=>"");
+    const err=new Error('HTTP '+r.status+(detail?(' '+detail.slice(0,120)):''));
+    err.conflict=r.status===409||r.status===412||/FAILED_PRECONDITION|ABORTED/i.test(detail);
+    throw err;
+  }
+  const d=await r.json().catch(()=>({}));
+  return d.updateTime||'';
 }
-// 歷史備份：把 payload 寫到另一個文件（10 分鐘一格 / 或指定 key），純安全網，失敗不影響主流程
+async function cloudSignatureSet(id){
+  const meta=billingSigMeta[id]||{updatedAt:Date.now()};
+  const deleted=!billingSigs[id];
+  const fields={
+    updatedAt:{integerValue:String(Number(meta.updatedAt)||Date.now())},
+    deleted:{booleanValue:deleted}
+  };
+  if(!deleted){ fields.data={stringValue:billingSigs[id]}; fields.locked={booleanValue:!!billingSigsLocked[id]}; }
+  const url=FS_SIG_BASE+encodeURIComponent(id)+'?key='+FS_KEY;
+  const r=await fetchT(url,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({fields})},15000);
+  if(!r.ok) throw new Error('簽名 HTTP '+r.status);
+}
+async function loadCloudSignatures(){
+  const found=new Set(); let token='';
+  for(let page=0;page<20;page++){
+    const url=FS_ROOT+'payrollSignatures?pageSize=300&key='+FS_KEY+(token?('&pageToken='+encodeURIComponent(token)):'');
+    const r=await fetchT(url,{},15000);
+    if(r.status===404) break;
+    if(!r.ok) throw new Error('簽名讀取 HTTP '+r.status);
+    const j=await r.json();
+    (j.documents||[]).forEach(doc=>{
+      const id=(doc.name||'').split('/').pop(); if(!id) return;
+      found.add(id);
+      const f=doc.fields||{}, incomingTs=Number(f.updatedAt&&f.updatedAt.integerValue)||0;
+      const localTs=Number((billingSigMeta[id]||{}).updatedAt)||0;
+      if(localSigPending[id]||incomingTs<localTs) return;
+      if(f.deleted&&f.deleted.booleanValue){
+        delete billingSigs[id]; delete billingSigsLocked[id];
+        billingSigMeta[id]={updatedAt:incomingTs,deleted:true};
+      }else if(f.data&&f.data.stringValue){
+        billingSigs[id]=f.data.stringValue;
+        billingSigsLocked[id]=!!(f.locked&&f.locked.booleanValue);
+        billingSigMeta[id]={updatedAt:incomingTs};
+      }
+    });
+    token=j.nextPageToken||''; if(!token) break;
+  }
+  // 主文件裡的舊簽名尚未拆檔時，自動排入一次搬移。
+  Object.keys(billingSigs).forEach(id=>{ if(!found.has(id)) localSigPending[id]=true; });
+  saveSigPending();
+  try{ localStorage.setItem(LS_SIGS,JSON.stringify(billingSigs)); }catch(e){}
+  try{ localStorage.setItem(LS_SIGS_LOCKED,JSON.stringify(billingSigsLocked)); }catch(e){}
+  saveSigMeta();
+}
+async function syncPendingSignatures(){
+  const ids=Object.keys(localSigPending);
+  for(const id of ids){ await cloudSignatureSet(id); delete localSigPending[id]; saveSigPending(); }
+}
+// 歷史備份：一般同步最多每 6 小時一份；指定 key 的救援備份不受限制。
 async function cloudBackup(payload, keyOverride){
-  const key=keyOverride||('hist-'+new Date().toISOString().slice(0,15).replace(/[:T]/g,'-'));
+  const now=Date.now();
+  if(!keyOverride){
+    let last=0; try{ last=Number(localStorage.getItem(LS_BACKUP_AT))||0; }catch(e){}
+    if(now-last<6*3600000) return;
+  }
+  const d=new Date(), bucket=Math.floor(d.getHours()/6)*6;
+  const key=keyOverride||(`hist-${localISODate(d)}-${String(bucket).padStart(2,'0')}`);
   const savedAt=Date.now();
+  let ok=false;
   try{
     if(window.__fb&&window.__fb.ok){
       await withTimeout(window.__fb.db.collection('payroll').doc(key).set({json:payload,savedAt}),8000,'SDK 逾時');
-      return;
+      ok=true;
     }
   }catch(e){}
-  try{
-    await fetchT(FS_DOC_BASE+key+'?key='+FS_KEY,{method:'PATCH',headers:{'Content-Type':'application/json'},
+  try{ if(!ok){
+    const br=await fetchT(FS_DOC_BASE+key+'?key='+FS_KEY,{method:'PATCH',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({fields:{json:{stringValue:payload},savedAt:{integerValue:String(savedAt)}}})},15000);
-  }catch(e){}
+    if(!br.ok) throw new Error('備份 HTTP '+br.status);
+    ok=true;
+  }}catch(e){}
+  if(ok&&!keyOverride){ try{ localStorage.setItem(LS_BACKUP_AT,String(now)); }catch(e){} }
 }
 // 先讀本機快取（讓畫面秒開），再從雲端拉最新
 function loadLocal(){
@@ -1205,15 +1321,17 @@ async function loadCloud(){
         }catch(e){}
       }
       mergeCloudDoc(cloudData); // 逐筆(依id)合併雲端＋本機，兩邊資料都保留、不互相覆蓋
+      try{ await loadCloudSignatures(); }catch(e){ setCloud('主資料已同步，簽名讀取失敗：'+String(e&&e.message||e).slice(0,35)); }
       // 回填本機較新的重點標記
       (state.measurements||[]).forEach(m=>{ const lf=keepFlags[m.id]; if(lf&&Number(lf.flagAt)>(Number(m.flagAt)||0)){ m.flag=lf.flag; m.flagAt=lf.flagAt; } });
-      try{ localStorage.setItem(LS, JSON.stringify(packData())); }catch(e){}
-      if(hadLocalChanges){
+      persistMainLocal(JSON.stringify(packData()),hadLocalChanges);
+      const pendingSignatureSync=Object.keys(localSigPending).length>0;
+      if(hadLocalChanges||pendingSignatureSync){
         // 我有未上傳資料 → 把合併後的完整版回推雲端，讓雲端也收到我的
-        localDirty=true;
+        localDirty=hadLocalChanges;
         if(saveTimer) clearTimeout(saveTimer);
         saveTimer=setTimeout(pushCloud,400);
-        setCloud('已同步(合併回傳中…)');
+        setCloud(pendingSignatureSync&&!hadLocalChanges?'簽名資料升級同步中…':'已同步(合併回傳中…)');
       } else {
         try{ localStorage.removeItem(LS_DIRTY); }catch(e){}
         localDirty=false; dirtyOther=false;
@@ -1231,12 +1349,37 @@ async function loadCloud(){
 }
 
 let saveTimer=null, saving=false, pendingSave=false;
+let storageWarningShown=false;
+function persistMainLocal(payload, markDirty=true){
+  try{
+    if(markDirty) localStorage.setItem(LS_DIRTY,'1');
+    localStorage.setItem(LS,payload);
+    return true;
+  }catch(e){
+    setCloud('本機儲存空間不足，請保持網路並匯出備份');
+    if(!storageWarningShown){
+      storageWarningShown=true;
+      setTimeout(()=>alert('本機儲存空間不足，這次資料可能只能暫時留在畫面。請保持網路、確認顯示「已同步」，並盡快匯出備份。'),0);
+    }
+    return false;
+  }
+}
+function persistAuxLocal(key,payload){
+  try{ localStorage.setItem(key,payload); return true; }
+  catch(e){
+    setCloud('本機儲存空間不足，附件可能無法保留');
+    if(!storageWarningShown){ storageWarningShown=true; setTimeout(()=>alert('本機儲存空間不足，照片或簽名可能無法保留。請先確認雲端同步並匯出備份。'),0); }
+    return false;
+  }
+}
 function saveData(kind){
   // 本機立即存；kind==='flag' 表示這次變更只有重點標記（衝突時可自動合併）
+  stampRecordChanges();
   recordDeletions(); // 偵測本次是否有刪除，記入刪除記號（避免合併時被補回）
   localDirty=true;
   if(kind!=='flag') dirtyOther=true;
-  try{ localStorage.setItem(LS_DIRTY,'1'); localStorage.setItem(LS, JSON.stringify(packData())); }catch(e){}
+  persistMainLocal(JSON.stringify(packData()),true);
+  refreshRecordBaseline();
   // 雲端防抖動：300ms 內多次變更只送一次
   if(saveTimer) clearTimeout(saveTimer);
   setCloud('儲存中…');
@@ -1246,27 +1389,34 @@ async function pushCloud(){
   if(saving){ pendingSave=true; return; }
   if(!localDirty && Object.keys(localSigPending).length===0){ setCloud('已同步'); return; }
   saving=true;
-  let merged=false;
+  let merged=false, payload='';
   try {
-    // 推送前先讀雲端，把雲端已有的資料「逐筆合併」進本機，再寫回union → 誰也不會蓋掉誰
-    try{
+    // 先讀取版本再條件式寫入；若另一台裝置搶先更新，重新讀取合併後再試。
+    for(let attempt=0;attempt<3;attempt++){
       const keepFlags={}; (state.measurements||[]).forEach(m=>{ if(m.flagAt) keepFlags[m.id]={flag:m.flag,flagAt:m.flagAt}; });
       const g=await cloudGet();
       if(g&&g.ok&&g.data){
         const cd=JSON.parse(g.data);
-        applyCloudSigsBeforePush(cd.billingSigs||{}, cd.billingSigsLocked||{}, cd.billingSigMeta||{});
-        mergeCloudDoc(cd); // 逐筆union合併
+        mergeCloudDoc(cd);
         (state.measurements||[]).forEach(m=>{ const lf=keepFlags[m.id]; if(lf&&Number(lf.flagAt)>(Number(m.flagAt)||0)){ m.flag=lf.flag; m.flagAt=lf.flagAt; } });
         merged=true;
       }
-    }catch(e){}
-    const payload=JSON.stringify(packData());
-    try{ localStorage.setItem(LS,payload); }catch(e){}
-    await cloudSet(payload);
+      payload=JSON.stringify(packData());
+      persistMainLocal(payload,true);
+      try{
+        await cloudSet(payload,g&&g.ok?(g.updateTime||undefined):false);
+        break;
+      }catch(e){
+        if(e&&e.conflict&&attempt<2){ setCloud('偵測到其他裝置更新，重新合併中…'); continue; }
+        throw e;
+      }
+    }
+    await syncPendingSignatures();
     cloudBackup(payload); // 成功後順手存一份歷史快照（非阻塞），日後可回溯
     localSigPending={}; localDirty=false; dirtyOther=false;
     try{ localStorage.removeItem(LS_DIRTY); }catch(e){}
     try{ lastCloudTs=Number((JSON.parse(payload)||{}).savedAt)||Date.now(); _lastCloudJson=payload; }catch(e){}
+    refreshPrevIds();
     setCloud('已同步');
     if(merged) safeRender(); // 合併後畫面同步更新（打字中則延後）
   } catch(e){ setCloud('雲端儲存失敗：'+String(e&&e.message||e).slice(0,50)); }
@@ -1277,7 +1427,7 @@ function flushCloudOnExit(){
   if(!localDirty && Object.keys(localSigPending).length===0) return;
   if(saveTimer){ clearTimeout(saveTimer); saveTimer=null; }
   const payload=JSON.stringify(packData());
-  try{ localStorage.setItem(LS_DIRTY,'1'); localStorage.setItem(LS, payload); }catch(e){}
+  persistMainLocal(payload,true);
 }
 async function diagCloud(){
   setCloud('診斷中…');
@@ -1301,10 +1451,11 @@ function loadPhotos(){
   try{ const raw=localStorage.getItem(LS_PHOTOS_DEL); if(raw) billingPhotosDeleted=JSON.parse(raw); }catch(e){}
 }
 function savePhotos(){
-  try{ localStorage.setItem(LS_PHOTOS,JSON.stringify(billingPhotos)); }catch(e){}
-  try{ localStorage.setItem(LS_PHOTOS_DEL,JSON.stringify(billingPhotosDeleted)); }catch(e){}
+  persistAuxLocal(LS_PHOTOS,JSON.stringify(billingPhotos));
+  persistAuxLocal(LS_PHOTOS_DEL,JSON.stringify(billingPhotosDeleted));
 }
-function saveSigMeta(){ try{ localStorage.setItem(LS_SIG_META,JSON.stringify(billingSigMeta)); }catch(e){} }
+function saveSigMeta(){ persistAuxLocal(LS_SIG_META,JSON.stringify(billingSigMeta)); }
+function saveSigPending(){ persistAuxLocal(LS_SIG_PENDING,JSON.stringify(localSigPending)); }
 function mergeBillingSigs(inSigs={}, inLocked={}, inMeta={}){
   Object.keys(inSigs||{}).forEach(id=>{
     if(localSigPending[id] && billingSigs[id]) return; // 剛簽完待上傳的本機正式簽名優先
@@ -1352,6 +1503,7 @@ function loadSigs(){
   try{ const raw=localStorage.getItem(LS_SIGS); if(raw) Object.assign(billingSigs,JSON.parse(raw)); }catch(e){}
   try{ const raw=localStorage.getItem(LS_SIGS_LOCKED); if(raw) Object.assign(billingSigsLocked,JSON.parse(raw)); }catch(e){}
   try{ const raw=localStorage.getItem(LS_SIG_META); if(raw) Object.assign(billingSigMeta,JSON.parse(raw)); }catch(e){}
+  try{ const raw=localStorage.getItem(LS_SIG_PENDING); if(raw) Object.assign(localSigPending,JSON.parse(raw)); }catch(e){}
   // 遷移：把舊版存在 state.billings 裡的 signedPhoto 搬出來
   state.billings.forEach(b=>{ if(b.signedPhoto){ billingSigs[b.id]=b.signedPhoto; billingSigMeta[b.id]=billingSigMeta[b.id]||{updatedAt:Date.now()}; delete b.signedPhoto; } });
   Object.keys(billingSigs).forEach(id=>{ billingSigMeta[id]=billingSigMeta[id]||{updatedAt:0}; });
@@ -1364,23 +1516,28 @@ function saveSig(id,url){
   billingSigsLocked[id]=true; // 簽完自動鎖定
   billingSigMeta[id]={updatedAt:Date.now()};
   localSigPending[id]=true;
-  try{ localStorage.setItem(LS_SIGS,JSON.stringify(billingSigs)); }catch(e){}
-  try{ localStorage.setItem(LS_SIGS_LOCKED,JSON.stringify(billingSigsLocked)); }catch(e){}
+  saveSigPending();
+  persistAuxLocal(LS_SIGS,JSON.stringify(billingSigs));
+  persistAuxLocal(LS_SIGS_LOCKED,JSON.stringify(billingSigsLocked));
   saveSigMeta();
   setCloud('簽名已儲存，同步中…');
 }
 function deleteSig(id){
   delete billingSigs[id];
   delete billingSigsLocked[id];
-  delete billingSigMeta[id];
-  try{ localStorage.setItem(LS_SIGS,JSON.stringify(billingSigs)); }catch(e){}
-  try{ localStorage.setItem(LS_SIGS_LOCKED,JSON.stringify(billingSigsLocked)); }catch(e){}
+  billingSigMeta[id]={updatedAt:Date.now(),deleted:true};
+  localSigPending[id]=true;
+  saveSigPending();
+  persistAuxLocal(LS_SIGS,JSON.stringify(billingSigs));
+  persistAuxLocal(LS_SIGS_LOCKED,JSON.stringify(billingSigsLocked));
   saveSigMeta();
 }
 function unlockSig(id){
   delete billingSigsLocked[id];
   billingSigMeta[id]={updatedAt:Date.now()};
-  try{ localStorage.setItem(LS_SIGS_LOCKED,JSON.stringify(billingSigsLocked)); }catch(e){}
+  localSigPending[id]=true;
+  saveSigPending();
+  persistAuxLocal(LS_SIGS_LOCKED,JSON.stringify(billingSigsLocked));
   saveSigMeta();
 }
 
@@ -1455,7 +1612,7 @@ function entryTodayNoteInner(cs,cd){
 function refreshEntryTodayNote(){
   const el=document.getElementById('entry-today-note'); if(!el) return;
   const fd=document.getElementById('f-date'), fs=document.getElementById('f-site');
-  const cd=(fd&&fd.value)|| entryDate || new Date().toISOString().slice(0,10);
+  const cd=(fd&&fd.value)|| entryDate || localISODate();
   const cs=(fs&&fs.value)|| entrySite || '';
   el.innerHTML=entryTodayNoteInner(cs,cd);
 }
@@ -1476,7 +1633,7 @@ function viewEntry(){
       <button class="btn" id="goto-manage">前往「員工/案場」設定 →</button>
     </div>`;
   }
-  const today=new Date().toISOString().slice(0,10);
+  const today=localISODate();
   const curDate=entryDate||today;
   const curSite=entrySite|| (activeSites[0]?activeSites[0].id:'');
   // 今天(所選日期)這個案場已登記哪幾位
@@ -1631,7 +1788,7 @@ function viewEntry(){
 function cycleContaining(d){
   const day=d.getDate();
   let startY=d.getFullYear(), startM=d.getMonth();
-  if(day>11){
+  if(day>=11){
     // 12號之後，屬於本月11號起算的新週期
   } else {
     // 今天在 1~11 號，仍屬於上個月11號起算的週期
@@ -1643,7 +1800,7 @@ function cycleContaining(d){
   return {from:fmt(from),to:fmt(to)};
 }
 function defaultPayRange(){ return cycleContaining(new Date()); }
-function periodOf(dateStr){ return cycleContaining(new Date((dateStr||new Date().toISOString().slice(0,10))+'T00:00:00')); }
+function periodOf(dateStr){ return cycleContaining(new Date((dateStr||localISODate())+'T00:00:00')); }
 function prevPayRange(){
   const cur=cycleContaining(new Date());
   const f=new Date(cur.from+'T00:00:00');
@@ -1680,12 +1837,14 @@ function buildPayroll(from,to){
     e.systemAddTotal=e.systemAdds.reduce((s,a)=>s+(Number(a.amount)||0),0);
     e.addTotal=e.manualAddTotal+e.systemAddTotal;
     e.dedTotal=e.deds.reduce((s,a)=>s+(Number(a.amount)||0),0);
-    e.net=e.gross+e.addTotal-e.dedTotal;
+    const rawNet=e.gross+e.addTotal-e.dedTotal;
+    e.net=Math.max(0,rawNet);
+    e.unpaidDed=Math.max(0,-rawNet); // 超過可領薪資的扣項只提示，不產生負薪資
     // 借支扣還（還品佑）＝有 loanId 或標籤為「借支扣還」；其餘扣項（工具遺失/罰單/其他）歸東澤廣昕回收
     e.loanDedTotal=e.deds.filter(a=>a.loanId||a.label==='借支扣還').reduce((s,a)=>s+(Number(a.amount)||0),0);
     e.otherDedTotal=e.dedTotal-e.loanDedTotal;
     // 公司（東澤/廣昕）負擔工資＝基本工資＋加項−非借支扣項＝實發＋借支扣還
-    e.companyWage=e.net+e.loanDedTotal;
+    e.companyWage=Math.max(0,e.gross+e.addTotal-e.otherDedTotal);
   });
   return byEmp;
 }
@@ -1958,7 +2117,7 @@ function viewPayroll(){
       <td class="num">${e.days.size}</td><td class="num">${gongStr(e.hours)}</td>
       <td class="num">${money(e.gross)}</td>
       <td class="num" style="color:var(--accent)">${e.addTotal?'+'+money(e.addTotal):'—'}</td>
-      <td class="num" style="color:var(--danger)">${e.dedTotal?'−'+money(e.dedTotal):'—'}${dedBreak}</td>
+      <td class="num" style="color:var(--danger)">${e.dedTotal?'−'+money(e.dedTotal):'—'}${dedBreak}${e.unpaidDed>0?`<div style="font-size:10px;font-weight:700">尚有 ${money(e.unpaidDed)} 未能扣除</div>`:''}</td>
       <td class="num" style="font-weight:600">${money(e.net)}</td>
       <td class="num" style="font-weight:600;color:var(--accent)">${money(e.companyWage)}</td>
       <td><button class="act" data-payslip="${id}">明細單</button></td></tr>`;
@@ -1996,11 +2155,13 @@ function viewPayroll(){
   // 本期借支扣款提示：尚未還清、且本期還沒扣過的借支
   const loanReminders=state.loans.filter(l=>loanBalance(l)>0 && !loanDeductedInRange(l.id,state.payFrom,state.payTo)).map(l=>{
     const bal=loanBalance(l);
+    const available=Math.max(0,Number(byEmp[l.empId]&&byEmp[l.empId].net)||0);
+    const maxDed=Math.min(bal,available);
     return `<tr>
       <td>${esc(empName(l.empId))}</td>
       <td class="num">${money(bal)}</td>
-      <td class="num"><input type="number" data-loanpay="${l.id}" min="0" max="${bal}" step="500" placeholder="本期扣多少" style="width:120px;text-align:right"></td>
-      <td><button class="act" data-repay="${l.id}" style="border:1px solid var(--accent);border-radius:6px;padding:3px 10px;color:var(--accent)">加入扣款</button></td>
+      <td class="num"><input type="number" data-loanpay="${l.id}" min="0" max="${maxDed}" step="500" placeholder="${maxDed>0?'本期扣多少':'本期無可扣薪資'}" style="width:120px;text-align:right" ${maxDed<=0?'disabled':''}></td>
+      <td><button class="act" data-repay="${l.id}" style="border:1px solid var(--accent);border-radius:6px;padding:3px 10px;color:var(--accent)" ${maxDed<=0?'disabled':''}>加入扣款</button></td>
     </tr>`;
   }).join('');
 
@@ -2162,7 +2323,7 @@ function viewSites(){
       ${payerSummary}
       <details data-sitecostdetails="${sid}" ${(siteCostDetailsOpen[sid]!==undefined?siteCostDetailsOpen[sid]:(isCoop||myCosts.some(c=>c.id===costEditId)))?'open':''}><summary>手動成本明細（${myCosts.length} 筆）</summary>
         <div class="row" style="margin:8px 0">
-          <div class="field"><label>日期</label><input type="date" data-costdate="${sid}" value="${new Date().toISOString().slice(0,10)}"></div>
+          <div class="field"><label>日期</label><input type="date" data-costdate="${sid}" value="${localISODate()}"></div>
           <div class="field" style="flex:1;min-width:120px"><label>項目</label><input data-costitem="${sid}" placeholder="材料、工資、機具…"></div>
           <div class="field"><label>金額</label><input type="number" data-costamount="${sid}" min="0" step="1000" style="width:120px"></div>
           <div class="field"><label>誰支付</label><select data-costpayer="${sid}"><option value="dz">東澤</option><option value="gx">廣昕</option><option value="py">品佑</option></select></div>
@@ -2652,6 +2813,7 @@ function bind(){
     const name=document.getElementById('e-name').value.trim();
     const daily=parseFloat(document.getElementById('e-daily').value);
     if(!name||isNaN(daily)) return;
+    if(state.employees.some(e=>String(e.name||'').trim()===name)){ alert('已有同名員工。請在姓名後加上代號或其他辨識文字，避免薪資與外宿津貼混在一起。'); return; }
     state.employees.push({id:uid(),name,daily,active:true}); saveData(); render();
   };
   document.querySelectorAll('[data-raise]').forEach(b=>b.onclick=()=>{
@@ -2670,7 +2832,7 @@ function bind(){
     const cell=b.closest('td');
     cell.innerHTML=`<span class="inline"><input value="${esc(e.name)}" id="ren-in" style="width:120px"><button class="act" id="ren-ok">✓</button><button class="act muted" id="ren-cancel" style="cursor:pointer">✕</button></span>`;
     const inp=cell.querySelector('#ren-in'); inp.focus();
-    cell.querySelector('#ren-ok').onclick=()=>{ const v=inp.value.trim(); if(v){ e.name=v; saveData(); } render(); };
+    cell.querySelector('#ren-ok').onclick=()=>{ const v=inp.value.trim(); if(v){ if(state.employees.some(x=>x.id!==e.id&&String(x.name||'').trim()===v)){ alert('已有同名員工，請使用可辨識的名稱。'); return; } e.name=v; saveData(); } render(); };
     cell.querySelector('#ren-cancel').onclick=()=>render();
   });
 
@@ -2741,6 +2903,10 @@ function bind(){
     const child=sel?state.sites.find(x=>x.id===sel.value):null;
     if(!child) return;
     const sub=child.name;
+    if(state.sites.some(x=>x.id!==child.id&&x.name===sub)){
+      alert(`目前有其他案場也叫「${sub}」，無法安全判斷舊請款與計量屬於哪一個。請先把要收納的案場改成唯一名稱。`);
+      return;
+    }
     if(!confirm(`要把「${sub}」收進「${s.name}」底下當子案場嗎？\n\n子案場會保留自己的出工、成本、請款與計量，不會併入合作案成本。`)) return;
     s.subSites=subSitesOf(s);
     if(!s.subSites.includes(sub)) s.subSites.push(sub);
@@ -2750,6 +2916,9 @@ function bind(){
     child.parentSiteId=s.id;
     child.parentSiteName=s.name;
     ensureSubSiteMeta(s)[sub]=childType;
+    const canonical=siteOptionValue(s.name,sub);
+    (state.billings||[]).forEach(x=>{ if(x.site===sub) x.site=canonical; });
+    (state.measurements||[]).forEach(x=>{ if(x.site===sub) x.site=canonical; });
     siteSettingsOpen[s.id]=true;
     resyncAllSiteDeals(); saveData(); render();
     alert(`已把「${sub}」收進「${s.name}」底下。`);
@@ -2899,7 +3068,7 @@ function bind(){
     siteCostDetailsOpen[c.siteId]=true;
     c.payer='py';
     c.reimbursed=true;
-    c.reimbDate=new Date().toISOString().slice(0,10);
+    c.reimbDate=localISODate();
     if(hasPark){
       state.ledger.push({id:uid(), date:c.reimbDate, accId:state.parkAccId, kind:'out', amount:Number(c.amount)||0, note:(c.item||'報銷'), reimbCostId:c.id});
     }
@@ -2983,7 +3152,7 @@ function bind(){
     const amt=Math.min(parseFloat(raw), bal);
     if(isNaN(amt)||amt<=0){ alert('請輸入正確金額'); return; }
     if(!Array.isArray(loan.repayments)) loan.repayments=[];
-    loan.repayments.push({date:new Date().toISOString().slice(0,10),amount:amt});
+    loan.repayments.push({date:localISODate(),amount:amt});
     saveData(); render();
   });
   document.querySelectorAll('[data-repay]').forEach(b=>b.onclick=()=>{
@@ -2992,7 +3161,10 @@ function bind(){
     const inp=document.querySelector(`[data-loanpay="${loan.id}"]`);
     const amt=Math.min(parseFloat(inp&&inp.value), bal);
     if(isNaN(amt)||amt<=0){ alert('請輸入本期要扣的金額'); return; }
-    state.adjustments.push({id:uid(),date:state.payTo||new Date().toISOString().slice(0,10),empId:loan.empId,kind:'ded',label:'借支扣還',amount:amt,note:(loan.note?loan.note+' ':'')+'借支扣還',loanId:loan.id});
+    const payroll=buildPayroll(state.payFrom,state.payTo);
+    const available=Math.max(0,Number(payroll[loan.empId]&&payroll[loan.empId].net)||0);
+    if(amt>available){ alert(`本期最多只能扣 ${money(available)}，超過的借支會保留到下期。`); return; }
+    state.adjustments.push({id:uid(),date:state.payTo||localISODate(),empId:loan.empId,kind:'ded',label:'借支扣還',amount:amt,note:(loan.note?loan.note+' ':'')+'借支扣還',loanId:loan.id});
     saveData(); render();
   });
 
@@ -3114,7 +3286,7 @@ function bind(){
     const due=wage+advTotal;
     if(due<=0){ advPosting=null; render(); return; }
     const postKey=`${advFrom}~${advTo}|${pid}`;
-    state.ledger.push({id:uid(),date:advTo||new Date().toISOString().slice(0,10),accId,kind:'out',amount:due,note:`代墊款報銷 ${empName(pid)}（${advFrom}~${advTo}）`,fromAdvance:postKey});
+    state.ledger.push({id:uid(),date:advTo||localISODate(),accId,kind:'out',amount:due,note:`代墊款報銷 ${empName(pid)}（${advFrom}~${advTo}）`,fromAdvance:postKey});
     advPosting=null; saveData(); render();
   });
   document.querySelectorAll('[data-unpost]').forEach(b=>b.onclick=()=>{
@@ -3218,7 +3390,7 @@ function bind(){
   document.querySelectorAll('[data-carrynew]').forEach(b=>b.onclick=()=>{
     const d=state.deals.find(x=>x.id===b.dataset.carrynew); if(!d) return;
     const c=dealCalc(d);
-    const nd={id:uid(),name:d.name+'（公司分潤）',type:'公司分潤',date:new Date().toISOString().slice(0,10),amount:Math.round(c.companyShare),cost:0,taxPct:0,scheme:'new',ownerId:d.ownerId||'',owner:d.owner||'',moneyAcc:d.moneyAcc||'',posted:false,fromCoop:d.id};
+    const nd={id:uid(),name:d.name+'（公司分潤）',type:'公司分潤',date:localISODate(),amount:Math.round(c.companyShare),cost:0,taxPct:0,scheme:'new',ownerId:d.ownerId||'',owner:d.owner||'',moneyAcc:d.moneyAcc||'',posted:false,fromCoop:d.id};
     state.deals.push(nd);
     d.carriedTo=nd.id; dealCarry=null; saveData(); render();
   });
@@ -3279,7 +3451,7 @@ function bind(){
   document.querySelectorAll('[data-coopcarrynew]').forEach(b=>b.onclick=()=>{
     const s=state.sites.find(x=>x.id===b.dataset.coopcarrynew); if(!s) return;
     const c=coopSiteCalc(s);
-    const nd={id:uid(),name:s.name+'（公司分潤）',type:'公司分潤',date:new Date().toISOString().slice(0,10),amount:Math.round(c.companyShare),cost:0,taxPct:0,scheme:'new',ownerId:s.coopOwnerId||'',owner:'',moneyAcc:'',posted:false,fromCoopSite:s.id};
+    const nd={id:uid(),name:s.name+'（公司分潤）',type:'公司分潤',date:localISODate(),amount:Math.round(c.companyShare),cost:0,taxPct:0,scheme:'new',ownerId:s.coopOwnerId||'',owner:'',moneyAcc:'',posted:false,fromCoopSite:s.id};
     state.deals.push(nd); s.coopCarriedTo=nd.id; coopCarry=null; saveData(); render();
   });
   document.querySelectorAll('[data-coopcarryinto]').forEach(b=>b.onclick=()=>{
@@ -3341,7 +3513,7 @@ function bind(){
     const d=state.deals.find(x=>x.id===did); if(!d) return;
     const c=dealCalc(d);
     if(c.fund!==0){
-      state.ledger.push({id:uid(),date:d.date||new Date().toISOString().slice(0,10),accId,kind:c.fund>=0?'in':'out',amount:Math.abs(c.fund),note:`分潤結算·${d.name}（公積金${c.fund>=0?'收入':'虧損'}）`,fromDeal:did});
+      state.ledger.push({id:uid(),date:d.date||localISODate(),accId,kind:c.fund>=0?'in':'out',amount:Math.abs(c.fund),note:`分潤結算·${d.name}（公積金${c.fund>=0?'收入':'虧損'}）`,fromDeal:did});
     }
     d.posted=true; d.postAcc=accId; dealPosting=null; saveData(); render();
   });
@@ -3404,7 +3576,7 @@ function bind(){
   };
   document.querySelectorAll('[data-copy-req]').forEach(b=>b.onclick=()=>{
     const bill=state.billings.find(x=>x.id===b.dataset.copyReq); if(!bill) return;
-    billingReqDraft={date:bill.date||new Date().toISOString().slice(0,10),method:bill.method||'',client:bill.client||'',note:bill.note||'',settled:!!bill.settled};
+    billingReqDraft={date:bill.date||localISODate(),method:bill.method||'',client:bill.client||'',note:bill.note||'',settled:!!bill.settled};
     formOpen.bnr=true;
     render();
   });
@@ -3428,7 +3600,7 @@ function bind(){
   document.querySelectorAll('[data-copy-add]').forEach(b=>b.onclick=()=>{
     const bill=state.billings.find(x=>x.id===b.dataset.copyAdd); if(!bill) return;
     billingAddDraft={
-      date:bill.date||new Date().toISOString().slice(0,10),
+      date:bill.date||localISODate(),
       site:bill.site||'',
       unit:bill.unit||'式',
       qty:(bill.qty!==undefined&&bill.qty!==null)?bill.qty:1,
@@ -3526,8 +3698,9 @@ function bind(){
     const date=document.getElementById('meas-date').value;
     const site=document.getElementById('meas-site').value.trim();
     const item=document.getElementById('meas-item').value.trim();
-    const unit=document.getElementById('meas-unit').value.trim()||'㎡';
     const measureType=(document.getElementById('meas-type')||{}).value||'partition';
+    const unitRaw=document.getElementById('meas-unit').value.trim();
+    const unit=unitRaw||(measureType==='carry'?'':'㎡');
     const width=parseFloat((document.getElementById('meas-width')||{}).value);
     const height=parseFloat((document.getElementById('meas-height')||{}).value);
     let qty=parseFloat(document.getElementById('meas-qty').value);
@@ -3633,7 +3806,7 @@ function bind(){
     if(already.length&&!confirm(`勾選中有 ${already.length} 筆之前已帶入過請款單。\n再帶一次會產生重複請款，確定繼續？`)) return;
     const bySiteKey={};
     sel.forEach(m=>{ const k=canonSiteKey(m.site); (bySiteKey[k]=bySiteKey[k]||[]).push(m); });
-    const today=new Date().toISOString().slice(0,10);
+    const today=localISODate();
     const made=[];
     Object.entries(bySiteKey).forEach(([site,rows])=>{
       const amount=Math.round(rows.reduce((s,m)=>s+(Number(m.qty)||0)*(Number(m.unitPrice)||0),0));
@@ -3820,7 +3993,7 @@ function printHTML(title, inner, opts){
   // 全站 PDF 統一藍色系商用報告風；薪資明細單（paydoc）保留專屬加減項配色
   const themed=inner.includes('class="paydoc"')||inner.includes('class="bluedoc"')
     ?inner
-    :`<div class="bluedoc">${inner}<div class="foot"><span>本報表由系統自動產生</span><span>${new Date().toISOString().slice(0,10)}</span></div></div>`;
+    :`<div class="bluedoc">${inner}<div class="foot"><span>本報表由系統自動產生</span><span>${localISODate()}</span></div></div>`;
   const landscape=!!(opts&&opts.landscape);
   const ov=document.createElement('div');
   ov.id='print-overlay';
@@ -3849,7 +4022,7 @@ function exportSummaryPDF(){
       <td class="num">${e.dedTotal?money(e.dedTotal):'-'}</td><td class="num">${money(e.net)}</td><td class="num">${money(e.companyWage)}</td></tr>`;
   }).join('');
   const inner=`<h1>薪資總表</h1>
-    <div class="meta">計薪期間：${state.payFrom||'起始'} ～ ${state.payTo||'迄今'}　|　列印日期：${new Date().toISOString().slice(0,10)}　|　共 ${ids.length} 人</div>
+    <div class="meta">計薪期間：${state.payFrom||'起始'} ～ ${state.payTo||'迄今'}　|　列印日期：${localISODate()}　|　共 ${ids.length} 人</div>
     <table><thead><tr><th>員工</th><th class="num">出勤天</th><th class="num">總工數</th><th class="num">基本工資</th><th class="num">加項</th><th class="num">扣項</th><th class="num">實發金額</th><th class="num">公司負擔</th></tr></thead>
     <tbody>${rows}
       <tr class="total-row"><td>合計</td><td class="num"></td><td class="num"></td><td class="num">${money(gG)}</td><td class="num">${money(gA)}</td><td class="num">${money(gD)}</td><td class="num">${money(gN)}</td><td class="num">${money(gC)}</td></tr>
@@ -3911,10 +4084,10 @@ function postParkWage(){
   const amount=Math.round(Object.keys(byEmp).filter(id=>!isPartner(id)).reduce((s,id)=>s+byEmp[id].companyWage,0));
   if(amount<=0){ alert('本期公司負擔工資為 0，沒有可記入的金額。'); return; }
   // 發薪日＝計薪迄日的隔天（例：計薪到 7/10 → 隔天 7/11 發，記「0711工資」）
-  const nextDay=iso=>{ const d=new Date(iso+'T00:00:00'); d.setDate(d.getDate()+1); return d.toISOString().slice(0,10); };
+  const nextDay=iso=>{ const d=new Date(iso+'T00:00:00'); d.setDate(d.getDate()+1); return localISODate(d); };
   // 落在某月 11 號前後三天（8～14）內就一律歸到該月 11 號，避免忘記按或期間微調時項目/日期跑掉
-  const snap11=iso=>{ const d=new Date(iso+'T00:00:00'); if(d.getDate()>=8&&d.getDate()<=14) d.setDate(11); return d.toISOString().slice(0,10); };
-  const payday=snap11(state.payTo?nextDay(state.payTo):new Date().toISOString().slice(0,10));
+  const snap11=iso=>{ const d=new Date(iso+'T00:00:00'); if(d.getDate()>=8&&d.getDate()<=14) d.setDate(11); return localISODate(d); };
+  const payday=snap11(state.payTo?nextDay(state.payTo):localISODate());
   const note=payday.slice(5,7)+payday.slice(8,10)+'工資'; // 例：0711工資
   const date=payday;
   const tag=(state.payFrom||'')+'~'+(state.payTo||'');
@@ -3988,6 +4161,7 @@ function exportPayslipPDF(empId){
       <tr><td>基本工資</td><td class="num">${money(e.gross)}</td></tr>
       <tr><td>加項合計</td><td class="num add-amt">+${money(e.addTotal)}</td></tr>
       <tr><td>扣項合計</td><td class="num ded-amt">−${money(e.dedTotal)}</td></tr>
+      ${e.unpaidDed>0?`<tr><td style="color:#b42318">超過本期薪資、尚未扣除</td><td class="num ded-amt">${money(e.unpaidDed)}</td></tr>`:''}
       <tr class="total-row"><td>實發金額</td><td class="num">${money(e.net)}</td></tr>
     </tbody></table>
     <div class="sign"><div>員工簽收</div><div>主管核章</div></div>
@@ -4010,7 +4184,7 @@ function exportLedgerPDF(){
   // 若指定單一帳戶，附目前餘額
   const balLine=ledgerAcc?`　|　該帳戶目前餘額：${money(accountBalance(ledgerAcc))}`:'';
   const inner=`<h1>公積金帳戶收支明細</h1>
-    <div class="meta">帳戶：${esc(accLabel)}　|　期間：${range}${balLine}　|　列印日：${new Date().toISOString().slice(0,10)}</div>
+    <div class="meta">帳戶：${esc(accLabel)}　|　期間：${range}${balLine}　|　列印日：${localISODate()}</div>
     <table><thead><tr><th>日期</th><th>帳戶</th><th>項目/來源</th><th class="num">收入</th><th class="num">支出</th></tr></thead>
     <tbody>${rows}
       <tr class="total-row"><td colspan="3">區間合計</td><td class="num">${money(tin)}</td><td class="num">${money(tout)}</td></tr>
@@ -4035,7 +4209,7 @@ function exportDealsPDF(selectedOnly){
       <td class="num">${money(c.profit)}</td><td class="num">${money(c.bonus)}</td><td class="num">${money(c.fund)}</td></tr>`;
   }).join('');
   const inner=`<h1>案場損益及分潤結算明細</h1>
-    <div class="meta">列印日：${new Date().toISOString().slice(0,10)}　|　共 ${list.length} 案${selectedOnly?'（已選取）':''}</div>
+    <div class="meta">列印日：${localISODate()}　|　共 ${list.length} 案${selectedOnly?'（已選取）':''}</div>
     <table><thead><tr><th>案場</th><th class="num">請款</th><th class="num">稅金</th><th class="num">稅後</th><th class="num">成本</th><th class="num">淨利</th><th class="num">負責人獎金</th><th class="num">進公積金</th></tr></thead>
     <tbody>${rows}
       <tr class="total-row"><td>合計</td><td class="num">${money(gA)}</td><td class="num">${money(gT)}</td><td class="num">${money(gAfter)}</td><td class="num">${money(gC)}</td><td class="num">${money(gP)}</td><td class="num">${money(gB)}</td><td class="num">${money(gF)}</td></tr>
@@ -4408,7 +4582,7 @@ function exportBillingPDF(){
       <table><thead><tr><th>日期</th><th class="num">金額</th><th>方式</th><th>業主</th><th>說明</th></tr></thead><tbody>${rows}</tbody></table>`;
   });
   const inner=`<h1>案場請款追蹤明細（已收款）</h1>
-    <div class="meta">列印日：${new Date().toISOString().slice(0,10)}　|　已收款合計 ${money(GB)}</div>
+    <div class="meta">列印日：${localISODate()}　|　已收款合計 ${money(GB)}</div>
     ${secs}
     <p class="sub">僅列入已收款筆數。未收款請款單、追加單不計入。金額四捨五入至整數。</p>`;
   printHTML('請款追蹤明細', inner);
@@ -4430,7 +4604,7 @@ function exportSiteOnePDF(sid){
   const own=isCoop?manual:Math.round(tot+opening+manual);
   const cw=site.parentSiteId?[]:childWorkBillsForSite(site);
   const cwSum=cw.reduce((s,x)=>s+billingAmount(x.b),0);
-  const today=new Date().toISOString().slice(0,10);
+  const today=localISODate();
   const costRows=myCosts.map(c=>`<tr><td>${esc(c.date||'')}</td><td>${esc(c.item||'')}</td><td class="num">${money(c.amount)}</td><td>${esc(payerName(c.payer))}</td><td>${c.reimbursed?'已報銷':(c.payer==='dz'||c.payer==='gx'?'待報銷':'')}</td></tr>`).join('');
   const cwRows=cw.map(x=>`<tr><td>${esc(x.b.date||'')}</td><td>${esc(x.sub)}</td><td>${esc(x.b.docType||'請款單')}</td><td class="num">${money(billingAmount(x.b))}</td><td>${esc(String(x.b.note||'').slice(0,30))}</td></tr>`).join('');
   const empRows=Object.entries(emp).sort((a,b)=>b[1]-a[1]).map(([eid,v])=>`<tr><td>${esc(empName(eid))}</td><td class="num">${money(v)}</td></tr>`).join('');
@@ -4476,7 +4650,7 @@ function exportSitesPDF(){
     return `<tr><td>${esc(s.name||siteName(id))}</td><td class="num">${gongStr(s.hours)}</td><td class="num">${money(s.opening)}</td><td class="num">${money(s.wage)}</td><td class="num">${money(s.allow)}</td><td class="num">${s.childWork?money(s.childWork):'-'}</td><td class="num" style="font-weight:700">${money(s.grand+(s.childWork||0))}</td></tr>`;
   }).join('');
   const inner=`<h1>案場人事成本明細</h1>
-    <div class="meta">列印日：${new Date().toISOString().slice(0,10)}　|　實際人事成本 ${money(grand)}　|　含子工程款合計 ${money(grand+cwGrand)}</div>
+    <div class="meta">列印日：${localISODate()}　|　實際人事成本 ${money(grand)}　|　含子工程款合計 ${money(grand+cwGrand)}</div>
     <table><thead><tr><th>案場</th><th class="num">系統工數</th><th class="num">期初成本</th><th class="num">系統工資</th><th class="num">津貼</th><th class="num">子工程款</th><th class="num">總成本</th></tr></thead>
     <tbody>${rows}
       <tr class="total-row"><td>合計</td><td class="num"></td><td class="num"></td><td class="num"></td><td class="num"></td><td class="num">${money(cwGrand)}</td><td class="num">${money(grand+cwGrand)}</td></tr>
@@ -4540,7 +4714,7 @@ function viewLoans(){
     <div style="font-size:14px;font-weight:600;margin-bottom:4px">新增借支</div>
     <p class="sub">登記一筆借款：借出日與總額。系統會追蹤已扣與剩餘；發薪時可在薪資頁手動輸入本期扣款金額。</p>
     <div class="row" style="margin-bottom:10px">
-      <div class="field"><label>借款日</label><input type="date" id="loan-date" value="${new Date().toISOString().slice(0,10)}"></div>
+      <div class="field"><label>借款日</label><input type="date" id="loan-date" value="${localISODate()}"></div>
       <div class="field"><label>員工</label><select id="loan-emp">${empOpts}</select></div>
       <div class="field"><label>借款總額</label><input type="number" id="loan-amount" min="0" step="500" style="width:120px"></div>
       <div class="field" style="flex:1;min-width:140px"><label>備註（選填）</label><input id="loan-note" placeholder="例：預支生活費"></div>
@@ -4622,7 +4796,7 @@ function viewTools(){
     <div style="font-size:14px;font-weight:600;margin-bottom:4px">工具遺失賠償</div>
     <p class="sub">填好一筆遺失工具，按「設定分攤」後勾選要分攤的員工。金額會在分攤確認後一次帶入各人當期扣項（全額均攤、不分期）。</p>
     <div class="row">
-      <div class="field"><label>遺失日</label><input type="date" id="tool-date" value="${new Date().toISOString().slice(0,10)}"></div>
+      <div class="field"><label>遺失日</label><input type="date" id="tool-date" value="${localISODate()}"></div>
       <div class="field"><label>廠牌</label><input id="tool-brand" placeholder="例：HILTI" style="width:120px"></div>
       <div class="field"><label>型號</label><input id="tool-model" placeholder="例：PM30" style="width:140px"></div>
       <div class="field"><label>金額</label><input type="number" id="tool-amount" min="0" step="100" style="width:120px"></div>
@@ -4762,7 +4936,7 @@ function viewAdvances(){
   <div class="card">
     <div style="font-size:14px;font-weight:600;margin-bottom:4px">新增代墊款</div>
     <div class="row">
-      <div class="field"><label>日期</label><input type="date" id="adv-date" value="${new Date().toISOString().slice(0,10)}"></div>
+      <div class="field"><label>日期</label><input type="date" id="adv-date" value="${localISODate()}"></div>
       <div class="field"><label>股東</label><select id="adv-emp">${partnerOpts}</select></div>
       <div class="field"><label>金額</label><input type="number" id="adv-amount" min="0" step="100" style="width:120px"></div>
       <div class="field" style="flex:1;min-width:200px"><label>用途說明</label><input id="adv-purpose" placeholder="例：酷擊五金材料、Hilti租金、台北住宿"></div>
@@ -4848,7 +5022,7 @@ function viewAccounts(){
   <div class="card">
     <div style="font-size:14px;font-weight:600;margin-bottom:4px">記一筆收支</div>
     <div class="row">
-      <div class="field"><label>日期</label><input type="date" id="led-date" value="${new Date().toISOString().slice(0,10)}"></div>
+      <div class="field"><label>日期</label><input type="date" id="led-date" value="${localISODate()}"></div>
       <div class="field"><label>帳戶</label><select id="led-acc">${accOpts}</select></div>
       <div class="field"><label>性質</label><select id="led-kind"><option value="out">支出（−）</option><option value="in">收入（+）</option></select></div>
       <div class="field"><label>金額</label><input type="number" id="led-amount" min="0" step="100" style="width:120px"></div>
@@ -4934,14 +5108,14 @@ function syncDealIncome(d){
   if(d.moneyAcc && d.type!=='合作案'){
     const amt=dealIncomeAmount(d);
     if(amt!==0){
-      state.ledger.push({id:uid(), date:d.date||new Date().toISOString().slice(0,10), accId:d.moneyAcc, kind: amt>=0?'in':'out', amount:Math.abs(amt), note:`分潤進帳·${d.name}`, autoDealId:d.id});
+      state.ledger.push({id:uid(), date:d.date||localISODate(), accId:d.moneyAcc, kind: amt>=0?'in':'out', amount:Math.abs(amt), note:`分潤進帳·${d.name}`, autoDealId:d.id});
     }
   }
 }
 // 重建所有分潤的自動收入（A方案：一次補齊）
 function rebuildAllDealIncome(){
   state.ledger=state.ledger.filter(t=>!t.autoDealId);
-  state.deals.forEach(d=>{ if(d.moneyAcc && d.type!=='合作案'){ const amt=dealIncomeAmount(d); if(amt!==0) state.ledger.push({id:uid(), date:d.date||new Date().toISOString().slice(0,10), accId:d.moneyAcc, kind:amt>=0?'in':'out', amount:Math.abs(amt), note:`分潤進帳·${d.name}`, autoDealId:d.id}); } });
+  state.deals.forEach(d=>{ if(d.moneyAcc && d.type!=='合作案'){ const amt=dealIncomeAmount(d); if(amt!==0) state.ledger.push({id:uid(), date:d.date||localISODate(), accId:d.moneyAcc, kind:amt>=0?'in':'out', amount:Math.abs(amt), note:`分潤進帳·${d.name}`, autoDealId:d.id}); } });
 }
 // 案場成本（給分潤算淨利用）＝出工工資+津貼 + 手動成本 +（期初，但舊制不算期初）
 function siteCostForDeal(site){
@@ -5015,7 +5189,7 @@ function resyncSiteDeal(site){
   }
   const stableId='site-'+site.id; // 固定 id＝以案場 id 為準，讓每台裝置對同一案場產生同一筆分潤
   if(!d){
-    d={id:stableId, autoSiteId:site.id, name:site.name, type:site.type||'代工', date:new Date().toISOString().slice(0,10), cost:0};
+    d={id:stableId, autoSiteId:site.id, name:site.name, type:site.type||'代工', date:localISODate(), cost:0};
     state.deals.push(d);
   } else if(d.id!==stableId){
     // 舊版用隨機 id 建立的自動分潤：多裝置各生一組 id，帳戶就被重複進帳。
@@ -5206,7 +5380,7 @@ function viewDeals(){
     <div class="row">
       <div class="field" style="flex:1;min-width:160px"><label>案場名稱</label><input id="d-name" list="d-site-list" placeholder="可選或輸入"><datalist id="d-site-list">${state.sites.map(s=>`<option value="${esc(s.name)}">`).join('')}</datalist></div>
       <div class="field"><label>類型</label><select id="d-type"><option value="代工">代工</option><option value="公司分潤">公司分潤（30/70）</option></select></div>
-      <div class="field"><label>日期</label><input type="date" id="d-date" value="${new Date().toISOString().slice(0,10)}"></div>
+      <div class="field"><label>日期</label><input type="date" id="d-date" value="${localISODate()}"></div>
     </div>
     <div class="row" style="margin-top:8px">
       <div class="field"><label>請款金額</label><input type="number" id="d-amount" min="0" step="1000" style="width:130px"></div>
@@ -5322,7 +5496,7 @@ function viewBillingReq(){
   <div class="card">
     ${foldBtn('bnr','新增請款單')}
     ${formOpen.bnr?`<div class="row" style="margin-top:8px">
-      <div class="field"><label>日期</label><input type="date" id="bnr-date" value="${billingReqDraft?esc(billingReqDraft.date):new Date().toISOString().slice(0,10)}"></div>
+      <div class="field"><label>日期</label><input type="date" id="bnr-date" value="${billingReqDraft?esc(billingReqDraft.date):localISODate()}"></div>
       <div class="field" style="flex:1;min-width:150px"><label>案場</label><select id="bnr-site">${siteSelOpts}</select></div>
       <div class="field"><label>單位</label><input id="bnr-unit" value="式" placeholder="式、天、坪" style="width:90px"></div>
       <div class="field"><label>數量</label><input type="number" id="bnr-qty" min="0" step="0.01" value="${billingReqDraft?'':'1'}" style="width:90px"></div>
@@ -5586,7 +5760,7 @@ function viewBillingAdd(){
   ${billViewMode==='out'?'':`<div class="card">
     ${foldBtn('bna','新增追加單')}
     ${formOpen.bna?`<div class="row" style="margin-top:8px">
-      <div class="field"><label>日期</label><input type="date" id="bna-date" value="${billingAddDraft?esc(billingAddDraft.date):new Date().toISOString().slice(0,10)}"></div>
+      <div class="field"><label>日期</label><input type="date" id="bna-date" value="${billingAddDraft?esc(billingAddDraft.date):localISODate()}"></div>
       <div class="field" style="flex:1;min-width:150px"><label>案場</label><select id="bna-site">${siteSelectOptions(billingAddDraft?billingAddDraft.site:'')}</select></div>
       <div class="field"><label>單位</label><input id="bna-unit" value="${billingAddDraft?esc(billingAddDraft.unit||'式'):'式'}" placeholder="式、天、坪" style="width:90px"></div>
       <div class="field"><label>數量</label><input type="number" id="bna-qty" min="0" step="0.01" value="${billingAddDraft?(billingAddDraft.qty!==undefined?billingAddDraft.qty:''):'1'}" style="width:90px"></div>
@@ -5781,7 +5955,7 @@ function viewMeasurements(){
       <div class="field" style="flex:0 0 130px;min-width:130px"><label id="meas-qty-label">數量/面積</label><input type="number" id="meas-qty" value="${mdQty}" min="0" step="0.01" style="width:100%"></div>
       <div class="field"><label>單價（可算式）</label><input id="meas-price" value="${measDraft?esc(measDraft.priceExpr||String(measDraft.unitPrice)):''}" placeholder="1200 或 1200*1.1" style="width:130px"></div>
       <div class="field"><label>小計</label><div id="meas-subtotal" class="num" style="height:36px;display:flex;align-items:center;font-weight:700">$0</div></div>
-      <div class="field"><label>日期</label><input type="date" id="meas-date" value="${measKeep&&measKeep.date?esc(measKeep.date):new Date().toISOString().slice(0,10)}"></div>
+      <div class="field"><label>日期</label><input type="date" id="meas-date" value="${measKeep&&measKeep.date?esc(measKeep.date):localISODate()}"></div>
       <div class="field" style="flex:1;min-width:150px"><label>備注（可換行）</label><textarea id="meas-note" rows="2" placeholder="（選填）">${measDraft?esc(measDraft.note||''):''}</textarea></div>
     </div>
     <div class="row" style="margin-top:10px"><button class="btn" id="meas-add">＋ 新增</button></div>`:''}
@@ -5825,7 +5999,7 @@ function exportMeasurementsPDF(selectedOnly=false){
   }).join('<div style="height:16px"></div>');
   const total=list.reduce((s,m)=>s+(Number(m.qty)||0)*(Number(m.unitPrice)||0),0);
   const title='計量明細';
-  const today=new Date().toISOString().slice(0,10);
+  const today=localISODate();
   const inner=`<div class="bluedoc">
     <h1>${title}</h1>
     <div class="meta">匯出日期：${today}　|　筆數：${list.length}　|　總金額：${money(total)}</div>
@@ -6080,7 +6254,7 @@ function exportRecon(){
   if(sections.length===0){ alert('勾選的項目目前都沒有可匯出的資料'); return; }
   const range=(reconFrom||reconTo)?`${reconFrom||'起始'} ～ ${reconTo||'迄今'}`:'全部期間';
   const inner=`<h1>對帳彙總</h1>
-    <div class="meta">可套期間明細區間：${range}　|　列印日：${new Date().toISOString().slice(0,10)}</div>
+    <div class="meta">可套期間明細區間：${range}　|　列印日：${localISODate()}</div>
     ${sections.join('<div style="height:18px"></div>')}`;
   printHTML('對帳彙總', inner);
 }
@@ -6127,7 +6301,7 @@ function printYearIncome(){
   const rows=data.emps.map(e=>`<tr><td>${esc(e.name)}</td>${e.months.map(v=>`<td class="num">${v?money(v):'-'}</td>`).join('')}<td class="num" style="font-weight:700">${money(e.total)}</td></tr>`).join('');
   const totalRow=`<tr class="total-row"><td>合計</td>${data.monthTotals.map(v=>`<td class="num">${v?money(v):'-'}</td>`).join('')}<td class="num">${money(data.grand)}</td></tr>`;
   const inner=`<h1>員工年度收入彙總 ${yearIncomeYear}</h1>
-    <div class="meta">各月＝計薪週期（前月11日～當月10日）收入，不含扣項　|　列印日期：${new Date().toISOString().slice(0,10)}　|　共 ${data.emps.length} 人</div>
+    <div class="meta">各月＝計薪週期（前月11日～當月10日）收入，不含扣項　|　列印日期：${localISODate()}　|　共 ${data.emps.length} 人</div>
     <table><thead><tr><th>員工</th>${mHead}<th class="num">全年合計</th></tr></thead>
     <tbody>${rows}${totalRow}</tbody></table>
     <p class="sub">各月金額＝該計薪週期（前月11日～當月10日）的收入＝基本工資＋加項，<b>不含任何扣項</b>（借支扣還、工具賠償等為內部代扣，不列入收入）；含手動補登的歷史月份。</p>`;
@@ -6371,7 +6545,7 @@ function exportParkVerify(){
     secs+=`<h2>④ 帳面該發獎金（各案相加）</h2><table>${br||row('—','')}${row('<b>合計應發</b>','<b>'+money(Math.round(totalTargetBonus))+'</b>')}</table>`;
   }
   if(!secs){ alert('請至少勾選一個段落'); return; }
-  printHTML('品佑帳戶結算·驗算明細', `<h1>品佑帳戶結算·驗算明細</h1><div class="meta">帳戶：${esc(accountName(state.parkAccId))}　|　列印日：${new Date().toISOString().slice(0,10)}</div>${secs}`);
+  printHTML('品佑帳戶結算·驗算明細', `<h1>品佑帳戶結算·驗算明細</h1><div class="meta">帳戶：${esc(accountName(state.parkAccId))}　|　列印日：${localISODate()}</div>${secs}`);
 }
 
 // ---- 年度總結 ----
@@ -6516,7 +6690,7 @@ function exportYearVerify(){
   }
   if(!secs){ alert('請至少勾選一個段落'); return; }
   const period=(yearFrom||yearTo)?`${yearFrom||'起'} ~ ${yearTo||'今'}`:'全部期間';
-  printHTML('年度總結·驗算明細', `<h1>年度總結·驗算明細</h1><div class="meta">期間：${period}　|　列印日：${new Date().toISOString().slice(0,10)}</div>${secs}`);
+  printHTML('年度總結·驗算明細', `<h1>年度總結·驗算明細</h1><div class="meta">期間：${period}　|　列印日：${localISODate()}</div>${secs}`);
 }
 
 // 手機關頁/切換 App 時，盡量把最後資料補送到雲端，避免只留在本機。
