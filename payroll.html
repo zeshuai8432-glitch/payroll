@@ -494,8 +494,8 @@ const FS_PROJECT = 'payroll-d1abe';
 const FS_KEY = 'AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
 const FS_DOC_BASE = 'https://firestore.googleapis.com/v1/projects/'+FS_PROJECT+'/databases/(default)/documents/payroll/';
 const FS_REST_URL = FS_DOC_BASE+'main?key='+FS_KEY;
-const APP_VERSION = 'v2026.07.12-dash+snapshot+search+yearincome';
-let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], tools:[], locations:[], assets:[], advances:[], accounts:[], ledger:[], deals:[], billings:[], measurements:[], contracts:{}, costs:[], textMemory:{clients:[],companies:[]}, parkAccId:'', oweBonus:{}, minFund:'', payrollSnapshots:[], deletedIds:[], tab:'dash' };
+const APP_VERSION = 'v2026.07.12-rescue';
+let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], tools:[], locations:[], assets:[], advances:[], accounts:[], ledger:[], deals:[], billings:[], measurements:[], contracts:{}, costs:[], textMemory:{clients:[],companies:[]}, parkAccId:'', oweBonus:{}, minFund:'', payrollSnapshots:[], deletedIds:[], resurrected:{ids:[],at:0}, tab:'dash' };
 let cloudStatus='連線中…';
 let localDirty=false, lastCloudTs=0;
 let dirtyOther=false; // 未上傳的變更中是否含「標記以外」的修改（決定衝突時能否自動合併）
@@ -789,7 +789,7 @@ const taxBreakdownHtml = (d,c) => {
 
 function applyData(d){
   if(!d) return;
-  state.employees=d.employees||[]; state.sites=d.sites||[]; state.attendance=d.attendance||[]; state.adjustments=d.adjustments||[]; state.loans=d.loans||[]; state.tools=d.tools||[]; state.locations=d.locations||[]; state.assets=d.assets||[]; state.advances=d.advances||[]; state.accounts=d.accounts||[]; state.ledger=d.ledger||[]; state.deals=d.deals||[]; state.billings=d.billings||[]; state.measurements=d.measurements||[]; state.contracts=d.contracts||{}; state.costs=d.costs||[]; state.textMemory=d.textMemory||{clients:[],companies:[]}; state.parkAccId=d.parkAccId||''; state.oweBonus=d.oweBonus||{}; state.minFund=(d.minFund!==undefined?d.minFund:''); state.payrollSnapshots=d.payrollSnapshots||[]; state.deletedIds=d.deletedIds||[];
+  state.employees=d.employees||[]; state.sites=d.sites||[]; state.attendance=d.attendance||[]; state.adjustments=d.adjustments||[]; state.loans=d.loans||[]; state.tools=d.tools||[]; state.locations=d.locations||[]; state.assets=d.assets||[]; state.advances=d.advances||[]; state.accounts=d.accounts||[]; state.ledger=d.ledger||[]; state.deals=d.deals||[]; state.billings=d.billings||[]; state.measurements=d.measurements||[]; state.contracts=d.contracts||{}; state.costs=d.costs||[]; state.textMemory=d.textMemory||{clients:[],companies:[]}; state.parkAccId=d.parkAccId||''; state.oweBonus=d.oweBonus||{}; state.minFund=(d.minFund!==undefined?d.minFund:''); state.payrollSnapshots=d.payrollSnapshots||[]; state.deletedIds=d.deletedIds||[]; if(d.resurrected&&Array.isArray(d.resurrected.ids)) state.resurrected={ids:d.resurrected.ids,at:Number(d.resurrected.at)||0}; else if(!state.resurrected) state.resurrected={ids:[],at:0};
   state.employees.forEach(e=>{ if(e.active===undefined) e.active=true; });
   state.sites.forEach(s=>{
     if(s.parentSiteId){
@@ -815,7 +815,7 @@ function packData(){
     const driveUrls=(urls||[]).filter(u=>typeof u==='string'&&u.startsWith('http'));
     if(driveUrls.length) photosSync[id]=driveUrls;
   });
-  return {employees:state.employees,sites:state.sites,attendance:state.attendance,adjustments:state.adjustments,loans:state.loans,tools:state.tools,locations:state.locations,assets:state.assets,advances:state.advances,accounts:state.accounts,ledger:state.ledger,deals:state.deals,billings:state.billings,measurements:state.measurements,contracts:state.contracts,costs:state.costs,textMemory:state.textMemory,parkAccId:state.parkAccId,oweBonus:state.oweBonus,minFund:state.minFund,payrollSnapshots:state.payrollSnapshots,billingPhotos:photosSync,billingPhotosDeleted:billingPhotosDeleted,billingSigs:billingSigs,billingSigsLocked:billingSigsLocked,billingSigMeta:billingSigMeta,deletedIds:state.deletedIds||[],savedAt:Date.now()};
+  return {employees:state.employees,sites:state.sites,attendance:state.attendance,adjustments:state.adjustments,loans:state.loans,tools:state.tools,locations:state.locations,assets:state.assets,advances:state.advances,accounts:state.accounts,ledger:state.ledger,deals:state.deals,billings:state.billings,measurements:state.measurements,contracts:state.contracts,costs:state.costs,textMemory:state.textMemory,parkAccId:state.parkAccId,oweBonus:state.oweBonus,minFund:state.minFund,payrollSnapshots:state.payrollSnapshots,resurrected:state.resurrected||{ids:[],at:0},billingPhotos:photosSync,billingPhotosDeleted:billingPhotosDeleted,billingSigs:billingSigs,billingSigsLocked:billingSigsLocked,billingSigMeta:billingSigMeta,deletedIds:state.deletedIds||[],savedAt:Date.now()};
 }
 // 需要逐筆(依 id)合併的集合；deals 為衍生資料不合併，靠 resyncAllSiteDeals 重算
 const MERGE_COLLECTIONS=['employees','sites','attendance','adjustments','loans','tools','locations','assets','advances','accounts','ledger','billings','measurements','costs','payrollSnapshots'];
@@ -835,8 +835,13 @@ function recordDeletions(){ // 比對上次的 id 集合，消失的視為刪除
   const cur=collectIds();
   if(_prevIds){
     const del=new Set(state.deletedIds||[]);
-    _prevIds.forEach(id=>{ if(!cur.has(id)) del.add(id); });
+    const newlyDel=new Set();
+    _prevIds.forEach(id=>{ if(!cur.has(id)){ del.add(id); newlyDel.add(id); } });
     state.deletedIds=[...del];
+    // 救回後又「真的」刪掉的，從救回清單移除，之後不會再復活
+    if(newlyDel.size && state.resurrected && (state.resurrected.ids||[]).length){
+      state.resurrected.ids=state.resurrected.ids.filter(id=>!newlyDel.has(id));
+    }
   }
   _prevIds=cur;
 }
@@ -847,19 +852,28 @@ function mergeCloudDoc(cd){
   const cloudTs=Number(cd.savedAt)||0;
   const keepLogs={}; MERGE_COLLECTIONS.forEach(k=>keepLogs[k]=(state[k]||[]).slice());
   const keepDelIds=(state.deletedIds||[]).slice();
+  const keepRes=(state.resurrected&&state.resurrected.at)?state.resurrected:{ids:[],at:0};
+  // 還原標記：先取兩邊較新的「刻意救回」清單（7 天內有效），洗墓碑要在 union 之前做，
+  // 否則救回的紀錄會在合併時就被舊墓碑過濾掉
+  const resCloud=(cd.resurrected&&Array.isArray(cd.resurrected.ids))?{ids:cd.resurrected.ids,at:Number(cd.resurrected.at)||0}:{ids:[],at:0};
+  const resEff=(resCloud.at>=keepRes.at)?resCloud:keepRes;
+  const resActive=!!(resEff.at && (Date.now()-resEff.at)<7*86400000 && (resEff.ids||[]).length);
+  const rSet=resActive?new Set(resEff.ids):null;
+  const purgeDel=arr=>rSet?arr.filter(id=>!rSet.has(id)):arr;
   if(cloudTs>=localTs){
     applyData(cd); // 內含 resyncAllSiteDeals + 合併簽名/照片（會把 deletedIds 設成雲端的）
-    state.deletedIds=[...new Set([...(state.deletedIds||[]),...keepDelIds])]; // 補回本機刪除記號
+    state.deletedIds=purgeDel([...new Set([...(state.deletedIds||[]),...keepDelIds])]); // 補回本機刪除記號（救回的除外）
     const del=new Set(state.deletedIds);
     MERGE_COLLECTIONS.forEach(k=>{ state[k]=unionById(state[k], keepLogs[k], del); });
   } else {
-    state.deletedIds=[...new Set([...(state.deletedIds||[]),...(cd.deletedIds||[])])];
+    state.deletedIds=purgeDel([...new Set([...(state.deletedIds||[]),...(cd.deletedIds||[])])]);
     const del=new Set(state.deletedIds);
     MERGE_COLLECTIONS.forEach(k=>{ state[k]=unionById(state[k], cd[k]||[], del); });
     mergeBillingSigs(cd.billingSigs||{}, cd.billingSigsLocked||{}, cd.billingSigMeta||{});
     mergeDeletedPhotos(cd.billingPhotosDeleted);
     if(cd.billingPhotos) mergeCloudPhotos(cd.billingPhotos);
   }
+  state.resurrected=resEff;
   // 依刪除記號再清一次各集合（applyData 套用的雲端資料可能含已刪的）
   const del=new Set(state.deletedIds||[]);
   MERGE_COLLECTIONS.forEach(k=>{ state[k]=(state[k]||[]).filter(r=>!(r&&del.has(r.id))); });
@@ -921,6 +935,12 @@ function importBackup(file){
       // 還原照片（含 base64）
       if(data._fullPhotos){ try{ billingPhotos=data._fullPhotos; savePhotos(); }catch(e){} }
       applyData(data);
+      // 匯入視為「刻意還原」：備份裡的紀錄從刪除記號移除並標記救回，
+      // 7 天內各裝置同步時會一併洗掉墓碑，救回的資料不會被同步再刪一次
+      const rIds=[...collectIds()];
+      state.resurrected={ids:rIds,at:Date.now()};
+      const rSet=new Set(rIds);
+      state.deletedIds=(state.deletedIds||[]).filter(id=>!rSet.has(id));
       refreshPrevIds(); // 還原視為新基準，避免被誤判為大量刪除
       saveData();        // 寫回本機並推雲端，讓三人同步到還原後的版本
       render();
@@ -929,6 +949,64 @@ function importBackup(file){
   };
   reader.onerror=()=>alert('讀取檔案失敗。');
   reader.readAsText(file);
+}
+
+// ---- 🚑 誤刪救援：把「快照裡有、現在沒有」的紀錄合併救回（不覆蓋現有資料）----
+function rescueMerge(d){
+  let added=0; const addedIds=[]; const detail=[];
+  MERGE_COLLECTIONS.forEach(k=>{
+    const have=new Set((state[k]||[]).map(r=>r&&r.id));
+    let n=0;
+    (Array.isArray(d[k])?d[k]:[]).forEach(r=>{ if(r&&r.id!=null&&!have.has(r.id)){ (state[k]=state[k]||[]).push(r); addedIds.push(r.id); added++; n++; } });
+    if(n) detail.push(`${k} ${n}筆`);
+  });
+  try{ mergeBillingSigs(d.billingSigs||{}, d.billingSigsLocked||{}, d.billingSigMeta||{}); }catch(e){}
+  try{ mergeDeletedPhotos(d.billingPhotosDeleted); if(d.billingPhotos) mergeCloudPhotos(d.billingPhotos); }catch(e){}
+  if(added===0){ alert('比對完成：這份快照裡沒有「現在缺少」的紀錄，不需要救回。'); return; }
+  // 標記救回：從刪除記號移除；7 天內各裝置同步時會一併洗掉墓碑，不會被同步再刪一次
+  const prev=(state.resurrected&&state.resurrected.ids)||[];
+  state.resurrected={ids:[...new Set([...prev,...addedIds])],at:Date.now()};
+  const rs=new Set(state.resurrected.ids);
+  state.deletedIds=(state.deletedIds||[]).filter(id=>!rs.has(id));
+  try{ resyncAllSiteDeals(); }catch(e){}
+  refreshPrevIds();
+  saveData();
+  render();
+  alert(`已救回 ${added} 筆（${detail.join('、')}），並已標記防止被同步再刪。\n\n其他裝置打開後會自動同步到救回後的版本。`);
+}
+// 從雲端歷史快照救回（系統每次成功上傳會自動留存 hist- 快照）
+async function rescueFromCloudSnapshots(){
+  setCloud('讀取雲端快照清單…');
+  let docs=[];
+  try{
+    const r=await fetchT(FS_DOC_BASE.replace(/\/$/,'')+'?pageSize=300&key='+FS_KEY,{},20000);
+    const jd=await r.json();
+    (jd.documents||[]).forEach(x=>{
+      const nm=(x.name||'').split('/').pop();
+      if(!/^hist-/.test(nm)) return;
+      const js=x.fields&&x.fields.json&&x.fields.json.stringValue; if(!js) return;
+      try{ const dd=JSON.parse(js); docs.push({nm,dd,savedAt:Number(dd.savedAt)||0}); }catch(e){}
+    });
+  }catch(e){ setCloud('快照清單讀取失敗'); alert('讀取雲端快照清單失敗：'+String(e&&e.message||e).slice(0,60)); return; }
+  setCloud(cloudStatus||'');
+  if(!docs.length){ alert('雲端沒有歷史快照。'); return; }
+  docs.sort((a,b)=>b.savedAt-a.savedAt);
+  const top=docs.slice(0,12);
+  const lines=top.map((x,i)=>`${i+1}) ${x.savedAt?new Date(x.savedAt).toLocaleString():x.nm}　出工${(x.dd.attendance||[]).length}／請款${(x.dd.billings||[]).length}／計量${(x.dd.measurements||[]).length}／帳務${(x.dd.ledger||[]).length}`);
+  const pick=prompt(`選擇要救回的快照（輸入編號 1～${top.length}）：\n只會把「快照裡有、現在沒有」的紀錄合併回來，不會覆蓋現有資料。\n\n${lines.join('\n')}`,'1');
+  if(pick==null) return;
+  const idx=parseInt(pick,10)-1;
+  if(!(idx>=0&&idx<top.length)){ alert('編號不對，已取消。'); return; }
+  rescueMerge(top[idx].dd);
+}
+// 檢查本機救援快照（合併雲端前自動留存的 pm_lost_local_v1）
+function rescueFromLocalSnapshot(){
+  let raw=null; try{ raw=localStorage.getItem('pm_lost_local_v1'); }catch(e){}
+  if(!raw){ alert('這台裝置沒有本機救援快照。'); return; }
+  let d=null; try{ d=JSON.parse(raw); }catch(e){ alert('本機救援快照損壞，無法讀取。'); return; }
+  const when=d.savedAt?new Date(d.savedAt).toLocaleString():'（時間不明）';
+  if(!confirm(`找到本機救援快照：${when}\n出工 ${(d.attendance||[]).length}、請款 ${(d.billings||[]).length}、計量 ${(d.measurements||[]).length}、帳務 ${(d.ledger||[]).length}\n\n要把「快照裡有、現在沒有」的紀錄合併救回嗎？（不會覆蓋現有資料）`)) return;
+  rescueMerge(d);
 }
 
 // 雲端讀寫：優先走 Firebase SDK，失敗或逾時自動改走 Firestore REST（避免卡在「讀取雲端中」）
@@ -2129,6 +2207,14 @@ function viewManage(){
       <input type="file" id="backup-import-file" accept="application/json,.json" style="display:none">
       <span class="sub" id="backup-status" style="margin:0"></span>
     </div>
+    <div style="margin-top:12px;padding-top:10px;border-top:1px dashed var(--line)">
+      <div style="font-size:13px;font-weight:600;margin-bottom:4px">🚑 誤刪救援</div>
+      <p class="sub" style="margin:0 0 8px">誤刪資料時用這裡救回：只會把「快照裡有、現在沒有」的紀錄合併回來，不會覆蓋現有資料；救回後會自動標記，7 天內其他裝置同步時不會再把它們刪掉。</p>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+        <button class="act" id="rescue-cloud" style="border:1px solid var(--danger);border-radius:8px;padding:0 14px;height:38px;color:var(--danger)">從雲端歷史快照救回…</button>
+        <button class="act" id="rescue-local" style="border:1px solid var(--danger);border-radius:8px;padding:0 14px;height:38px;color:var(--danger)">檢查本機救援快照</button>
+      </div>
+    </div>
   </div>`;
 }
 
@@ -2136,6 +2222,8 @@ function bind(){
   const bkE=document.getElementById('backup-export'); if(bkE) bkE.onclick=()=>exportBackup();
   const bkBtn=document.getElementById('backup-import-btn'); const bkFile=document.getElementById('backup-import-file');
   if(bkBtn&&bkFile){ bkBtn.onclick=()=>bkFile.click(); bkFile.onchange=()=>{ if(bkFile.files&&bkFile.files[0]) importBackup(bkFile.files[0]); bkFile.value=''; }; }
+  const rsc=document.getElementById('rescue-cloud'); if(rsc) rsc.onclick=()=>rescueFromCloudSnapshots();
+  const rsl=document.getElementById('rescue-local'); if(rsl) rsl.onclick=()=>rescueFromLocalSnapshot();
   document.querySelectorAll('.nav-item').forEach(b=>b.onclick=()=>{ state.tab=b.dataset.tab; closeSidebar(); render(); });
   document.querySelectorAll('[data-goto]').forEach(b=>b.onclick=()=>{ state.tab=b.dataset.goto; render(); });
   document.querySelectorAll('[data-sitetoggle]').forEach(b=>b.onclick=()=>{ const id=b.dataset.sitetoggle; dashSiteOpen[id]=!dashSiteOpen[id]; render(); });
