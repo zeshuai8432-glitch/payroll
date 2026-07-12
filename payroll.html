@@ -678,7 +678,7 @@ const uniqueTexts = arr => [...new Set((arr||[]).map(x=>String(x||'').trim()).fi
 const knownClients = () => uniqueTexts([...(state.textMemory&&state.textMemory.clients||[]), ...state.sites.map(s=>s.clientOwner||s.siteClientOwner||s.ownerName||''), ...state.billings.map(b=>b.client||''), ...state.deals.map(d=>d.owner||'')]);
 const knownCompanies = () => uniqueTexts([...(state.textMemory&&state.textMemory.companies||[]), ...state.sites.map(s=>s.applyUnit||s.contractCompany||s.company||'')]);
 const dataListHtml = (id, values) => `<datalist id="${id}">${values.map(v=>`<option value="${esc(v)}"></option>`).join('')}</datalist>`;
-const SUB_SITE_TYPES=['代工','連工代料','業主分潤','舊制'];
+const SUB_SITE_TYPES=['代工','連工代料','業主分潤','舊制','外包'];
 const childSitesOf = s => s?state.sites.filter(x=>x.parentSiteId===s.id):[];
 const childSiteFor = (s, subName) => s?state.sites.find(x=>x.parentSiteId===s.id&&x.name===subName):null;
 const subSitesOf = s => {
@@ -1702,7 +1702,8 @@ function viewDash(){
       if(rec) billed+=state.billings.filter(b=>b.settled).reduce((x,b)=>{ const sp=splitSiteValue(b.site); return x+((sp.parent===rec.name&&!sp.sub)?billingAmount(b):0); },0);
       const cost=rec?costOf(rec):0;
       const taxPct=rec?taxPctOf(rec):0;
-      parts.push({name:sub, billed, cost, profit:partProfit(billed,cost,taxPct)});
+      const outsourced=(rec?rec.type:subSiteType(s,sub))==='外包'; // 外包樓層：工程款付給外部工班，純成本、無代工毛利
+      parts.push({name:sub, billed, cost, outsourced, profit:outsourced?0:partProfit(billed,cost,taxPct)});
     });
     // 只出現在「母 / 子」請款、但既非 subSites 標籤也無獨立紀錄的（避免漏算）
     Object.keys(billMap).forEach(sub=>{ if(sub && !subNames.includes(sub)) parts.push({name:sub, billed:billMap[sub], cost:0, profit:billMap[sub]}); });
@@ -1728,10 +1729,10 @@ function viewDash(){
         <td class="num" style="color:var(--muted)">—</td>
         <td class="num" style="color:var(--muted)">${money(p.ownCost||0)}</td>
         <td class="num" style="color:var(--muted)">—</td></tr>`;
-      html+=p.parts.map(pt=>`<tr style="background:var(--bg)"><td style="padding-left:28px;color:var(--muted)">↳ ${esc(pt.name)}${pt.billed<=0?' <span style="font-size:11px">未請款</span>':''}<span style="font-size:11px;color:var(--muted)">（代工）</span></td>
+      html+=p.parts.map(pt=>`<tr style="background:var(--bg)"><td style="padding-left:28px;color:var(--muted)">↳ ${esc(pt.name)}${pt.billed<=0?' <span style="font-size:11px">未請款</span>':''}<span style="font-size:11px;color:${pt.outsourced?'#9a5b1a':'var(--muted)'}">（${pt.outsourced?'外包':'代工'}）</span></td>
         <td class="num" style="color:var(--muted)">${money(pt.billed)}</td>
         <td class="num" style="color:var(--muted)">${money(pt.cost)}</td>
-        <td class="num" style="color:${pt.profit>=0?'var(--accent)':'var(--danger)'}">${money(pt.profit)}</td></tr>`).join('');
+        <td class="num" style="color:${pt.outsourced?'var(--muted)':(pt.profit>=0?'var(--accent)':'var(--danger)')}">${pt.outsourced?'—':money(pt.profit)}</td></tr>`).join('');
     }
     return html;
   }).join('');
@@ -4882,6 +4883,12 @@ function resyncSiteDeal(site){
   // 合作案不走這裡（合作案在分潤頁用 coopSiteCalc 自動匯總）
   // 母案場：請款金額只算開給業主的；子案場工程款記入母的成本
   // 子案場：請款金額＝自己的工程款（對母請款），成本＝自身工資＋手動，淨利走 30/70
+  // 外包子案場：工程款是付給外部工班的錢（純成本），不是東澤/廣昕的代工收入 → 不產生分潤
+  if(site.parentSiteId && site.type==='外包'){
+    const dOld=state.deals.find(x=>x.autoSiteId===site.id);
+    if(dOld){ state.ledger=state.ledger.filter(t=>t.autoDealId!==dOld.id); state.deals=state.deals.filter(x=>x.id!==dOld.id); }
+    return;
+  }
   const totalBill=dealBillBasisForSite(site);
   let d=state.deals.find(x=>x.autoSiteId===site.id);
   if(site.coop || site.type==='合作案'){
