@@ -1070,7 +1070,8 @@ function userIsTyping(){
   if(tag==='TEXTAREA'||tag==='SELECT') return true;
   if(tag==='INPUT'){
     const t=(el.type||'').toLowerCase();
-    return ['checkbox','radio','button','file','submit','range'].indexOf(t)===-1;
+    // checkbox/radio 也算互動中：使用者連續勾選（如計量明細）時，背景同步不要整頁重繪造成畫面跳動
+    return ['button','file','submit'].indexOf(t)===-1;
   }
   return false;
 }
@@ -1342,11 +1343,13 @@ function tabsBar(){
     </div>`).join('');
 }
 function render(){
+  const _sx=window.scrollX,_sy=window.scrollY; // 重繪後還原捲動位置，避免畫面跳動
   try{ localStorage.setItem(LS_TAB, state.tab||'entry'); }catch(e){} // 記住目前分頁，重整後留在同一頁
   document.getElementById('sidebar').innerHTML=tabsBar();
   const body=document.getElementById('body');
   body.innerHTML = state.tab==='dash'?viewDash():state.tab==='search'?viewSearch():state.tab==='entry'?viewEntry():state.tab==='payroll'?viewPayroll():state.tab==='sites'?viewSites():state.tab==='loans'?viewLoans():state.tab==='tools'?viewTools():state.tab==='advances'?viewAdvances():state.tab==='accounts'?viewAccounts():state.tab==='deals'?viewDeals():state.tab==='billing'?viewBilling():state.tab==='billingReq'?viewBillingReq():state.tab==='billingAdd'?viewBillingAdd():state.tab==='meas'?viewMeasurements():state.tab==='yearend'?viewYearEnd():state.tab==='yearincome'?viewYearIncome():state.tab==='parkacc'?viewParkAcc():state.tab==='recon'?viewRecon():viewManage();
   bind();
+  window.scrollTo(_sx,_sy); // 還原捲動位置
 }
 
 function entryTodayNoteInner(cs,cd){
@@ -2007,8 +2010,12 @@ function viewSites(){
   });
   state.costs.forEach(co=>{ const s=bySite[co.siteId]; if(s) s.manual+=Number(co.amount)||0; });
   Object.values(bySite).forEach(s=>{ s.grandTotal=s.total+(s.opening||0)+(s.manual||0); });
+  // 母案場成本要含「子案場已收款工程款」（母子內帳：子做的代工對母是成本）。
+  // 全公司總成本仍只算實際成本（工資＋手動），子工程款不重複計入（子案場自己的工資已在內）。
+  state.sites.forEach(st=>{ if(!st.parentSiteId && bySite[st.id]){ const cw=childWorkBilledForSite(st); bySite[st.id].childWork=cw; } });
+  Object.values(bySite).forEach(s=>{ s.dispTotal=s.grandTotal+(s.childWork||0); });
   const grand=Object.values(bySite).reduce((s,x)=>s+x.grandTotal,0);
-  const ids=Object.keys(bySite).sort((a,b)=>bySite[b].grandTotal-bySite[a].grandTotal);
+  const ids=Object.keys(bySite).sort((a,b)=>bySite[b].dispTotal-bySite[a].dispTotal);
   const payerName=who=>({dz:'東澤',gx:'廣昕',py:'品佑'}[who]||who||'—');
   const cardFor=(sid)=>{ const s=bySite[sid]; const site=state.sites.find(x=>x.id===sid); const isCoop=site&&site.coop;
     const empBreak=Object.entries(s.emp).sort((a,b)=>b[1]-a[1]).map(([eid,v])=>`<tr><td>${esc(empName(eid))}</td><td class="num">${money(v)}</td></tr>`).join('');
@@ -2042,10 +2049,11 @@ function viewSites(){
     const payerSummary=Object.keys(byPayer).length?`<div class="sub" style="margin:4px 0">各人墊付：${Object.entries(byPayer).map(([k,v])=>`${esc(payerName(k))} ${money(v)}`).join('、')}</div>`:'';
     return `<div class="card" ${isCoop?'style="border-left:3px solid #d98430"':''}>
       <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px">
-        <div style="font-size:15px;font-weight:600">${esc(siteName(sid))}${isCoop?'<span class="tag" style="background:#fde9d4;color:#9a5b1a">合作案場</span>':''}</div>
-        <div style="font-size:18px;font-weight:600">${money(s.grandTotal)}</div>
+        <div style="font-size:15px;font-weight:600">${esc(siteName(sid))}${isCoop?'<span class="tag" style="background:#fde9d4;color:#9a5b1a">合作案場</span>':''}${(s.childWork||0)>0?'<span class="tag" style="background:#eef6ff;color:#1d4ed8">含子工程款</span>':''}</div>
+        <div style="font-size:18px;font-weight:600">${money(s.dispTotal!==undefined?s.dispTotal:s.grandTotal)}</div>
       </div>
-      <p class="sub">${isCoop?'手動成本明細加總':`總工數 ${gongStr(s.hours)}・系統工資 ${money(s.wage)}・津貼 ${money(s.allow)}`}${s.opening>0?`・期初 ${money(s.opening)}`:''}${s.manual>0?`・手動成本 ${money(s.manual)}`:''}・占總成本 ${pct}%</p>
+      <p class="sub">${isCoop?'手動成本明細加總':`總工數 ${gongStr(s.hours)}・系統工資 ${money(s.wage)}・津貼 ${money(s.allow)}`}${s.opening>0?`・期初 ${money(s.opening)}`:''}${s.manual>0?`・手動成本 ${money(s.manual)}`:''}${(s.childWork||0)>0?`・<b style="color:#1d4ed8">子案場工程款(已收款) ${money(s.childWork)}</b>`:''}・占總成本 ${pct}%</p>
+      ${(s.childWork||0)>0?`<p class="sub" style="margin:2px 0 6px;color:var(--muted)">子案場工程款自動來自「母 / 子」已收款請款（分潤結算已扣此成本）；不重複計入下方全公司總成本。</p>`:''}
       ${isCoop?'':`<div class="row" style="margin-bottom:6px">
         <div class="field"><label>期初人事成本（從Excel抄入，選填）</label><input type="number" data-opening="${sid}" value="${s.opening||''}" placeholder="未設定" min="0" step="1000" style="width:170px"></div>
       </div>`}
@@ -2102,10 +2110,10 @@ function viewSites(){
   return `
   <div class="metrics">
     <div class="metric"><div class="l">案場數</div><div class="v">${activeIds.length}${pausedIds.length?`<span style="font-size:12px;color:var(--muted)"> +${pausedIds.length}暫停</span>`:''}</div></div>
-    <div class="metric"><div class="l">總成本</div><div class="v">${money(grand)}</div></div>
+    <div class="metric"><div class="l">全公司實際總成本</div><div class="v">${money(grand)}</div></div>
   </div>
   ${reimbCard}
-  <p class="sub" style="margin:-6px 0 12px">一般案場成本＝期初＋出勤工資津貼＋手動成本；合作案場（橙色）成本＝手動成本明細加總（日期/項目/金額/誰付）。<button class="btn" id="export-sites" style="margin-left:10px" ${ids.length===0?'disabled style="opacity:.5"':''}>匯出 PDF</button></p>
+  <p class="sub" style="margin:-6px 0 12px">一般案場成本＝期初＋出勤工資津貼＋手動成本；<b>母案場另含子案場已收款工程款</b>（藍字，母子內帳）；合作案場（橙色）成本＝手動成本明細加總。全公司總成本只算實際成本（工資＋手動），子工程款不重複計入——子案場自己的工資已經在裡面。<button class="btn" id="export-sites" style="margin-left:10px" ${ids.length===0?'disabled style="opacity:.5"':''}>匯出 PDF</button></p>
   ${cards===''&&pausedCards===''?'<div class="card"><div class="empty">尚無案場成本資料。</div></div>':cards}${pausedCards}`;
 }
 
@@ -3375,8 +3383,11 @@ function bind(){
     measEditId=null; saveData(); render();
   };
   const measExportBtnRefresh=()=>{
-    const btn=document.getElementById('export-meas-sel');
-    if(btn){ const any=state.measurements.some(m=>measSel[m.id]); btn.disabled=!any; btn.style.opacity=any?'1':'.5'; }
+    const any=state.measurements.some(m=>measSel[m.id]);
+    ['export-meas-sel','meas-tobill'].forEach(id=>{
+      const btn=document.getElementById(id);
+      if(btn){ btn.disabled=!any; btn.style.opacity=any?'1':'.5'; }
+    });
   };
   document.querySelectorAll('[data-measpick-cb]').forEach(cb=>cb.onchange=()=>{
     measSel[cb.dataset.measpickCb]=cb.checked;
@@ -4195,19 +4206,23 @@ function exportSitesPDF(){
     s.hours+=Number(r.hours)||0; s.wage+=c.wage; s.allow+=c.allow; s.total+=c.total; s.emp[r.empId]=(s.emp[r.empId]||0)+c.total;
   });
   const ids=Object.keys(bySite); if(ids.length===0) return;
-  ids.forEach(id=>{ bySite[id].grand=bySite[id].total+bySite[id].opening; });
+  ids.forEach(id=>{ bySite[id].grand=bySite[id].total+bySite[id].opening;
+    const st=state.sites.find(x=>x.id===id);
+    bySite[id].childWork=(st&&!st.parentSiteId)?childWorkBilledForSite(st):0;
+  });
   const grand=ids.reduce((s,id)=>s+bySite[id].grand,0);
-  ids.sort((a,b)=>bySite[b].grand-bySite[a].grand);
+  const cwGrand=ids.reduce((s,id)=>s+(bySite[id].childWork||0),0);
+  ids.sort((a,b)=>(bySite[b].grand+(bySite[b].childWork||0))-(bySite[a].grand+(bySite[a].childWork||0)));
   const rows=ids.map(id=>{ const s=bySite[id];
-    return `<tr><td>${esc(s.name||siteName(id))}</td><td class="num">${gongStr(s.hours)}</td><td class="num">${money(s.opening)}</td><td class="num">${money(s.wage)}</td><td class="num">${money(s.allow)}</td><td class="num" style="font-weight:700">${money(s.grand)}</td></tr>`;
+    return `<tr><td>${esc(s.name||siteName(id))}</td><td class="num">${gongStr(s.hours)}</td><td class="num">${money(s.opening)}</td><td class="num">${money(s.wage)}</td><td class="num">${money(s.allow)}</td><td class="num">${s.childWork?money(s.childWork):'-'}</td><td class="num" style="font-weight:700">${money(s.grand+(s.childWork||0))}</td></tr>`;
   }).join('');
   const inner=`<h1>案場人事成本明細</h1>
-    <div class="meta">列印日：${new Date().toISOString().slice(0,10)}　|　總人事成本 ${money(grand)}</div>
-    <table><thead><tr><th>案場</th><th class="num">系統工數</th><th class="num">期初成本</th><th class="num">系統工資</th><th class="num">津貼</th><th class="num">總成本</th></tr></thead>
+    <div class="meta">列印日：${new Date().toISOString().slice(0,10)}　|　實際人事成本 ${money(grand)}　|　含子工程款合計 ${money(grand+cwGrand)}</div>
+    <table><thead><tr><th>案場</th><th class="num">系統工數</th><th class="num">期初成本</th><th class="num">系統工資</th><th class="num">津貼</th><th class="num">子工程款</th><th class="num">總成本</th></tr></thead>
     <tbody>${rows}
-      <tr class="total-row"><td>合計</td><td class="num"></td><td class="num"></td><td class="num"></td><td class="num"></td><td class="num">${money(grand)}</td></tr>
+      <tr class="total-row"><td>合計</td><td class="num"></td><td class="num"></td><td class="num"></td><td class="num"></td><td class="num">${money(cwGrand)}</td><td class="num">${money(grand+cwGrand)}</td></tr>
     </tbody></table>
-    <p class="sub">總成本＝期初人事成本（歷史抄入）＋系統內登記出勤的工資與津貼。金額四捨五入至整數。</p>`;
+    <p class="sub">總成本＝期初人事成本＋出勤工資津貼＋子案場已收款工程款（母案場的母子內帳成本）。注意：合計含子工程款時，子案場自身工資與母案場的子工程款屬同一筆錢的兩層記法，公司實際人事成本以「實際人事成本」為準。金額四捨五入至整數。</p>`;
   printHTML('案場成本明細', inner);
 }
 
@@ -5641,12 +5656,18 @@ function reconSection(key, from, to){
     state.attendance.forEach(r=>{ const c=comp[r.id]; if(!c)return; const s=bySite[r.siteId]=bySite[r.siteId]||{hours:0,wage:0,allow:0,total:0,opening:0,name:siteName(r.siteId)};
       s.hours+=Number(r.hours)||0; s.wage+=c.wage; s.allow+=c.allow; s.total+=c.total; });
     const ids=Object.keys(bySite); if(ids.length===0) return '';
-    ids.forEach(id=>bySite[id].grand=bySite[id].total+bySite[id].opening);
-    const grand=ids.reduce((s,id)=>s+bySite[id].grand,0); ids.sort((a,b)=>bySite[b].grand-bySite[a].grand);
-    const rows=ids.map(id=>{ const s=bySite[id]; return `<tr><td>${esc(s.name||siteName(id))}</td><td class="num">${money(s.opening)}</td><td class="num">${money(s.wage)}</td><td class="num">${money(s.allow)}</td><td class="num" style="font-weight:700">${money(s.grand)}</td></tr>`; }).join('');
+    ids.forEach(id=>{ bySite[id].grand=bySite[id].total+bySite[id].opening;
+      const st=state.sites.find(x=>x.id===id);
+      bySite[id].childWork=(st&&!st.parentSiteId)?childWorkBilledForSite(st):0;
+    });
+    const grand=ids.reduce((s,id)=>s+bySite[id].grand,0);
+    const cwGrand=ids.reduce((s,id)=>s+(bySite[id].childWork||0),0);
+    ids.sort((a,b)=>(bySite[b].grand+(bySite[b].childWork||0))-(bySite[a].grand+(bySite[a].childWork||0)));
+    const rows=ids.map(id=>{ const s=bySite[id]; return `<tr><td>${esc(s.name||siteName(id))}</td><td class="num">${money(s.opening)}</td><td class="num">${money(s.wage)}</td><td class="num">${money(s.allow)}</td><td class="num">${s.childWork?money(s.childWork):'-'}</td><td class="num" style="font-weight:700">${money(s.grand+(s.childWork||0))}</td></tr>`; }).join('');
     return `<h2 class="sec">案場成本明細（累計至今）</h2>
-      <table><thead><tr><th>案場</th><th class="num">期初</th><th class="num">系統工資</th><th class="num">津貼</th><th class="num">總成本</th></tr></thead>
-      <tbody>${rows}<tr class="total-row"><td>合計</td><td class="num"></td><td class="num"></td><td class="num"></td><td class="num">${money(grand)}</td></tr></tbody></table>`;
+      <table><thead><tr><th>案場</th><th class="num">期初</th><th class="num">系統工資</th><th class="num">津貼</th><th class="num">子工程款</th><th class="num">總成本</th></tr></thead>
+      <tbody>${rows}<tr class="total-row"><td>合計</td><td class="num"></td><td class="num"></td><td class="num"></td><td class="num">${money(cwGrand)}</td><td class="num">${money(grand+cwGrand)}</td></tr></tbody></table>
+      <p class="sub">子工程款＝子案場已收款工程款（母子內帳，分潤結算已扣）；公司實際人事成本＝${money(grand)}（不含子工程款，子案場工資已在各自列內）。</p>`;
   }
   if(key==='yearend'){
     let bookFund=0, postedFund=0; const bonusByP={};
