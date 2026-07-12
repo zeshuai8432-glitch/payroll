@@ -1046,7 +1046,7 @@ async function rescueFromCloudSnapshots(){
 }
 // ---- 🔗 品佑帳本互抓：讀品佑雲端的支出，抓到 payroll 沒有的就通知逐筆確認 ----
 const PINYOU_CLOUD_URL='https://script.google.com/macros/s/AKfycbxFLYgepJcn4-Sw_BvgTb-jUijDaSmRSfMkdfrnlwrVgDzDxE65KidWbao3Bq6ooL7q/exec';
-let pyFound=null, pyChecking=false; // null=尚未檢查；[]=已檢查無新項目
+let pyFound=null, pyChecking=false, pySkippedNoMatch=0; // null=尚未檢查；[]=已檢查無新項目
 async function checkPinyouExpenses(showFail){
   if(pyChecking) return; pyChecking=true;
   try{
@@ -1062,7 +1062,7 @@ async function checkPinyouExpenses(showFail){
     const byName={};
     state.sites.forEach(s=>{ if(!s.parentSiteId && byName[s.name]===undefined) byName[s.name]=s.id; });
     state.sites.forEach(s=>{ if(s.parentSiteId && byName[s.name]===undefined) byName[s.name]=s.id; });
-    pyFound=[];
+    pyFound=[]; pySkippedNoMatch=0;
     exps.forEach(e=>{
       if(!e||e.id==null) return;
       if(String(e.id).startsWith('pr-')) return; // 這筆本來就是 PAYROLL 帶過去品佑的，不要再帶回來
@@ -1070,7 +1070,8 @@ async function checkPinyouExpenses(showFail){
       if(!name) return; // 沒掛案場的公司雜支，不屬於案場成本
       const cid='py-'+e.id;
       if(have.has(cid)||haveSrc.has(e.id)||del.has(cid)) return; // 已帶入或已忽略
-      pyFound.push({e, cid, siteId:byName[name]||null});
+      if(!byName[name]){ pySkippedNoMatch++; return; } // 只抓「兩邊同名」的案場，其他直接略過不打擾
+      pyFound.push({e, cid, siteId:byName[name]});
     });
   }catch(err){ if(pyFound==null) pyFound=null; if(showFail) alert('讀取品佑帳本失敗：'+String(err&&err.message||err).slice(0,60)); pyChecking=false; return; }
   pyChecking=false;
@@ -2208,20 +2209,20 @@ function viewSites(){
   </div>
   ${(pyFound&&pyFound.length)?`<div class="card" style="border-left:3px solid var(--info)">
     <div style="font-size:14px;font-weight:600;margin-bottom:4px">📥 品佑帳本有 ${pyFound.length} 筆支出還沒帶入</div>
-    <p class="sub" style="margin:0 0 8px">夥伴在品佑帳本記的案場帳單。「＋新增」帶入該案場成本（帶入後可自行改刪，毛利/分潤自動吃到）；「忽略」則這筆不再提醒。</p>
+    <p class="sub" style="margin:0 0 8px">夥伴在品佑帳本記的案場帳單（只列兩邊同名的案場）。「＋新增」帶入該案場成本（帶入後可自行改刪，毛利/分潤自動吃到）；「忽略」則這筆不再提醒。</p>
     <div class="scroll"><table class="cardtable"><thead><tr><th>日期</th><th>案場</th><th>項目</th><th class="num">金額</th><th>出帳</th><th></th></tr></thead>
     <tbody>${pyFound.map((f,i)=>`<tr>
       <td data-label="日期">${esc(f.e.date||'')}</td>
-      <td data-label="案場">${esc(f.e.site||'')}${f.siteId?'':'<span class="tag" style="background:#f6e1e1;color:var(--danger)">找不到同名案場</span>'}</td>
+      <td data-label="案場">${esc(f.e.site||'')}</td>
       <td data-label="項目">${esc(String(f.e.item||''))}</td>
       <td class="num" data-label="金額">${money(f.e.amount)}</td>
       <td data-label="出帳">${esc(String(f.e.account||''))}</td>
-      <td class="actions" style="white-space:nowrap">${f.siteId?`<button class="act" data-pyadd="${i}" style="border:1px solid var(--accent);border-radius:6px;padding:0 10px;color:var(--accent)">＋新增</button>`:''} <button class="act muted" data-pyskip="${i}">忽略</button></td>
+      <td class="actions" style="white-space:nowrap"><button class="act" data-pyadd="${i}" style="border:1px solid var(--accent);border-radius:6px;padding:0 10px;color:var(--accent)">＋新增</button> <button class="act muted" data-pyskip="${i}">忽略</button></td>
     </tr>`).join('')}</tbody></table></div>
     <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
-      ${pyFound.some(f=>f.siteId)?'<button class="act" id="py-addall" style="border:1px solid var(--accent);border-radius:6px;padding:0 12px;height:32px;color:var(--accent)">全部新增</button>':''}
+      <button class="act" id="py-addall" style="border:1px solid var(--accent);border-radius:6px;padding:0 12px;height:32px;color:var(--accent)">全部新增</button>
       <button class="act muted" id="py-skipall" style="height:32px">全部忽略</button>
-      <span class="sub" style="margin:0;align-self:center">找不到同名案場的，把兩邊案場名改成一致後按「重新檢查」。</span>
+      ${pySkippedNoMatch?`<span class="sub" style="margin:0;align-self:center">另有 ${pySkippedNoMatch} 筆案場名對不上，已自動略過（要帶入的話把兩邊名字改一致再重查）。</span>`:''}
     </div>
   </div>`:''}
   ${reimbCard}

@@ -368,16 +368,17 @@ function viewExp(){
   const itemOpts=`<option value="">全部項目</option>`+items.map(s=>`<option ${expItemFilter===s?'selected':''}>${esc(s)}</option>`).join('');
   const prCard=(typeof prFound!=='undefined'&&prFound&&prFound.length)?`<div class="card" style="border-left:3px solid #2563eb">
     <h2>📥 PAYROLL 有 ${prFound.length} 筆案場成本還沒帶入</h2>
-    <p class="sub" style="margin:0 0 8px">在點工薪資系統記的案場成本（材料、機具等）。「＋新增」帶入本帳的支出（帶入後可自行改刪）；「忽略」則這筆不再提醒。</p>
+    <p class="sub" style="margin:0 0 8px">在點工薪資系統記的案場成本（材料、機具等，只列兩邊同名的案場）。「＋新增」帶入本帳的支出（帶入後可自行改刪）；「忽略」則這筆不再提醒。</p>
     <div class="scroll"><table><thead><tr><th>日期</th><th>案場</th><th>項目</th><th class="num">金額</th><th>出帳</th><th></th></tr></thead>
     <tbody>${prFound.map((f,i)=>`<tr>
       <td>${esc(f.c.date||'')}</td><td>${esc(f.site)}</td><td>${esc(String(f.c.item||''))}</td>
       <td class="num">${money(f.c.amount)}</td><td>${esc(f.account)}</td>
       <td class="num" style="white-space:nowrap"><button class="act on" data-pradd="${i}">＋新增</button> <button class="act" data-prskip="${i}">忽略</button></td>
     </tr>`).join('')}</tbody></table></div>
-    <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
+    <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;align-items:center">
       <button class="act on" id="pr-addall">全部新增</button>
       <button class="act" id="pr-skipall">全部忽略</button>
+      ${(typeof prSkippedNoMatch!=='undefined'&&prSkippedNoMatch)?`<span class="sub" style="margin:0">另有 ${prSkippedNoMatch} 筆案場名對不上，已自動略過。</span>`:''}
     </div>
   </div>`:'';
   return `${prCard}<div class="card">
@@ -847,7 +848,7 @@ function doImport(text,merge){
 
 // ---- 🔗 PAYROLL 互抓：讀 PAYROLL 雲端的案場手動成本，抓到這邊沒有的就通知逐筆確認 ----
 const PAYROLL_FS_URL='https://firestore.googleapis.com/v1/projects/payroll-d1abe/databases/(default)/documents/payroll/main?key=AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
-let prFound=null, prChecking=false; // null=尚未檢查；[]=已檢查無新項目
+let prFound=null, prChecking=false, prSkippedNoMatch=0; // null=尚未檢查；[]=已檢查無新項目
 async function checkPayrollCosts(showFail){
   if(prChecking) return; prChecking=true;
   try{
@@ -860,13 +861,15 @@ async function checkPayrollCosts(showFail){
     const haveSrc=new Set(state.expenses.map(x=>x&&x.payrollId).filter(Boolean));
     const del=new Set(state.deletedIds||[]);
     const accName={dz:'東澤工程行',gx:'廣昕工程行',py:'品佑工程有限公司'};
-    prFound=[];
+    const myProjects=new Set((state.projects||[]).map(p=>String(p&&p.name||'').trim()).filter(Boolean));
+    prFound=[]; prSkippedNoMatch=0;
     (dd.costs||[]).forEach(c=>{
       if(!c||c.id==null) return;
       if(String(c.id).startsWith('py-')) return; // 這筆本來就是品佑帶去 PAYROLL 的，不要再帶回來
       const eid='pr-'+c.id;
       if(have.has(eid)||haveSrc.has(c.id)||del.has(eid)) return; // 已帶入或已忽略
       const site=topName(c.siteId); if(!site) return;
+      if(!myProjects.has(site)){ prSkippedNoMatch++; return; } // 只抓「兩邊同名」的案場，其他直接略過不打擾
       prFound.push({c, eid, site, account:accName[c.payer]||'品佑工程有限公司'});
     });
   }catch(e){ if(showFail) alert('讀取 PAYROLL 失敗：'+String(e&&e.message||e).slice(0,60)); prChecking=false; return; }
