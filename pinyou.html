@@ -133,15 +133,15 @@ function money(n){ n=Math.round(Number(n)||0); return (n<0?'-':'')+'$'+Math.abs(
 function pct(n){ return (Number(n)||0*1).toLocaleString('en-US',{style:'percent',maximumFractionDigits:1}); }
 function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function escBr(s){ return esc(s).replace(/\n/g,'<br>'); }
-function today(){ return new Date().toISOString().slice(0,10); }
+function today(){ const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; } // 本地時區；toISOString 是 UTC，台灣早上 8 點前會差一天
 function num(v){ const n=parseFloat(v); return isNaN(n)?0:n; }
 
 function packData(){ return {projects:state.projects,expenses:state.expenses,incomes:state.incomes,companies:state.companies,accounts:state.accounts,items:state.items||[],quotes:state.quotes||[],invoices:state.invoices||[],purchases:state.purchases||[],myCompanies:state.myCompanies||[],deletedIds:state.deletedIds||[],resurrected:state.resurrected||{ids:[],at:0},savedAt:Date.now()}; }
-function load(){ try{ const r=localStorage.getItem(LS); if(r){ state=Object.assign(blank(),JSON.parse(r)); } }catch(e){} localDirty=!!localStorage.getItem(LS_DIRTY); _prevIds=collectIds(); }
+function load(){ try{ const r=localStorage.getItem(LS); if(r){ state=Object.assign(blank(),JSON.parse(r)); } }catch(e){} localDirty=!!localStorage.getItem(LS_DIRTY); _prevIds=collectIds(); refreshRecordBaseline(); }
 // 每日本機快照：每天第一次開啟/儲存時留一份當下資料，保留 7 天（雲端是單一檔案沒歷史，這是誤刪保險）
 function keepDailySnapshot(){
   try{
-    const day=new Date().toISOString().slice(0,10);
+    const day=today();
     const key='pinyou_snap_'+day;
     if(!localStorage.getItem(key)) localStorage.setItem(key, JSON.stringify(packData()));
     const drop=[];
@@ -175,10 +175,21 @@ function rescueFromDailySnapshot(day){
   save();
   alert('已救回 '+added+' 筆（'+detail.join('、')+'），其他裝置同步後也會恢復。');
 }
+let storageWarningShown=false;
+function persistMainLocal(payload){
+  try{ localStorage.setItem(LS_DIRTY,'1'); localStorage.setItem(LS,payload); return true; }
+  catch(e){
+    setStatus('本機儲存空間不足，請保持網路並匯出備份');
+    if(!storageWarningShown){ storageWarningShown=true; setTimeout(()=>alert('本機儲存空間不足，這次資料可能只能暫時留在畫面。請保持網路、確認顯示「已同步」，並盡快匯出備份。'),0); }
+    return false;
+  }
+}
 function save(){
+  stampRecordChanges(); // 有變動的紀錄蓋時間戳，合併時「新的贏」
   recordDeletions();
   localDirty=true;
-  try{ localStorage.setItem(LS_DIRTY,'1'); localStorage.setItem(LS,JSON.stringify(packData())); }catch(e){}
+  persistMainLocal(JSON.stringify(packData()));
+  refreshRecordBaseline();
   keepDailySnapshot();
   render();
   if(cloudUrl){ setStatus('儲存中…'); if(saveTimer) clearTimeout(saveTimer); saveTimer=setTimeout(pushCloud,400); }
@@ -190,7 +201,22 @@ function collectIds(){ const s=new Set(); MERGE.forEach(k=>(state[k]||[]).forEac
 function recordDeletions(){ const cur=collectIds(); if(_prevIds){ const del=new Set(state.deletedIds||[]); const newlyDel=new Set(); _prevIds.forEach(id=>{ if(!cur.has(id)){ del.add(id); newlyDel.add(id); } }); state.deletedIds=[...del];
   if(newlyDel.size && state.resurrected && (state.resurrected.ids||[]).length) state.resurrected.ids=state.resurrected.ids.filter(id=>!newlyDel.has(id)); // 救回後又真的刪掉的，不再復活
 } _prevIds=cur; }
-function unionById(base,add,del){ const map=new Map(); (base||[]).forEach(r=>{ if(r&&r.id!=null&&!del.has(r.id)) map.set(r.id,r); }); (add||[]).forEach(r=>{ if(r&&r.id!=null&&!del.has(r.id)&&!map.has(r.id)) map.set(r.id,r); }); return [...map.values()]; }
+// 相同 id 依每筆 updatedAt 決定新舊；舊資料沒有 updatedAt 時才退回整份文件時間。
+// （原本先到先贏：這台改過的紀錄，可能被另一台的舊版本蓋回去）
+const recordUpdatedAt=(r,fallback=0)=>Number(r&&r.updatedAt)||Number(fallback)||0;
+const recordComparable=r=>{ if(!r||typeof r!=='object') return ''; const copy={...r}; delete copy.updatedAt; return JSON.stringify(copy); };
+function mergeById(base,add,del,baseTs=0,addTs=0){
+  const map=new Map();
+  (base||[]).forEach(r=>{ if(r&&r.id!=null&&!del.has(r.id)) map.set(r.id,r); });
+  (add||[]).forEach(r=>{ if(!r||r.id==null||del.has(r.id)) return; const old=map.get(r.id); if(!old||recordUpdatedAt(r,addTs)>recordUpdatedAt(old,baseTs)) map.set(r.id,r); });
+  return [...map.values()];
+}
+let _recordBaseline=null;
+function refreshRecordBaseline(){ _recordBaseline={}; MERGE.forEach(k=>{ const m=new Map(); (state[k]||[]).forEach(r=>{ if(r&&r.id!=null) m.set(r.id,recordComparable(r)); }); _recordBaseline[k]=m; }); }
+function stampRecordChanges(){ // 新增或內容有變的紀錄，蓋上本次時間戳，合併時「新的贏」
+  const now=Date.now();
+  MERGE.forEach(k=>{ const old=_recordBaseline&&_recordBaseline[k]; (state[k]||[]).forEach(r=>{ if(!r||r.id==null) return; if(!old||!old.has(r.id)||old.get(r.id)!==recordComparable(r)) r.updatedAt=now; }); });
+}
 function mergeCloudDoc(cd){
   const localTs=Number((JSON.parse(localStorage.getItem(LS)||'{}')||{}).savedAt)||0;
   const cloudTs=Number(cd.savedAt)||0;
@@ -209,11 +235,11 @@ function mergeCloudDoc(cd){
     state.deletedIds=purgeDel([...new Set([...(cd.deletedIds||[]),...keepDel])]);
     (cd.accounts||[]).forEach(a=>{ if(!state.accounts.includes(a)) state.accounts.unshift(a); });
     const del=new Set(state.deletedIds);
-    MERGE.forEach(k=>{ state[k]=unionById(state[k],keep[k],del); });
+    MERGE.forEach(k=>{ state[k]=mergeById(state[k],keep[k],del,cloudTs,localTs); });
   } else {
     state.deletedIds=purgeDel([...new Set([...(state.deletedIds||[]),...(cd.deletedIds||[])])]);
     const del=new Set(state.deletedIds);
-    MERGE.forEach(k=>{ state[k]=unionById(state[k],cd[k]||[],del); });
+    MERGE.forEach(k=>{ state[k]=mergeById(state[k],cd[k]||[],del,localTs,cloudTs); });
     (cd.accounts||[]).forEach(a=>{ if(!state.accounts.includes(a)) state.accounts.push(a); });
   }
   state.resurrected=resEff;
@@ -224,6 +250,7 @@ function mergeCloudDoc(cd){
   MERGE.forEach(k=>(keep[k]||[]).forEach(r=>{ if(r&&r.id!=null&&!cloudIds.has(r.id)&&!del.has(r.id)) localExtra=true; }));
   if(localExtra){ localDirty=true; try{ localStorage.setItem(LS_DIRTY,'1'); }catch(e){} }
   _prevIds=collectIds();
+  refreshRecordBaseline(); // 合併進來的紀錄不算「本機修改」，之後儲存不重新蓋時間戳
 }
 async function loadCloud(){
   if(!cloudUrl) { setStatus('本機模式'); return; }

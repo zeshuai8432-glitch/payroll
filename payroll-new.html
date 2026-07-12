@@ -454,19 +454,43 @@ function rememberDeletedPhoto(id,url){
   state.billingPhotoDeleted=state.billingPhotoDeleted||{};
   state.billingPhotoDeleted[id]=[...new Set([...(state.billingPhotoDeleted[id]||[]),url])];
 }
+// 本地時區的今天（yyyy-mm-dd）。toISOString 是 UTC，台灣早上 8 點前會差一天
+function localISODate(d=new Date()){ return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
 // ── 逐筆(依id)合併，避免裝置互相整包覆蓋造成資料遺失 ──
 const MERGE_COLLECTIONS=['employees','sites','attendance','adjustments','loans','parkLedger','billings','measurements'];
-function unionById(baseArr, addArr, delSet){
+// 相同 id 依每筆 updatedAt 決定新舊；舊資料沒有 updatedAt 時才退回整份文件時間。
+// （原本先到先贏：A 裝置改過的紀錄，遇到 B 裝置的舊版本可能被舊的蓋回去）
+const recordUpdatedAt=(r,fallback=0)=>Number(r&&r.updatedAt)||Number(fallback)||0;
+const recordComparable=r=>{ if(!r||typeof r!=='object') return ''; const copy={...r}; delete copy.updatedAt; return JSON.stringify(copy); };
+function mergeById(baseArr, addArr, delSet, baseTs=0, addTs=0){
   const del=delSet||new Set(state.deletedIds||[]);
   const map=new Map();
   (baseArr||[]).forEach(r=>{ if(r&&r.id!=null && !del.has(r.id)) map.set(r.id,r); });
-  (addArr||[]).forEach(r=>{ if(r&&r.id!=null && !del.has(r.id) && !map.has(r.id)) map.set(r.id,r); });
+  (addArr||[]).forEach(r=>{
+    if(!r||r.id==null||del.has(r.id)) return;
+    const old=map.get(r.id);
+    if(!old||recordUpdatedAt(r,addTs)>recordUpdatedAt(old,baseTs)) map.set(r.id,r);
+  });
   return [...map.values()];
 }
 // ── 紀錄刪除記號(tombstone)：自動偵測被刪的 id，同步各裝置，避免合併時被補回 ──
-let _prevIds=null;
+let _prevIds=null, _recordBaseline=null;
 function collectIds(){ const s=new Set(); MERGE_COLLECTIONS.forEach(k=>(state[k]||[]).forEach(r=>{ if(r&&r.id!=null) s.add(r.id); })); return s; }
-function refreshPrevIds(){ _prevIds=collectIds(); }
+function refreshRecordBaseline(){
+  _recordBaseline={};
+  MERGE_COLLECTIONS.forEach(k=>{ const m=new Map(); (state[k]||[]).forEach(r=>{ if(r&&r.id!=null) m.set(r.id,recordComparable(r)); }); _recordBaseline[k]=m; });
+}
+function refreshPrevIds(){ _prevIds=collectIds(); refreshRecordBaseline(); }
+function stampRecordChanges(){ // 新增或內容有變的紀錄，蓋上本次時間戳
+  const now=Date.now();
+  MERGE_COLLECTIONS.forEach(k=>{
+    const old=_recordBaseline&&_recordBaseline[k];
+    (state[k]||[]).forEach(r=>{
+      if(!r||r.id==null) return;
+      if(!old||!old.has(r.id)||old.get(r.id)!==recordComparable(r)) r.updatedAt=now;
+    });
+  });
+}
 function recordDeletions(){
   const cur=collectIds();
   if(_prevIds){ const del=new Set(state.deletedIds||[]); const newlyDel=new Set(); _prevIds.forEach(id=>{ if(!cur.has(id)){ del.add(id); newlyDel.add(id); } }); state.deletedIds=[...del];
@@ -500,13 +524,13 @@ function mergeCloudDoc(cd){
     applyData(cd); // 內含合併簽名/照片（會把 deletedIds 設成雲端的）
     state.deletedIds=purgeDel([...new Set([...(state.deletedIds||[]),...keepDelIds])]);
     const del=new Set(state.deletedIds);
-    MERGE_COLLECTIONS.forEach(k=>{ state[k]=unionById(state[k], keepLogs[k], del); });
+    MERGE_COLLECTIONS.forEach(k=>{ state[k]=mergeById(state[k], keepLogs[k], del, cloudTs, localTs); });
     mergeDeletedTomb(keepDel); // 補回本機的照片刪除記號
     state.resurrected=resEff;
   } else {
     state.deletedIds=purgeDel([...new Set([...(state.deletedIds||[]),...(cd.deletedIds||[])])]);
     const del=new Set(state.deletedIds);
-    MERGE_COLLECTIONS.forEach(k=>{ state[k]=unionById(state[k], cd[k]||[], del); });
+    MERGE_COLLECTIONS.forEach(k=>{ state[k]=mergeById(state[k], cd[k]||[], del, localTs, cloudTs); });
     mergeBillingSigs(cd.billingSigs||{}, cd.billingSigsLocked||{}, cd.billingSigMeta||{});
     mergeDeletedTomb(cd.billingPhotoDeleted);
     if(cd.billingPhotos) mergeCloudPhotos(cd.billingPhotos);
@@ -704,7 +728,7 @@ let raiseEmpId=null;
 // 每日本機快照：每天第一次開啟/儲存時留一份當下資料，保留 7 天（雲端是單一檔案沒歷史，這是誤刪保險）
 function keepDailySnapshot(){
   try{
-    const day=new Date().toISOString().slice(0,10);
+    const day=localISODate();
     const key='pmnew_snap_'+day;
     if(!localStorage.getItem(key)) localStorage.setItem(key, JSON.stringify(packData()));
     const drop=[];
@@ -737,11 +761,22 @@ function rescueFromDailySnapshot(day){
   saveData(); render();
   alert('已救回 '+added+' 筆（'+detail.join('、')+'），其他裝置同步後也會恢復。');
 }
+let storageWarningShown=false;
+function persistMainLocal(payload){
+  try{ localStorage.setItem(LS_DIRTY,'1'); localStorage.setItem(LS,payload); return true; }
+  catch(e){
+    setCloud('本機儲存空間不足，請保持網路並匯出備份');
+    if(!storageWarningShown){ storageWarningShown=true; setTimeout(()=>alert('本機儲存空間不足，這次資料可能只能暫時留在畫面。請保持網路、確認顯示「已同步」，並盡快匯出備份。'),0); }
+    return false;
+  }
+}
 function saveData(){
   // 本機立即存（不怕當掉）
+  stampRecordChanges(); // 有變動的紀錄蓋時間戳，合併時「新的贏」
   recordDeletions(); // 偵測刪除，記入刪除記號，避免合併時被補回
   localDirty=true;
-  try{ localStorage.setItem(LS_DIRTY,'1'); localStorage.setItem(LS, JSON.stringify(packData())); }catch(e){}
+  persistMainLocal(JSON.stringify(packData()));
+  refreshRecordBaseline();
   keepDailySnapshot();
   if(!CLOUD_URL){ setCloud('已存本機'); return; }
   // 雲端防抖動：手機常很快切走，縮短等待時間讓資料更早開始上傳。
@@ -794,18 +829,11 @@ function pushCloudSoon(){
   pushCloud();
 }
 function flushCloudOnExit(){
-  if(!CLOUD_URL) return;
+  // 退出時只存本機、標記未同步，下次開啟會「先合併再上傳」。
+  // 不再用 sendBeacon 直接推整包：那是未經合併的覆蓋，會把其他裝置剛寫進雲端的資料洗掉
+  //（品佑帳本曾因此掉資料）。visibilitychange 的 pushCloudSoon 仍會在頁面存活時做合併上傳。
   if(!localDirty && Object.keys(localSigPending).length===0) return;
-  if(saveTimer){ clearTimeout(saveTimer); saveTimer=null; }
-  const payload=JSON.stringify(packData());
-  try{ localStorage.setItem(LS_DIRTY,'1'); localStorage.setItem(LS, payload); }catch(e){}
-  try{
-    if(navigator.sendBeacon){
-      const blob=new Blob([payload],{type:'text/plain;charset=UTF-8'});
-      if(navigator.sendBeacon(CLOUD_URL, blob)) return;
-    }
-  }catch(e){}
-  try{ fetch(CLOUD_URL,{method:'POST',body:payload,keepalive:true}); }catch(e){}
+  persistMainLocal(JSON.stringify(packData()));
 }
 function setCloud(s){ cloudStatus=s; const el=document.getElementById('cloud-status'); if(el) el.textContent=s; }
 
@@ -877,7 +905,7 @@ function viewEntry(){
       <button class="btn" id="goto-manage">前往「員工/案場」設定 →</button>
     </div>`;
   }
-  const today=new Date().toISOString().slice(0,10);
+  const today=localISODate();
   const curDate=entryDate||today;
   const curSite=entrySite|| (activeSites[0]?activeSites[0].id:'');
   // 今天(所選日期)這個案場已登記哪幾位
@@ -971,10 +999,10 @@ function viewEntry(){
 function cycleContaining(d){
   const day=d.getDate();
   let startY=d.getFullYear(), startM=d.getMonth();
-  if(day>11){
-    // 12號之後，屬於本月11號起算的新週期
+  if(day>=11){
+    // 11號（含）之後，屬於本月11號起算的新週期
   } else {
-    // 今天在 1~11 號，仍屬於上個月11號起算的週期
+    // 今天在 1~10 號，仍屬於上個月11號起算的週期
     startM-=1; if(startM<0){ startM=11; startY-=1; }
   }
   const from=new Date(startY,startM,11);
@@ -1162,7 +1190,7 @@ function printYearIncome(){
   const rows=data.emps.map(e=>`<tr><td>${esc(e.name)}</td>${e.months.map(v=>`<td class="num">${v?money(v):'-'}</td>`).join('')}<td class="num" style="font-weight:700">${money(e.total)}</td></tr>`).join('');
   const totalRow=`<tr class="total-row"><td>合計</td>${data.monthTotals.map(v=>`<td class="num">${v?money(v):'-'}</td>`).join('')}<td class="num">${money(data.grand)}</td></tr>`;
   const inner=`<h1>員工年度收入彙總 ${yearIncomeYear}</h1>
-    <div class="meta">各月＝計薪週期（前月11日～當月10日）收入，不含扣項　|　列印日期：${new Date().toISOString().slice(0,10)}　|　共 ${data.emps.length} 人</div>
+    <div class="meta">各月＝計薪週期（前月11日～當月10日）收入，不含扣項　|　列印日期：${localISODate()}　|　共 ${data.emps.length} 人</div>
     <table><thead><tr><th>員工</th>${mHead}<th class="num">全年合計</th></tr></thead>
     <tbody>${rows}${totalRow}</tbody></table>
     <p class="sub">各月金額＝該計薪週期（前月11日～當月10日）的收入＝基本工資＋加項，不含任何扣項（借支扣還、賠償等為內部代扣）。</p>`;
@@ -1382,7 +1410,7 @@ function viewSites(){
 }
 
 function viewManage(){
-  const todayStr=new Date().toISOString().slice(0,10);
+  const todayStr=localISODate();
   const empRows=state.employees.map(e=>{
     const hasRecords=state.attendance.some(r=>r.empId===e.id);
     const delBtn=hasRecords?'<span class="act muted" title="已有出工紀錄，無法刪除">🔒</span>':`<button class="act danger" data-delemp="${e.id}">刪</button>`;
@@ -1467,7 +1495,7 @@ function bind(){
   };
   document.querySelectorAll('[data-copy-req]').forEach(b=>b.onclick=()=>{
     const bill=state.billings.find(x=>x.id===b.dataset.copyReq); if(!bill) return;
-    billingReqDraft={date:bill.date||new Date().toISOString().slice(0,10),method:bill.method||'',client:bill.client||'',note:bill.note||'',settled:!!bill.settled};
+    billingReqDraft={date:bill.date||localISODate(),method:bill.method||'',client:bill.client||'',note:bill.note||'',settled:!!bill.settled};
     formOpen.bnr=true; render();
   });
   const bnaAdd=document.getElementById('bna-add');
@@ -1486,7 +1514,7 @@ function bind(){
   };
   document.querySelectorAll('[data-copy-add]').forEach(b=>b.onclick=()=>{
     const bill=state.billings.find(x=>x.id===b.dataset.copyAdd); if(!bill) return;
-    billingAddDraft={date:bill.date||new Date().toISOString().slice(0,10),client:bill.client||'',note:bill.note||'',remark:bill.remark||'',settled:!!bill.settled};
+    billingAddDraft={date:bill.date||localISODate(),client:bill.client||'',note:bill.note||'',remark:bill.remark||'',settled:!!bill.settled};
     formOpen.bna=true; render();
   });
   document.querySelectorAll('[data-billedit-add]').forEach(b=>b.onclick=()=>{ billingAddEditId=b.dataset.billeditAdd; render(); });
@@ -1698,6 +1726,7 @@ function bind(){
     const name=document.getElementById('e-name').value.trim();
     const daily=parseFloat(document.getElementById('e-daily').value);
     if(!name||isNaN(daily)) return;
+    if(state.employees.some(e=>e.name===name) && !confirm(`已經有一位員工叫「${name}」。\n同名員工的出工、借支很容易登記錯人。\n\n確定還是要新增嗎？`)) return;
     state.employees.push({id:uid(),name,daily,active:true}); saveData(); render();
   };
   document.querySelectorAll('[data-raise]').forEach(b=>b.onclick=()=>{ raiseEmpId=b.dataset.raise; render(); });
@@ -1711,7 +1740,7 @@ function bind(){
         if(!e.rateHistory) e.rateHistory=[];
         e.rateHistory=e.rateHistory.filter(h=>h.date!==d);
         e.rateHistory.push({date:d,daily:v});
-        e.daily=effectiveDaily(e,new Date().toISOString().slice(0,10));
+        e.daily=effectiveDaily(e,localISODate());
         saveData();
       }
     }
@@ -1734,6 +1763,7 @@ function bind(){
   const sa=document.getElementById('s-add');
   if(sa) sa.onclick=()=>{
     const name=document.getElementById('s-name').value.trim(); if(!name)return;
+    if(state.sites.some(s=>s.name===name) && !confirm(`已經有一個案場叫「${name}」。\n請款、成本都是依案場名歸戶，同名會混在一起。\n\n確定還是要新增嗎？`)) return;
     state.sites.push({id:uid(),name,active:true}); saveData(); render();
   };
   document.querySelectorAll('[data-delsite]').forEach(b=>b.onclick=()=>{ const s=state.sites.find(x=>x.id===b.dataset.delsite); if(!confirm(`確定刪除案場「${s?esc(s.name):''}」？`)) return; state.sites=state.sites.filter(s=>s.id!==b.dataset.delsite); saveData(); render(); });
@@ -1781,7 +1811,10 @@ function bind(){
     const inp=document.querySelector(`[data-loanpay="${loan.id}"]`);
     const amt=Math.min(parseFloat(inp&&inp.value), bal);
     if(isNaN(amt)||amt<=0){ alert('請輸入本期要扣回的金額'); return; }
-    state.adjustments.push({id:uid(),date:state.payTo||new Date().toISOString().slice(0,10),empId:loan.empId,kind:'ded',label:'借支扣還',amount:amt,note:(loan.note?loan.note+' ':'')+'借支扣還',loanId:loan.id});
+    const payroll=buildPayroll(state.payFrom,state.payTo);
+    const available=Math.max(0,Number(payroll[loan.empId]&&payroll[loan.empId].net)||0);
+    if(amt>available){ alert(`本期最多只能扣 ${money(available)}，超過的借支會保留到下期。`); return; }
+    state.adjustments.push({id:uid(),date:state.payTo||localISODate(),empId:loan.empId,kind:'ded',label:'借支扣還',amount:amt,note:(loan.note?loan.note+' ':'')+'借支扣還',loanId:loan.id});
     saveData(); render();
   });
 
@@ -1847,7 +1880,7 @@ function exportSummaryPDF(){
       <td class="num">${e.dedTotal?money(e.dedTotal):'-'}</td><td class="num">${money(e.net)}</td></tr>`;
   }).join('');
   const inner=`<h1>薪資總表</h1>
-    <div class="meta">計薪期間：${state.payFrom||'起始'} ～ ${state.payTo||'迄今'}　|　列印日期：${new Date().toISOString().slice(0,10)}　|　共 ${ids.length} 人</div>
+    <div class="meta">計薪期間：${state.payFrom||'起始'} ～ ${state.payTo||'迄今'}　|　列印日期：${localISODate()}　|　共 ${ids.length} 人</div>
     <table><thead><tr><th>員工</th><th class="num">出勤天</th><th class="num">總工數</th><th class="num">基本工資</th><th class="num">加項</th><th class="num">扣項</th><th class="num">實發金額</th></tr></thead>
     <tbody>${rows}
       <tr class="total-row"><td>合計</td><td class="num"></td><td class="num"></td><td class="num">${money(gG)}</td><td class="num">${money(gA)}</td><td class="num">${money(gD)}</td><td class="num">${money(gN)}</td></tr>
@@ -1935,7 +1968,7 @@ function exportSitesPDF(){
     return `<tr><td>${esc(s.name||siteName(id))}</td><td class="num">${gongStr(s.hours)}</td><td class="num">${money(s.opening)}</td><td class="num">${money(s.wage)}</td><td class="num">${money(s.allow)}</td><td class="num" style="font-weight:700">${money(s.grand)}</td></tr>`;
   }).join('');
   const inner=`<h1>案場人事成本明細</h1>
-    <div class="meta">列印日：${new Date().toISOString().slice(0,10)}　|　總人事成本 ${money(grand)}</div>
+    <div class="meta">列印日：${localISODate()}　|　總人事成本 ${money(grand)}</div>
     <table><thead><tr><th>案場</th><th class="num">系統工數</th><th class="num">期初成本</th><th class="num">系統工資</th><th class="num">津貼</th><th class="num">總成本</th></tr></thead>
     <tbody>${rows}
       <tr class="total-row"><td>合計</td><td class="num"></td><td class="num"></td><td class="num"></td><td class="num"></td><td class="num">${money(grand)}</td></tr>
@@ -1988,7 +2021,7 @@ function viewLoans(){
     <div class="card-body">
       <p class="sub">登記一筆借款：借出日與總額。系統會追蹤已扣與剩餘；發薪時可在薪資頁手動輸入本期要扣回的金額。</p>
       <div class="row" style="margin-bottom:10px">
-        <div class="field"><label>借款日</label><input type="date" id="loan-date" value="${new Date().toISOString().slice(0,10)}"></div>
+        <div class="field"><label>借款日</label><input type="date" id="loan-date" value="${localISODate()}"></div>
         <div class="field"><label>員工</label><select id="loan-emp">${empOpts}</select></div>
         <div class="field"><label>借款總額</label><input type="number" id="loan-amount" min="0" step="500" style="width:120px"></div>
         <div class="field" style="flex:1;min-width:140px"><label>備註（選填）</label><input id="loan-note" placeholder="例：預支生活費"></div>
@@ -2031,7 +2064,7 @@ function viewBillingReq(){
   <div class="card">
     ${foldBtn('bnr','新增請款單')}
     ${formOpen.bnr?`<div class="row" style="margin-top:8px">
-      <div class="field"><label>日期</label><input type="date" id="bnr-date" value="${billingReqDraft?esc(billingReqDraft.date):new Date().toISOString().slice(0,10)}"></div>
+      <div class="field"><label>日期</label><input type="date" id="bnr-date" value="${billingReqDraft?esc(billingReqDraft.date):localISODate()}"></div>
       <div class="field" style="flex:1;min-width:150px"><label>案場</label><select id="bnr-site">${siteSelOpts}</select></div>
       <div class="field"><label>單位</label><input id="bnr-unit" value="式" style="width:80px"></div>
       <div class="field"><label>數量</label><input type="number" id="bnr-qty" min="0" step="0.01" value="${billingReqDraft?'':'1'}" style="width:90px"></div>
@@ -2090,7 +2123,7 @@ function viewBillingAdd(){
   <div class="card">
     ${foldBtn('bna','新增追加單')}
     ${formOpen.bna?`<div class="row" style="margin-top:8px">
-      <div class="field"><label>日期</label><input type="date" id="bna-date" value="${billingAddDraft?esc(billingAddDraft.date):new Date().toISOString().slice(0,10)}"></div>
+      <div class="field"><label>日期</label><input type="date" id="bna-date" value="${billingAddDraft?esc(billingAddDraft.date):localISODate()}"></div>
       <div class="field" style="flex:1;min-width:150px"><label>案場</label><select id="bna-site">${siteSelectOptions('')}</select></div>
       <div class="field"><label>單位</label><input id="bna-unit" value="式" style="width:80px"></div>
       <div class="field"><label>數量</label><input type="number" id="bna-qty" min="0" step="0.01" value="${billingAddDraft?'':'1'}" style="width:90px"></div>
@@ -2156,7 +2189,7 @@ function viewMeasurements(){
       <div class="field"><label>數量/面積</label><input type="number" id="meas-qty" min="0" step="0.01" style="width:105px"></div>
       <div class="field"><label>單價</label><input type="number" id="meas-price" min="0" step="1" style="width:120px"></div>
       <div class="field"><label>小計</label><div id="meas-subtotal" class="num" style="height:38px;display:flex;align-items:center;font-weight:700">$0</div></div>
-      <div class="field"><label>日期</label><input type="date" id="meas-date" value="${new Date().toISOString().slice(0,10)}"></div>
+      <div class="field"><label>日期</label><input type="date" id="meas-date" value="${localISODate()}"></div>
       <div class="field" style="flex:1;min-width:150px"><label>備注</label><input id="meas-note"></div>
     </div>
     <div class="row" style="margin-top:10px"><button class="btn" id="meas-add">＋ 新增</button></div>`:''}
@@ -2169,7 +2202,7 @@ function buildBillingDocHTML(id){
   const photoSec=photos.length?`<div class="sec">施作照片</div><div style="display:flex;flex-direction:column;gap:12px;margin:8px 0 16px">${photos.map(url=>`<img src="${photoDisplayUrl(url)}" style="max-width:100%;width:auto;max-height:640px;object-fit:contain;border:1px solid #ddd;border-radius:4px;page-break-inside:avoid;-webkit-print-color-adjust:exact">`).join('')}</div>`:'';
   const signImg=sig?`<img src="${sig}" style="max-width:180px;max-height:70px;display:block;margin-top:4px">`:'';
   return `<h1>${esc(type)}</h1>
-    <div class="meta">列印日：${new Date().toISOString().slice(0,10)}</div>
+    <div class="meta">列印日：${localISODate()}</div>
     <table><tbody>
       <tr><th style="width:90px">日期</th><td>${esc(b.date||'')}</td><th style="width:90px">案場</th><td>${esc(siteDisplayLabel(b.site))}</td></tr>
       <tr><th>業主</th><td>${esc(b.client||'')}${type!=='追加單'&&b.method?`　（${esc(b.method)}）`:''}</td><th>狀態</th><td>${b.settled?'已收款':'未收款'}</td></tr>
@@ -2207,7 +2240,7 @@ function printMeasurementsPDF(ids){
       <tbody>${rows}<tr class="total-row"><td colspan="6">案場小計</td><td class="num">${money(subtotal)}</td><td></td></tr></tbody></table>`;
   }).join('');
   const inner=`<h1>計量明細</h1>
-    <div class="meta">列印日：${new Date().toISOString().slice(0,10)}　|　筆數：${list.length}　|　總額：${money(total)}</div>
+    <div class="meta">列印日：${localISODate()}　|　筆數：${list.length}　|　總額：${money(total)}</div>
     ${sections}
     <table style="margin-top:14px"><tbody><tr class="total-row"><td>計量總額</td><td class="num">${money(total)}</td></tr></tbody></table>`;
   printHTML('計量明細', inner);
@@ -2283,7 +2316,7 @@ function viewPark(){
         <div class="field"><label>期初餘額</label><input type="number" id="park-opening" value="${state.parkOpening||0}" step="1000" style="width:140px"></div>
       </div>
       <div class="row">
-        <div class="field"><label>日期</label><input type="date" id="park-date" value="${new Date().toISOString().slice(0,10)}"></div>
+        <div class="field"><label>日期</label><input type="date" id="park-date" value="${localISODate()}"></div>
         <div class="field"><label>性質</label><select id="park-kind"><option value="out">支出（−）</option><option value="in">收入（+）</option></select></div>
         <div class="field"><label>金額</label><input type="number" id="park-amount" min="0" step="100" style="width:120px"></div>
         <div class="field" style="flex:1;min-width:200px"><label>說明</label><input id="park-note" placeholder="例：收到工程款、Hilti租金、台北住宿"></div>
@@ -2318,7 +2351,7 @@ function exportParkPDF(){
       <td class="num">${t.kind==='in'?money(t.amount):'-'}</td><td class="num">${t.kind==='out'?money(t.amount):'-'}</td></tr>`;
   }).join('');
   const inner=`<h1>品佑收支明細</h1>
-    <div class="meta">期間：${range}　|　期初餘額：${money(state.parkOpening||0)}　|　目前餘額：${money(parkBalance())}　|　列印日：${new Date().toISOString().slice(0,10)}</div>
+    <div class="meta">期間：${range}　|　期初餘額：${money(state.parkOpening||0)}　|　目前餘額：${money(parkBalance())}　|　列印日：${localISODate()}</div>
     <table><thead><tr><th>日期</th><th>說明</th><th class="num">收入</th><th class="num">支出</th></tr></thead>
     <tbody>${rows}
       <tr class="total-row"><td colspan="2">區間合計</td><td class="num">${money(tin)}</td><td class="num">${money(tout)}</td></tr>
