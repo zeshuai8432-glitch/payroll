@@ -6091,10 +6091,12 @@ function yearIncomeData(year){
     const from=fmt(new Date(year, m-1, 11));
     const to=fmt(new Date(year, m, 10));
     const be=buildPayroll(from,to);
-    Object.keys(be).forEach(id=>{ if(isPartner(id)) return; const e=be[id]; const net=Number(e.net)||0;
-      if(net===0 && e.days.size===0 && e.addTotal===0 && e.dedTotal===0) return;
+    Object.keys(be).forEach(id=>{ if(isPartner(id)) return; const e=be[id];
+      // 年度收入＝賺到的錢：基本工資＋加項，「不含任何扣項」（借支扣還、工具賠償等是內部代扣，不減收入）
+      const inc=(Number(e.gross)||0)+(Number(e.addTotal)||0);
+      if(inc===0 && e.days.size===0) return;
       const row=ensure(id);
-      row.months[m]+=net; row.total+=net; monthTotals[m]+=net;
+      row.months[m]+=inc; row.total+=inc; monthTotals[m]+=inc;
     });
   }
   // 手動補登（系統啟用前沒資料的月份，點表格格子輸入）
@@ -6119,10 +6121,10 @@ function printYearIncome(){
   const rows=data.emps.map(e=>`<tr><td>${esc(e.name)}</td>${e.months.map(v=>`<td class="num">${v?money(v):'-'}</td>`).join('')}<td class="num" style="font-weight:700">${money(e.total)}</td></tr>`).join('');
   const totalRow=`<tr class="total-row"><td>合計</td>${data.monthTotals.map(v=>`<td class="num">${v?money(v):'-'}</td>`).join('')}<td class="num">${money(data.grand)}</td></tr>`;
   const inner=`<h1>員工年度收入彙總 ${yearIncomeYear}</h1>
-    <div class="meta">各月＝計薪週期（前月11日～當月10日）實發金額　|　列印日期：${new Date().toISOString().slice(0,10)}　|　共 ${data.emps.length} 人</div>
+    <div class="meta">各月＝計薪週期（前月11日～當月10日）收入，不含扣項　|　列印日期：${new Date().toISOString().slice(0,10)}　|　共 ${data.emps.length} 人</div>
     <table><thead><tr><th>員工</th>${mHead}<th class="num">全年合計</th></tr></thead>
     <tbody>${rows}${totalRow}</tbody></table>
-    <p class="sub">各月金額＝該計薪週期（前月11日～當月10日）的實發薪資（基本工資＋加項−扣項），與員工薪資頁一致；含手動補登的歷史月份。</p>`;
+    <p class="sub">各月金額＝該計薪週期（前月11日～當月10日）的收入＝基本工資＋加項，<b>不含任何扣項</b>（借支扣還、工具賠償等為內部代扣，不列入收入）；含手動補登的歷史月份。</p>`;
   printHTML('員工年度收入 '+yearIncomeYear, inner, {landscape:true});
 }
 function exportYearIncomeCSV(){
@@ -6158,7 +6160,7 @@ function viewYearIncome(){
         <button class="act" id="yi-next" style="height:34px;padding:0 12px">後一年 ›</button>
       </div>
     </div>
-    <p class="sub" style="margin:6px 0 0">每位員工整年實發薪資。<b>各月＝計薪週期</b>（例：7月欄＝6/11～7/10），跟「員工薪資」頁的本期數字一致。<b>點任一格子可手動補登</b>系統啟用前的舊資料（藍色 ✎ 標記，會加進合計並同步各裝置）。</p>
+    <p class="sub" style="margin:6px 0 0">每位員工整年收入＝<b>基本工資＋加項，不含任何扣項</b>（借支扣還、工具賠償等是內部代扣，不減收入）。<b>各月＝計薪週期</b>（例：7月欄＝6/11～7/10）。<b>點任一格子可手動補登</b>系統啟用前的舊資料（藍色 ✎ 標記，會加進合計並同步各裝置）。</p>
     <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
       <button class="btn" id="yi-pdf" ${data.emps.length?'':'disabled style="opacity:.5"'}>匯出 PDF</button>
       <button class="act" id="yi-csv" ${data.emps.length?'':'disabled style="opacity:.5"'} style="border:1px solid var(--accent);color:var(--accent)">匯出 CSV（Excel）</button>
