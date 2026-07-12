@@ -3336,6 +3336,8 @@ function bind(){
   // 追加單視角切換：對內（全部內帳）／對外（業主看的）
   const bvIn=document.getElementById('bv-in'); if(bvIn) bvIn.onclick=()=>{ billViewMode='in'; render(); };
   const bvOut=document.getElementById('bv-out'); if(bvOut) bvOut.onclick=()=>{ billViewMode='out'; billMergeSrc=null; render(); };
+  // 「內含內帳」收合狀態記憶（重繪後保持你點開/收起的樣子）
+  document.querySelectorAll('details[data-allocdetails]').forEach(d=>{ d.ontoggle=()=>{ billAllocOpen[d.dataset.allocdetails]=d.open; }; });
   // 追加單「分攤」：金額灌進同案場另一或多張，本單內帳保留不刪
   document.querySelectorAll('[data-mergestart]').forEach(b=>b.onclick=()=>{ billMergeSrc=b.dataset.mergestart; render(); });
   document.querySelectorAll('[data-mergecancel]').forEach(b=>b.onclick=()=>{ billMergeSrc=null; render(); });
@@ -4799,6 +4801,7 @@ function dealCalc(d){
 let dealPosting=null, dealEditId=null, dealCarry=null, coopCarry=null, billEditId=null, dealAccPick=null, billingAddEditId=null; // 入帳/編輯/帶去/請款編輯/選帳戶中
 let billMergeSrc=null; // 追加單「分攤→」選目標中
 let billViewMode='in'; // 追加單視角：'in'＝對內（全部內帳）、'out'＝對外（業主看的）
+let billAllocOpen={}; // 目標單底下「內含內帳」收合狀態（點開看）
 let billingPhotos={}; // { [billingId]: [dataUrl, ...] }
 let billingPhotosDeleted={}; // { [billingId]: [已刪除的url, ...] } — 刪除記號，避免同步時被雲端補回來
 let billingSigs={}; // { [billingId]: dataUrl }
@@ -5249,26 +5252,28 @@ function viewBillingAdd(){
     // 分攤標籤（→ 目標 $金額 ✕）與「已分攤內帳單」的灰色列（可縮排掛在目標單底下）
     const allocTagsFor=(bb)=>(bb.allocOut||[]).map((a,i)=>{ const tgt=state.billings.find(x=>x.id===a.to);
       return `<span style="display:inline-flex;align-items:center;gap:4px;background:#eef6ff;color:#1d4ed8;border-radius:6px;padding:2px 6px;margin:2px;font-size:12px">→ ${tgt?esc(String(tgt.note||tgt.date||'').slice(0,16)):'（目標已刪）'} ${money(a.amount)}<button data-allocdel="${bb.id}::${i}" style="border:none;background:none;color:var(--danger);cursor:pointer;font-size:12px;padding:0 2px" title="撤銷這筆分攤">✕</button></span>`; }).join('');
-    const allocRow=(bb,indent)=>`<div style="border-top:1px solid var(--line);padding:10px 0;opacity:.65;${indent?'margin-left:26px;border-left:3px solid #dbeafe;padding-left:12px;':''}">
+    const allocRow=(bb)=>`<div style="border-top:1px solid var(--line);padding:10px 0;opacity:.75">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap">
         <div style="flex:1;min-width:0">
           <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap">
-            ${indent?'<span style="color:#1d4ed8;font-weight:700;font-size:12px">↳ 內含</span>':''}
             <span style="font-size:16px;font-weight:700;color:var(--muted);text-decoration:line-through">${money(rawBillingAmount(bb))}</span>
             <span class="tag" style="background:#eef6ff;color:#1d4ed8">已分攤（${(bb.allocOut||[]).length} 筆）</span>
             <span style="font-size:12px;color:var(--muted)">${esc(bb.date||'')}</span>
             ${subSiteTag(bb.site)}
+            ${bb.client?`<span style="font-size:12px;color:var(--muted)">${esc(bb.client)}</span>`:''}
           </div>
-          ${bb.note?`<div style="font-size:13px;color:var(--muted);margin-top:4px">${esc(bb.note)}</div>`:''}
-          <div style="margin-top:4px">${allocTagsFor(bb)}</div>
-          <div style="font-size:11px;color:var(--muted);margin-top:2px">內帳備查：金額已分攤到目標單對外呈現，不重複計帳；收款以目標單為準。按 ✕ 可撤銷。</div>
+          ${billingLineMeta(bb)?`<div style="font-size:12px;color:var(--muted);margin-top:2px">計算式：${billingLineMeta(bb)} ＝ ${money(rawBillingAmount(bb))}</div>`:''}
+          ${bb.note?`<div style="font-size:13px;color:var(--text);margin-top:4px;font-weight:500">${esc(bb.note)}</div>`:''}
+          ${bb.remark?`<div style="font-size:12px;color:var(--muted);margin-top:2px">備注：${escBr(bb.remark)}</div>`:''}
+          <div style="margin-top:4px">分攤去向：${allocTagsFor(bb)}</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:2px">內帳備查：金額已灌入目標單對外呈現，不重複計帳；收款以目標單為準。按 ✕ 可撤銷該筆分攤。</div>
         </div>
         <div style="display:flex;gap:4px;flex-wrap:wrap;flex-shrink:0">
           <button class="act danger" data-delbill="${bb.id}">刪</button>
         </div>
       </div>
     </div>`;
-    // 組一個區塊：一般單照序，已分攤的內帳單縮排歸類在它的目標單底下；目標不在本區的收到最後
+    // 組一個區塊：一般單照序；已分攤的暗單「收合」在目標單底下（點開看詳細），目標不在本區的收到最後
     const buildSection=(arr)=>{
       const mains=arr.filter(x=>!isFullyAllocated(x));
       const allocd=arr.filter(x=>isFullyAllocated(x));
@@ -5279,8 +5284,23 @@ function viewBillingAdd(){
         if(host)(byTarget[host]=byTarget[host]||[]).push(x); else orphans.push(x);
       });
       let html='';
-      mains.forEach((m,i)=>{ html+=entryFor(m,i); (byTarget[m.id]||[]).forEach(x=>{ html+=allocRow(x,true); }); });
-      if(orphans.length){ html+=`<div style="font-size:11px;font-weight:700;color:var(--muted);margin-top:10px;border-top:1px dashed var(--line);padding-top:6px">已分攤・目標單不在此區</div>`+orphans.map(x=>allocRow(x,false)).join(''); }
+      mains.forEach((m,i)=>{
+        html+=entryFor(m,i);
+        const kids=byTarget[m.id]||[];
+        if(kids.length){
+          const kidsSum=kids.reduce((s,x)=>s+rawBillingAmount(x),0);
+          html+=`<details data-allocdetails="${m.id}" ${billAllocOpen[m.id]?'open':''} style="margin:0 0 4px 26px;border-left:3px solid #dbeafe;padding-left:12px">
+            <summary style="cursor:pointer;font-size:12px;color:#1d4ed8;padding:4px 0;user-select:none">內含 ${kids.length} 筆內帳（原始合計 ${money(kidsSum)}）— 點開看明細</summary>
+            ${kids.map(allocRow).join('')}
+          </details>`;
+        }
+      });
+      if(orphans.length){
+        html+=`<details data-allocdetails="orphan-${siteName}" ${billAllocOpen['orphan-'+siteName]?'open':''} style="margin-top:10px;border-top:1px dashed var(--line);padding-top:4px">
+          <summary style="cursor:pointer;font-size:12px;color:var(--muted);padding:4px 0;user-select:none">已分攤・目標單不在此區（${orphans.length} 筆）— 點開看明細</summary>
+          ${orphans.map(allocRow).join('')}
+        </details>`;
+      }
       return html;
     };
 
@@ -5342,8 +5362,8 @@ function viewBillingAdd(){
       }
 
       const allocList=()=>allocTagsFor(b);
-      // 已全數分攤出去：由 buildSection 歸類到目標單底下呈現（此分支為保險）
-      if(isFullyAllocated(b)) return allocRow(b,false);
+      // 已全數分攤出去：由 buildSection 收合到目標單底下呈現（此分支為保險）
+      if(isFullyAllocated(b)) return allocRow(b);
       const raw=rawBillingAmount(b), ms=allocInSum(b), outSum=allocOutSum(b), amt=billingAmount(b);
       const hasCombine=(b.printAmount!=null&&b.printAmount!=='')||ms>0||outSum>0;
       // 分攤目標選擇中：列出同案場其他追加單（可連續分給多張，直到分完或按完成）
