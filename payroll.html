@@ -728,6 +728,16 @@ const subSiteTag = value => {
 const subSiteText = value => childSiteName(value)||'';
 const billingsForSiteName = name => state.billings.filter(b=>parentSiteName(b.site)===name);
 const settledBillingsForSiteName = name => billingsForSiteName(name).filter(b=>b.settled);
+// ── 母子案場帳務邏輯：子案場做的代工工程款，對母案場是「成本」不是收入 ──
+// 母案場自己開給業主的已收款（不含「母 / 子」的請款）
+const ownSettledBilledForSite = site => state.billings.filter(b=>b.settled).reduce((x,b)=>{ const sp=splitSiteValue(b.site); return x+((sp.parent===site.name&&!sp.sub)?billingAmount(b):0); },0);
+// 子案場已收款工程款合計（「母 / 子」的請款 ＋ 相容以子案場本名開的請款）→ 記入母案場成本
+const childWorkBilledForSite = site => {
+  let sum=0;
+  state.billings.filter(b=>b.settled).forEach(b=>{ const sp=splitSiteValue(b.site); if(sp.parent===site.name&&sp.sub) sum+=billingAmount(b); });
+  childSitesOf(site).forEach(c=>{ if(c.name===site.name) return; state.billings.filter(b=>b.settled).forEach(b=>{ const sp=splitSiteValue(b.site); if(sp.parent===c.name&&!sp.sub) sum+=billingAmount(b); }); });
+  return sum;
+};
 const siteTypeLabel = name => {
   const p=splitSiteValue(name);
   const s=state.sites.find(x=>x.name===p.parent);
@@ -1510,10 +1520,10 @@ function viewDash(){
   // 案場毛利、公積金累計
   let totProfit=0, totFund=0; state.deals.forEach(d=>{ const c=dealCalc(d); totProfit+=(c.profit||0); totFund+=(c.fund||0); });
 
-  // 請款：已收款、合約總額、尚未收款
+  // 請款：已收款、合約總額、尚未收款（只算開給業主的，子案場工程款是成本不算收款）
   let totContract=0, totBilled=0;
   state.sites.filter(s=>!s.parentSiteId).forEach(s=>{
-    totBilled+=settledBillingsForSiteName(s.name).reduce((x,b)=>x+billingAmount(b),0);
+    totBilled+=ownSettledBilledForSite(s);
     const contract=Number(s.contract!==undefined&&s.contract!==''?s.contract:state.contracts[s.name])||0;
     if(contract>0) totContract+=contract;
   });
@@ -2166,12 +2176,12 @@ function bind(){
     if(!confirm('重算所有案場分潤？\n\n會依各案場目前的「請款＋成本（期初/出工工資/手動）」重新計算每個案場的分潤與帳戶進帳，並清掉「對不上案場或已無請款」的殘留分潤。\n\n你在「進階」手動補的分潤不受影響。')) return;
     state.deals.filter(d=>d.autoSiteId).forEach(d=>{
       const s=state.sites.find(x=>x.id===d.autoSiteId);
-      const tot=s?settledBillingsForSiteName(s.name).reduce((a,b)=>a+(Number(b.amount)||0),0):0;
+      const tot=s?ownSettledBilledForSite(s):0;
       if(!s || tot<=0){ state.ledger=state.ledger.filter(t=>t.autoDealId!==d.id); state.deals=state.deals.filter(x=>x.id!==d.id); }
     });
     state.deals.filter(d=>!d.autoSiteId).forEach(d=>{
       const s=state.sites.find(x=>x.name===d.name && !(x.coop||x.type==='合作案'));
-      const tot=s?settledBillingsForSiteName(s.name).reduce((a,b)=>a+(Number(b.amount)||0),0):0;
+      const tot=s?ownSettledBilledForSite(s):0;
       if(s && tot>0){ state.ledger=state.ledger.filter(t=>t.autoDealId!==d.id && t.fromDeal!==d.id); state.deals=state.deals.filter(x=>x.id!==d.id); }
     });
     resyncAllSiteDeals();
@@ -3370,7 +3380,7 @@ function bind(){
     // 防呆：清掉任何「對應案場已無請款」的自動分潤
     state.deals.filter(d=>d.autoSiteId).forEach(d=>{
       const s=state.sites.find(x=>x.id===d.autoSiteId);
-      const tot=s?settledBillingsForSiteName(s.name).reduce((a,x)=>a+(Number(x.amount)||0),0):0;
+      const tot=s?ownSettledBilledForSite(s):0;
       if(!s || tot<=0){ state.ledger=state.ledger.filter(t=>t.autoDealId!==d.id); state.deals=state.deals.filter(x=>x.id!==d.id); }
     });
     saveData(); render();
@@ -4456,14 +4466,16 @@ const SCHEMES={
 };
 // 合作案場：總請款、總成本、利潤、業主/管理人對拆（成本來自案場成本明細、請款來自請款追蹤）
 function coopSiteCalc(site){
-  const totalBill=settledBillingsForSiteName(site.name).reduce((s,b)=>s+(Number(b.amount)||0),0);
-  const totalCost=(state.costs||[]).filter(c=>c.siteId===site.id).reduce((s,c)=>s+(Number(c.amount)||0),0);
+  // 已收款只算開給業主的；子案場工程款＋手動成本＝成本。利潤對拆後，管理人那半可帶去公司分潤走 30/70
+  const totalBill=ownSettledBilledForSite(site);
+  const childWork=childWorkBilledForSite(site);
+  const totalCost=(state.costs||[]).filter(c=>c.siteId===site.id).reduce((s,c)=>s+(Number(c.amount)||0),0)+childWork;
   const taxPct=(site.coopTaxPct!==undefined&&site.coopTaxPct!=='')?Number(site.coopTaxPct):0;
   const tax=totalBill*taxPct/100;
   const profit=totalBill-totalCost-tax;
   const mgrPct=(site.coopMgrPct!==undefined&&site.coopMgrPct!=='')?Number(site.coopMgrPct):50;
   const ownerPct=100-mgrPct;
-  return {totalBill,totalCost,tax,taxPct,profit,mgrPct,ownerPct,companyShare:profit*mgrPct/100,partnerShare:profit*ownerPct/100};
+  return {totalBill,totalCost,childWork,tax,taxPct,profit,mgrPct,ownerPct,companyShare:profit*mgrPct/100,partnerShare:profit*ownerPct/100};
 }
 function dealCalc(d){
   const amount=Number(d.amount)||0, cost=Number(d.cost)||0;
@@ -4537,6 +4549,8 @@ function resyncAllSiteDeals(){
   const doneNames=new Set();
   state.sites.forEach(s=>{
     if(s.coop||s.type==='合作案') return;
+    // 子案場不自己產生分潤：它的工程款是母案場的成本（已計入母的分潤成本）；順便清掉舊的子案場分潤
+    if(s.parentSiteId){ const d=state.deals.find(x=>x.autoSiteId===s.id); if(d){ state.ledger=state.ledger.filter(t=>t.autoDealId!==d.id); state.deals=state.deals.filter(x=>x.id!==d.id); } return; }
     if(doneNames.has(s.name)){
       const dup=state.deals.find(x=>x.autoSiteId===s.id);
       if(dup){ state.ledger=state.ledger.filter(t=>t.autoDealId!==dup.id); state.deals=state.deals.filter(x=>x.id!==dup.id); }
@@ -4553,7 +4567,8 @@ function resyncAllSiteDeals(){
 // 案場驅動：代工/公司分潤案場 → 自動維護「一個案場一筆分潤」，金額＝該案場總請款
 function resyncSiteDeal(site){
   // 合作案不走這裡（合作案在分潤頁用 coopSiteCalc 自動匯總）
-  const totalBill=settledBillingsForSiteName(site.name).reduce((s,b)=>s+(Number(b.amount)||0),0);
+  // 請款金額只算開給業主的；子案場工程款記入成本（子案場做的代工，對母案場是成本）
+  const totalBill=ownSettledBilledForSite(site);
   let d=state.deals.find(x=>x.autoSiteId===site.id);
   if(site.coop || site.type==='合作案'){
     // 若之前是代工/公司分潤、後來改成合作案，移除舊的自動分潤與其進帳
@@ -4578,7 +4593,7 @@ function resyncSiteDeal(site){
   d.name=site.name;
   d.type=site.type||'代工';
   d.amount=totalBill;
-  d.cost=siteCostForDeal(site);              // 期初(舊制不算)+出工工資+手動成本
+  d.cost=siteCostForDeal(site)+childWorkBilledForSite(site); // 期初(舊制不算)+出工工資+手動成本＋子案場已收款工程款
   d.taxPct=(site.siteTaxPct!==undefined?site.siteTaxPct:0);
   d.scheme=(site.type==='舊制')?'old':'new';  // 舊制全進公積金，其餘30/70
   d.ownerId=site.siteOwnerId||'';
