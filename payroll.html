@@ -738,6 +738,19 @@ const childWorkBilledForSite = site => {
   childSitesOf(site).forEach(c=>{ if(c.name===site.name) return; state.billings.filter(b=>b.settled).forEach(b=>{ const sp=splitSiteValue(b.site); if(sp.parent===c.name&&!sp.sub) sum+=billingAmount(b); }); });
   return sum;
 };
+// 正規化案場值：把「以子案場本名」記的資料歸到「母 / 子」同一把鑰匙（計量 vs 請款比對用）
+const canonSiteKey = v => {
+  const sp=splitSiteValue(v);
+  const rec=state.sites.find(x=>x.name===sp.parent);
+  if(rec&&rec.parentSiteId&&!sp.sub){ const p=state.sites.find(x=>x.id===rec.parentSiteId); if(p) return p.name+' / '+rec.name; }
+  return sp.sub?(sp.parent+' / '+sp.sub):sp.parent;
+};
+// 某案場鑰匙的計量累計與已開請款（全部請款，不分已未收款）→ 可請款差額
+const measBilledDiffForKey = key => {
+  const meas=state.measurements.filter(m=>canonSiteKey(m.site)===key).reduce((s,m)=>s+(Number(m.qty)||0)*(Number(m.unitPrice)||0),0);
+  const billed=state.billings.filter(b=>canonSiteKey(b.site)===key).reduce((s,b)=>s+billingAmount(b),0);
+  return {meas, billed, diff:meas-billed};
+};
 // 自動分潤的請款基準：母案場＝開給業主的已收款；子案場＝自己的工程款（「母 / 子」＋相容以子本名開的）
 const dealBillBasisForSite = site => {
   if(site.parentSiteId){
@@ -1542,6 +1555,10 @@ function viewDash(){
   });
   const remain=Math.max(0, totContract-totBilled);
 
+  // 計量可請款：各案場（依「母 / 子」鑰匙）計量累計 − 已開請款，取正值加總
+  const measKeys=[...new Set(state.measurements.map(m=>canonSiteKey(m.site)))];
+  const unbilledMeas=measKeys.reduce((s,k)=>{ const d=measBilledDiffForKey(k); return s+Math.max(0,d.diff); },0);
+
   const card=(goto,label,val,sub,accent)=>`<div class="metric" data-goto="${goto}" style="cursor:pointer${accent?';background:var(--accent);color:#fff':''}"><div class="l"${accent?' style="color:#fff;opacity:.85"':''}>${label}</div><div class="v"${accent?'':''} style="font-size:20px">${val}</div>${sub?`<div class="l"${accent?' style="color:#fff;opacity:.8"':''} style="margin-top:2px;font-weight:400">${sub}</div>`:''}</div>`;
 
   // 各案場毛利：列出所有母案場（含合作案）；母案場合計＝母自己＋各子案場，只要有子案場就能展開
@@ -1632,6 +1649,7 @@ function viewDash(){
     ${card('loans','借支未還總額', money(loanOutstanding), loanPeople+' 人未還清')}
     ${card('sites','墊付待報銷', money(reimbPending), '東澤／廣昕')}
     ${card('billing','案場尚未收款', money(remain), '合約 '+money(totContract))}
+    ${card('meas','計量可請款', money(unbilledMeas), '已計量、還沒開請款')}
   </div>
 
   <div style="font-size:13px;font-weight:600;color:var(--muted);margin:4px 0 8px">資產 · 累計</div>
@@ -3293,6 +3311,28 @@ function bind(){
   });
   const ema=document.getElementById('export-meas-all'); if(ema) ema.onclick=()=>exportMeasurementsPDF(false);
   const ems=document.getElementById('export-meas-sel'); if(ems) ems.onclick=()=>exportMeasurementsPDF(true);
+  const mtb=document.getElementById('meas-tobill'); if(mtb) mtb.onclick=()=>{
+    const sel=state.measurements.filter(m=>measSel[m.id]);
+    if(sel.length===0){ alert('請先展開案場、勾選要帶入的計量明細。'); return; }
+    const already=sel.filter(m=>m.billedTo&&state.billings.some(b=>b.id===m.billedTo));
+    if(already.length&&!confirm(`勾選中有 ${already.length} 筆之前已帶入過請款單。\n再帶一次會產生重複請款，確定繼續？`)) return;
+    const bySiteKey={};
+    sel.forEach(m=>{ const k=canonSiteKey(m.site); (bySiteKey[k]=bySiteKey[k]||[]).push(m); });
+    const today=new Date().toISOString().slice(0,10);
+    const made=[];
+    Object.entries(bySiteKey).forEach(([site,rows])=>{
+      const amount=Math.round(rows.reduce((s,m)=>s+(Number(m.qty)||0)*(Number(m.unitPrice)||0),0));
+      const bid=uid();
+      const dates=rows.map(m=>m.date||'').filter(Boolean).sort();
+      state.billings.push({id:bid,docType:'請款單',date:today,site,amount,method:'',client:'',note:`依計量明細 ${rows.length} 筆${dates.length?`（${dates[0]}～${dates[dates.length-1]}）`:''}`,settled:false,fromMeas:rows.map(m=>m.id)});
+      rows.forEach(m=>{ m.billedTo=bid; });
+      made.push(`${site}　${money(amount)}（${rows.length} 筆計量）`);
+    });
+    measSel={};
+    saveData();
+    alert(`已生成請款單草稿：\n\n${made.join('\n')}\n\n接下來到「請款單」頁補業主／方式，列印給業主；收到款再按「✓ 已收款」。`);
+    state.tab='billingReq'; render();
+  };
   const mse=document.getElementById('meas-show-expr'); if(mse) mse.onchange=()=>{ measShowExpr=mse.checked; };
   bindBillingSubtotal('bnr'); bindBillingSubtotal('bna'); bindBillingSubtotal('bae'); bindMeasSubtotal();
   bindSiteClientAutofill('bnr-site','bnr-client');
@@ -5146,7 +5186,7 @@ function viewMeasurements(){
       return `<tr${ff?` style="background:${ff.bg}"`:''}>
         <td style="text-align:center"><input type="checkbox" data-measpick-cb="${m.id}" ${measSel[m.id]?'checked':''} style="width:16px;height:16px"></td>
         <td>${esc(m.date||'')}</td>
-        <td style="max-width:280px;white-space:normal;word-break:break-word">${ff?`<span style="color:${ff.ink};font-weight:700;font-size:11px">★${ff.label}</span> `:''}${escBr(m.item||'')}</td>
+        <td style="max-width:280px;white-space:normal;word-break:break-word">${ff?`<span style="color:${ff.ink};font-weight:700;font-size:11px">★${ff.label}</span> `:''}${escBr(m.item||'')}${m.billedTo&&state.billings.some(b=>b.id===m.billedTo)?'<span class="tag" style="background:#e3efe9;color:var(--accent)">已帶入請款</span>':''}</td>
         <td style="text-align:right">${esc(sizeLabel)}</td>
         <td style="text-align:center">${esc(m.unit||'')}</td>
         <td style="text-align:right">${(Number(m.qty)||0).toLocaleString()}</td>
@@ -5163,14 +5203,26 @@ function viewMeasurements(){
       const sub=g.reduce((s,m)=>s+(Number(m.qty)||0)*(Number(m.unitPrice)||0),0);
       return `<tr><td colspan="10" style="background:rgba(99,102,241,.07);padding:7px 12px;font-weight:700;font-size:12px;color:#4338ca">${label}（${g.length}筆）<span style="float:right">小計 ${money(sub)}</span></td></tr>`+g.map(renderRow).join('');
     }).join(''):'';
+    // 計量 vs 請款差額（依「母 / 子」正規化鑰匙逐一比對）
+    const keys=[...new Set(rows.map(m=>canonSiteKey(m.site)))].sort();
+    const diffLines=keys.map(k=>{
+      const d=measBilledDiffForKey(k);
+      const label=k===name?'':(k.startsWith(name+' / ')?('↳ '+k.slice(name.length+3)):k);
+      return `<div style="display:flex;justify-content:space-between;gap:10px;font-size:12px;padding:2px 0">
+        <span style="color:var(--muted)">${label?esc(label):'（本案場）'}</span>
+        <span class="num" style="white-space:nowrap">計量 ${money(d.meas)}　已開請款 ${money(d.billed)}　${d.diff>0?`可請 <b style="color:var(--accent)">${money(d.diff)}</b>`:(d.diff<0?`<span style="color:var(--muted)">已超請 ${money(-d.diff)}</span>`:'已請足')}</span>
+      </div>`;
+    }).join('');
+    const cardUnbilled=keys.reduce((s,k)=>{ const d=measBilledDiffForKey(k); return s+Math.max(0,d.diff); },0);
     return `<div class="card" style="padding:0;overflow:hidden">
       <div style="display:flex;justify-content:space-between;align-items:center;padding:14px 18px;cursor:pointer" data-toggle-form="meas-site-${name}">
-        <div style="font-size:15px;font-weight:700">${esc(name)}</div>
+        <div style="font-size:15px;font-weight:700">${esc(name)}${cardUnbilled>0?`<span class="tag" style="background:#e3efe9;color:var(--accent);margin-left:8px">可請 ${money(cardUnbilled)}</span>`:''}</div>
         <div style="display:flex;align-items:center;gap:12px">
           <div style="font-size:15px;font-weight:800;color:var(--accent)">${money(siteTotal)}</div>
           <span style="font-size:12px;color:var(--muted)">${open?'▲':'▼'}</span>
         </div>
       </div>
+      ${open?`<div style="padding:8px 18px;border-top:1px solid var(--line);background:var(--bg)">${diffLines}</div>`:''}
       ${open?`<div class="scroll" style="border-top:1px solid var(--line)">
         <table style="width:100%;border-collapse:collapse;font-size:13px">
           <thead><tr style="background:var(--bg);color:var(--muted);font-size:12px">
@@ -5200,6 +5252,7 @@ function viewMeasurements(){
   <div class="card" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
     <button class="btn" id="export-meas-all" ${list.length===0?'disabled style="opacity:.5"':''}>全部匯出 PDF</button>
     <button class="act" id="export-meas-sel" style="height:36px;padding:0 14px" ${list.some(m=>measSel[m.id])?'':'disabled style="opacity:.5"'}>匯出勾選 PDF</button>
+    <button class="act" id="meas-tobill" style="height:36px;padding:0 14px;border:1px solid var(--accent);color:var(--accent)" ${list.some(m=>measSel[m.id])?'':'disabled style="opacity:.5"'}>勾選帶入請款單 →</button>
     <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--muted);cursor:pointer;white-space:nowrap"><input type="checkbox" id="meas-show-expr" ${measShowExpr?'checked':''} style="width:15px;height:15px">PDF 顯示算式</label>
     <span class="sub" style="margin:0">可展開案場後勾選指定明細匯出。</span>
   </div>
