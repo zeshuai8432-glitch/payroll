@@ -494,7 +494,7 @@ const FS_PROJECT = 'payroll-d1abe';
 const FS_KEY = 'AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
 const FS_DOC_BASE = 'https://firestore.googleapis.com/v1/projects/'+FS_PROJECT+'/databases/(default)/documents/payroll/';
 const FS_REST_URL = FS_DOC_BASE+'main?key='+FS_KEY;
-const APP_VERSION = 'v2026.07.12-rescue';
+const APP_VERSION = 'v2026.07.12b-alloc+outsource+link';
 let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], tools:[], locations:[], assets:[], advances:[], accounts:[], ledger:[], deals:[], billings:[], measurements:[], contracts:{}, costs:[], textMemory:{clients:[],companies:[]}, parkAccId:'', oweBonus:{}, minFund:'', payrollSnapshots:[], yearIncomeAdj:[], deletedIds:[], resurrected:{ids:[],at:0}, tab:'dash' };
 let cloudStatus='連線中…';
 let localDirty=false, lastCloudTs=0;
@@ -1024,14 +1024,20 @@ async function rescueFromCloudSnapshots(){
   setCloud('讀取雲端快照清單…');
   let docs=[];
   try{
-    const r=await fetchT(FS_DOC_BASE.replace(/\/$/,'')+'?pageSize=300&key='+FS_KEY,{},20000);
-    const jd=await r.json();
-    (jd.documents||[]).forEach(x=>{
-      const nm=(x.name||'').split('/').pop();
-      if(!/^hist-/.test(nm)) return;
-      const js=x.fields&&x.fields.json&&x.fields.json.stringValue; if(!js) return;
-      try{ const dd=JSON.parse(js); docs.push({nm,dd,savedAt:Number(dd.savedAt)||0}); }catch(e){}
-    });
+    // Firestore list 會分頁（每頁不一定滿），要跟著 nextPageToken 抓完才看得到最新快照
+    let tok='';
+    for(let i=0;i<20;i++){
+      const r=await fetchT(FS_DOC_BASE.replace(/\/$/,'')+'?pageSize=300&key='+FS_KEY+(tok?('&pageToken='+encodeURIComponent(tok)):''),{},20000);
+      const jd=await r.json();
+      (jd.documents||[]).forEach(x=>{
+        const nm=(x.name||'').split('/').pop();
+        if(!/^hist-/.test(nm)) return;
+        const js=x.fields&&x.fields.json&&x.fields.json.stringValue; if(!js) return;
+        try{ const dd=JSON.parse(js); docs.push({nm,dd,savedAt:Number(dd.savedAt)||0}); }catch(e){}
+      });
+      tok=jd.nextPageToken||'';
+      if(!tok) break;
+    }
   }catch(e){ setCloud('快照清單讀取失敗'); alert('讀取雲端快照清單失敗：'+String(e&&e.message||e).slice(0,60)); return; }
   setCloud(cloudStatus||'');
   if(!docs.length){ alert('雲端沒有歷史快照。'); return; }

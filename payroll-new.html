@@ -796,6 +796,7 @@ function tabsBar(){
     </div>`).join('');
 }
 function render(){
+  const _sx=window.scrollX,_sy=window.scrollY; // 重繪後還原捲動位置，避免畫面跳動
   try{ localStorage.setItem(LS_TAB, state.tab||'entry'); }catch(e){} // 記住目前分頁，重整後留在同一頁
   const openKeys=new Set();
   document.querySelectorAll('details.card[open]').forEach(d=>{
@@ -810,6 +811,7 @@ function render(){
     if(s && openKeys.has(state.tab+'|'+s.textContent.trim().slice(0,40))) d.open=true;
   });
   bind();
+  window.scrollTo(_sx,_sy); // 還原捲動位置
 }
 
 function viewEntry(){
@@ -1087,16 +1089,18 @@ function viewSearch(){
 let yearIncomeYear=new Date().getFullYear();
 function yearIncomeData(year){
   const byId={}; const monthTotals=Array(12).fill(0);
+  const fmt=x=>`${x.getFullYear()}-${String(x.getMonth()+1).padStart(2,'0')}-${String(x.getDate()).padStart(2,'0')}`;
   for(let m=0;m<12;m++){
-    const mm=String(m+1).padStart(2,'0');
-    const from=`${year}-${mm}-01`;
-    const last=new Date(year,m+1,0).getDate();
-    const to=`${year}-${mm}-${String(last).padStart(2,'0')}`;
+    // 「m+1月」＝計薪週期（m月11日～m+1月10日），跟員工薪資頁同一套
+    const from=fmt(new Date(year, m-1, 11));
+    const to=fmt(new Date(year, m, 10));
     const be=buildPayroll(from,to);
-    Object.keys(be).forEach(id=>{ const e=be[id]; const net=Number(e.net)||0;
-      if(net===0 && e.days.size===0 && e.addTotal===0 && e.dedTotal===0) return;
+    Object.keys(be).forEach(id=>{ const e=be[id];
+      // 年度收入＝基本工資＋加項，不含任何扣項（借支扣還、賠償等內部代扣不減收入）
+      const inc=(Number(e.gross)||0)+(Number(e.addTotal)||0);
+      if(inc===0 && e.days.size===0) return;
       byId[id]=byId[id]||{id,name:empName(id),months:Array(12).fill(0),total:0};
-      byId[id].months[m]+=net; byId[id].total+=net; monthTotals[m]+=net;
+      byId[id].months[m]+=inc; byId[id].total+=inc; monthTotals[m]+=inc;
     });
   }
   const emps=Object.values(byId).sort((a,b)=>b.total-a.total);
@@ -1110,10 +1114,10 @@ function printYearIncome(){
   const rows=data.emps.map(e=>`<tr><td>${esc(e.name)}</td>${e.months.map(v=>`<td class="num">${v?money(v):'-'}</td>`).join('')}<td class="num" style="font-weight:700">${money(e.total)}</td></tr>`).join('');
   const totalRow=`<tr class="total-row"><td>合計</td>${data.monthTotals.map(v=>`<td class="num">${v?money(v):'-'}</td>`).join('')}<td class="num">${money(data.grand)}</td></tr>`;
   const inner=`<h1>員工年度收入彙總 ${yearIncomeYear}</h1>
-    <div class="meta">依實發金額（每月按出勤日期歸月）　|　列印日期：${new Date().toISOString().slice(0,10)}　|　共 ${data.emps.length} 人</div>
+    <div class="meta">各月＝計薪週期（前月11日～當月10日）收入，不含扣項　|　列印日期：${new Date().toISOString().slice(0,10)}　|　共 ${data.emps.length} 人</div>
     <table><thead><tr><th>員工</th>${mHead}<th class="num">全年合計</th></tr></thead>
     <tbody>${rows}${totalRow}</tbody></table>
-    <p class="sub">各月金額＝該月出勤日期落點的實發薪資（基本工資＋加項−扣項）。</p>`;
+    <p class="sub">各月金額＝該計薪週期（前月11日～當月10日）的收入＝基本工資＋加項，不含任何扣項（借支扣還、賠償等為內部代扣）。</p>`;
   printHTML('員工年度收入 '+yearIncomeYear, inner, {landscape:true});
 }
 function exportYearIncomeCSV(){
@@ -1149,7 +1153,7 @@ function viewYearIncome(){
         <button class="act" id="yi-next" style="height:34px;padding:0 12px">後一年 ›</button>
       </div>
     </div>
-    <p class="sub" style="margin:6px 0 0">每位員工整年實發薪資，按月拆開（依出勤日期歸月）。給員工對帳或報稅參考。</p>
+    <p class="sub" style="margin:6px 0 0">每位員工整年收入＝基本工資＋加項，不含任何扣項；各月＝計薪週期（例：7月欄＝6/11～7/10），與員工薪資頁同一套週期。</p>
     <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
       <button class="btn" id="yi-pdf" ${data.emps.length?'':'disabled style="opacity:.5"'}>匯出 PDF</button>
       <button class="act" id="yi-csv" ${data.emps.length?'':'disabled style="opacity:.5"'} style="border:1px solid var(--accent);color:var(--accent)">匯出 CSV（Excel）</button>

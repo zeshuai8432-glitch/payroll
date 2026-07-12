@@ -703,11 +703,13 @@ function viewSet(){
 
 // ================= render / bind =================
 function render(){
+  const _sx=window.scrollX,_sy=window.scrollY; // 重繪後還原捲動位置，避免畫面跳動
   document.getElementById('nav').innerHTML=TABS.map(([k,t])=>`<button class="${tab===k?'on':''}" data-tab="${k}">${(k==='exp'&&typeof prFound!=='undefined'&&prFound&&prFound.length)?t+' 🔺'+prFound.length:t}</button>`).join('');
   const v={dash:viewDash,proj:viewProj,exp:viewExp,inc:viewInc,quote:()=>viewDoc('quote'),invoice:()=>viewDoc('invoice'),purchase:()=>viewDoc('purchase'),co:viewCo,set:viewSet}[tab];
   document.getElementById('app').innerHTML=v();
   setBalance();
   bind();
+  window.scrollTo(_sx,_sy); // 還原捲動位置（切分頁時 nav handler 會先捲回頂端）
 }
 function bind(){
   document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{ tab=b.dataset.tab; window.scrollTo(0,0); render(); });
