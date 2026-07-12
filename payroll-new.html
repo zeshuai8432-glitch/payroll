@@ -330,7 +330,9 @@
     #print-overlay { position: static; padding: 0; }
     #print-overlay .pbar { display: none !important; }
     @page { size: A4; margin: 16mm; }
+    #print-overlay.landscape .pdoc { max-width: none; page: landscapePage; }
   }
+  @page landscapePage { size: A4 landscape; margin: 12mm; }
 </style>
 </head>
 <body>
@@ -350,6 +352,7 @@
 
 <script>
 const LS = 'pm_payroll_v1';
+const LS_TAB = 'pm_new_tab_v1'; // 記住目前分頁（僅本機，重整後留在同一頁）
 const LS_PHOTOS = 'pm_billing_photos_v1';
 const LS_SIGS = 'pm_billing_sigs_v1';
 const LS_SIGS_LOCKED = 'pm_billing_sigs_locked_v1';
@@ -357,7 +360,7 @@ const LS_SIG_META = 'pm_billing_sig_meta_v1';
 const LS_DIRTY = 'pm_cloud_dirty_v1';
 // ↓↓↓ 把這裡換成你自己的 Google Apps Script 網址（/exec 結尾）。留空則只用本機儲存。
 const CLOUD_URL = 'https://script.google.com/macros/s/AKfycbynPpe_rq76SrW5_sTNaXms4U65bRrb4oscpH0GMyIXsM4Gk2DUXpOlEimP0C-pCahOVw/exec';
-let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], parkLedger:[], parkOpening:0, billings:[], measurements:[], billingPhotoDeleted:{}, deletedIds:[], textMemory:{clients:[],companies:[]}, tab:'entry' };
+let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], parkLedger:[], parkOpening:0, billings:[], measurements:[], billingPhotoDeleted:{}, deletedIds:[], textMemory:{clients:[],companies:[]}, tab:'dash' };
 let cloudStatus = CLOUD_URL ? '連線中…' : '本機模式';
 let localDirty=false, lastCloudTs=0;
 let entryDate='', entrySite='', entryEmp=''; // 登記出工：記住上次選的日期、案場、員工
@@ -780,8 +783,9 @@ function computeRecords(records){
 
 function tabsBar(){
   const groups=[
+    ['總覽',[['dash','首頁總覽'],['search','全域搜尋']]],
     ['薪資作業',[['entry','登記出工'],['payroll','員工薪資']]],
-    ['財務管理',[['loans','借支管理'],['park','品佑收支明細']]],
+    ['財務管理',[['loans','借支管理'],['yearincome','年度收入'],['park','品佑收支明細']]],
     ['單據',[['billingReq','請款單'],['billingAdd','追加單'],['meas','計量明細']]],
     ['設定',[['sites','案場成本'],['manage','員工/案場']]],
   ];
@@ -792,6 +796,7 @@ function tabsBar(){
     </div>`).join('');
 }
 function render(){
+  try{ localStorage.setItem(LS_TAB, state.tab||'entry'); }catch(e){} // 記住目前分頁，重整後留在同一頁
   const openKeys=new Set();
   document.querySelectorAll('details.card[open]').forEach(d=>{
     const s=d.querySelector(':scope>summary');
@@ -799,7 +804,7 @@ function render(){
   });
   document.getElementById('sidebar').innerHTML=tabsBar();
   const body=document.getElementById('body');
-  body.innerHTML = state.tab==='entry'?viewEntry():state.tab==='payroll'?viewPayroll():state.tab==='sites'?viewSites():state.tab==='loans'?viewLoans():state.tab==='park'?viewPark():state.tab==='billingReq'?viewBillingReq():state.tab==='billingAdd'?viewBillingAdd():state.tab==='meas'?viewMeasurements():viewManage();
+  body.innerHTML = state.tab==='dash'?viewDash():state.tab==='search'?viewSearch():state.tab==='entry'?viewEntry():state.tab==='payroll'?viewPayroll():state.tab==='sites'?viewSites():state.tab==='loans'?viewLoans():state.tab==='yearincome'?viewYearIncome():state.tab==='park'?viewPark():state.tab==='billingReq'?viewBillingReq():state.tab==='billingAdd'?viewBillingAdd():state.tab==='meas'?viewMeasurements():viewManage();
   if(openKeys.size) document.querySelectorAll('details.card').forEach(d=>{
     const s=d.querySelector(':scope>summary');
     if(s && openKeys.has(state.tab+'|'+s.textContent.trim().slice(0,40))) d.open=true;
@@ -968,6 +973,194 @@ function buildPayroll(from,to){
     e.net=e.gross+e.addTotal-e.dedTotal;
   });
   return byEmp;
+}
+
+// ---- 首頁總覽儀表板 ----
+function viewDash(){
+  if(!state.payFrom||!state.payTo){ const d=defaultPayRange(); state.payFrom=d.from; state.payTo=d.to; }
+  const byEmp=buildPayroll(state.payFrom,state.payTo);
+  const ids=Object.keys(byEmp);
+  const netSum=ids.reduce((s,id)=>s+byEmp[id].net,0);
+  const headcount=ids.filter(id=>byEmp[id].days.size>0).length;
+  const loanOutstanding=state.loans.reduce((s,l)=>s+loanBalance(l),0);
+  const loanPeople=new Set(state.loans.filter(l=>loanBalance(l)>0).map(l=>l.empId)).size;
+  // 案場成本＝期初＋出勤工資津貼（累計）
+  const comp=computeRecords(state.attendance);
+  const bySite={};
+  state.sites.forEach(s=>{ if(s.active!==false) bySite[s.id]={name:s.name,total:Number(s.opening)||0}; });
+  state.attendance.forEach(r=>{ const c=comp[r.id]; if(!c) return; if(bySite[r.siteId]) bySite[r.siteId].total+=c.total; });
+  const siteCostList=Object.values(bySite).sort((a,b)=>b.total-a.total);
+  const totalSiteCost=siteCostList.reduce((s,x)=>s+x.total,0);
+  const parkBal=parkBalance();
+
+  const card=(goto,label,val,sub,accent)=>`<div class="metric" data-goto="${goto}" style="cursor:pointer${accent?';background:var(--accent);color:#fff':''}"><div class="l"${accent?' style="color:#fff;opacity:.85"':''}>${label}</div><div class="v" style="font-size:20px">${val}</div>${sub?`<div class="l"${accent?' style="color:#fff;opacity:.8"':''} style="margin-top:2px;font-weight:400">${sub}</div>`:''}</div>`;
+  const costRows=siteCostList.filter(x=>x.total!==0).map(x=>`<tr><td>${esc(x.name)}</td><td class="num">${money(x.total)}</td></tr>`).join('');
+
+  return `
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+      <div style="font-size:15px;font-weight:600">總覽 · 本期 ${esc(state.payFrom||'')} ～ ${esc(state.payTo||'')}</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        <button class="act" id="dash-thisperiod" style="height:34px;padding:0 12px">本期</button>
+        <button class="act" id="dash-lastperiod" style="height:34px;padding:0 12px">上期</button>
+      </div>
+    </div>
+    <p class="sub" style="margin:6px 0 0">點卡片可跳到對應分頁。本期實發、出工人數依上方期間計算。</p>
+  </div>
+  <div class="metrics">
+    ${card('payroll','本期實發薪資', money(netSum), headcount+' 人出工', true)}
+    ${card('loans','借支未還總額', money(loanOutstanding), loanPeople+' 人未還清')}
+    ${card('sites','案場總成本', money(totalSiteCost), siteCostList.length+' 個案場')}
+    ${card('park','品佑收支餘額', money(parkBal))}
+  </div>
+  ${costRows?`<div class="card">
+    <div style="font-size:14px;font-weight:600;margin-bottom:2px">各案場成本</div>
+    <p class="sub" style="margin:0 0 6px">案場成本＝期初人事成本＋出勤工資與津貼（累計至今）。</p>
+    <div class="scroll"><table><thead><tr><th>案場</th><th class="num">成本</th></tr></thead><tbody>${costRows}</tbody></table></div>
+  </div>`:''}`;
+}
+
+// ---- 全域搜尋 ----
+let searchQuery='';
+function viewSearch(){
+  const q=(searchQuery||'').trim().toLowerCase();
+  const qNum=q.replace(/[$,\s]/g,'');
+  const hit=(hay,amt)=>{ if(!q) return false; const h=String(hay||'').toLowerCase(); if(h.includes(q)) return true; if(qNum&&/\d/.test(qNum)&&String(round(Number(amt)||0)).includes(qNum)) return true; return false; };
+  const groups=[]; const push=(label,goto,items)=>{ if(items.length) groups.push({label,goto,items}); };
+  const mny=v=>money(Number(v)||0);
+
+  const att=state.attendance.filter(r=>hit(empName(r.empId)+' '+siteName(r.siteId)+' '+(r.date||'')+' '+(r.note||''),0))
+    .sort((a,b)=>(b.date||'').localeCompare(a.date||'')).slice(0,50)
+    .map(r=>({date:r.date||'', desc:`${esc(empName(r.empId))}　${esc(siteName(r.siteId))}　${r.type&&r.type!=='工作'?esc(r.type):gongStr(Number(r.hours)||0)}`, amt:''}));
+  push('出工','entry',att);
+
+  const loans=state.loans.filter(l=>hit(empName(l.empId)+' '+(l.note||'')+' 借支',l.amount))
+    .sort((a,b)=>(b.date||'').localeCompare(a.date||'')).slice(0,50)
+    .map(l=>({date:l.date||'', desc:`${esc(empName(l.empId))}　${esc(l.note||'借支')}　未還 ${mny(loanBalance(l))}`, amt:mny(l.amount)}));
+  push('借支','loans',loans);
+
+  const adj=state.adjustments.filter(a=>hit(empName(a.empId)+' '+(a.label||'')+' '+(a.note||''),a.amount))
+    .sort((a,b)=>(b.date||'').localeCompare(a.date||'')).slice(0,50)
+    .map(a=>({date:a.date||'', desc:`${esc(empName(a.empId))}　${a.kind==='add'?'加項':'扣項'} ${esc(a.label||'')}${a.note?'　'+esc(a.note):''}`, amt:(a.kind==='add'?'+':'−')+mny(a.amount)}));
+  push('薪資加扣項','payroll',adj);
+
+  const park=state.parkLedger.filter(t=>hit((t.note||''),t.amount))
+    .sort((a,b)=>(b.date||'').localeCompare(a.date||'')).slice(0,50)
+    .map(t=>({date:t.date||'', desc:esc(t.note||''), amt:(t.kind==='in'?'+':'−')+mny(t.amount)}));
+  push('品佑收支','park',park);
+
+  const bills=state.billings.filter(b=>hit(parentSiteName(b.site)+' '+(b.client||'')+' '+(b.note||''),billingAmount(b)))
+    .sort((a,b)=>(b.date||'').localeCompare(a.date||'')).slice(0,50)
+    .map(b=>({date:b.date||'', desc:`${esc(parentSiteName(b.site))}　${esc(b.docType||'請款單')}${b.client?'　'+esc(b.client):''}${b.settled?'':'　未收款'}`, amt:mny(billingAmount(b))}));
+  push('請款','billingReq',bills);
+
+  const totalHits=groups.reduce((s,g)=>s+g.items.length,0);
+  const resultHTML=!q
+    ? '<div class="empty">輸入員工、案場、項目或金額開始搜尋。</div>'
+    : (totalHits===0
+      ? '<div class="empty">找不到符合「'+esc(searchQuery)+'」的資料。</div>'
+      : groups.map(g=>`<div class="card">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+            <div style="font-size:14px;font-weight:600">${g.label}　<span style="color:var(--muted);font-size:12px">${g.items.length} 筆</span></div>
+            <button class="act" data-goto="${g.goto}" style="border:1px solid var(--accent);color:var(--accent);border-radius:6px;padding:2px 10px">前往${g.label} →</button>
+          </div>
+          <div class="scroll"><table>
+            <thead><tr><th style="width:100px">日期</th><th>內容</th><th class="num">金額</th></tr></thead>
+            <tbody>${g.items.map(it=>`<tr><td>${esc(it.date)}</td><td>${it.desc}</td><td class="num">${it.amt}</td></tr>`).join('')}</tbody>
+          </table></div>
+        </div>`).join(''));
+
+  return `
+  <div class="card">
+    <div style="font-size:15px;font-weight:600;margin-bottom:6px">全域搜尋</div>
+    <div class="row">
+      <div class="field" style="flex:1;min-width:220px"><label>關鍵字（員工／案場／項目／金額）</label>
+        <input id="search-input" value="${esc(searchQuery)}" placeholder="例：張三、某工地、48000、住宿" autocomplete="off"></div>
+      ${q?`<button class="act" id="search-clear" style="height:36px;padding:0 14px;align-self:flex-end">清除</button>`:''}
+    </div>
+    ${q?`<p class="sub" style="margin:8px 0 0">共 ${totalHits} 筆結果（每類最多顯示 50 筆）。</p>`:''}
+  </div>
+  ${resultHTML}`;
+}
+
+// ---- 員工年度收入彙總（逐月 + 全年合計，可匯出 PDF / CSV）----
+let yearIncomeYear=new Date().getFullYear();
+function yearIncomeData(year){
+  const byId={}; const monthTotals=Array(12).fill(0);
+  for(let m=0;m<12;m++){
+    const mm=String(m+1).padStart(2,'0');
+    const from=`${year}-${mm}-01`;
+    const last=new Date(year,m+1,0).getDate();
+    const to=`${year}-${mm}-${String(last).padStart(2,'0')}`;
+    const be=buildPayroll(from,to);
+    Object.keys(be).forEach(id=>{ const e=be[id]; const net=Number(e.net)||0;
+      if(net===0 && e.days.size===0 && e.addTotal===0 && e.dedTotal===0) return;
+      byId[id]=byId[id]||{id,name:empName(id),months:Array(12).fill(0),total:0};
+      byId[id].months[m]+=net; byId[id].total+=net; monthTotals[m]+=net;
+    });
+  }
+  const emps=Object.values(byId).sort((a,b)=>b.total-a.total);
+  const grand=emps.reduce((s,e)=>s+e.total,0);
+  return {emps,monthTotals,grand};
+}
+function printYearIncome(){
+  const data=yearIncomeData(yearIncomeYear);
+  if(data.emps.length===0){ alert(`${yearIncomeYear} 年沒有薪資資料。`); return; }
+  const mHead=Array.from({length:12},(_,i)=>`<th class="num">${i+1}月</th>`).join('');
+  const rows=data.emps.map(e=>`<tr><td>${esc(e.name)}</td>${e.months.map(v=>`<td class="num">${v?money(v):'-'}</td>`).join('')}<td class="num" style="font-weight:700">${money(e.total)}</td></tr>`).join('');
+  const totalRow=`<tr class="total-row"><td>合計</td>${data.monthTotals.map(v=>`<td class="num">${v?money(v):'-'}</td>`).join('')}<td class="num">${money(data.grand)}</td></tr>`;
+  const inner=`<h1>員工年度收入彙總 ${yearIncomeYear}</h1>
+    <div class="meta">依實發金額（每月按出勤日期歸月）　|　列印日期：${new Date().toISOString().slice(0,10)}　|　共 ${data.emps.length} 人</div>
+    <table><thead><tr><th>員工</th>${mHead}<th class="num">全年合計</th></tr></thead>
+    <tbody>${rows}${totalRow}</tbody></table>
+    <p class="sub">各月金額＝該月出勤日期落點的實發薪資（基本工資＋加項−扣項）。</p>`;
+  printHTML('員工年度收入 '+yearIncomeYear, inner, {landscape:true});
+}
+function exportYearIncomeCSV(){
+  const data=yearIncomeData(yearIncomeYear);
+  if(data.emps.length===0){ alert(`${yearIncomeYear} 年沒有薪資資料。`); return; }
+  const csv=s=>{ const t=String(s==null?'':s); return /[",\n]/.test(t)?'"'+t.replace(/"/g,'""')+'"':t; };
+  const head=['員工',...Array.from({length:12},(_,i)=>`${i+1}月`),'全年合計'];
+  const lines=[head.map(csv).join(',')];
+  data.emps.forEach(e=>{ lines.push([csv(e.name),...e.months.map(v=>round(v)),round(e.total)].join(',')); });
+  lines.push([csv('合計'),...data.monthTotals.map(v=>round(v)),round(data.grand)].join(','));
+  const text='﻿'+lines.join('\r\n');
+  try{
+    const blob=new Blob([text],{type:'text/csv;charset=utf-8'});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');
+    a.href=url; a.download=`員工年度收入-${yearIncomeYear}.csv`;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(()=>URL.revokeObjectURL(url),1000);
+  }catch(e){ alert('匯出失敗：'+e.message); }
+}
+function viewYearIncome(){
+  const data=yearIncomeData(yearIncomeYear);
+  const mHead=Array.from({length:12},(_,i)=>`<th class="num">${i+1}月</th>`).join('');
+  const rows=data.emps.map(e=>`<tr><td>${esc(e.name)}</td>${e.months.map(v=>`<td class="num">${v?money(v):'-'}</td>`).join('')}<td class="num" style="font-weight:700">${money(e.total)}</td></tr>`).join('');
+  const totalRow=data.emps.length?`<tr class="total-row"><td>合計</td>${data.monthTotals.map(v=>`<td class="num">${v?money(v):'-'}</td>`).join('')}<td class="num">${money(data.grand)}</td></tr>`:'';
+  return `
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+      <div style="font-size:15px;font-weight:600">員工年度收入彙總</div>
+      <div style="display:flex;align-items:center;gap:6px">
+        <button class="act" id="yi-prev" style="height:34px;padding:0 12px">‹ 前一年</button>
+        <input type="number" id="yi-year" value="${yearIncomeYear}" style="width:100px;text-align:center" min="2000" max="2100">
+        <button class="act" id="yi-next" style="height:34px;padding:0 12px">後一年 ›</button>
+      </div>
+    </div>
+    <p class="sub" style="margin:6px 0 0">每位員工整年實發薪資，按月拆開（依出勤日期歸月）。給員工對帳或報稅參考。</p>
+    <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+      <button class="btn" id="yi-pdf" ${data.emps.length?'':'disabled style="opacity:.5"'}>匯出 PDF</button>
+      <button class="act" id="yi-csv" ${data.emps.length?'':'disabled style="opacity:.5"'} style="border:1px solid var(--accent);color:var(--accent)">匯出 CSV（Excel）</button>
+    </div>
+  </div>
+  <div class="card">
+    ${data.emps.length===0?`<div class="empty">${yearIncomeYear} 年沒有薪資資料。</div>`:`
+    <div class="scroll"><table>
+      <thead><tr><th>員工</th>${mHead}<th class="num">全年合計</th></tr></thead>
+      <tbody>${rows}${totalRow}</tbody></table></div>`}
+  </div>`;
 }
 
 function viewPayroll(){
@@ -1311,6 +1504,16 @@ function bind(){
   document.querySelectorAll('[data-togglesettle]').forEach(b=>b.onclick=()=>{ const bill=state.billings.find(x=>x.id===b.dataset.togglesettle); if(!bill) return; bill.settled=!bill.settled; saveData(); render(); });
   document.querySelectorAll('[data-delbill]').forEach(b=>b.onclick=()=>{ if(!confirm('確定刪除這筆單據？')) return; const id=b.dataset.delbill; (billingPhotos[id]||[]).forEach(url=>rememberDeletedPhoto(id,url)); state.billings=state.billings.filter(x=>x.id!==id); delete billingPhotos[id]; deleteSig(id); savePhotos(); saveData(); render(); });
   document.querySelectorAll('.nav-item').forEach(b=>b.onclick=()=>{ state.tab=b.dataset.tab; closeSidebar(); render(); });
+  document.querySelectorAll('[data-goto]').forEach(b=>b.onclick=()=>{ state.tab=b.dataset.goto; render(); });
+  const dtp=document.getElementById('dash-thisperiod'); if(dtp) dtp.onclick=()=>{ const d=defaultPayRange(); state.payFrom=d.from; state.payTo=d.to; render(); };
+  const dlp=document.getElementById('dash-lastperiod'); if(dlp) dlp.onclick=()=>{ const d=prevPayRange(); state.payFrom=d.from; state.payTo=d.to; render(); };
+  const si=document.getElementById('search-input'); if(si) si.oninput=()=>{ searchQuery=si.value; render(); const n=document.getElementById('search-input'); if(n){ n.focus(); const v=n.value; try{ n.setSelectionRange(v.length,v.length); }catch(e){} } };
+  const sc=document.getElementById('search-clear'); if(sc) sc.onclick=()=>{ searchQuery=''; render(); const n=document.getElementById('search-input'); if(n) n.focus(); };
+  const yiPrev=document.getElementById('yi-prev'); if(yiPrev) yiPrev.onclick=()=>{ yearIncomeYear--; render(); };
+  const yiNext=document.getElementById('yi-next'); if(yiNext) yiNext.onclick=()=>{ yearIncomeYear++; render(); };
+  const yiYear=document.getElementById('yi-year'); if(yiYear) yiYear.onchange=()=>{ const v=parseInt(yiYear.value,10); if(v>=2000&&v<=2100){ yearIncomeYear=v; render(); } };
+  const yiPdf=document.getElementById('yi-pdf'); if(yiPdf) yiPdf.onclick=()=>printYearIncome();
+  const yiCsv=document.getElementById('yi-csv'); if(yiCsv) yiCsv.onclick=()=>exportYearIncomeCSV();
 
   const pf=document.getElementById('pay-from'); if(pf) pf.onchange=()=>{ state.payFrom=pf.value; render(); };
   const pt=document.getElementById('pay-to'); if(pt) pt.onchange=()=>{ state.payTo=pt.value; render(); };
@@ -1554,10 +1757,11 @@ function bind(){
 }
 
 // ---- PDF 匯出（以列印視窗產生，可存成 PDF 或直接列印）----
-function printHTML(title, inner){
+function printHTML(title, inner, opts){
   const old=document.getElementById('print-overlay'); if(old) old.remove();
   const ov=document.createElement('div');
   ov.id='print-overlay';
+  if(opts&&opts.landscape) ov.classList.add('landscape');
   ov.innerHTML=`
     <div class="pbar">
       <button class="btn" id="po-print">列印 / 存成 PDF</button>
@@ -2078,7 +2282,9 @@ document.addEventListener('visibilitychange', ()=>{
 });
 document.addEventListener('freeze', ()=>{ pushCloudSoon(); flushCloudOnExit(); });
 
-loadLocal(); loadPhotos(); loadSigs(); refreshPrevIds(); render(); loadCloud();
+loadLocal(); loadPhotos(); loadSigs(); refreshPrevIds();
+try{ const t=localStorage.getItem(LS_TAB); if(t) state.tab=t; }catch(e){} // 還原上次所在分頁
+render(); loadCloud();
 </script>
 </body>
 </html>
