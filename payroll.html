@@ -738,6 +738,19 @@ const childWorkBilledForSite = site => {
   childSitesOf(site).forEach(c=>{ if(c.name===site.name) return; state.billings.filter(b=>b.settled).forEach(b=>{ const sp=splitSiteValue(b.site); if(sp.parent===c.name&&!sp.sub) sum+=billingAmount(b); }); });
   return sum;
 };
+// 自動分潤的請款基準：母案場＝開給業主的已收款；子案場＝自己的工程款（「母 / 子」＋相容以子本名開的）
+const dealBillBasisForSite = site => {
+  if(site.parentSiteId){
+    const parent=state.sites.find(x=>x.id===site.parentSiteId);
+    let sum=0;
+    state.billings.filter(b=>b.settled).forEach(b=>{ const sp=splitSiteValue(b.site);
+      if(parent && sp.parent===parent.name && sp.sub===site.name) sum+=billingAmount(b);
+      if(sp.parent===site.name && !sp.sub) sum+=billingAmount(b);
+    });
+    return sum;
+  }
+  return ownSettledBilledForSite(site);
+};
 const siteTypeLabel = name => {
   const p=splitSiteValue(name);
   const s=state.sites.find(x=>x.name===p.parent);
@@ -2176,12 +2189,12 @@ function bind(){
     if(!confirm('重算所有案場分潤？\n\n會依各案場目前的「請款＋成本（期初/出工工資/手動）」重新計算每個案場的分潤與帳戶進帳，並清掉「對不上案場或已無請款」的殘留分潤。\n\n你在「進階」手動補的分潤不受影響。')) return;
     state.deals.filter(d=>d.autoSiteId).forEach(d=>{
       const s=state.sites.find(x=>x.id===d.autoSiteId);
-      const tot=s?ownSettledBilledForSite(s):0;
+      const tot=s?dealBillBasisForSite(s):0;
       if(!s || tot<=0){ state.ledger=state.ledger.filter(t=>t.autoDealId!==d.id); state.deals=state.deals.filter(x=>x.id!==d.id); }
     });
     state.deals.filter(d=>!d.autoSiteId).forEach(d=>{
       const s=state.sites.find(x=>x.name===d.name && !(x.coop||x.type==='合作案'));
-      const tot=s?ownSettledBilledForSite(s):0;
+      const tot=s?dealBillBasisForSite(s):0;
       if(s && tot>0){ state.ledger=state.ledger.filter(t=>t.autoDealId!==d.id && t.fromDeal!==d.id); state.deals=state.deals.filter(x=>x.id!==d.id); }
     });
     resyncAllSiteDeals();
@@ -3380,7 +3393,7 @@ function bind(){
     // 防呆：清掉任何「對應案場已無請款」的自動分潤
     state.deals.filter(d=>d.autoSiteId).forEach(d=>{
       const s=state.sites.find(x=>x.id===d.autoSiteId);
-      const tot=s?ownSettledBilledForSite(s):0;
+      const tot=s?dealBillBasisForSite(s):0;
       if(!s || tot<=0){ state.ledger=state.ledger.filter(t=>t.autoDealId!==d.id); state.deals=state.deals.filter(x=>x.id!==d.id); }
     });
     saveData(); render();
@@ -4547,10 +4560,18 @@ function resyncAllSiteDeals(){
   // 同名案場只讓第一個驅動自動分潤：多裝置同步可能產生兩筆同名案場，
   // 而請款是「依案場名」歸戶，兩個同名案場會抓到同一筆請款，導致分潤結算重複兩筆。
   const doneNames=new Set();
+  const doneChild=new Set(); // 同母之下同名子案場只讓第一個驅動（多裝置同步防重複）
   state.sites.forEach(s=>{
     if(s.coop||s.type==='合作案') return;
-    // 子案場不自己產生分潤：它的工程款是母案場的成本（已計入母的分潤成本）；順便清掉舊的子案場分潤
-    if(s.parentSiteId){ const d=state.deals.find(x=>x.autoSiteId===s.id); if(d){ state.ledger=state.ledger.filter(t=>t.autoDealId!==d.id); state.deals=state.deals.filter(x=>x.id!==d.id); } return; }
+    // 子案場也產生自己的分潤：金額＝工程款、成本＝自身工資＋手動，淨利走 30/70
+    // （工程款在母案場那邊已扣成成本，兩層各算各的、不重複）
+    if(s.parentSiteId){
+      const key=s.parentSiteId+'|'+s.name;
+      if(doneChild.has(key)){ const dup=state.deals.find(x=>x.autoSiteId===s.id); if(dup){ state.ledger=state.ledger.filter(t=>t.autoDealId!==dup.id); state.deals=state.deals.filter(x=>x.id!==dup.id); } return; }
+      doneChild.add(key);
+      resyncSiteDeal(s);
+      return;
+    }
     if(doneNames.has(s.name)){
       const dup=state.deals.find(x=>x.autoSiteId===s.id);
       if(dup){ state.ledger=state.ledger.filter(t=>t.autoDealId!==dup.id); state.deals=state.deals.filter(x=>x.id!==dup.id); }
@@ -4567,8 +4588,9 @@ function resyncAllSiteDeals(){
 // 案場驅動：代工/公司分潤案場 → 自動維護「一個案場一筆分潤」，金額＝該案場總請款
 function resyncSiteDeal(site){
   // 合作案不走這裡（合作案在分潤頁用 coopSiteCalc 自動匯總）
-  // 請款金額只算開給業主的；子案場工程款記入成本（子案場做的代工，對母案場是成本）
-  const totalBill=ownSettledBilledForSite(site);
+  // 母案場：請款金額只算開給業主的；子案場工程款記入母的成本
+  // 子案場：請款金額＝自己的工程款（對母請款），成本＝自身工資＋手動，淨利走 30/70
+  const totalBill=dealBillBasisForSite(site);
   let d=state.deals.find(x=>x.autoSiteId===site.id);
   if(site.coop || site.type==='合作案'){
     // 若之前是代工/公司分潤、後來改成合作案，移除舊的自動分潤與其進帳
@@ -4590,10 +4612,12 @@ function resyncSiteDeal(site){
     state.ledger=state.ledger.filter(t=>t.autoDealId!==d.id);
     d.id=stableId;
   }
-  d.name=site.name;
+  const parentRec=site.parentSiteId?state.sites.find(x=>x.id===site.parentSiteId):null;
+  d.name=parentRec?(parentRec.name+' / '+site.name):site.name; // 子案場分潤標成「母 / 子」避免同名混淆
   d.type=site.type||'代工';
   d.amount=totalBill;
-  d.cost=siteCostForDeal(site)+childWorkBilledForSite(site); // 期初(舊制不算)+出工工資+手動成本＋子案場已收款工程款
+  // 母案場成本＝自身（期初/出工工資/手動）＋子案場已收款工程款；子案場成本＝只算自身
+  d.cost=siteCostForDeal(site)+(site.parentSiteId?0:childWorkBilledForSite(site));
   d.taxPct=(site.siteTaxPct!==undefined?site.siteTaxPct:0);
   d.scheme=(site.type==='舊制')?'old':'new';  // 舊制全進公積金，其餘30/70
   d.ownerId=site.siteOwnerId||'';
@@ -5262,19 +5286,21 @@ function viewBilling(){
 
   const cardForName=(name)=>{
     const list=groups[name].sort((a,b)=>(a.date||'').localeCompare(b.date||''));
-    const billed=list.reduce((s,b)=>s+billingAmount(b),0);
-    const settled=billed;
-    const unsettled=billed-settled;
+    // 分兩區：對業主請款（sub=''，計入合約進度）／子案場工程款（「母 / 子」，對母案場是成本，不計入進度）
+    const ownList=list.filter(b=>!splitSiteValue(b.site).sub);
+    const childList=list.filter(b=>!!splitSiteValue(b.site).sub);
+    const billedOwn=ownList.reduce((s,b)=>s+billingAmount(b),0);
+    const billedChild=childList.reduce((s,b)=>s+billingAmount(b),0);
     const siteObj=state.sites.find(x=>x.name===name);
     const contract=Number(siteObj&&siteObj.contract!==undefined&&siteObj.contract!==''?siteObj.contract:state.contracts[name])||0;
     let progress='';
     if(contract>0){
-      const pct=Math.min(100,Math.round(billed/contract*100));
-      const remain=contract-billed;
-      progress=`<div class="sub" style="margin:4px 0 8px">合約總額 ${money(contract)}　已收款 ${money(billed)}（${pct}%）　${remain>0?`尚未收款 <b>${money(remain)}</b>`:(remain<0?`<span style="color:var(--danger)">超出合約 ${money(-remain)}</span>`:'已收足')}
+      const pct=Math.min(100,Math.round(billedOwn/contract*100));
+      const remain=contract-billedOwn;
+      progress=`<div class="sub" style="margin:4px 0 8px">合約總額 ${money(contract)}　對業主已收款 ${money(billedOwn)}（${pct}%）　${remain>0?`尚未收款 <b>${money(remain)}</b>`:(remain<0?`<span style="color:var(--danger)">超出合約 ${money(-remain)}</span>`:'已收足')}
         <div style="height:6px;background:var(--line);border-radius:3px;margin-top:6px;overflow:hidden"><div style="height:100%;width:${pct}%;background:var(--accent)"></div></div></div>`;
     }
-    const rows=list.map(b=>{
+    const rowFor=b=>{
       const docType=b.docType||'請款單';
       if(billEditId===b.id){
         return `<tr><td colspan="8" style="background:var(--bg)">
@@ -5308,16 +5334,20 @@ function viewBilling(){
           <label style="cursor:pointer;display:flex;align-items:center;gap:4px;padding:5px 10px;background:var(--surface);border:1px dashed var(--line2);border-radius:8px;font-size:12px;color:var(--muted)">📷 上傳施作照片<input type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif,.heic,.heif" multiple data-photoadd="${b.id}" style="display:none"></label>
         </div>
       </td>
-    </tr>`;}).join('');
+    </tr>`;};
+    const ownRows=ownList.map(rowFor).join('');
+    const childRows=childList.map(rowFor).join('');
+    const tableHead=`<thead><tr><th>日期</th><th class="num">金額</th><th>方式</th><th>業主</th><th>收款</th><th>備註</th><th></th></tr></thead>`;
     return `<div class="card">
       <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px;flex-wrap:wrap;gap:8px">
         <div style="font-size:15px;font-weight:600">${esc(name)}${(()=>{const so=state.sites.find(x=>x.name===name);if(!so)return '';if(so.coop||so.type==='合作案')return '<span class="tag" style="background:#fde9d4;color:#9a5b1a">合作案</span>';if(so.type)return `<span class="tag" style="background:#e3efe9;color:var(--accent)">${esc(so.type)}</span>`;return '';})()}</div>
-        <div style="font-size:14px">已收款 <b>${money(billed)}</b></div>
+        <div style="font-size:14px">對業主已收款 <b>${money(billedOwn)}</b>${billedChild>0?`　<span style="color:var(--muted)">子案場工程款 ${money(billedChild)}</span>`:''}</div>
       </div>
       ${progress}
-      <div class="scroll"><table>
-        <thead><tr><th>日期</th><th class="num">金額</th><th>方式</th><th>業主</th><th>收款</th><th>備註</th><th></th></tr></thead>
-        <tbody>${rows}</tbody></table></div>
+      ${ownRows?`<div style="font-size:13px;font-weight:600;margin:6px 0 4px">對業主請款</div>
+      <div class="scroll"><table>${tableHead}<tbody>${ownRows}</tbody></table></div>`:'<div class="sub" style="margin:6px 0">尚無對業主的已收款請款。</div>'}
+      ${childRows?`<div style="font-size:13px;font-weight:600;margin:12px 0 4px">子案場工程款 <span class="tag" style="background:#fde9d4;color:#9a5b1a">對母案場是成本</span> <span style="font-weight:400;font-size:11px;color:var(--muted)">不計入合約進度；各子案場的分潤在「分潤結算」以「母 / 子」名稱列出</span></div>
+      <div class="scroll"><table>${tableHead}<tbody>${childRows}</tbody></table></div>`:''}
     </div>`;
   };
   const namePaused=name=>{ const st=state.sites.find(x=>x.name===name); return st&&st.active===false; };
