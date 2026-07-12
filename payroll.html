@@ -2368,7 +2368,7 @@ function viewSites(){
   <div class="card">
     <div style="font-size:14px;font-weight:600;margin-bottom:8px">墊付報銷彙總（東澤／廣昕）</div>
     ${personBlock('dz')}${personBlock('gx')}
-    <p class="sub" style="margin-top:6px">展開「待報銷明細」可看到是哪個案場、哪一筆，直接按「報銷」標記。此處只記錄報銷狀態，不會動到帳戶餘額。</p>
+    <p class="sub" style="margin-top:6px">展開「待報銷明細」可看到是哪個案場、哪一筆，直接按「報銷」標記。<b>已設定品佑帳戶時，按「報銷」會同時在品佑帳戶記一筆支出</b>（＝品佑撥款回補墊付人）；按「取消報銷」會一併移除那筆支出。成本本身仍留在案場成本，不受影響。</p>
   </div>`:'';
   return `
   <div class="metrics">
@@ -3054,8 +3054,10 @@ function bind(){
   });
   document.querySelectorAll('[data-delcost]').forEach(b=>b.onclick=()=>{
     const c=state.costs.find(x=>x.id===b.dataset.delcost);
-    if(!confirm('確定刪除這筆成本？')) return;
+    const hasReimbTx=c&&state.ledger.some(t=>t.reimbCostId===c.id);
+    if(!confirm(`確定刪除這筆成本？${hasReimbTx?'\n\n它有一筆報銷產生的品佑帳戶支出，會一併刪除（避免留下重複記帳的孤兒）。':''}`)) return;
     if(c) siteCostDetailsOpen[c.siteId]=true;
+    if(hasReimbTx) state.ledger=state.ledger.filter(t=>t.reimbCostId!==c.id); // 連動刪報銷支出，不留孤兒
     state.costs=state.costs.filter(c=>c.id!==b.dataset.delcost); resyncAllSiteDeals(); saveData(); render();
   });
   document.querySelectorAll('[data-reimb]').forEach(b=>b.onclick=()=>{
@@ -3328,7 +3330,12 @@ function bind(){
   };
   document.querySelectorAll('[data-delledger]').forEach(b=>b.onclick=()=>{
     const t=state.ledger.find(x=>x.id===b.dataset.delledger);
-    if(t&&t.reimbCostId){ alert('這筆是「報銷」在品佑帳戶自動產生的支出。請到「案場成本」對該筆按「取消報銷」來移除，以免帳對不上。'); return; }
+    if(t&&t.reimbCostId){
+      const src=state.costs.find(c=>c.id===t.reimbCostId);
+      if(src){ alert('這筆是「報銷」在品佑帳戶自動產生的支出。請到「案場成本」對該筆按「取消報銷」來移除，以免帳對不上。'); return; }
+      if(!confirm('這筆是報銷自動產生的支出，但它的來源成本已經被刪除（孤兒紀錄，會造成重複記帳）。\n\n直接刪除這筆？')) return;
+      state.ledger=state.ledger.filter(x=>x.id!==t.id); saveData(); render(); return;
+    }
     if(t&&t.autoDealId){ alert('這筆是分潤「錢進哪個帳戶」自動產生的進帳。請到「分潤結算」改該筆的帳戶或刪除分潤來移除，別在這裡刪，以免帳對不上。'); return; }
     if(t&&t.fromDeal){ alert('這筆是分潤結算入帳產生的，請到「分潤結算」按該案場的「撤銷」來移除，以免帳對不上。'); return; }
     if(t&&t.fromAdvance){ alert('這筆是代墊款入帳產生的，請到「代墊款」按該股東的「撤銷入帳」來移除。'); return; }
@@ -5163,6 +5170,11 @@ function resyncAllSiteDeals(){
   //    這些就是同一案場被重複算進公積金帳戶的來源，一律移除。
   const dealIds=new Set(state.deals.map(d=>d.id));
   state.ledger=state.ledger.filter(t=>!(t && t.autoDealId!=null && !dealIds.has(t.autoDealId)));
+  // ③ 清報銷孤兒：報銷自動產生的品佑支出，其來源成本「確定被刪」（有刪除記號）→ 一併移除，
+  //    否則成本刪了、報銷支出留著會重複記帳（成本可能之後又從品佑帳本重新帶入）。
+  const tombs=new Set(state.deletedIds||[]);
+  const costIds=new Set((state.costs||[]).map(c=>c&&c.id));
+  state.ledger=state.ledger.filter(t=>!(t && t.reimbCostId && !costIds.has(t.reimbCostId) && tombs.has(t.reimbCostId)));
 }
 // 案場驅動：代工/公司分潤案場 → 自動維護「一個案場一筆分潤」，金額＝該案場總請款
 function resyncSiteDeal(site){
