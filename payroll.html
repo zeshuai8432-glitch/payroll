@@ -530,12 +530,14 @@ const mergedIntoSum = allocInSum; // 舊名稱相容
 // 是否已全數分攤出去（→ 內帳備查，不對外、不計帳）
 const isFullyAllocated = b => { const r=rawBillingAmount(b); return r>0 && allocOutSum(b)>=r; };
 // 對外／記帳金額：有「對外開單金額」以它為準（議價/灌單用）；
+// wrapAlloc（內含模式）＝本單是對外包裝單，分攤進來的是「內容物」不加總，對外＝自己的計算式；
 // 否則＝計算式 − 分攤出去 ＋ 分攤進來（全數分攤出去＝0，不重複計帳）
 const billingAmount = b => {
   if(!b) return 0;
   if(b.mergedInto) return 0; // 未遷移舊資料保險
   if(b.printAmount!=null&&b.printAmount!=='') return Number(b.printAmount)||0;
-  return Math.max(0, rawBillingAmount(b)-allocOutSum(b))+allocInSum(b);
+  const base=Math.max(0, rawBillingAmount(b)-allocOutSum(b));
+  return b.wrapAlloc?base:base+allocInSum(b);
 };
 // 舊「mergedInto 整張併入」遷移成 allocOut 分攤格式（一律走同一套邏輯）
 function migrateBillingMerges(){
@@ -3354,6 +3356,17 @@ function bind(){
     saveData(); render();
     alert(`已分攤 ${money(amt)} → 「${String(tgt.note||'').slice(0,20)||tgt.date}」（該單對外變 ${money(billingAmount(tgt))}）。\n${nowRemaining>0?`本單還剩 ${money(nowRemaining)} 可繼續分攤或保留對外。`:'本單已全數分攤，轉為內帳備查（灰色）。'}\n目標單金額如需議價調整，用該單的「設對外金額」。`);
   });
+  document.querySelectorAll('[data-wraptoggle]').forEach(b=>b.onclick=()=>{
+    const bill=state.billings.find(x=>x.id===b.dataset.wraptoggle); if(!bill) return;
+    if(!bill.wrapAlloc){
+      if(!confirm(`切換成「內含模式」？\n\n本單變成對外包裝單：對外金額＝本單自己的計算式 ${money(rawBillingAmount(bill))}，分攤進來的 ${money(allocInSum(bill))} 視為內容物、不再加總。\n列印會照本單的 數量×單價 呈現。${(bill.printAmount!=null&&bill.printAmount!=='')?'\n\n（本單設有對外開單金額，會一併清除，改用計算式。）':''}`)) return;
+      bill.wrapAlloc=true; delete bill.printAmount;
+    } else {
+      if(!confirm('切回「加總模式」？分攤進來的金額會重新加進對外金額。')) return;
+      delete bill.wrapAlloc;
+    }
+    saveData(); render();
+  });
   document.querySelectorAll('[data-allocdel]').forEach(b=>b.onclick=()=>{
     const [srcId,idxStr]=b.dataset.allocdel.split('::');
     const src=state.billings.find(x=>x.id===srcId); if(!src||!Array.isArray(src.allocOut)) return;
@@ -4179,7 +4192,7 @@ function billingDocInner(id){
     <div class="sec">金額</div>
     <table><thead><tr><th>項目</th><th>單位</th><th class="num">數量</th><th class="num">單價</th><th class="num">小計</th></tr></thead>
       <tbody>
-        ${(b.printAmount!=null&&b.printAmount!=='')||mergedIntoSum(b)>0||allocOutSum(b)>0
+        ${(b.printAmount!=null&&b.printAmount!=='')||(!b.wrapAlloc&&mergedIntoSum(b)>0)||allocOutSum(b)>0
           ? `<tr><td>${esc(b.note||type)}</td><td>式</td><td class="num">1</td><td class="num">${money(amt)}</td><td class="num">${money(amt)}</td></tr>`
           : `<tr><td>${esc(b.note||type)}</td><td>${esc(b.unit||'')}</td><td class="num">${b.qty!==undefined?b.qty:'—'}</td><td class="num">${b.unitPrice!==undefined?money(b.unitPrice):'—'}</td><td class="num">${money(amt)}</td></tr>`}
         <tr class="total-row"><td colspan="4">總金額</td><td class="num">${money(amt)}</td></tr>
@@ -5238,7 +5251,7 @@ function viewBillingAdd(){
       if(billViewMode==='out'){
         const sep0=idx>0?'border-top:1px solid var(--line);':'';
         const amt0=billingAmount(b);
-        const combined=(b.printAmount!=null&&b.printAmount!=='')||allocInSum(b)>0||allocOutSum(b)>0;
+        const combined=(b.printAmount!=null&&b.printAmount!=='')||(!b.wrapAlloc&&allocInSum(b)>0)||allocOutSum(b)>0;
         return `<div style="${sep0}padding:${idx>0?'12px':'4px'} 0 10px">
           <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap">
             <div style="flex:1;min-width:0">
@@ -5337,7 +5350,10 @@ function viewBillingAdd(){
               ${b.client?`<span style="font-size:12px;color:var(--muted)">${esc(b.client)}</span>`:''}
               ${billingSigs[b.id]?`<span style="font-size:11px;background:#dcfce7;color:#16a34a;border-radius:6px;padding:2px 8px;font-weight:700">${billingSigsLocked[b.id]?'🔒':'✓'} 已簽核</span>`:''}
             </div>
-            ${hasCombine?`<div style="font-size:12px;color:#1d4ed8;margin-top:2px">內帳：計算式 ${money(raw)}${outSum>0?`−分攤出 ${money(outSum)}`:''}${ms>0?`＋分攤入 ${money(ms)}`:''}${(b.printAmount!=null&&b.printAmount!=='')?`　→ 對外開單 ${money(amt)}${(raw-outSum+ms)!==amt?`（差 ${money(amt-(raw-outSum+ms))}）`:''}`:''}</div>${outSum>0?`<div style="margin-top:2px">${allocList()}</div>`:''}`:(billingLineMeta(b)?`<div style="font-size:12px;color:var(--muted);margin-top:2px">${billingLineMeta(b)}</div>`:'')}
+            ${hasCombine?(b.wrapAlloc&&ms>0
+              ?`<div style="font-size:12px;color:#1d4ed8;margin-top:2px">內帳：對外包裝單 ${money(amt)}｜內含分攤 ${money(ms)}${amt-ms!==0?`（對外${amt-ms>0?'多開':'少開'} ${money(Math.abs(amt-ms))}）`:'（剛好等額）'}</div>`
+              :`<div style="font-size:12px;color:#1d4ed8;margin-top:2px">內帳：計算式 ${money(raw)}${outSum>0?`−分攤出 ${money(outSum)}`:''}${ms>0?`＋分攤入 ${money(ms)}`:''}${(b.printAmount!=null&&b.printAmount!=='')?`　→ 對外開單 ${money(amt)}${(raw-outSum+ms)!==amt?`（差 ${money(amt-(raw-outSum+ms))}）`:''}`:''}</div>`)
+              +`${outSum>0?`<div style="margin-top:2px">${allocList()}</div>`:''}`:(billingLineMeta(b)?`<div style="font-size:12px;color:var(--muted);margin-top:2px">${billingLineMeta(b)}</div>`:'')}
             ${b.note?`<div style="font-size:13px;color:var(--text);margin-top:4px;font-weight:500">${esc(b.note)}</div>`:''}
             ${b.remark?`<div style="font-size:12px;color:var(--muted);margin-top:2px">${escBr(b.remark)}</div>`:''}
             ${mergePicker}
@@ -5345,6 +5361,7 @@ function viewBillingAdd(){
           <div style="display:flex;gap:4px;flex-wrap:wrap;flex-shrink:0">
             <button class="act ${b.settled?'':'muted'}" data-togglesettle="${b.id}" style="${b.settled?'color:var(--accent)':''}">${b.settled?'✓ 已收款':'未收款'}</button>
             <button class="act" data-mergestart="${b.id}" title="金額分攤到同案場一或多張追加單，本單內帳保留">分攤→</button>
+            ${ms>0?`<button class="act" data-wraptoggle="${b.id}" title="加總：分攤入直接加進對外金額。內含：本單是對外包裝單，分攤入視為內容物不加總，對外＝本單計算式" style="${b.wrapAlloc?'color:#1d4ed8;border:1px solid #1d4ed8;border-radius:6px':''}">${b.wrapAlloc?'內含模式':'分攤入：加總'}</button>`:''}
             <button class="act" data-printamt="${b.id}" title="對外開單金額（議價/含併入時蓋過計算式）">${(b.printAmount!=null&&b.printAmount!=='')?'改對外金額':'設對外金額'}</button>
             <button class="act" data-copy-add="${b.id}">複製</button>
             <button class="act" data-billedit-add="${b.id}">改</button>
