@@ -127,7 +127,7 @@ function blank(){ return {projects:[],expenses:[],incomes:[],companies:[],accoun
   {id:'c-py',name:'品佑工程有限公司',taxId:'',addr:'',tel:'',bank:''},
   {id:'c-dz',name:'東澤工程行',taxId:'',addr:'',tel:'',bank:''},
   {id:'c-gx',name:'廣昕工程行',taxId:'',addr:'',tel:'',bank:''}
-],quotes:[],invoices:[],purchases:[],deletedIds:[]}; }
+],quotes:[],invoices:[],purchases:[],deletedIds:[],resurrected:{ids:[],at:0}}; }
 function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
 function money(n){ n=Math.round(Number(n)||0); return (n<0?'-':'')+'$'+Math.abs(n).toLocaleString('en-US'); }
 function pct(n){ return (Number(n)||0*1).toLocaleString('en-US',{style:'percent',maximumFractionDigits:1}); }
@@ -136,12 +136,50 @@ function escBr(s){ return esc(s).replace(/\n/g,'<br>'); }
 function today(){ return new Date().toISOString().slice(0,10); }
 function num(v){ const n=parseFloat(v); return isNaN(n)?0:n; }
 
-function packData(){ return {projects:state.projects,expenses:state.expenses,incomes:state.incomes,companies:state.companies,accounts:state.accounts,items:state.items||[],quotes:state.quotes||[],invoices:state.invoices||[],purchases:state.purchases||[],myCompanies:state.myCompanies||[],deletedIds:state.deletedIds||[],savedAt:Date.now()}; }
+function packData(){ return {projects:state.projects,expenses:state.expenses,incomes:state.incomes,companies:state.companies,accounts:state.accounts,items:state.items||[],quotes:state.quotes||[],invoices:state.invoices||[],purchases:state.purchases||[],myCompanies:state.myCompanies||[],deletedIds:state.deletedIds||[],resurrected:state.resurrected||{ids:[],at:0},savedAt:Date.now()}; }
 function load(){ try{ const r=localStorage.getItem(LS); if(r){ state=Object.assign(blank(),JSON.parse(r)); } }catch(e){} localDirty=!!localStorage.getItem(LS_DIRTY); _prevIds=collectIds(); }
+// 每日本機快照：每天第一次開啟/儲存時留一份當下資料，保留 7 天（雲端是單一檔案沒歷史，這是誤刪保險）
+function keepDailySnapshot(){
+  try{
+    const day=new Date().toISOString().slice(0,10);
+    const key='pinyou_snap_'+day;
+    if(!localStorage.getItem(key)) localStorage.setItem(key, JSON.stringify(packData()));
+    const drop=[];
+    for(let i=0;i<localStorage.length;i++){ const k=localStorage.key(i); if(k&&k.indexOf('pinyou_snap_')===0){ const d=k.slice(12); if((Date.now()-new Date(d+'T00:00:00').getTime())>7*86400000) drop.push(k); } }
+    drop.forEach(k=>localStorage.removeItem(k));
+  }catch(e){}
+}
+function listDailySnapshots(){
+  const out=[];
+  try{ for(let i=0;i<localStorage.length;i++){ const k=localStorage.key(i); if(k&&k.indexOf('pinyou_snap_')===0) out.push(k.slice(12)); } }catch(e){}
+  return out.sort().reverse();
+}
+function rescueFromDailySnapshot(day){
+  let raw=null; try{ raw=localStorage.getItem('pinyou_snap_'+day); }catch(e){}
+  if(!raw){ alert('找不到 '+day+' 的快照。'); return; }
+  let d=null; try{ d=JSON.parse(raw); }catch(e){ alert('快照損壞，無法讀取。'); return; }
+  let added=0; const ids=[]; const detail=[];
+  MERGE.forEach(k=>{
+    const have=new Set((state[k]||[]).map(r=>r&&r.id));
+    let n=0;
+    (Array.isArray(d[k])?d[k]:[]).forEach(r=>{ if(r&&r.id!=null&&!have.has(r.id)){ (state[k]=state[k]||[]).push(r); ids.push(r.id); added++; n++; } });
+    if(n) detail.push(k+' '+n+'筆');
+  });
+  if(!added){ alert('比對完成：'+day+' 的快照裡沒有「現在缺少」的紀錄。'); return; }
+  // 標記救回：從刪除記號移除，7 天內各裝置同步時會一併洗掉墓碑，不會被同步再刪一次
+  const prev=(state.resurrected&&state.resurrected.ids)||[];
+  state.resurrected={ids:[...new Set([...prev,...ids])],at:Date.now()};
+  const rs=new Set(state.resurrected.ids);
+  state.deletedIds=(state.deletedIds||[]).filter(x=>!rs.has(x));
+  _prevIds=collectIds();
+  save();
+  alert('已救回 '+added+' 筆（'+detail.join('、')+'），其他裝置同步後也會恢復。');
+}
 function save(){
   recordDeletions();
   localDirty=true;
   try{ localStorage.setItem(LS_DIRTY,'1'); localStorage.setItem(LS,JSON.stringify(packData())); }catch(e){}
+  keepDailySnapshot();
   render();
   if(cloudUrl){ setStatus('儲存中…'); if(saveTimer) clearTimeout(saveTimer); saveTimer=setTimeout(pushCloud,400); }
 }
@@ -149,7 +187,9 @@ function save(){
 function setStatus(s){ cloudStatus=s; const el=document.getElementById('cloud-status'); if(el) el.textContent=(cloudUrl?'☁ ':'')+s; }
 function safeRender(){ const a=document.activeElement; if(a&&/^(INPUT|SELECT|TEXTAREA)$/.test(a.tagName)) return; render(); }
 function collectIds(){ const s=new Set(); MERGE.forEach(k=>(state[k]||[]).forEach(r=>{ if(r&&r.id!=null) s.add(r.id); })); return s; }
-function recordDeletions(){ const cur=collectIds(); if(_prevIds){ const del=new Set(state.deletedIds||[]); _prevIds.forEach(id=>{ if(!cur.has(id)) del.add(id); }); state.deletedIds=[...del]; } _prevIds=cur; }
+function recordDeletions(){ const cur=collectIds(); if(_prevIds){ const del=new Set(state.deletedIds||[]); const newlyDel=new Set(); _prevIds.forEach(id=>{ if(!cur.has(id)){ del.add(id); newlyDel.add(id); } }); state.deletedIds=[...del];
+  if(newlyDel.size && state.resurrected && (state.resurrected.ids||[]).length) state.resurrected.ids=state.resurrected.ids.filter(id=>!newlyDel.has(id)); // 救回後又真的刪掉的，不再復活
+} _prevIds=cur; }
 function unionById(base,add,del){ const map=new Map(); (base||[]).forEach(r=>{ if(r&&r.id!=null&&!del.has(r.id)) map.set(r.id,r); }); (add||[]).forEach(r=>{ if(r&&r.id!=null&&!del.has(r.id)&&!map.has(r.id)) map.set(r.id,r); }); return [...map.values()]; }
 function mergeCloudDoc(cd){
   const localTs=Number((JSON.parse(localStorage.getItem(LS)||'{}')||{}).savedAt)||0;
@@ -157,18 +197,26 @@ function mergeCloudDoc(cd){
   const keep={}; MERGE.forEach(k=>keep[k]=(state[k]||[]).slice());
   const keepDel=(state.deletedIds||[]).slice();
   const cloudIds=new Set(); MERGE.forEach(k=>(Array.isArray(cd[k])?cd[k]:[]).forEach(r=>{ if(r&&r.id!=null) cloudIds.add(r.id); }));
+  // 還原標記：取兩邊較新的「刻意救回」清單（7天內有效），洗墓碑要在 union 之前，救回的紀錄才不會被舊墓碑再殺一次
+  const keepRes=(state.resurrected&&state.resurrected.at)?state.resurrected:{ids:[],at:0};
+  const resCloud=(cd.resurrected&&Array.isArray(cd.resurrected.ids))?{ids:cd.resurrected.ids,at:Number(cd.resurrected.at)||0}:{ids:[],at:0};
+  const resEff=(resCloud.at>=keepRes.at)?resCloud:keepRes;
+  const resActive=!!(resEff.at && (Date.now()-resEff.at)<7*86400000 && (resEff.ids||[]).length);
+  const rSet=resActive?new Set(resEff.ids):null;
+  const purgeDel=arr=>rSet?arr.filter(id=>!rSet.has(id)):arr;
   if(cloudTs>=localTs){
     MERGE.forEach(k=>{ state[k]=Array.isArray(cd[k])?cd[k]:[]; });
-    state.deletedIds=[...new Set([...(cd.deletedIds||[]),...keepDel])];
+    state.deletedIds=purgeDel([...new Set([...(cd.deletedIds||[]),...keepDel])]);
     (cd.accounts||[]).forEach(a=>{ if(!state.accounts.includes(a)) state.accounts.unshift(a); });
     const del=new Set(state.deletedIds);
     MERGE.forEach(k=>{ state[k]=unionById(state[k],keep[k],del); });
   } else {
-    state.deletedIds=[...new Set([...(state.deletedIds||[]),...(cd.deletedIds||[])])];
+    state.deletedIds=purgeDel([...new Set([...(state.deletedIds||[]),...(cd.deletedIds||[])])]);
     const del=new Set(state.deletedIds);
     MERGE.forEach(k=>{ state[k]=unionById(state[k],cd[k]||[],del); });
     (cd.accounts||[]).forEach(a=>{ if(!state.accounts.includes(a)) state.accounts.push(a); });
   }
+  state.resurrected=resEff;
   const del=new Set(state.deletedIds||[]);
   MERGE.forEach(k=>{ state[k]=(state[k]||[]).filter(r=>!(r&&del.has(r.id))); });
   // 自癒：本機有、但雲端沒有（且未被刪除）的紀錄 → 標記為待上傳，稍後回推雲端，避免本機獨有資料被留在單機
@@ -653,6 +701,11 @@ function viewSet(){
     <p class="sub">已內建雲端，多裝置自動同步（不用設定）。目前狀態：<b>${esc(cloudStatus||(cloudUrl?'—':'本機模式'))}</b></p>
     ${cloudUrl?'<button class="act" id="cloud-sync">立即同步</button> <button class="act" id="cloud-force">強制上傳（合併）</button>':''}
     <p class="sub" style="margin-top:6px">若某台裝置的紀錄沒出現在其他裝置，請在「有那筆資料」的裝置按「強制上傳（合併）」，它會先讀雲端再把本機獨有的紀錄併回雲端，不會蓋掉別台的資料。</p>
+    <div style="margin-top:12px;padding-top:10px;border-top:1px dashed var(--line)">
+      <div style="font-weight:700;font-size:13px;margin-bottom:4px">🚑 本機每日快照（誤刪救援）</div>
+      <p class="sub" style="margin:0 0 8px">這台裝置每天第一次開啟時自動留一份資料快照，保留 7 天。誤刪資料時選一天按「合併救回」：只補回「快照有、現在沒有」的紀錄，不覆蓋現有資料，救回後同步到各裝置也不會被再刪。</p>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">${listDailySnapshots().map(d=>`<button class="act" data-snaprestore="${d}">${d} 合併救回</button>`).join('')||'<span class="sub" style="margin:0">尚無快照（每天第一次開啟自動留存）。</span>'}</div>
+    </div>
   </div>
   <div class="card">
     <h2>公司資料（開單抬頭）</h2>
@@ -796,6 +849,11 @@ function bind(){
 
   // 設定
   on('cloud-sync','onclick',()=>{ if(cloudUrl){ setStatus('同步中…'); loadCloud(); } });
+  document.querySelectorAll('[data-snaprestore]').forEach(btn=>btn.onclick=()=>{
+    const day=btn.dataset.snaprestore;
+    if(!confirm('用 '+day+' 的本機快照做「合併救回」？\n只會補回「快照有、現在沒有」的紀錄，不覆蓋現有資料。')) return;
+    rescueFromDailySnapshot(day);
+  });
   on('cloud-force','onclick',()=>{ if(cloudUrl){ localDirty=true; try{ localStorage.setItem(LS_DIRTY,'1'); }catch(e){} setStatus('強制上傳中…'); pushCloud(); } });
   // 公司資料
   on('myco-save','onclick',()=>{ state.myCompanies.forEach((c,i)=>{ const g=id=>document.getElementById(id+i); if(g('mc-name')) c.name=g('mc-name').value.trim(); if(g('mc-tax')) c.taxId=g('mc-tax').value.trim(); if(g('mc-addr')) c.addr=g('mc-addr').value.trim(); if(g('mc-tel')) c.tel=g('mc-tel').value.trim(); if(g('mc-bankname')) c.bankName=g('mc-bankname').value.trim(); if(g('mc-bankbranch')) c.bankBranch=g('mc-bankbranch').value.trim(); if(g('mc-bankacctname')) c.bankAcctName=g('mc-bankacctname').value.trim(); if(g('mc-bankacctno')) c.bankAcctNo=g('mc-bankacctno').value.trim(); }); save(); alert('公司資料已儲存'); });
@@ -884,7 +942,7 @@ function prAddExpense(f){
   state.expenses.push({id:f.eid, date:c.date||'', site:f.site, item:String(c.item||'PAYROLL成本'), amount:Number(c.amount)||0, account:f.account, method:'', note:'', payrollId:c.id});
 }
 
-load(); render();
+load(); keepDailySnapshot(); render();
 setStatus(cloudUrl?'連線中…':'本機模式');
 if(cloudUrl) loadCloud();
 setTimeout(()=>{ try{ checkPayrollCosts(false); }catch(e){} }, 3000); // 開頁自動檢查 PAYROLL 有沒有新成本（背景、不打擾）
