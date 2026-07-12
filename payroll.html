@@ -1531,42 +1531,53 @@ function viewDash(){
   const taxPctOf=s=>{ const p=isCoopSite(s)?s.coopTaxPct:s.siteTaxPct; return (p!==undefined&&p!=='')?Number(p):0; };
   const partProfit=(billed,cost,taxPct)=>billed-cost-(billed*taxPct/100);
   const buildSiteProfit=s=>{
-    // 依「母 / 子」把已收款請款分攤到母自己(sub='')與各子案場
+    // 邏輯：子案場做的代工工程款（已收款）對母案場是「成本」，不是收入。
+    // 母：已收款＝只算開給業主的請款(sub='')；成本＝母自身＋Σ子案場已收款工程款
+    // 子：工程款(對母請款)−自身成本(出工工資＋手動)＝代工毛利
     const billMap={};
     state.billings.filter(b=>b.settled).forEach(b=>{ const sp=splitSiteValue(b.site); if(sp.parent!==s.name) return; const k=sp.sub||''; billMap[k]=(billMap[k]||0)+billingAmount(b); });
     const childRecs=childSitesOf(s);
     // 子案場權威清單＝母的 subSites 標籤 ∪ 有獨立紀錄的子案場名
     const subNames=[...new Set([...subSitesOf(s), ...childRecs.map(c=>c.name)])];
-    const ownBilled=billMap['']||0;
-    const parts=[ {name:'（母案場本身）', billed:ownBilled, cost:costOf(s), profit:partProfit(ownBilled, costOf(s), taxPctOf(s))} ];
+    const parts=[];
     subNames.forEach(sub=>{
       const rec=childSiteFor(s,sub)||childRecs.find(c=>c.name===sub)||null;
-      // 子案場已收款＝「母 / 子」的請款 ＋ 以子案場本名開的請款（相容舊資料）
+      // 子案場工程款＝「母 / 子」的已收款請款 ＋ 以子案場本名開的請款（相容舊資料）
       let billed=billMap[sub]||0;
       if(rec) billed+=state.billings.filter(b=>b.settled).reduce((x,b)=>{ const sp=splitSiteValue(b.site); return x+((sp.parent===rec.name&&!sp.sub)?billingAmount(b):0); },0);
       const cost=rec?costOf(rec):0;
-      const taxPct=rec?taxPctOf(rec):taxPctOf(s);
+      const taxPct=rec?taxPctOf(rec):0;
       parts.push({name:sub, billed, cost, profit:partProfit(billed,cost,taxPct)});
     });
     // 只出現在「母 / 子」請款、但既非 subSites 標籤也無獨立紀錄的（避免漏算）
-    Object.keys(billMap).forEach(sub=>{ if(sub && !subNames.includes(sub)) parts.push({name:sub, billed:billMap[sub], cost:0, profit:partProfit(billMap[sub],0,taxPctOf(s))}); });
-    const total=parts.reduce((a,p)=>({billed:a.billed+p.billed,cost:a.cost+p.cost,profit:a.profit+p.profit}),{billed:0,cost:0,profit:0});
-    return {id:s.id, name:s.name, coop:isCoopSite(s), billed:total.billed, cost:total.cost, profit:total.profit, parts:parts.length>1?parts:[]};
+    Object.keys(billMap).forEach(sub=>{ if(sub && !subNames.includes(sub)) parts.push({name:sub, billed:billMap[sub], cost:0, profit:billMap[sub]}); });
+    const ownBilled=billMap['']||0;
+    const ownCost=costOf(s);
+    const childWorkSum=parts.reduce((x,p)=>x+p.billed,0); // 子案場已收款工程款 → 母的成本
+    const cost=ownCost+childWorkSum;
+    const profit=partProfit(ownBilled, cost, taxPctOf(s));
+    return {id:s.id, name:s.name, coop:isCoopSite(s), billed:ownBilled, cost, ownCost, profit, parts};
   };
   const profitRowsHTML=list=>list.map(p=>{
     const badge=p.coop?'<span class="tag" style="background:#fde9d4;color:#9a5b1a">合作案</span>':'';
     const unpaid=p.billed<=0?'<span class="tag" style="background:var(--bg);color:var(--muted)">未收款</span>':'';
-    const expandable=p.parts&&p.parts.length>1;
+    const expandable=p.parts&&p.parts.length>0;
     const open=expandable&&dashSiteOpen[p.id];
     const toggle=expandable?`<button class="act" data-sitetoggle="${p.id}" style="border:none;background:none;cursor:pointer;padding:0 6px 0 0;color:var(--accent)">${open?'▾':'▸'}</button>`:'';
-    let html=`<tr><td>${toggle}${esc(p.name||'（未命名）')}${expandable?`<span style="color:var(--muted);font-size:11px"> ＋${p.parts.length-1}子案場</span>`:''}${badge}${unpaid}</td>
+    let html=`<tr><td>${toggle}${esc(p.name||'（未命名）')}${expandable?`<span style="color:var(--muted);font-size:11px"> ＋${p.parts.length}子案場</span>`:''}${badge}${unpaid}</td>
       <td class="num">${money(p.billed)}</td>
       <td class="num" style="color:var(--muted)">${money(p.cost)}</td>
       <td class="num" style="font-weight:600;color:${p.profit>=0?'var(--accent)':'var(--danger)'}">${money(p.profit)}</td></tr>`;
-    if(open){ html+=p.parts.map(pt=>`<tr style="background:var(--bg)"><td style="padding-left:28px;color:var(--muted)">↳ ${esc(pt.name)}${pt.billed<=0?' <span style="font-size:11px">未收款</span>':''}</td>
-      <td class="num" style="color:var(--muted)">${money(pt.billed)}</td>
-      <td class="num" style="color:var(--muted)">${money(pt.cost)}</td>
-      <td class="num" style="color:${pt.profit>=0?'var(--accent)':'var(--danger)'}">${money(pt.profit)}</td></tr>`).join(''); }
+    if(open){
+      html+=`<tr style="background:var(--bg)"><td style="padding-left:28px;color:var(--muted)">↳ 母自身成本（工資＋手動＋期初）</td>
+        <td class="num" style="color:var(--muted)">—</td>
+        <td class="num" style="color:var(--muted)">${money(p.ownCost||0)}</td>
+        <td class="num" style="color:var(--muted)">—</td></tr>`;
+      html+=p.parts.map(pt=>`<tr style="background:var(--bg)"><td style="padding-left:28px;color:var(--muted)">↳ ${esc(pt.name)}${pt.billed<=0?' <span style="font-size:11px">未請款</span>':''}<span style="font-size:11px;color:var(--muted)">（代工）</span></td>
+        <td class="num" style="color:var(--muted)">${money(pt.billed)}</td>
+        <td class="num" style="color:var(--muted)">${money(pt.cost)}</td>
+        <td class="num" style="color:${pt.profit>=0?'var(--accent)':'var(--danger)'}">${money(pt.profit)}</td></tr>`).join('');
+    }
     return html;
   }).join('');
   const activeProfits=state.sites.filter(s=>s.active!==false && !s.parentSiteId).map(buildSiteProfit).sort((a,b)=>b.profit-a.profit);
@@ -1610,7 +1621,7 @@ function viewDash(){
 
   ${(dealRows||pausedRows)?`<div class="card">
     <div style="font-size:14px;font-weight:600;margin-bottom:2px">各案場毛利</div>
-    <p class="sub" style="margin:0 0 6px">列出所有母案場（子案場數字併入母案場）。毛利＝已收款 − 成本 − 稅，為負代表成本已投入但還沒收款。一般案場成本含出工工資＋手動成本＋期初；合作案成本只含手動成本明細。暫停的案場收在下方可展開區。</p>
+    <p class="sub" style="margin:0 0 6px">母案場：已收款＝開給業主的請款；成本＝母自身（工資＋手動＋期初，合作案只計手動）＋<b>子案場已收款工程款</b>（子案場做的代工，對母案場是成本）。展開 ▸ 看各子案場：工程款 − 自身成本 ＝ 代工毛利。母毛利＋子毛利＝整體實際利潤，不重複不漏算。毛利為負＝成本已投入但業主款還沒進來。</p>
     <div class="scroll"><table class="cardtable">
       <thead><tr><th>案場</th><th class="num">已收款</th><th class="num">成本</th><th class="num">毛利</th></tr></thead>
       <tbody>${dealRows||'<tr><td colspan="4" style="color:var(--muted)">目前沒有啟用中的案場</td></tr>'}</tbody></table></div>
