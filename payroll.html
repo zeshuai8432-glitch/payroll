@@ -1521,21 +1521,37 @@ function viewDash(){
 
   const card=(goto,label,val,sub,accent)=>`<div class="metric" data-goto="${goto}" style="cursor:pointer${accent?';background:var(--accent);color:#fff':''}"><div class="l"${accent?' style="color:#fff;opacity:.85"':''}>${label}</div><div class="v"${accent?'':''} style="font-size:20px">${val}</div>${sub?`<div class="l"${accent?' style="color:#fff;opacity:.8"':''} style="margin-top:2px;font-weight:400">${sub}</div>`:''}</div>`;
 
-  // 各案場毛利：列出所有母案場（含合作案）；母案場合計＝母自己＋各子案場，可展開看每個子案場毛利
-  const taxPctOf=s=>(s&&s.siteTaxPct!==undefined&&s.siteTaxPct!=='')?Number(s.siteTaxPct):0;
+  // 各案場毛利：列出所有母案場（含合作案）；母案場合計＝母自己＋各子案場，只要有子案場就能展開
+  // 成本用共用的 computeRecords 一次算好，避免每個案場重覆掃 attendance
+  const _dashComp=computeRecords(state.attendance);
+  const _wageBySite={}; state.attendance.forEach(r=>{ const c=_dashComp[r.id]; if(!c) return; _wageBySite[r.siteId]=(_wageBySite[r.siteId]||0)+(Number(c.total)||0); });
+  const _manualBySite={}; (state.costs||[]).forEach(co=>{ _manualBySite[co.siteId]=(_manualBySite[co.siteId]||0)+(Number(co.amount)||0); });
+  const isCoopSite=s=>!!(s&&(s.coop||s.type==='合作案'));
+  const costOf=s=>{ if(isCoopSite(s)) return _manualBySite[s.id]||0; const opening=(s.type==='舊制')?0:(Number(s.opening)||0); return Math.round((_wageBySite[s.id]||0)+(_manualBySite[s.id]||0)+opening); };
+  const taxPctOf=s=>{ const p=isCoopSite(s)?s.coopTaxPct:s.siteTaxPct; return (p!==undefined&&p!=='')?Number(p):0; };
+  const partProfit=(billed,cost,taxPct)=>billed-cost-(billed*taxPct/100);
   const buildSiteProfit=s=>{
-    if(s.coop||s.type==='合作案'){ const c=coopSiteCalc(s); return {id:s.id, name:s.name, coop:true, billed:c.totalBill, cost:c.totalCost, profit:c.profit, parts:[]}; }
-    // 依「母 / 子」把已收款請款分攤到母自己與各子案場
+    // 依「母 / 子」把已收款請款分攤到母自己(sub='')與各子案場
     const billMap={};
     state.billings.filter(b=>b.settled).forEach(b=>{ const sp=splitSiteValue(b.site); if(sp.parent!==s.name) return; const k=sp.sub||''; billMap[k]=(billMap[k]||0)+billingAmount(b); });
-    const children=childSitesOf(s).filter(c=>c.active!==false);
-    const mk=(name,billed,site)=>{ const cost=site?siteCostForDeal(site):0; const taxPct=site?taxPctOf(site):taxPctOf(s); return {name, billed, cost, profit:billed-cost-(billed*taxPct/100)}; };
-    const parts=[ mk('（母案場本身）', billMap['']||0, s) ];
-    children.forEach(c=>parts.push(mk(c.name, billMap[c.name]||0, c)));
-    // 只出現在請款「母 / 子」但沒有獨立子案場紀錄的（無出工/成本，成本以 0 計）
-    Object.keys(billMap).forEach(sub=>{ if(sub && !children.some(c=>c.name===sub)) parts.push(mk(sub, billMap[sub], null)); });
+    const childRecs=childSitesOf(s);
+    // 子案場權威清單＝母的 subSites 標籤 ∪ 有獨立紀錄的子案場名
+    const subNames=[...new Set([...subSitesOf(s), ...childRecs.map(c=>c.name)])];
+    const ownBilled=billMap['']||0;
+    const parts=[ {name:'（母案場本身）', billed:ownBilled, cost:costOf(s), profit:partProfit(ownBilled, costOf(s), taxPctOf(s))} ];
+    subNames.forEach(sub=>{
+      const rec=childSiteFor(s,sub)||childRecs.find(c=>c.name===sub)||null;
+      // 子案場已收款＝「母 / 子」的請款 ＋ 以子案場本名開的請款（相容舊資料）
+      let billed=billMap[sub]||0;
+      if(rec) billed+=state.billings.filter(b=>b.settled).reduce((x,b)=>{ const sp=splitSiteValue(b.site); return x+((sp.parent===rec.name&&!sp.sub)?billingAmount(b):0); },0);
+      const cost=rec?costOf(rec):0;
+      const taxPct=rec?taxPctOf(rec):taxPctOf(s);
+      parts.push({name:sub, billed, cost, profit:partProfit(billed,cost,taxPct)});
+    });
+    // 只出現在「母 / 子」請款、但既非 subSites 標籤也無獨立紀錄的（避免漏算）
+    Object.keys(billMap).forEach(sub=>{ if(sub && !subNames.includes(sub)) parts.push({name:sub, billed:billMap[sub], cost:0, profit:partProfit(billMap[sub],0,taxPctOf(s))}); });
     const total=parts.reduce((a,p)=>({billed:a.billed+p.billed,cost:a.cost+p.cost,profit:a.profit+p.profit}),{billed:0,cost:0,profit:0});
-    return {id:s.id, name:s.name, coop:false, billed:total.billed, cost:total.cost, profit:total.profit, parts:parts.length>1?parts:[]};
+    return {id:s.id, name:s.name, coop:isCoopSite(s), billed:total.billed, cost:total.cost, profit:total.profit, parts:parts.length>1?parts:[]};
   };
   const profitRowsHTML=list=>list.map(p=>{
     const badge=p.coop?'<span class="tag" style="background:#fde9d4;color:#9a5b1a">合作案</span>':'';
