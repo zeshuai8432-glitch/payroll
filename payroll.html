@@ -1520,11 +1520,18 @@ function viewDash(){
 
   const card=(goto,label,val,sub,accent)=>`<div class="metric" data-goto="${goto}" style="cursor:pointer${accent?';background:var(--accent);color:#fff':''}"><div class="l"${accent?' style="color:#fff;opacity:.85"':''}>${label}</div><div class="v"${accent?'':''} style="font-size:20px">${val}</div>${sub?`<div class="l"${accent?' style="color:#fff;opacity:.8"':''} style="margin-top:2px;font-weight:400">${sub}</div>`:''}</div>`;
 
-  // 各案場毛利（有分潤紀錄者）
-  const dealRows=state.deals.slice().map(d=>({d,c:dealCalc(d)})).sort((a,b)=>(b.c.profit||0)-(a.c.profit||0))
-    .map(({d,c})=>`<tr><td>${esc(d.name||'（未命名）')}${d.type==='合作案'?'<span class="tag" style="background:#fde9d4;color:#9a5b1a">合作案</span>':''}</td>
-      <td class="num">${money(Number(d.amount)||0)}</td>
-      <td class="num" style="font-weight:600;color:${(c.profit||0)>=0?'var(--accent)':'var(--danger)'}">${money(c.profit||0)}</td></tr>`).join('');
+  // 各案場毛利：列出所有啟用中母案場（含合作案），就算 0 請款也顯示（毛利為負＝成本已投入尚未收款）
+  const siteProfits=state.sites.filter(s=>s.active!==false && !s.parentSiteId).map(s=>{
+    if(s.coop||s.type==='合作案'){ const c=coopSiteCalc(s); return {name:s.name, coop:true, billed:c.totalBill, cost:c.totalCost, profit:c.profit}; }
+    const billed=settledBillingsForSiteName(s.name).reduce((x,b)=>x+billingAmount(b),0);
+    const cost=siteCostForDeal(s);
+    const taxPct=(s.siteTaxPct!==undefined&&s.siteTaxPct!=='')?Number(s.siteTaxPct):0;
+    return {name:s.name, coop:false, billed, cost, profit:billed-cost-(billed*taxPct/100)};
+  }).sort((a,b)=>b.profit-a.profit);
+  const dealRows=siteProfits.map(p=>`<tr><td>${esc(p.name||'（未命名）')}${p.coop?'<span class="tag" style="background:#fde9d4;color:#9a5b1a">合作案</span>':''}${p.billed<=0?'<span class="tag" style="background:var(--bg);color:var(--muted)">未收款</span>':''}</td>
+      <td class="num">${money(p.billed)}</td>
+      <td class="num" style="color:var(--muted)">${money(p.cost)}</td>
+      <td class="num" style="font-weight:600;color:${p.profit>=0?'var(--accent)':'var(--danger)'}">${money(p.profit)}</td></tr>`).join('');
 
   return `
   <div class="card">
@@ -1561,9 +1568,10 @@ function viewDash(){
   </div>
 
   ${dealRows?`<div class="card">
-    <div style="font-size:14px;font-weight:600;margin-bottom:6px">各案場毛利</div>
+    <div style="font-size:14px;font-weight:600;margin-bottom:2px">各案場毛利</div>
+    <p class="sub" style="margin:0 0 6px">列出所有啟用中母案場，含合作案；沒收款也顯示。毛利＝已收款請款 − 成本 − 稅，為負代表成本已投入但還沒收款。合作案成本只含手動成本明細。</p>
     <div class="scroll"><table class="cardtable">
-      <thead><tr><th>案場</th><th class="num">請款金額</th><th class="num">毛利</th></tr></thead>
+      <thead><tr><th>案場</th><th class="num">已收款</th><th class="num">成本</th><th class="num">毛利</th></tr></thead>
       <tbody>${dealRows}</tbody></table></div>
   </div>`:''}`;
 }
