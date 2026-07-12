@@ -512,10 +512,21 @@ let payslipShowWorkDetails=false;
 
 const round = n => Math.round(n);
 const money = n => '$' + round(n).toLocaleString();
-const billingAmount = b => {
+// 計算式金額（數量×單價 或 金額欄）＝這張單自己的帳面值
+const rawBillingAmount = b => {
   const qty=Number(b&&b.qty), up=Number(b&&b.unitPrice);
   if(b&&b.qty!==undefined&&b.unitPrice!==undefined&&!isNaN(qty)&&qty>0&&!isNaN(up)&&up>=0) return qty*up;
   return Number(b&&b.amount)||0;
+};
+// 併入這張單的其他追加單金額合計（內帳保留、對外灌進本單）
+const mergedIntoSum = b => b?(state.billings||[]).reduce((s,x)=>s+((x&&x.mergedInto===b.id)?rawBillingAmount(x):0),0):0;
+// 對外／記帳金額：已併入別張的單＝0（由目標單計，不重複）；
+// 有「對外開單金額」以它為準（議價/灌單用）；否則＝計算式＋併入合計
+const billingAmount = b => {
+  if(!b) return 0;
+  if(b.mergedInto) return 0;
+  if(b.printAmount!=null&&b.printAmount!=='') return Number(b.printAmount)||0;
+  return rawBillingAmount(b)+mergedIntoSum(b);
 };
 const billingLineMeta = b => {
   if(!b||b.qty===undefined||b.unitPrice===undefined) return '';
@@ -3300,6 +3311,46 @@ function bind(){
   // 追加單頁：改（inline 展開）
   document.querySelectorAll('[data-billedit-add]').forEach(b=>b.onclick=()=>{ billingAddEditId=b.dataset.billeditAdd; render(); });
   document.querySelectorAll('[data-bae-cancel]').forEach(b=>b.onclick=()=>{ billingAddEditId=null; render(); });
+  // 追加單「併入」：金額灌進同案場另一張，本單內帳保留不刪
+  document.querySelectorAll('[data-mergestart]').forEach(b=>b.onclick=()=>{ billMergeSrc=b.dataset.mergestart; render(); });
+  document.querySelectorAll('[data-mergecancel]').forEach(b=>b.onclick=()=>{ billMergeSrc=null; render(); });
+  document.querySelectorAll('[data-mergeinto]').forEach(b=>b.onclick=()=>{
+    const [srcId,tgtId]=b.dataset.mergeinto.split('::');
+    const src=state.billings.find(x=>x.id===srcId), tgt=state.billings.find(x=>x.id===tgtId);
+    if(!src||!tgt) return;
+    const suggested=Math.round(billingAmount(tgt)+rawBillingAmount(src));
+    const v=prompt(`「${String(src.note||'').slice(0,20)||src.date}」$${rawBillingAmount(src).toLocaleString()} 併入「${String(tgt.note||'').slice(0,20)||tgt.date}」\n\n目標單目前對外 ${money(billingAmount(tgt))} ＋ 本單 ${money(rawBillingAmount(src))} ＝ 建議 $${suggested.toLocaleString()}\n\n對外開單金額（可自行修改，例如議價後的數字）：`, suggested);
+    if(v==null){ return; }
+    const amt=Math.round(parseFloat(String(v).replace(/[,$\s]/g,'')));
+    if(isNaN(amt)||amt<0){ alert('金額不對，已取消。'); return; }
+    src.mergedInto=tgt.id;
+    if(src.settled) src.settled=false; // 收款以目標單為準
+    const autoSum=Math.round(rawBillingAmount(tgt)+mergedIntoSum(tgt));
+    if(amt===autoSum) delete tgt.printAmount; else tgt.printAmount=amt; // 剛好等於加總→自動計算；否則記對外金額
+    billMergeSrc=null;
+    saveData(); render();
+    alert(`已併入。目標單對外金額：${money(billingAmount(tgt))}\n本單保留為內帳備查（灰色），列印目標單時業主只會看到一筆總價。`);
+  });
+  document.querySelectorAll('[data-unmerge]').forEach(b=>b.onclick=()=>{
+    const src=state.billings.find(x=>x.id===b.dataset.unmerge); if(!src) return;
+    const tgt=state.billings.find(x=>x.id===src.mergedInto);
+    if(!confirm(`撤銷併入？本單恢復為獨立追加單 ${money(rawBillingAmount(src))}。${tgt&&tgt.printAmount!=null&&tgt.printAmount!==''?'\n\n注意：目標單設有「對外開單金額 '+money(tgt.printAmount)+'」，撤銷後不會自動調整，請自行檢查。':''}`)) return;
+    delete src.mergedInto;
+    saveData(); render();
+  });
+  document.querySelectorAll('[data-printamt]').forEach(b=>b.onclick=()=>{
+    const bill=state.billings.find(x=>x.id===b.dataset.printamt); if(!bill) return;
+    const raw=rawBillingAmount(bill), ms=mergedIntoSum(bill);
+    const cur=(bill.printAmount!=null&&bill.printAmount!=='')?bill.printAmount:'';
+    const v=prompt(`對外開單金額（列印與記帳都用這個數字）\n計算式 ${money(raw)}${ms>0?`＋併入 ${money(ms)}`:''} ＝ 自動 ${money(raw+ms)}\n\n輸入金額；留空＝取消對外金額、回到自動計算：`, cur!==''?cur:Math.round(raw+ms));
+    if(v==null) return;
+    const t=String(v).replace(/[,$\s]/g,'');
+    if(t===''){ delete bill.printAmount; saveData(); render(); return; }
+    const amt=Math.round(parseFloat(t));
+    if(isNaN(amt)||amt<0){ alert('金額不對，已取消。'); return; }
+    if(amt===Math.round(raw+ms)) delete bill.printAmount; else bill.printAmount=amt;
+    saveData(); render();
+  });
   document.querySelectorAll('[data-bae-ok]').forEach(b=>b.onclick=()=>{
     const bill=state.billings.find(x=>x.id===b.dataset.baeOk); if(!bill) return;
     const date=document.getElementById('bae-date').value;
@@ -3469,7 +3520,7 @@ function bind(){
   document.querySelectorAll('[data-site-printall]').forEach(b=>b.onclick=e=>{
     e.stopPropagation();
     const site=b.dataset.sitePrintall;
-    const ids=state.billings.filter(x=>(x.docType||'請款單')==='追加單'&&parentSiteName(x.site)===site).sort((a,c)=>(a.date||'').localeCompare(c.date||'')).map(x=>x.id);
+    const ids=state.billings.filter(x=>(x.docType||'請款單')==='追加單'&&!x.mergedInto&&parentSiteName(x.site)===site).sort((a,c)=>(a.date||'').localeCompare(c.date||'')).map(x=>x.id);
     printBillingDocs(ids);
   });
   document.querySelectorAll('[data-site-printsel]').forEach(b=>b.onclick=e=>{
@@ -4102,7 +4153,9 @@ function billingDocInner(id){
     <div class="sec">金額</div>
     <table><thead><tr><th>項目</th><th>單位</th><th class="num">數量</th><th class="num">單價</th><th class="num">小計</th></tr></thead>
       <tbody>
-        <tr><td>${esc(b.note||type)}</td><td>${esc(b.unit||'')}</td><td class="num">${b.qty!==undefined?b.qty:'—'}</td><td class="num">${b.unitPrice!==undefined?money(b.unitPrice):'—'}</td><td class="num">${money(amt)}</td></tr>
+        ${(b.printAmount!=null&&b.printAmount!=='')||mergedIntoSum(b)>0
+          ? `<tr><td>${esc(b.note||type)}</td><td>式</td><td class="num">1</td><td class="num">${money(amt)}</td><td class="num">${money(amt)}</td></tr>`
+          : `<tr><td>${esc(b.note||type)}</td><td>${esc(b.unit||'')}</td><td class="num">${b.qty!==undefined?b.qty:'—'}</td><td class="num">${b.unitPrice!==undefined?money(b.unitPrice):'—'}</td><td class="num">${money(amt)}</td></tr>`}
         <tr class="total-row"><td colspan="4">總金額</td><td class="num">${money(amt)}</td></tr>
         ${b.remark?`<tr><td colspan="5" style="padding-top:8px;color:#555;font-size:13px">備注：${escBr(b.remark)}</td></tr>`:''}
       </tbody></table>
@@ -4705,6 +4758,7 @@ function dealCalc(d){
   return {profit,bonus,fund,tax,isDeal:false};
 }
 let dealPosting=null, dealEditId=null, dealCarry=null, coopCarry=null, billEditId=null, dealAccPick=null, billingAddEditId=null; // 入帳/編輯/帶去/請款編輯/選帳戶中
+let billMergeSrc=null; // 追加單「併入→」選目標中
 let billingPhotos={}; // { [billingId]: [dataUrl, ...] }
 let billingPhotosDeleted={}; // { [billingId]: [已刪除的url, ...] } — 刪除記號，避免同步時被雲端補回來
 let billingSigs={}; // { [billingId]: dataUrl }
@@ -5180,23 +5234,60 @@ function viewBillingAdd(){
         </div>`;
       }
 
+      // 已併入其他單：內帳保留（灰色唯讀），金額由目標單對外呈現
+      if(b.mergedInto){
+        const tgt=state.billings.find(x=>x.id===b.mergedInto);
+        return `<div style="${sep}padding:${idx>0?'12px':'4px'} 0 10px;opacity:.65">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap">
+            <div style="flex:1;min-width:0">
+              <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap">
+                <span style="font-size:16px;font-weight:700;color:var(--muted);text-decoration:line-through">${money(rawBillingAmount(b))}</span>
+                <span class="tag" style="background:#eef6ff;color:#1d4ed8">已併入 → ${tgt?esc(String(tgt.note||tgt.date||'另一張追加單').slice(0,20)):'（目標單已刪除）'}</span>
+                <span style="font-size:12px;color:var(--muted)">${esc(b.date||'')}</span>
+                ${subSiteTag(b.site)}
+              </div>
+              ${b.note?`<div style="font-size:13px;color:var(--muted);margin-top:4px">${esc(b.note)}</div>`:''}
+              <div style="font-size:11px;color:var(--muted);margin-top:2px">內帳備查：金額已灌入目標單對外呈現，不重複計帳；收款狀態以目標單為準。</div>
+            </div>
+            <div style="display:flex;gap:4px;flex-wrap:wrap;flex-shrink:0">
+              <button class="act" data-unmerge="${b.id}" style="border:1px solid var(--info);border-radius:6px;padding:0 10px;color:var(--info)">撤銷併入</button>
+              <button class="act danger" data-delbill="${b.id}">刪</button>
+            </div>
+          </div>
+        </div>`;
+      }
+      const raw=rawBillingAmount(b), ms=mergedIntoSum(b), amt=billingAmount(b);
+      const hasCombine=(b.printAmount!=null&&b.printAmount!=='')||ms>0;
+      // 併入目標選擇中：列出同案場其他追加單
+      let mergePicker='';
+      if(billMergeSrc===b.id){
+        const cands=state.billings.filter(x=>(x.docType||'請款單')==='追加單'&&x.id!==b.id&&!x.mergedInto&&parentSiteName(x.site)===parentSiteName(b.site));
+        mergePicker=`<div style="margin-top:6px;padding:8px;background:var(--bg);border-radius:8px">
+          <span class="sub" style="margin:0">把這張（$${(raw).toLocaleString()}）灌進哪一張？</span>
+          ${cands.length?cands.map(x=>`<button class="act" data-mergeinto="${b.id}::${x.id}" style="border:1px solid var(--accent);border-radius:6px;padding:2px 10px;color:var(--accent);margin:2px">${esc(String(x.note||x.date||'').slice(0,24))} ${money(billingAmount(x))}</button>`).join(''):'<span class="sub" style="margin:0;color:var(--danger)">同案場沒有其他可併入的追加單</span>'}
+          <button class="act muted" data-mergecancel="1" style="cursor:pointer">取消</button>
+        </div>`;
+      }
       return `<div style="${sep}padding:${idx>0?'12px':'4px'} 0 10px">
         <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap">
           <div style="flex:1;min-width:0">
             <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap">
               <input type="checkbox" data-billcheck="${b.id}" style="width:18px;height:18px;flex-shrink:0;cursor:pointer;accent-color:var(--accent);margin-right:2px">
-              <span style="font-size:18px;font-weight:800;color:#9a5b1a">${money(billingAmount(b))}</span>
+              <span style="font-size:18px;font-weight:800;color:#9a5b1a">${money(amt)}</span>
               <span style="font-size:12px;color:var(--muted)">${esc(b.date||'')}</span>
               ${subSiteTag(b.site)}
               ${b.client?`<span style="font-size:12px;color:var(--muted)">${esc(b.client)}</span>`:''}
               ${billingSigs[b.id]?`<span style="font-size:11px;background:#dcfce7;color:#16a34a;border-radius:6px;padding:2px 8px;font-weight:700">${billingSigsLocked[b.id]?'🔒':'✓'} 已簽核</span>`:''}
             </div>
-            ${billingLineMeta(b)?`<div style="font-size:12px;color:var(--muted);margin-top:2px">${billingLineMeta(b)}</div>`:''}
+            ${hasCombine?`<div style="font-size:12px;color:#1d4ed8;margin-top:2px">內帳：計算式 ${money(raw)}${ms>0?`＋併入 ${money(ms)}`:''}${(b.printAmount!=null&&b.printAmount!=='')?`　→ 對外開單 ${money(amt)}${(raw+ms)!==amt?`（差 ${money(amt-raw-ms)}）`:''}`:''}</div>`:(billingLineMeta(b)?`<div style="font-size:12px;color:var(--muted);margin-top:2px">${billingLineMeta(b)}</div>`:'')}
             ${b.note?`<div style="font-size:13px;color:var(--text);margin-top:4px;font-weight:500">${esc(b.note)}</div>`:''}
             ${b.remark?`<div style="font-size:12px;color:var(--muted);margin-top:2px">${escBr(b.remark)}</div>`:''}
+            ${mergePicker}
           </div>
           <div style="display:flex;gap:4px;flex-wrap:wrap;flex-shrink:0">
             <button class="act ${b.settled?'':'muted'}" data-togglesettle="${b.id}" style="${b.settled?'color:var(--accent)':''}">${b.settled?'✓ 已收款':'未收款'}</button>
+            <button class="act" data-mergestart="${b.id}" title="金額灌進同案場另一張追加單，本單內帳保留">併入→</button>
+            <button class="act" data-printamt="${b.id}" title="對外開單金額（議價/含併入時蓋過計算式）">${(b.printAmount!=null&&b.printAmount!=='')?'改對外金額':'設對外金額'}</button>
             <button class="act" data-copy-add="${b.id}">複製</button>
             <button class="act" data-billedit-add="${b.id}">改</button>
             <button class="act" data-billprint="${b.id}">列印</button>
