@@ -4956,9 +4956,13 @@ function viewDeals(){
 // ---- 請款單 ----
 function viewBillingReq(){
   const list=state.billings.filter(b=>(b.docType||'請款單')==='請款單').sort((a,b)=>(b.date||'').localeCompare(a.date||''));
-  const total=list.reduce((s,b)=>s+billingAmount(b),0);
-  const totalSettled=list.filter(b=>b.settled).reduce((s,b)=>s+billingAmount(b),0);
+  // 對業主請款與子案場工程款分開計算：子工程款是母案場的成本，不能併進請款合計
+  const isChildBill=b=>!!splitSiteValue(b.site).sub;
+  const ownAll=list.filter(b=>!isChildBill(b));
+  const total=ownAll.reduce((s,b)=>s+billingAmount(b),0);
+  const totalSettled=ownAll.filter(b=>b.settled).reduce((s,b)=>s+billingAmount(b),0);
   const unsettled=total-totalSettled;
+  const childTotal=list.filter(isChildBill).reduce((s,b)=>s+billingAmount(b),0);
   const siteSelOpts=siteSelectOptions();
 
   // 依案場分組
@@ -4971,10 +4975,13 @@ function viewBillingReq(){
 
   const renderSiteCard=siteName=>{
     const siteList=groups[siteName];
-    const siteTot=siteList.reduce((s,b)=>s+billingAmount(b),0);
-    const siteSettled=siteList.filter(b=>b.settled).reduce((s,b)=>s+billingAmount(b),0);
+    const ownL=siteList.filter(b=>!isChildBill(b));
+    const childL=siteList.filter(isChildBill);
+    const siteTot=ownL.reduce((s,b)=>s+billingAmount(b),0);
+    const siteSettled=ownL.filter(b=>b.settled).reduce((s,b)=>s+billingAmount(b),0);
+    const childTot=childL.reduce((s,b)=>s+billingAmount(b),0);
     const open=!!formOpen['req-site-'+siteName];
-    const entries=open?siteList.map((b,idx)=>{
+    const entryFor=(b,idx)=>{
       const sep=idx>0?'border-top:1px solid var(--line);':'';
       return `<div style="${sep}padding:${idx>0?'12px':'4px'} 0 10px">
         <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap">
@@ -4997,12 +5004,16 @@ function viewBillingReq(){
           </div>
         </div>
       </div>`;
-    }).join(''):'';
+    };
+    const entries=open?`
+      ${ownL.length?`<div style="font-size:12px;font-weight:700;color:var(--muted);margin-top:8px">對業主請款</div>`+ownL.map(entryFor).join(''):''}
+      ${childL.length?`<div style="font-size:12px;font-weight:700;margin-top:12px;color:#9a5b1a">子案場工程款 <span class="tag" style="background:#fde9d4;color:#9a5b1a">對母案場是成本，不併入上方合計</span></div>`+childL.map(entryFor).join(''):''}
+    `:'';
     return `<div class="card" style="border-left:3px solid ${siteSettled>=siteTot?'var(--accent)':'var(--line2)'}">
       <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px;cursor:pointer" data-toggle-form="req-site-${siteName}">
         <div style="font-size:15px;font-weight:700;display:flex;align-items:center;gap:6px;flex-wrap:wrap">${esc(siteDisplayLabel(siteName))}${siteTypeTag(siteName)}</div>
         <div style="display:flex;align-items:center;gap:12px">
-          <div style="font-size:13px;color:var(--muted)">合計 <b style="color:var(--accent)">${money(siteTot)}</b>　案場未收款合計 <span style="color:var(--danger)">${money(siteTot-siteSettled)}</span></div>
+          <div style="font-size:13px;color:var(--muted)">對業主合計 <b style="color:var(--accent)">${money(siteTot)}</b>　未收款 <span style="color:var(--danger)">${money(siteTot-siteSettled)}</span>${childTot>0?`　<span style="color:#9a5b1a">子工程款 ${money(childTot)}</span>`:''}</div>
           <span style="font-size:12px;color:var(--muted)">${open?'▲':'▼'}</span>
         </div>
       </div>
@@ -5021,8 +5032,9 @@ function viewBillingReq(){
   return `
   <div class="metrics">
     <div class="metric"><div class="l">請款單數</div><div class="v">${list.length}</div></div>
-    <div class="metric"><div class="l">請款總額</div><div class="v" style="font-size:21px">${money(total)}</div></div>
-    <div class="metric"><div class="l">全部未收款合計</div><div class="v" style="font-size:21px">${money(unsettled)}</div></div>
+    <div class="metric"><div class="l">對業主請款總額</div><div class="v" style="font-size:21px">${money(total)}</div></div>
+    ${childTotal>0?`<div class="metric"><div class="l">子案場工程款（母案場成本）</div><div class="v" style="font-size:21px;color:#9a5b1a">${money(childTotal)}</div></div>`:''}
+    <div class="metric"><div class="l">對業主未收款合計</div><div class="v" style="font-size:21px">${money(unsettled)}</div></div>
   </div>
   <div class="card">
     ${foldBtn('bnr','新增請款單')}
@@ -5047,9 +5059,13 @@ function viewBillingReq(){
 // ---- 追加單 ----
 function viewBillingAdd(){
   const list=state.billings.filter(b=>(b.docType||'請款單')==='追加單').sort((a,b)=>(b.date||'').localeCompare(a.date||''));
-  const total=list.reduce((s,b)=>s+billingAmount(b),0);
-  const totalSettled=list.filter(b=>b.settled).reduce((s,b)=>s+billingAmount(b),0);
+  // 對業主追加與子案場工程款分開計算
+  const isChildBill=b=>!!splitSiteValue(b.site).sub;
+  const ownAll=list.filter(b=>!isChildBill(b));
+  const total=ownAll.reduce((s,b)=>s+billingAmount(b),0);
+  const totalSettled=ownAll.filter(b=>b.settled).reduce((s,b)=>s+billingAmount(b),0);
   const unsettled=total-totalSettled;
+  const childTotal=list.filter(isChildBill).reduce((s,b)=>s+billingAmount(b),0);
   const siteSelOpts=siteSelectOptions();
 
   // 依案場分組，預設收合
@@ -5062,11 +5078,14 @@ function viewBillingAdd(){
 
   const renderSiteCard=siteName=>{
     const siteList=groups[siteName];
-    const siteTot=siteList.reduce((s,b)=>s+billingAmount(b),0);
-    const siteSettled=siteList.filter(b=>b.settled).reduce((s,b)=>s+billingAmount(b),0);
+    const ownL=siteList.filter(b=>!isChildBill(b));
+    const childL=siteList.filter(isChildBill);
+    const siteTot=ownL.reduce((s,b)=>s+billingAmount(b),0);
+    const siteSettled=ownL.filter(b=>b.settled).reduce((s,b)=>s+billingAmount(b),0);
+    const childTot=childL.reduce((s,b)=>s+billingAmount(b),0);
     const open=!!formOpen['add-site-'+siteName];
 
-    const entries=open?siteList.map((b,idx)=>{
+    const entryFor=(b,idx)=>{
       const photos=billingPhotos[b.id]||[];
       const thumbs=photos.map((url,i)=>`<div style="position:relative;display:inline-block;vertical-align:top;margin:3px"><img src="${url}" class="photo-thumb" style="width:80px;height:60px;object-fit:cover;border-radius:8px;border:1px solid var(--line)"><button data-photodel="${b.id}" data-photoidx="${i}" style="position:absolute;top:-5px;right:-5px;width:20px;height:20px;border-radius:50%;border:none;background:var(--danger);color:#fff;font-size:11px;cursor:pointer;padding:0;line-height:20px;text-align:center">✕</button></div>`).join('');
       const sep=idx>0?'border-top:1px solid var(--line);':'';
@@ -5127,13 +5146,17 @@ function viewBillingAdd(){
           </label>
         </div>
       </div>`;
-    }).join(''):'';
+    };
+    const entries=open?`
+      ${ownL.length?`<div style="font-size:12px;font-weight:700;color:var(--muted);margin-top:8px">對業主追加</div>`+ownL.map(entryFor).join(''):''}
+      ${childL.length?`<div style="font-size:12px;font-weight:700;margin-top:12px;color:#9a5b1a">子案場工程款 <span class="tag" style="background:#fde9d4;color:#9a5b1a">對母案場是成本，不併入上方合計</span></div>`+childL.map(entryFor).join(''):''}
+    `:'';
 
     return `<div class="card" style="border-left:3px solid #d97706">
       <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
         <div style="display:flex;align-items:center;gap:10px;flex:1;min-width:0;cursor:pointer" data-toggle-form="add-site-${siteName}">
         <div style="font-size:15px;font-weight:700;display:flex;align-items:center;gap:6px;flex-wrap:wrap">${esc(siteDisplayLabel(siteName))}${siteTypeTag(siteName)}</div>
-          <div style="font-size:13px;color:var(--muted)">合計 <b style="color:#9a5b1a">${money(siteTot)}</b>　案場未收款合計 <span style="color:var(--danger)">${money(siteTot-siteSettled)}</span></div>
+          <div style="font-size:13px;color:var(--muted)">對業主合計 <b style="color:#9a5b1a">${money(siteTot)}</b>　未收款 <span style="color:var(--danger)">${money(siteTot-siteSettled)}</span>${childTot>0?`　<span style="color:#9a5b1a">子工程款 ${money(childTot)}</span>`:''}</div>
           <span style="font-size:12px;color:var(--muted)">${open?'▲':'▼'}</span>
         </div>
         <div style="display:flex;gap:6px;flex-shrink:0">
@@ -5157,8 +5180,9 @@ function viewBillingAdd(){
   return `
   <div class="metrics">
     <div class="metric"><div class="l">追加單數</div><div class="v">${list.length}</div></div>
-    <div class="metric"><div class="l">追加總額</div><div class="v" style="font-size:21px">${money(total)}</div></div>
-    <div class="metric"><div class="l">全部未收款合計</div><div class="v" style="font-size:21px">${money(unsettled)}</div></div>
+    <div class="metric"><div class="l">對業主追加總額</div><div class="v" style="font-size:21px">${money(total)}</div></div>
+    ${childTotal>0?`<div class="metric"><div class="l">子案場工程款（母案場成本）</div><div class="v" style="font-size:21px;color:#9a5b1a">${money(childTotal)}</div></div>`:''}
+    <div class="metric"><div class="l">對業主未收款合計</div><div class="v" style="font-size:21px">${money(unsettled)}</div></div>
   </div>
   <div class="card">
     ${foldBtn('bna','新增追加單')}
