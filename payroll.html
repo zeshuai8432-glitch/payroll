@@ -5246,6 +5246,44 @@ function viewBillingAdd(){
     const childTot=childL.reduce((s,b)=>s+billingAmount(b),0);
     const open=!!formOpen['add-site-'+siteName];
 
+    // 分攤標籤（→ 目標 $金額 ✕）與「已分攤內帳單」的灰色列（可縮排掛在目標單底下）
+    const allocTagsFor=(bb)=>(bb.allocOut||[]).map((a,i)=>{ const tgt=state.billings.find(x=>x.id===a.to);
+      return `<span style="display:inline-flex;align-items:center;gap:4px;background:#eef6ff;color:#1d4ed8;border-radius:6px;padding:2px 6px;margin:2px;font-size:12px">→ ${tgt?esc(String(tgt.note||tgt.date||'').slice(0,16)):'（目標已刪）'} ${money(a.amount)}<button data-allocdel="${bb.id}::${i}" style="border:none;background:none;color:var(--danger);cursor:pointer;font-size:12px;padding:0 2px" title="撤銷這筆分攤">✕</button></span>`; }).join('');
+    const allocRow=(bb,indent)=>`<div style="border-top:1px solid var(--line);padding:10px 0;opacity:.65;${indent?'margin-left:26px;border-left:3px solid #dbeafe;padding-left:12px;':''}">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap">
+        <div style="flex:1;min-width:0">
+          <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap">
+            ${indent?'<span style="color:#1d4ed8;font-weight:700;font-size:12px">↳ 內含</span>':''}
+            <span style="font-size:16px;font-weight:700;color:var(--muted);text-decoration:line-through">${money(rawBillingAmount(bb))}</span>
+            <span class="tag" style="background:#eef6ff;color:#1d4ed8">已分攤（${(bb.allocOut||[]).length} 筆）</span>
+            <span style="font-size:12px;color:var(--muted)">${esc(bb.date||'')}</span>
+            ${subSiteTag(bb.site)}
+          </div>
+          ${bb.note?`<div style="font-size:13px;color:var(--muted);margin-top:4px">${esc(bb.note)}</div>`:''}
+          <div style="margin-top:4px">${allocTagsFor(bb)}</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:2px">內帳備查：金額已分攤到目標單對外呈現，不重複計帳；收款以目標單為準。按 ✕ 可撤銷。</div>
+        </div>
+        <div style="display:flex;gap:4px;flex-wrap:wrap;flex-shrink:0">
+          <button class="act danger" data-delbill="${bb.id}">刪</button>
+        </div>
+      </div>
+    </div>`;
+    // 組一個區塊：一般單照序，已分攤的內帳單縮排歸類在它的目標單底下；目標不在本區的收到最後
+    const buildSection=(arr)=>{
+      const mains=arr.filter(x=>!isFullyAllocated(x));
+      const allocd=arr.filter(x=>isFullyAllocated(x));
+      const byTarget={}; const orphans=[];
+      allocd.forEach(x=>{
+        const tgtIds=[...new Set((x.allocOut||[]).map(a=>a.to))];
+        const host=tgtIds.find(id=>mains.some(m=>m.id===id));
+        if(host)(byTarget[host]=byTarget[host]||[]).push(x); else orphans.push(x);
+      });
+      let html='';
+      mains.forEach((m,i)=>{ html+=entryFor(m,i); (byTarget[m.id]||[]).forEach(x=>{ html+=allocRow(x,true); }); });
+      if(orphans.length){ html+=`<div style="font-size:11px;font-weight:700;color:var(--muted);margin-top:10px;border-top:1px dashed var(--line);padding-top:6px">已分攤・目標單不在此區</div>`+orphans.map(x=>allocRow(x,false)).join(''); }
+      return html;
+    };
+
     const entryFor=(b,idx)=>{
       // 對外視角：只顯示會給業主的資訊——對外金額、日期、說明、簽名、列印；內帳細節全部隱藏
       if(billViewMode==='out'){
@@ -5303,29 +5341,9 @@ function viewBillingAdd(){
         </div>`;
       }
 
-      const allocList=(pad)=> (b.allocOut||[]).map((a,i)=>{ const tgt=state.billings.find(x=>x.id===a.to);
-        return `<span style="display:inline-flex;align-items:center;gap:4px;background:#eef6ff;color:#1d4ed8;border-radius:6px;padding:2px 6px;margin:2px;font-size:12px">→ ${tgt?esc(String(tgt.note||tgt.date||'').slice(0,16)):'（目標已刪）'} ${money(a.amount)}<button data-allocdel="${b.id}::${i}" style="border:none;background:none;color:var(--danger);cursor:pointer;font-size:12px;padding:0 2px" title="撤銷這筆分攤">✕</button></span>`; }).join('');
-      // 已全數分攤出去：內帳保留（灰色唯讀），金額由各目標單對外呈現
-      if(isFullyAllocated(b)){
-        return `<div style="${sep}padding:${idx>0?'12px':'4px'} 0 10px;opacity:.65">
-          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap">
-            <div style="flex:1;min-width:0">
-              <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap">
-                <span style="font-size:16px;font-weight:700;color:var(--muted);text-decoration:line-through">${money(rawBillingAmount(b))}</span>
-                <span class="tag" style="background:#eef6ff;color:#1d4ed8">已分攤（${(b.allocOut||[]).length} 筆）</span>
-                <span style="font-size:12px;color:var(--muted)">${esc(b.date||'')}</span>
-                ${subSiteTag(b.site)}
-              </div>
-              ${b.note?`<div style="font-size:13px;color:var(--muted);margin-top:4px">${esc(b.note)}</div>`:''}
-              <div style="margin-top:4px">${allocList()}</div>
-              <div style="font-size:11px;color:var(--muted);margin-top:2px">內帳備查：金額已分攤到上列單據對外呈現，不重複計帳；收款以各目標單為準。按 ✕ 可撤銷單筆分攤。</div>
-            </div>
-            <div style="display:flex;gap:4px;flex-wrap:wrap;flex-shrink:0">
-              <button class="act danger" data-delbill="${b.id}">刪</button>
-            </div>
-          </div>
-        </div>`;
-      }
+      const allocList=()=>allocTagsFor(b);
+      // 已全數分攤出去：由 buildSection 歸類到目標單底下呈現（此分支為保險）
+      if(isFullyAllocated(b)) return allocRow(b,false);
       const raw=rawBillingAmount(b), ms=allocInSum(b), outSum=allocOutSum(b), amt=billingAmount(b);
       const hasCombine=(b.printAmount!=null&&b.printAmount!=='')||ms>0||outSum>0;
       // 分攤目標選擇中：列出同案場其他追加單（可連續分給多張，直到分完或按完成）
@@ -5383,8 +5401,8 @@ function viewBillingAdd(){
     const ownLV=billViewMode==='out'?ownL.filter(x=>!isFullyAllocated(x)&&!x.mergedInto):ownL;
     const childLV=billViewMode==='out'?childL.filter(x=>!isFullyAllocated(x)&&!x.mergedInto):childL;
     const entries=open?`
-      ${ownLV.length?`<div style="font-size:12px;font-weight:700;color:var(--muted);margin-top:8px">對業主追加</div>`+ownLV.map(entryFor).join(''):''}
-      ${childLV.length?`<div style="font-size:12px;font-weight:700;margin-top:12px;color:#9a5b1a">子案場工程款 <span class="tag" style="background:#fde9d4;color:#9a5b1a">對母案場是成本，不併入上方合計</span></div>`+childLV.map(entryFor).join(''):''}
+      ${ownLV.length?`<div style="font-size:12px;font-weight:700;color:var(--muted);margin-top:8px">對業主追加</div>`+buildSection(ownLV):''}
+      ${childLV.length?`<div style="font-size:12px;font-weight:700;margin-top:12px;color:#9a5b1a">子案場工程款 <span class="tag" style="background:#fde9d4;color:#9a5b1a">對母案場是成本，不併入上方合計</span></div>`+buildSection(childLV):''}
     `:'';
 
     return `<div class="card" style="border-left:3px solid #d97706">
