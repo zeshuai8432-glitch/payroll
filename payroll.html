@@ -1044,6 +1044,44 @@ async function rescueFromCloudSnapshots(){
   if(!(idx>=0&&idx<top.length)){ alert('編號不對，已取消。'); return; }
   rescueMerge(top[idx].dd);
 }
+// ---- 🔗 品佑帳本互抓：讀品佑雲端的支出，抓到 payroll 沒有的就通知逐筆確認 ----
+const PINYOU_CLOUD_URL='https://script.google.com/macros/s/AKfycbxFLYgepJcn4-Sw_BvgTb-jUijDaSmRSfMkdfrnlwrVgDzDxE65KidWbao3Bq6ooL7q/exec';
+let pyFound=null, pyChecking=false; // null=尚未檢查；[]=已檢查無新項目
+async function checkPinyouExpenses(showFail){
+  if(pyChecking) return; pyChecking=true;
+  try{
+    const r=await fetchT(PINYOU_CLOUD_URL,{},20000);
+    const j=await r.json();
+    if(!j||!j.ok||!j.data) throw new Error('品佑雲端無資料');
+    const dd=JSON.parse(j.data);
+    const exps=Array.isArray(dd.expenses)?dd.expenses:[];
+    const del=new Set(state.deletedIds||[]);
+    const have=new Set((state.costs||[]).map(c=>c&&c.id));
+    const haveSrc=new Set((state.costs||[]).map(c=>c&&c.pinyouId).filter(Boolean));
+    // 案場名對應：母案場優先，其次子案場（名稱要一字不差）
+    const byName={};
+    state.sites.forEach(s=>{ if(!s.parentSiteId && byName[s.name]===undefined) byName[s.name]=s.id; });
+    state.sites.forEach(s=>{ if(s.parentSiteId && byName[s.name]===undefined) byName[s.name]=s.id; });
+    pyFound=[];
+    exps.forEach(e=>{
+      if(!e||e.id==null) return;
+      if(String(e.id).startsWith('pr-')) return; // 這筆本來就是 PAYROLL 帶過去品佑的，不要再帶回來
+      const name=String(e.site||'').trim();
+      if(!name) return; // 沒掛案場的公司雜支，不屬於案場成本
+      const cid='py-'+e.id;
+      if(have.has(cid)||haveSrc.has(e.id)||del.has(cid)) return; // 已帶入或已忽略
+      pyFound.push({e, cid, siteId:byName[name]||null});
+    });
+  }catch(err){ if(pyFound==null) pyFound=null; if(showFail) alert('讀取品佑帳本失敗：'+String(err&&err.message||err).slice(0,60)); pyChecking=false; return; }
+  pyChecking=false;
+  safeRender();
+}
+function pyAddCost(f){
+  const e=f.e;
+  const payer=String(e.account||'').includes('東澤')?'dz':(String(e.account||'').includes('廣昕')?'gx':'py');
+  state.deletedIds=(state.deletedIds||[]).filter(x=>x!==f.cid);
+  state.costs.push({id:f.cid, siteId:f.siteId, date:e.date||'', item:String(e.item||'品佑支出'), amount:Number(e.amount)||0, payer, pinyouId:e.id});
+}
 // 檢查本機救援快照（合併雲端前自動留存的 pm_lost_local_v1）
 function rescueFromLocalSnapshot(){
   let raw=null; try{ raw=localStorage.getItem('pm_lost_local_v1'); }catch(e){}
@@ -1379,7 +1417,7 @@ function tabsBar(){
     ['薪資作業',[['entry','登記出工'],['payroll','員工薪資']]],
     ['財務管理',[['loans','借支管理'],['tools','工具管理'],['advances','代墊款'],['accounts','公積金帳戶'],['deals','分潤結算'],['billing','請款追蹤'],['yearend','年度總結'],['yearincome','年度收入'],['parkacc','品佑帳戶結算'],['recon','對帳匯出']]],
     ['單據',[['billingReq','請款單'],['billingAdd','追加單'],['meas','計量明細']]],
-    ['設定',[['sites','案場成本'],['manage','員工/案場']]],
+    ['設定',[['sites','案場成本'+(pyFound&&pyFound.length?` 🔺${pyFound.length}`:'')],['manage','員工/案場']]],
   ];
   return groups.map(([label,items])=>`
     <div class="nav-group">
@@ -2090,7 +2128,7 @@ function viewSites(){
       const payerTag=c.payer==='dz'||c.payer==='gx'
         ? (c.reimbursed?'<span class="tag" style="background:#e3efe9;color:var(--accent)">已報銷</span>':'<span class="tag" style="background:var(--warn-bg);color:var(--warn-ink)">待報銷</span>')
         : '';
-      return `<tr${(canReimb&&!c.reimbursed)?' style="background:#fff8f0"':''}><td>${esc(c.date||'')}</td><td>${c.subSite?subSiteTag(siteOptionValue(site.name,c.subSite)):''} ${esc(c.item||'')}</td><td class="num">${money(c.amount)}</td><td>${esc(payerName(c.payer))}${payerTag}</td><td>${reimbCell} <button class="act" data-costedit="${c.id}">改</button> <button class="act danger" data-delcost="${c.id}">刪</button></td></tr>`;
+      return `<tr${(canReimb&&!c.reimbursed)?' style="background:#fff8f0"':''}><td>${esc(c.date||'')}</td><td>${c.subSite?subSiteTag(siteOptionValue(site.name,c.subSite)):''} ${esc(c.item||'')}${c.pinyouId?'<span class="tag" style="background:#e3efe9;color:var(--accent)">品佑帳本</span>':''}</td><td class="num">${money(c.amount)}</td><td>${esc(payerName(c.payer))}${payerTag}</td><td>${reimbCell} <button class="act" data-costedit="${c.id}">改</button> <button class="act danger" data-delcost="${c.id}">刪</button></td></tr>`;
     }).join('');
     const byPayer={}; myCosts.forEach(c=>{ byPayer[c.payer||'—']=(byPayer[c.payer||'—']||0)+(Number(c.amount)||0); });
     const payerSummary=Object.keys(byPayer).length?`<div class="sub" style="margin:4px 0">各人墊付：${Object.entries(byPayer).map(([k,v])=>`${esc(payerName(k))} ${money(v)}`).join('、')}</div>`:'';
@@ -2168,8 +2206,26 @@ function viewSites(){
     <div class="metric"><div class="l">案場數</div><div class="v">${activeIds.length}${pausedIds.length?`<span style="font-size:12px;color:var(--muted)"> +${pausedIds.length}暫停</span>`:''}</div></div>
     <div class="metric"><div class="l">全公司實際總成本</div><div class="v">${money(grand)}</div></div>
   </div>
+  ${(pyFound&&pyFound.length)?`<div class="card" style="border-left:3px solid var(--info)">
+    <div style="font-size:14px;font-weight:600;margin-bottom:4px">📥 品佑帳本有 ${pyFound.length} 筆支出還沒帶入</div>
+    <p class="sub" style="margin:0 0 8px">夥伴在品佑帳本記的案場帳單。「＋新增」帶入該案場成本（帶入後可自行改刪，毛利/分潤自動吃到）；「忽略」則這筆不再提醒。</p>
+    <div class="scroll"><table class="cardtable"><thead><tr><th>日期</th><th>案場</th><th>項目</th><th class="num">金額</th><th>出帳</th><th></th></tr></thead>
+    <tbody>${pyFound.map((f,i)=>`<tr>
+      <td data-label="日期">${esc(f.e.date||'')}</td>
+      <td data-label="案場">${esc(f.e.site||'')}${f.siteId?'':'<span class="tag" style="background:#f6e1e1;color:var(--danger)">找不到同名案場</span>'}</td>
+      <td data-label="項目">${esc(String(f.e.item||''))}</td>
+      <td class="num" data-label="金額">${money(f.e.amount)}</td>
+      <td data-label="出帳">${esc(String(f.e.account||''))}</td>
+      <td class="actions" style="white-space:nowrap">${f.siteId?`<button class="act" data-pyadd="${i}" style="border:1px solid var(--accent);border-radius:6px;padding:0 10px;color:var(--accent)">＋新增</button>`:''} <button class="act muted" data-pyskip="${i}">忽略</button></td>
+    </tr>`).join('')}</tbody></table></div>
+    <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
+      ${pyFound.some(f=>f.siteId)?'<button class="act" id="py-addall" style="border:1px solid var(--accent);border-radius:6px;padding:0 12px;height:32px;color:var(--accent)">全部新增</button>':''}
+      <button class="act muted" id="py-skipall" style="height:32px">全部忽略</button>
+      <span class="sub" style="margin:0;align-self:center">找不到同名案場的，把兩邊案場名改成一致後按「重新檢查」。</span>
+    </div>
+  </div>`:''}
   ${reimbCard}
-  <p class="sub" style="margin:-6px 0 12px">一般案場成本＝期初＋出勤工資津貼＋手動成本；<b>母案場另含子案場已收款工程款</b>（藍字，母子內帳）；合作案場（橙色）成本＝手動成本明細加總。全公司總成本只算實際成本（工資＋手動），子工程款不重複計入——子案場自己的工資已經在裡面。<button class="btn" id="export-sites" style="margin-left:10px" ${ids.length===0?'disabled style="opacity:.5"':''}>匯出 PDF</button></p>
+  <p class="sub" style="margin:-6px 0 12px">一般案場成本＝期初＋出勤工資津貼＋手動成本；<b>母案場另含子案場已收款工程款</b>（藍字，母子內帳）；合作案場（橙色）成本＝手動成本明細加總。全公司總成本只算實際成本（工資＋手動），子工程款不重複計入——子案場自己的工資已經在裡面。<button class="btn" id="export-sites" style="margin-left:10px" ${ids.length===0?'disabled style="opacity:.5"':''}>匯出 PDF</button><button class="act" id="py-check" style="margin-left:8px;height:32px;padding:0 12px;border:1px solid var(--info);border-radius:8px;color:var(--info)">${pyChecking?'檢查中…':'🔗 檢查品佑支出'}</button>${pyFound&&!pyFound.length?'<span class="sub" style="margin-left:6px">品佑帳本沒有新支出 ✓</span>':''}</p>
   ${cards===''&&pausedCards===''?'<div class="card"><div class="empty">尚無案場成本資料。</div></div>':cards}${pausedCards}`;
 }
 
@@ -2387,6 +2443,23 @@ function bind(){
   const eb=document.getElementById('export-billing'); if(eb) eb.onclick=()=>exportBillingPDF();
   const esi=document.getElementById('export-sites'); if(esi) esi.onclick=()=>exportSitesPDF();
   document.querySelectorAll('[data-siteexport]').forEach(b=>b.onclick=e=>{ e.stopPropagation(); exportSiteOnePDF(b.dataset.siteexport); });
+  // 品佑帳本互抓：新增/忽略
+  const pyc=document.getElementById('py-check'); if(pyc) pyc.onclick=()=>{ checkPinyouExpenses(true); render(); };
+  document.querySelectorAll('[data-pyadd]').forEach(b=>b.onclick=()=>{ const f=pyFound&&pyFound[+b.dataset.pyadd]; if(!f||!f.siteId) return; pyAddCost(f); pyFound.splice(+b.dataset.pyadd,1); saveData(); render(); });
+  document.querySelectorAll('[data-pyskip]').forEach(b=>b.onclick=()=>{ const f=pyFound&&pyFound[+b.dataset.pyskip]; if(!f) return; state.deletedIds=[...new Set([...(state.deletedIds||[]),f.cid])]; pyFound.splice(+b.dataset.pyskip,1); saveData(); render(); });
+  const pyaa=document.getElementById('py-addall'); if(pyaa) pyaa.onclick=()=>{
+    const ok=pyFound.filter(f=>f.siteId);
+    if(!ok.length) return;
+    if(!confirm(`把 ${ok.length} 筆品佑支出全部帶入對應案場成本？`)) return;
+    ok.forEach(pyAddCost); pyFound=pyFound.filter(f=>!f.siteId);
+    saveData(); render();
+  };
+  const pysa=document.getElementById('py-skipall'); if(pysa) pysa.onclick=()=>{
+    if(!confirm(`全部忽略這 ${pyFound.length} 筆？之後不會再提醒。`)) return;
+    state.deletedIds=[...new Set([...(state.deletedIds||[]),...pyFound.map(f=>f.cid)])];
+    pyFound=[];
+    saveData(); render();
+  };
   document.querySelectorAll('[data-payslip]').forEach(b=>b.onclick=()=>exportPayslipPDF(b.dataset.payslip));
 
   const gotoM=document.getElementById('goto-manage'); if(gotoM) gotoM.onclick=()=>{ state.tab='manage'; render(); };
@@ -6421,6 +6494,7 @@ document.addEventListener('visibilitychange', ()=>{
 (function(){ const v=document.getElementById('app-version'); if(v){ v.textContent=APP_VERSION; v.style.display=''; } })(); // 版本號常駐顯示，方便確認是否拿到新版
 loadLocal(); loadPhotos(); loadSigs(); refreshPrevIds();
 try{ const t=localStorage.getItem(LS_TAB); if(t) state.tab=t; }catch(e){} // 還原上次所在分頁
+setTimeout(()=>{ try{ checkPinyouExpenses(false); }catch(e){} }, 3000); // 開頁自動檢查品佑帳本有沒有新支出（背景、不打擾）
 render(); loadCloud();
 </script>
 </body>

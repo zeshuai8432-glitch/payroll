@@ -357,7 +357,7 @@ function viewExp(){
       </tr>`;
     }
     return `<tr>
-      <td>${esc(x.date)}</td><td>${esc(x.site)}</td><td>${esc(x.item)}</td>
+      <td>${esc(x.date)}</td><td>${esc(x.site)}</td><td>${esc(x.item)}${x.payrollId?'<span class="tag" style="background:#dbeafe;color:#2563eb;margin-left:4px">PAYROLL</span>':''}</td>
       <td class="num" style="color:var(--danger)">${money(x.amount)}</td>
       <td>${esc(x.account||'')}</td>
       <td>${esc(x.method||'')}</td><td>${esc(x.note||'')}</td>
@@ -366,7 +366,21 @@ function viewExp(){
   }).join('');
   const siteOpts=`<option value="">全部案場</option>`+sites.map(s=>`<option ${expFilter===s?'selected':''}>${esc(s)}</option>`).join('');
   const itemOpts=`<option value="">全部項目</option>`+items.map(s=>`<option ${expItemFilter===s?'selected':''}>${esc(s)}</option>`).join('');
-  return `<div class="card">
+  const prCard=(typeof prFound!=='undefined'&&prFound&&prFound.length)?`<div class="card" style="border-left:3px solid #2563eb">
+    <h2>📥 PAYROLL 有 ${prFound.length} 筆案場成本還沒帶入</h2>
+    <p class="sub" style="margin:0 0 8px">在點工薪資系統記的案場成本（材料、機具等）。「＋新增」帶入本帳的支出（帶入後可自行改刪）；「忽略」則這筆不再提醒。</p>
+    <div class="scroll"><table><thead><tr><th>日期</th><th>案場</th><th>項目</th><th class="num">金額</th><th>出帳</th><th></th></tr></thead>
+    <tbody>${prFound.map((f,i)=>`<tr>
+      <td>${esc(f.c.date||'')}</td><td>${esc(f.site)}</td><td>${esc(String(f.c.item||''))}</td>
+      <td class="num">${money(f.c.amount)}</td><td>${esc(f.account)}</td>
+      <td class="num" style="white-space:nowrap"><button class="act on" data-pradd="${i}">＋新增</button> <button class="act" data-prskip="${i}">忽略</button></td>
+    </tr>`).join('')}</tbody></table></div>
+    <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
+      <button class="act on" id="pr-addall">全部新增</button>
+      <button class="act" id="pr-skipall">全部忽略</button>
+    </div>
+  </div>`:'';
+  return `${prCard}<div class="card">
     <h2>新增支出</h2>
     <div class="row">
       <div class="field"><label>日期</label><input id="e-date" type="date" value="${today()}"></div>
@@ -388,6 +402,8 @@ function viewExp(){
       <select id="e-item-filter" style="width:auto;height:34px">${itemOpts}</select>
       ${(expFilter||expItemFilter)?'<button class="act" id="e-clearfilter">清除篩選</button>':''}
       <button class="act" id="e-rename" title="把某個項目名稱一次全部改掉，用來整理混亂的名稱">項目批次改名</button>
+      <button class="act" id="pr-check" title="讀 PAYROLL 雲端的案場成本，有這邊沒記的會列出來讓你確認">${(typeof prChecking!=='undefined'&&prChecking)?'檢查中…':'🔗 檢查PAYROLL'}</button>
+      ${(typeof prFound!=='undefined'&&prFound&&!prFound.length)?'<span class="sub" style="margin:0">PAYROLL 沒有新成本 ✓</span>':''}
       <div style="margin-left:auto;font-weight:700">合計 <span style="color:var(--danger)">${money(tot)}</span></div>
     </div>
     ${filtered.length===0?'<div class="empty">尚無支出。</div>':`<div class="scroll"><table>
@@ -686,7 +702,7 @@ function viewSet(){
 
 // ================= render / bind =================
 function render(){
-  document.getElementById('nav').innerHTML=TABS.map(([k,t])=>`<button class="${tab===k?'on':''}" data-tab="${k}">${t}</button>`).join('');
+  document.getElementById('nav').innerHTML=TABS.map(([k,t])=>`<button class="${tab===k?'on':''}" data-tab="${k}">${(k==='exp'&&typeof prFound!=='undefined'&&prFound&&prFound.length)?t+' 🔺'+prFound.length:t}</button>`).join('');
   const v={dash:viewDash,proj:viewProj,exp:viewExp,inc:viewInc,quote:()=>viewDoc('quote'),invoice:()=>viewDoc('invoice'),purchase:()=>viewDoc('purchase'),co:viewCo,set:viewSet}[tab];
   document.getElementById('app').innerHTML=v();
   setBalance();
@@ -736,6 +752,12 @@ function bind(){
     save(); alert(`已把 ${cnt} 筆「${f}」改成「${to.trim()}」。`);
   });
   document.querySelectorAll('[data-exdel]').forEach(b=>b.onclick=()=>{ if(confirm('刪除這筆支出？')){ state.expenses=state.expenses.filter(x=>x.id!==b.dataset.exdel); save(); } });
+  // PAYROLL 互抓：新增/忽略
+  on('pr-check','onclick',()=>{ checkPayrollCosts(true); render(); });
+  document.querySelectorAll('[data-pradd]').forEach(b=>b.onclick=()=>{ const f=prFound&&prFound[+b.dataset.pradd]; if(!f) return; prAddExpense(f); prFound.splice(+b.dataset.pradd,1); save(); });
+  document.querySelectorAll('[data-prskip]').forEach(b=>b.onclick=()=>{ const f=prFound&&prFound[+b.dataset.prskip]; if(!f) return; state.deletedIds=[...new Set([...(state.deletedIds||[]),f.eid])]; prFound.splice(+b.dataset.prskip,1); save(); });
+  on('pr-addall','onclick',()=>{ if(!prFound||!prFound.length) return; if(!confirm(`把 ${prFound.length} 筆 PAYROLL 成本全部帶入支出？`)) return; prFound.forEach(prAddExpense); prFound=[]; save(); });
+  on('pr-skipall','onclick',()=>{ if(!prFound||!prFound.length) return; if(!confirm(`全部忽略這 ${prFound.length} 筆？之後不會再提醒。`)) return; state.deletedIds=[...new Set([...(state.deletedIds||[]),...prFound.map(f=>f.eid)])]; prFound=[]; save(); });
   document.querySelectorAll('[data-exedit]').forEach(b=>b.onclick=()=>{ expEditId=b.dataset.exedit; render(); });
   document.querySelectorAll('[data-exeditcancel]').forEach(b=>b.onclick=()=>{ expEditId=null; render(); });
   document.querySelectorAll('[data-exeditok]').forEach(b=>b.onclick=()=>{
@@ -823,9 +845,44 @@ function doImport(text,merge){
   alert(`匯入完成：案場 ${state.projects.length}、支出 ${state.expenses.length}、請款 ${state.incomes.length}、公司 ${state.companies.length}`);
 }
 
+// ---- 🔗 PAYROLL 互抓：讀 PAYROLL 雲端的案場手動成本，抓到這邊沒有的就通知逐筆確認 ----
+const PAYROLL_FS_URL='https://firestore.googleapis.com/v1/projects/payroll-d1abe/databases/(default)/documents/payroll/main?key=AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
+let prFound=null, prChecking=false; // null=尚未檢查；[]=已檢查無新項目
+async function checkPayrollCosts(showFail){
+  if(prChecking) return; prChecking=true;
+  try{
+    const r=await fetch(PAYROLL_FS_URL);
+    const d=await r.json();
+    const dd=JSON.parse(d.fields.json.stringValue);
+    const byId={}; (dd.sites||[]).forEach(s=>{ if(s&&s.id) byId[s.id]=s; });
+    const topName=sid=>{ let s=byId[sid],hops=0; while(s&&s.parentSiteId&&byId[s.parentSiteId]&&hops++<5) s=byId[s.parentSiteId]; return s?s.name:''; };
+    const have=new Set(state.expenses.map(x=>x&&x.id));
+    const haveSrc=new Set(state.expenses.map(x=>x&&x.payrollId).filter(Boolean));
+    const del=new Set(state.deletedIds||[]);
+    const accName={dz:'東澤工程行',gx:'廣昕工程行',py:'品佑工程有限公司'};
+    prFound=[];
+    (dd.costs||[]).forEach(c=>{
+      if(!c||c.id==null) return;
+      if(String(c.id).startsWith('py-')) return; // 這筆本來就是品佑帶去 PAYROLL 的，不要再帶回來
+      const eid='pr-'+c.id;
+      if(have.has(eid)||haveSrc.has(c.id)||del.has(eid)) return; // 已帶入或已忽略
+      const site=topName(c.siteId); if(!site) return;
+      prFound.push({c, eid, site, account:accName[c.payer]||'品佑工程有限公司'});
+    });
+  }catch(e){ if(showFail) alert('讀取 PAYROLL 失敗：'+String(e&&e.message||e).slice(0,60)); prChecking=false; return; }
+  prChecking=false;
+  safeRender();
+}
+function prAddExpense(f){
+  const c=f.c;
+  state.deletedIds=(state.deletedIds||[]).filter(x=>x!==f.eid);
+  state.expenses.push({id:f.eid, date:c.date||'', site:f.site, item:String(c.item||'PAYROLL成本'), amount:Number(c.amount)||0, account:f.account, method:'', note:'', payrollId:c.id});
+}
+
 load(); render();
 setStatus(cloudUrl?'連線中…':'本機模式');
 if(cloudUrl) loadCloud();
+setTimeout(()=>{ try{ checkPayrollCosts(false); }catch(e){} }, 3000); // 開頁自動檢查 PAYROLL 有沒有新成本（背景、不打擾）
 // 離開頁面時「不」盲目覆蓋雲端（sendBeacon 無法先讀取合併，會把另一台裝置剛新增的紀錄洗掉）。
 // 未存變更已用 LS_DIRTY 記在本機，下次開啟或切回前景時 loadCloud→pushCloud 會安全合併回推。
 window.addEventListener('pagehide',()=>{ if(cloudUrl&&localDirty){ try{ localStorage.setItem(LS_DIRTY,'1'); localStorage.setItem(LS,JSON.stringify(packData())); }catch(e){} } });
