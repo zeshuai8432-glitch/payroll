@@ -731,13 +731,14 @@ const settledBillingsForSiteName = name => billingsForSiteName(name).filter(b=>b
 // ── 母子案場帳務邏輯：子案場做的代工工程款，對母案場是「成本」不是收入 ──
 // 母案場自己開給業主的已收款（不含「母 / 子」的請款）
 const ownSettledBilledForSite = site => state.billings.filter(b=>b.settled).reduce((x,b)=>{ const sp=splitSiteValue(b.site); return x+((sp.parent===site.name&&!sp.sub)?billingAmount(b):0); },0);
-// 子案場已收款工程款合計（「母 / 子」的請款 ＋ 相容以子案場本名開的請款）→ 記入母案場成本
-const childWorkBilledForSite = site => {
-  let sum=0;
-  state.billings.filter(b=>b.settled).forEach(b=>{ const sp=splitSiteValue(b.site); if(sp.parent===site.name&&sp.sub) sum+=billingAmount(b); });
-  childSitesOf(site).forEach(c=>{ if(c.name===site.name) return; state.billings.filter(b=>b.settled).forEach(b=>{ const sp=splitSiteValue(b.site); if(sp.parent===c.name&&!sp.sub) sum+=billingAmount(b); }); });
-  return sum;
+// 子案場已收款工程款逐筆（「母 / 子」的請款 ＋ 相容以子案場本名開的請款）→ 記入母案場成本
+const childWorkBillsForSite = site => {
+  const out=[];
+  state.billings.filter(b=>b.settled).forEach(b=>{ const sp=splitSiteValue(b.site); if(sp.parent===site.name&&sp.sub) out.push({b,sub:sp.sub}); });
+  childSitesOf(site).forEach(c=>{ if(c.name===site.name) return; state.billings.filter(b=>b.settled).forEach(b=>{ const sp=splitSiteValue(b.site); if(sp.parent===c.name&&!sp.sub) out.push({b,sub:c.name}); }); });
+  return out.sort((a,x)=>(a.b.date||'').localeCompare(x.b.date||''));
 };
+const childWorkBilledForSite = site => childWorkBillsForSite(site).reduce((s,x)=>s+billingAmount(x.b),0);
 // 正規化案場值：把「以子案場本名」記的資料歸到「母 / 子」同一把鑰匙（計量 vs 請款比對用）
 const canonSiteKey = v => {
   const sp=splitSiteValue(v);
@@ -2048,12 +2049,21 @@ function viewSites(){
     const byPayer={}; myCosts.forEach(c=>{ byPayer[c.payer||'—']=(byPayer[c.payer||'—']||0)+(Number(c.amount)||0); });
     const payerSummary=Object.keys(byPayer).length?`<div class="sub" style="margin:4px 0">各人墊付：${Object.entries(byPayer).map(([k,v])=>`${esc(payerName(k))} ${money(v)}`).join('、')}</div>`:'';
     return `<div class="card" ${isCoop?'style="border-left:3px solid #d98430"':''}>
-      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px;gap:8px;flex-wrap:wrap">
         <div style="font-size:15px;font-weight:600">${esc(siteName(sid))}${isCoop?'<span class="tag" style="background:#fde9d4;color:#9a5b1a">合作案場</span>':''}${(s.childWork||0)>0?'<span class="tag" style="background:#eef6ff;color:#1d4ed8">含子工程款</span>':''}</div>
-        <div style="font-size:18px;font-weight:600">${money(s.dispTotal!==undefined?s.dispTotal:s.grandTotal)}</div>
+        <div style="display:flex;align-items:baseline;gap:10px">
+          <button class="act" data-siteexport="${sid}" style="font-size:12px;padding:0 10px;height:30px">匯出此案場 PDF</button>
+          <div style="font-size:18px;font-weight:600">${money(s.dispTotal!==undefined?s.dispTotal:s.grandTotal)}</div>
+        </div>
       </div>
       <p class="sub">${isCoop?'手動成本明細加總':`總工數 ${gongStr(s.hours)}・系統工資 ${money(s.wage)}・津貼 ${money(s.allow)}`}${s.opening>0?`・期初 ${money(s.opening)}`:''}${s.manual>0?`・手動成本 ${money(s.manual)}`:''}${(s.childWork||0)>0?`・<b style="color:#1d4ed8">子案場工程款(已收款) ${money(s.childWork)}</b>`:''}・占總成本 ${pct}%</p>
-      ${(s.childWork||0)>0?`<p class="sub" style="margin:2px 0 6px;color:var(--muted)">子案場工程款自動來自「母 / 子」已收款請款（分潤結算已扣此成本）；不重複計入下方全公司總成本。</p>`:''}
+      ${(s.childWork||0)>0?(()=>{ const cw=childWorkBillsForSite(site);
+        return `<details style="margin:2px 0 6px"><summary style="cursor:pointer;font-size:13px;color:#1d4ed8">子案場工程款明細（${cw.length} 筆・唯讀）</summary>
+          <table style="margin-top:6px"><thead><tr><th>日期</th><th>子案場</th><th>類型</th><th class="num">金額</th><th>備註</th></tr></thead>
+          <tbody>${cw.map(x=>`<tr><td>${esc(x.b.date||'')}</td><td>${esc(x.sub)}</td><td>${esc(x.b.docType||'請款單')}</td><td class="num">${money(billingAmount(x.b))}</td><td style="color:var(--muted);font-size:12px">${esc(String(x.b.note||'').slice(0,40))}</td></tr>`).join('')}
+          <tr class="total-row" style="font-weight:700"><td colspan="3">小計</td><td class="num">${money(s.childWork)}</td><td></td></tr></tbody></table>
+          <p class="sub" style="margin:4px 0 0">唯讀，來自「母 / 子」已收款請款；要修改請到請款單／請款追蹤頁。分潤結算已自動扣此成本，不重複計入全公司總成本。</p>
+        </details>`; })():''}
       ${isCoop?'':`<div class="row" style="margin-bottom:6px">
         <div class="field"><label>期初人事成本（從Excel抄入，選填）</label><input type="number" data-opening="${sid}" value="${s.opening||''}" placeholder="未設定" min="0" step="1000" style="width:170px"></div>
       </div>`}
@@ -2330,6 +2340,7 @@ function bind(){
   const dsn=document.getElementById('deals-selnone'); if(dsn) dsn.onclick=()=>{ dealSel={}; render(); };
   const eb=document.getElementById('export-billing'); if(eb) eb.onclick=()=>exportBillingPDF();
   const esi=document.getElementById('export-sites'); if(esi) esi.onclick=()=>exportSitesPDF();
+  document.querySelectorAll('[data-siteexport]').forEach(b=>b.onclick=e=>{ e.stopPropagation(); exportSiteOnePDF(b.dataset.siteexport); });
   document.querySelectorAll('[data-payslip]').forEach(b=>b.onclick=()=>exportPayslipPDF(b.dataset.payslip));
 
   const gotoM=document.getElementById('goto-manage'); if(gotoM) gotoM.onclick=()=>{ state.tab='manage'; render(); };
@@ -4197,6 +4208,47 @@ function exportBillingPDF(){
 }
 
 // 案場成本明細 PDF
+// 單一案場成本 PDF：自身成本明細＋子工程款明細＋員工金額
+function exportSiteOnePDF(sid){
+  const site=state.sites.find(x=>x.id===sid); if(!site) return;
+  const isCoop=site.coop||site.type==='合作案';
+  const comp=computeRecords(state.attendance);
+  let hours=0,tot=0,wage=0,allow=0; const emp={};
+  state.attendance.forEach(r=>{ if(r.siteId!==sid) return; const c=comp[r.id]; if(!c) return;
+    hours+=Number(r.hours)||0; wage+=c.wage; allow+=c.allow; tot+=c.total; emp[r.empId]=(emp[r.empId]||0)+c.total; });
+  const opening=isCoop?0:(Number(site.opening)||0);
+  const payerName=who=>({dz:'東澤',gx:'廣昕',py:'品佑'}[who]||who||'—');
+  const myCosts=state.costs.filter(c=>c.siteId===sid).sort((a,b)=>(a.date||'').localeCompare(b.date||''));
+  const manual=myCosts.reduce((s,c)=>s+(Number(c.amount)||0),0);
+  const own=isCoop?manual:Math.round(tot+opening+manual);
+  const cw=site.parentSiteId?[]:childWorkBillsForSite(site);
+  const cwSum=cw.reduce((s,x)=>s+billingAmount(x.b),0);
+  const today=new Date().toISOString().slice(0,10);
+  const costRows=myCosts.map(c=>`<tr><td>${esc(c.date||'')}</td><td>${esc(c.item||'')}</td><td class="num">${money(c.amount)}</td><td>${esc(payerName(c.payer))}</td><td>${c.reimbursed?'已報銷':(c.payer==='dz'||c.payer==='gx'?'待報銷':'')}</td></tr>`).join('');
+  const cwRows=cw.map(x=>`<tr><td>${esc(x.b.date||'')}</td><td>${esc(x.sub)}</td><td>${esc(x.b.docType||'請款單')}</td><td class="num">${money(billingAmount(x.b))}</td><td>${esc(String(x.b.note||'').slice(0,30))}</td></tr>`).join('');
+  const empRows=Object.entries(emp).sort((a,b)=>b[1]-a[1]).map(([eid,v])=>`<tr><td>${esc(empName(eid))}</td><td class="num">${money(v)}</td></tr>`).join('');
+  const inner=`<h1>案場成本明細：${esc(site.name)}${isCoop?'（合作案場）':''}</h1>
+    <div class="meta">列印日：${today}　|　案場總成本 ${money(own+cwSum)}${cwSum?`（自身 ${money(own)} ＋ 子工程款 ${money(cwSum)}）`:''}</div>
+    <table><tbody>
+      ${isCoop?'':`<tr><td>出勤工資（${gongStr(hours)} 工）</td><td class="num">${money(wage)}</td></tr>
+      <tr><td>津貼</td><td class="num">${money(allow)}</td></tr>
+      ${opening>0?`<tr><td>期初人事成本</td><td class="num">${money(opening)}</td></tr>`:''}`}
+      <tr><td>手動成本合計</td><td class="num">${money(manual)}</td></tr>
+      ${cwSum?`<tr><td>子案場工程款（已收款）</td><td class="num">${money(cwSum)}</td></tr>`:''}
+      <tr class="total-row"><td>案場總成本</td><td class="num">${money(own+cwSum)}</td></tr>
+    </tbody></table>
+    ${costRows?`<h2 class="sec">手動成本明細（${myCosts.length} 筆）</h2>
+    <table><thead><tr><th>日期</th><th>項目</th><th class="num">金額</th><th>誰付</th><th>報銷</th></tr></thead>
+    <tbody>${costRows}<tr class="total-row"><td colspan="2">小計</td><td class="num">${money(manual)}</td><td></td><td></td></tr></tbody></table>`:''}
+    ${cwRows?`<h2 class="sec">子案場工程款明細（${cw.length} 筆・已收款）</h2>
+    <table><thead><tr><th>日期</th><th>子案場</th><th>類型</th><th class="num">金額</th><th>備註</th></tr></thead>
+    <tbody>${cwRows}<tr class="total-row"><td colspan="3">小計</td><td class="num">${money(cwSum)}</td><td></td></tr></tbody></table>`:''}
+    ${empRows&&!isCoop?`<h2 class="sec">各員工出勤金額</h2>
+    <table><thead><tr><th>員工</th><th class="num">金額</th></tr></thead><tbody>${empRows}</tbody></table>`:''}
+    <p class="sub">子案場工程款＝「母 / 子」已收款請款（母子內帳，分潤結算已扣）。金額四捨五入至整數。</p>`;
+  printHTML('案場成本 '+site.name, inner);
+}
+
 function exportSitesPDF(){
   const comp=computeRecords(state.attendance);
   const bySite={};
