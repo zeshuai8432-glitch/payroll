@@ -3331,7 +3331,10 @@ function bind(){
   // 追加單頁：改（inline 展開）
   document.querySelectorAll('[data-billedit-add]').forEach(b=>b.onclick=()=>{ billingAddEditId=b.dataset.billeditAdd; render(); });
   document.querySelectorAll('[data-bae-cancel]').forEach(b=>b.onclick=()=>{ billingAddEditId=null; render(); });
-  // 追加單「併入」：金額灌進同案場另一張，本單內帳保留不刪
+  // 追加單視角切換：對內（全部內帳）／對外（業主看的）
+  const bvIn=document.getElementById('bv-in'); if(bvIn) bvIn.onclick=()=>{ billViewMode='in'; render(); };
+  const bvOut=document.getElementById('bv-out'); if(bvOut) bvOut.onclick=()=>{ billViewMode='out'; billMergeSrc=null; render(); };
+  // 追加單「分攤」：金額灌進同案場另一或多張，本單內帳保留不刪
   document.querySelectorAll('[data-mergestart]').forEach(b=>b.onclick=()=>{ billMergeSrc=b.dataset.mergestart; render(); });
   document.querySelectorAll('[data-mergecancel]').forEach(b=>b.onclick=()=>{ billMergeSrc=null; render(); });
   document.querySelectorAll('[data-allocinto]').forEach(b=>b.onclick=()=>{
@@ -4781,7 +4784,8 @@ function dealCalc(d){
   return {profit,bonus,fund,tax,isDeal:false};
 }
 let dealPosting=null, dealEditId=null, dealCarry=null, coopCarry=null, billEditId=null, dealAccPick=null, billingAddEditId=null; // 入帳/編輯/帶去/請款編輯/選帳戶中
-let billMergeSrc=null; // 追加單「併入→」選目標中
+let billMergeSrc=null; // 追加單「分攤→」選目標中
+let billViewMode='in'; // 追加單視角：'in'＝對內（全部內帳）、'out'＝對外（業主看的）
 let billingPhotos={}; // { [billingId]: [dataUrl, ...] }
 let billingPhotosDeleted={}; // { [billingId]: [已刪除的url, ...] } — 刪除記號，避免同步時被雲端補回來
 let billingSigs={}; // { [billingId]: dataUrl }
@@ -5230,6 +5234,35 @@ function viewBillingAdd(){
     const open=!!formOpen['add-site-'+siteName];
 
     const entryFor=(b,idx)=>{
+      // 對外視角：只顯示會給業主的資訊——對外金額、日期、說明、簽名、列印；內帳細節全部隱藏
+      if(billViewMode==='out'){
+        const sep0=idx>0?'border-top:1px solid var(--line);':'';
+        const amt0=billingAmount(b);
+        const combined=(b.printAmount!=null&&b.printAmount!=='')||allocInSum(b)>0||allocOutSum(b)>0;
+        return `<div style="${sep0}padding:${idx>0?'12px':'4px'} 0 10px">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap">
+            <div style="flex:1;min-width:0">
+              <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap">
+                <input type="checkbox" data-billcheck="${b.id}" style="width:18px;height:18px;flex-shrink:0;cursor:pointer;accent-color:var(--accent);margin-right:2px">
+                <span style="font-size:18px;font-weight:800;color:#9a5b1a">${money(amt0)}</span>
+                <span style="font-size:12px;color:var(--muted)">${esc(b.date||'')}</span>
+                ${subSiteTag(b.site)}
+                ${b.client?`<span style="font-size:12px;color:var(--muted)">${esc(b.client)}</span>`:''}
+                ${billingSigs[b.id]?`<span style="font-size:11px;background:#dcfce7;color:#16a34a;border-radius:6px;padding:2px 8px;font-weight:700">${billingSigsLocked[b.id]?'🔒':'✓'} 已簽核</span>`:''}
+                <span class="tag" style="${b.settled?'background:#e3efe9;color:var(--accent)':'background:var(--bg);color:var(--muted)'}">${b.settled?'✓ 已收款':'未收款'}</span>
+              </div>
+              ${!combined&&billingLineMeta(b)?`<div style="font-size:12px;color:var(--muted);margin-top:2px">${billingLineMeta(b)}</div>`:''}
+              ${b.note?`<div style="font-size:13px;color:var(--text);margin-top:4px;font-weight:500">${esc(b.note)}</div>`:''}
+              ${b.remark?`<div style="font-size:12px;color:var(--muted);margin-top:2px">${escBr(b.remark)}</div>`:''}
+            </div>
+            <div style="display:flex;gap:4px;flex-wrap:wrap;flex-shrink:0">
+              <button class="act" data-billprint="${b.id}">列印</button>
+              <button class="act" data-billsign="${b.id}" style="${billingSigs[b.id]?'color:var(--accent)':''}">${billingSigs[b.id]?(billingSigsLocked[b.id]?'🔒 工程師':'✍ 工程師'):'✍ 工程師簽'}</button>
+              <button class="act" data-billsign-so="${b.id}" style="${billingSigs[b.id+'::so']?'color:var(--accent)':''}">${billingSigs[b.id+'::so']?(billingSigsLocked[b.id+'::so']?'🔒 所長':'✍ 所長'):'✍ 所長簽'}</button>
+            </div>
+          </div>
+        </div>`;
+      }
       const photos=billingPhotos[b.id]||[];
       const thumbs=photos.map((url,i)=>`<div style="position:relative;display:inline-block;vertical-align:top;margin:3px"><img src="${url}" class="photo-thumb" style="width:80px;height:60px;object-fit:cover;border-radius:8px;border:1px solid var(--line)"><button data-photodel="${b.id}" data-photoidx="${i}" style="position:absolute;top:-5px;right:-5px;width:20px;height:20px;border-radius:50%;border:none;background:var(--danger);color:#fff;font-size:11px;cursor:pointer;padding:0;line-height:20px;text-align:center">✕</button></div>`).join('');
       const sep=idx>0?'border-top:1px solid var(--line);':'';
@@ -5330,9 +5363,11 @@ function viewBillingAdd(){
         </div>
       </div>`;
     };
+    const ownLV=billViewMode==='out'?ownL.filter(x=>!isFullyAllocated(x)&&!x.mergedInto):ownL;
+    const childLV=billViewMode==='out'?childL.filter(x=>!isFullyAllocated(x)&&!x.mergedInto):childL;
     const entries=open?`
-      ${ownL.length?`<div style="font-size:12px;font-weight:700;color:var(--muted);margin-top:8px">對業主追加</div>`+ownL.map(entryFor).join(''):''}
-      ${childL.length?`<div style="font-size:12px;font-weight:700;margin-top:12px;color:#9a5b1a">子案場工程款 <span class="tag" style="background:#fde9d4;color:#9a5b1a">對母案場是成本，不併入上方合計</span></div>`+childL.map(entryFor).join(''):''}
+      ${ownLV.length?`<div style="font-size:12px;font-weight:700;color:var(--muted);margin-top:8px">對業主追加</div>`+ownLV.map(entryFor).join(''):''}
+      ${childLV.length?`<div style="font-size:12px;font-weight:700;margin-top:12px;color:#9a5b1a">子案場工程款 <span class="tag" style="background:#fde9d4;color:#9a5b1a">對母案場是成本，不併入上方合計</span></div>`+childLV.map(entryFor).join(''):''}
     `:'';
 
     return `<div class="card" style="border-left:3px solid #d97706">
@@ -5367,7 +5402,14 @@ function viewBillingAdd(){
     ${childTotal>0?`<div class="metric"><div class="l">子案場工程款（母案場成本）</div><div class="v" style="font-size:21px;color:#9a5b1a">${money(childTotal)}</div></div>`:''}
     <div class="metric"><div class="l">對業主未收款合計</div><div class="v" style="font-size:21px">${money(unsettled)}</div></div>
   </div>
-  <div class="card">
+  <div class="card" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+    <button class="act" id="bv-in" style="border:1.5px solid var(--accent);border-radius:8px;padding:0 16px;height:36px;font-weight:700;${billViewMode==='in'?'background:var(--accent);color:#fff':'color:var(--accent)'}">對內（全部）</button>
+    <button class="act" id="bv-out" style="border:1.5px solid #9a5b1a;border-radius:8px;padding:0 16px;height:36px;font-weight:700;${billViewMode==='out'?'background:#9a5b1a;color:#fff':'color:#9a5b1a'}">對外（業主看的）</button>
+    <span class="sub" style="margin:0;flex:1;min-width:200px">${billViewMode==='out'
+      ?'業主視角：只列會給業主的單與對外金額；已分攤掉的內帳單不顯示、內帳數字全部隱藏。這裡看到什麼，印出來就是什麼。'
+      :'內帳視角：全部單據，含分攤明細（藍色標籤）、計算式與對外金額差異、已分攤的備查單（灰色）。'}</span>
+  </div>
+  ${billViewMode==='out'?'':`<div class="card">
     ${foldBtn('bna','新增追加單')}
     ${formOpen.bna?`<div class="row" style="margin-top:8px">
       <div class="field"><label>日期</label><input type="date" id="bna-date" value="${billingAddDraft?esc(billingAddDraft.date):new Date().toISOString().slice(0,10)}"></div>
@@ -5383,7 +5425,7 @@ function viewBillingAdd(){
     </div>
     <div class="row" style="margin-top:10px"><button class="btn" id="bna-add">＋ 新增追加單</button></div>`:''}
     ${dataListHtml('client-memory-list', knownClients())}
-  </div>
+  </div>`}
   ${list.length===0?'<div class="card"><div class="empty">尚無追加單。點上方「新增追加單」開始登記，新增後可在每張卡片上傳施作照片。</div></div>':siteCards+pausedSection}`;
 }
 
