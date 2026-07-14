@@ -3192,6 +3192,38 @@ function bind(){
     loan.repayments.push({date:localISODate(),amount:amt});
     saveData(); render();
   });
+  // 快速還款：自動從最舊的借支開始沖銷（FIFO），一筆還完沖下一筆
+  const qp=document.getElementById('loan-quickpay');
+  if(qp) qp.onclick=()=>{
+    const empId=(document.getElementById('qp-emp')||{}).value;
+    const amt=parseFloat((document.getElementById('qp-amount')||{}).value);
+    const date=(document.getElementById('qp-date')||{}).value||localISODate();
+    if(!empId||isNaN(amt)||amt<=0){ alert('請選員工並輸入金額'); return; }
+    const unpaid=state.loans.filter(l=>l.empId===empId&&loanBalance(l)>0).sort((a,b)=>(a.date||'').localeCompare(b.date||''));
+    const totalBal=unpaid.reduce((s,l)=>s+loanBalance(l),0);
+    if(!unpaid.length){ alert('這位員工沒有未還清的借支。'); return; }
+    if(amt>totalBal){ alert(`金額超過未還總額 ${money(totalBal)}，請重新輸入。`); return; }
+    let left=amt; const applied=[];
+    for(const l of unpaid){
+      if(left<=0) break;
+      const pay=Math.min(left,loanBalance(l));
+      if(pay<=0) continue;
+      if(!Array.isArray(l.repayments)) l.repayments=[];
+      l.repayments.push({date,amount:pay});
+      applied.push(`・${l.date} 那筆：沖 ${money(pay)}${loanBalance(l)<=0?'（已還清 ✓）':`（還剩 ${money(loanBalance(l))}）`}`);
+      left-=pay;
+    }
+    saveData(); render();
+    alert(`已登記 ${empName(empId)} 現金還款 ${money(amt)}：\n\n${applied.join('\n')}`);
+  };
+  // 刪除單筆現金還款（登記錯誤時的反悔出口）
+  document.querySelectorAll('[data-repaydel]').forEach(b=>b.onclick=()=>{
+    const [lid,idxs]=b.dataset.repaydel.split('::');
+    const loan=state.loans.find(l=>l.id===lid); if(!loan||!Array.isArray(loan.repayments)) return;
+    const i=parseInt(idxs,10); const r=loan.repayments[i]; if(!r) return;
+    if(!confirm(`刪除這筆現金還款（${r.date||''}　${money(r.amount)}）？\n剩餘欠款會加回去。`)) return;
+    loan.repayments.splice(i,1); saveData(); render();
+  });
   document.querySelectorAll('[data-repay]').forEach(b=>b.onclick=()=>{
     const loan=state.loans.find(l=>l.id===b.dataset.repay); if(!loan) return;
     const bal=loanBalance(loan);
@@ -4746,35 +4778,61 @@ function viewLoans(){
   const inRange=d=>(!loanFrom||d>=loanFrom)&&(!loanTo||d<=loanTo);
   const activeEmps=state.employees.filter(e=>e.active);
   const empOpts=activeEmps.map(e=>`<option value="${e.id}">${esc(e.name)}</option>`).join('');
-  const loans=[...state.loans].filter(l=>inRange(l.date)).sort((a,b)=>b.date.localeCompare(a.date));
-  const outstanding=loans.filter(l=>loanBalance(l)>0).reduce((s,l)=>s+loanBalance(l),0);
-  const rows=loans.map(l=>{
+  // 未還清：不分日期一律顯示（拖好幾個月慢慢還的，不用再調區間去找）；已還清的才照區間收進歷史
+  const unpaid=state.loans.filter(l=>loanBalance(l)>0);
+  const outstanding=unpaid.reduce((s,l)=>s+loanBalance(l),0);
+  const cleared=[...state.loans].filter(l=>loanBalance(l)<=0&&inRange(l.date)).sort((a,b)=>b.date.localeCompare(a.date));
+  const repayDetail=l=>{
+    const cash=Array.isArray(l.repayments)?l.repayments:[];
+    if(!cash.length) return '';
+    return `<details style="margin-top:2px"><summary style="cursor:pointer;font-size:11px;color:var(--info)">現金還款 ${cash.length} 筆</summary>${cash.map((r,i)=>`<div style="display:flex;justify-content:space-between;gap:8px;font-size:11px;color:var(--muted);padding:2px 0"><span>${esc(r.date||'')}</span><span style="white-space:nowrap">${money(r.amount)} <button class="act danger" data-repaydel="${l.id}::${i}" style="padding:0 6px;font-size:11px">刪</button></span></div>`).join('')}</details>`;
+  };
+  const rowFor=(l,withEmp,withCash)=>{
     const repaid=loanRepaid(l.id), bal=loanBalance(l), done=bal<=0;
     const pct=l.amount>0?Math.round(repaid/l.amount*100):0;
     return `<tr>
-      <td>${esc(l.date)}</td><td>${esc(empName(l.empId))}</td>
+      <td>${esc(l.date)}</td>${withEmp?`<td>${esc(empName(l.empId))}</td>`:''}
       <td class="num">${money(l.amount)}</td>
       <td class="num">${money(repaid)}（${pct}%）</td>
       <td class="num" style="font-weight:600;color:${done?'var(--accent)':'var(--danger)'}">${done?'已還清':money(bal)}</td>
-      <td>${esc(l.note||'')}${(l.repayments&&l.repayments.length)?`<div style="font-size:11px;color:var(--muted)">現金還款 ${l.repayments.length} 筆</div>`:''}</td>
-      <td style="white-space:nowrap">${done?'':`<button class="act" data-loancash="${l.id}" style="color:var(--accent)">現金還款</button> `}<button class="act danger" data-delloan="${l.id}">刪</button></td>
+      <td>${esc(l.note||'')}${repayDetail(l)}</td>
+      <td style="white-space:nowrap">${withCash?`<button class="act" data-loancash="${l.id}" style="color:var(--accent)">現金還款</button> `:''}<button class="act danger" data-delloan="${l.id}">刪</button></td>
     </tr>`;
+  };
+  // 未還清：依員工分組（組頭顯示未還小計），組內照借款日由舊到新
+  const byEmp={}; unpaid.forEach(l=>{ (byEmp[l.empId]=byEmp[l.empId]||[]).push(l); });
+  const empIds=Object.keys(byEmp).sort((a,b)=>empName(a).localeCompare(empName(b),'zh-Hant'));
+  const unpaidRows=empIds.map(eid=>{
+    const ls=byEmp[eid].sort((a,b)=>(a.date||'').localeCompare(b.date||''));
+    const sub=ls.reduce((s,l)=>s+loanBalance(l),0);
+    return `<tr><td colspan="6" style="background:var(--bg);font-weight:700;padding:8px 12px">${esc(empName(eid))}<span style="float:right;color:var(--danger)">未還 ${money(sub)}</span></td></tr>`+ls.map(l=>rowFor(l,false,true)).join('');
   }).join('');
+  // 快速還款：只列有未還借支的員工（含已停用，人走了帳還在）
+  const debtors=empIds.map(eid=>{
+    const sub=byEmp[eid].reduce((s,l)=>s+loanBalance(l),0);
+    return `<option value="${eid}">${esc(empName(eid))}（未還 ${money(sub)}）</option>`;
+  }).join('');
+  const clearedRows=cleared.map(l=>rowFor(l,true,false)).join('');
   return `
-  <div class="card">
-    <div style="font-size:14px;font-weight:600;margin-bottom:4px">借支紀錄區間</div>
-    <p class="sub">依借款日篩選。預設與員工薪資同樣採 11 號週期。</p>
-    <div class="row">
-      <div class="field"><label>起</label><input type="date" id="loan-from" value="${loanFrom}"></div>
-      <div class="field"><label>訖</label><input type="date" id="loan-to" value="${loanTo}"></div>
-      <button class="act" id="loan-thisperiod" style="height:36px;padding:0 12px">本期</button>
-      <button class="act" id="loan-lastperiod" style="height:36px;padding:0 12px">上期</button>
-      <button class="act" id="loan-all" style="height:36px;padding:0 12px">全部</button>
-    </div>
-  </div>
   <div class="metrics">
-    <div class="metric"><div class="l">借支筆數</div><div class="v">${loans.length}</div></div>
+    <div class="metric"><div class="l">未還清筆數</div><div class="v">${unpaid.length}</div></div>
     <div class="metric"><div class="l">尚未還清總額</div><div class="v">${money(outstanding)}</div></div>
+  </div>
+  ${unpaid.length?`<div class="card" style="border-left:3px solid var(--accent)">
+    <div style="font-size:14px;font-weight:600;margin-bottom:4px">快速還款（現金，不扣薪）</div>
+    <p class="sub">選員工、輸金額，自動從<b>最舊的借支</b>開始沖銷，一筆還完自動沖下一筆；每筆借支會留下還款明細（點「現金還款 N 筆」可展開、可刪）。要指定沖某一筆的話，用下面清單該筆的「現金還款」。</p>
+    <div class="row">
+      <div class="field"><label>員工</label><select id="qp-emp">${debtors}</select></div>
+      <div class="field"><label>還款日</label><input type="date" id="qp-date" value="${localISODate()}"></div>
+      <div class="field"><label>金額</label><input type="number" id="qp-amount" min="0" step="100" style="width:130px"></div>
+      <button class="btn" id="loan-quickpay">登記還款</button>
+    </div>
+  </div>`:''}
+  <div class="card">
+    <div style="font-size:14px;font-weight:600;margin-bottom:4px">未還清借支（${unpaid.length} 筆・不分日期一律顯示）</div>
+    ${unpaid.length===0?'<div class="empty">目前沒有未還清的借支 ✓</div>':`<div class="scroll"><table>
+      <thead><tr><th>借款日</th><th class="num">總額</th><th class="num">已扣</th><th class="num">剩餘</th><th>備註</th><th></th></tr></thead>
+      <tbody>${unpaidRows}</tbody></table></div>`}
   </div>
   <div class="card">
     <div style="font-size:14px;font-weight:600;margin-bottom:4px">新增借支</div>
@@ -4786,9 +4844,20 @@ function viewLoans(){
       <div class="field" style="flex:1;min-width:140px"><label>備註（選填）</label><input id="loan-note" placeholder="例：預支生活費"></div>
       <button class="btn" id="loan-add">＋ 新增借支</button>
     </div>
-    ${rows===''?'<div class="empty">尚無借支紀錄。</div>':`<div class="scroll"><table>
+  </div>
+  <div class="card">
+    <div style="font-size:14px;font-weight:600;margin-bottom:4px">已還清（歷史紀錄）</div>
+    <p class="sub">依借款日篩選，預設與員工薪資同樣採 11 號週期。未還清的不受這裡影響、永遠顯示在上面。</p>
+    <div class="row" style="margin-bottom:10px">
+      <div class="field"><label>起</label><input type="date" id="loan-from" value="${loanFrom}"></div>
+      <div class="field"><label>訖</label><input type="date" id="loan-to" value="${loanTo}"></div>
+      <button class="act" id="loan-thisperiod" style="height:36px;padding:0 12px">本期</button>
+      <button class="act" id="loan-lastperiod" style="height:36px;padding:0 12px">上期</button>
+      <button class="act" id="loan-all" style="height:36px;padding:0 12px">全部</button>
+    </div>
+    ${clearedRows===''?'<div class="empty">此區間沒有已還清的借支。</div>':`<div class="scroll"><table>
       <thead><tr><th>借款日</th><th>員工</th><th class="num">總額</th><th class="num">已扣</th><th class="num">剩餘</th><th>備註</th><th></th></tr></thead>
-      <tbody>${rows}</tbody></table></div>`}
+      <tbody>${clearedRows}</tbody></table></div>`}
   </div>`;
 }
 
