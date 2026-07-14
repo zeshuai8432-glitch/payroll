@@ -4563,9 +4563,13 @@ function billingDocInner(id){
   const photos=billingPhotos[id]||[];
   const amt=billingAmount(b);
   const applyUnit=siteApplyUnit(b.site);
+  // 照片依張數自適應：1 張放大單欄（跟表頭簽名同頁）、2 張並排、3 張以上兩張一排，
+  // 盡量塞進同一頁 A4，看得清楚為主，不再一張照片吃一頁
+  const pMaxW=photos.length===1?'100%':'48.5%';
+  const pMaxH=photos.length===1?560:(photos.length===2?440:360);
   const photoSec=photos.length?`<div class="sec">施作照片</div>
-    <div style="display:flex;flex-direction:column;gap:12px;margin:8px 0 16px">
-      ${photos.map(url=>`<img src="${url}" style="max-width:100%;width:auto;max-height:640px;object-fit:contain;border:1px solid #ddd;border-radius:4px;page-break-inside:avoid;-webkit-print-color-adjust:exact">`).join('')}
+    <div style="display:flex;flex-wrap:wrap;gap:10px;margin:8px 0 14px;align-items:flex-start">
+      ${photos.map(url=>`<img src="${url}" style="max-width:${pMaxW};width:auto;max-height:${pMaxH}px;object-fit:contain;border:1px solid #ddd;border-radius:4px;page-break-inside:avoid;-webkit-print-color-adjust:exact">`).join('')}
     </div>`:'';
   const sig=billingSigs[id]||null;
   const signImgHtml=sig?`<img src="${sig}" style="display:block;height:72px;max-width:220px;margin-top:6px">`:'';
