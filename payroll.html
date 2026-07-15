@@ -4583,7 +4583,7 @@ function billingDocInner(id, internal){
   // 內帳版：列出所有「分攤入本單」的來源項目
   const allocIns=internal?state.billings.map(x=>({x,inAmt:(Array.isArray(x.allocOut)?x.allocOut:[]).filter(a=>a&&a.to===b.id).reduce((s,a)=>s+(Number(a.amount)||0),0)})).filter(e=>e.x.id!==b.id&&e.inAmt>0):[];
   const internalSec=allocIns.length?`
-    <div class="sec">內帳明細（內部備查，勿交業主）</div>
+    <div class="sec">內帳明細（內部備查）</div>
     <table><thead><tr><th>項目</th><th>計算式</th><th class="num">內含金額</th></tr></thead><tbody>
       ${b.wrapAlloc?'':`<tr><td>本單自身項目</td><td>${billingLineMeta(b)||'—'}</td><td class="num">${money(amt-allocIns.reduce((s,e)=>s+e.inAmt,0))}</td></tr>`}
       ${allocIns.map(e=>`<tr><td>${esc(e.x.note||'（未填說明）')}</td><td>${billingLineMeta(e.x)||'—'}</td><td class="num">${money(e.inAmt)}</td></tr>`).join('')}
@@ -5871,7 +5871,7 @@ function viewBillingAdd(){
             <button class="act" data-mergestart="${b.id}" title="金額分攤到同案場一或多張追加單，本單內帳保留">分攤→</button>
             ${ms>0?`<button class="act" data-wraptoggle="${b.id}" title="加總：分攤入直接加進對外金額。內含：本單是對外包裝單，分攤入視為內容物不加總，對外＝本單計算式" style="${b.wrapAlloc?'color:#1d4ed8;border:1px solid #1d4ed8;border-radius:6px':''}">${b.wrapAlloc?'內含模式':'分攤入：加總'}</button>`:''}
             <button class="act" data-billedit-add="${b.id}">改</button>
-            <button class="act" data-billprint-int="${b.id}" title="對內視角列印：有內含項目時自動攤開列出（標「內帳版」，勿交業主）；要印給業主的請切「對外」視角再印">列印</button>
+            <button class="act" data-billprint-int="${b.id}" title="對內視角列印：有內含項目時自動攤開列出（標「內帳版」）；要印給業主的請切「對外」視角再印">列印</button>
             ${billMoreOpen[b.id]?`<button class="act" data-printamt="${b.id}" title="對外開單金額（議價/含併入時蓋過計算式）">${(b.printAmount!=null&&b.printAmount!=='')?'改對外金額':'設對外金額'}</button>
             <button class="act" data-copy-add="${b.id}">複製</button>`:''}
             <button class="act" data-billmore="${b.id}" title="更多功能（設對外金額、複製）">${billMoreOpen[b.id]?'×':'⋯'}</button>
