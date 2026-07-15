@@ -3709,6 +3709,7 @@ function bind(){
   });
   // 追加單頁：改（inline 展開）
   document.querySelectorAll('[data-billedit-add]').forEach(b=>b.onclick=()=>{ billingAddEditId=b.dataset.billeditAdd; render(); });
+  document.querySelectorAll('[data-billmore]').forEach(b=>b.onclick=()=>{ billMoreOpen[b.dataset.billmore]=!billMoreOpen[b.dataset.billmore]; render(); });
   document.querySelectorAll('[data-bae-cancel]').forEach(b=>b.onclick=()=>{ billingAddEditId=null; render(); });
   // 追加單視角切換：對內（全部內帳）／對外（業主看的）
   const bvIn=document.getElementById('bv-in'); if(bvIn) bvIn.onclick=()=>{ billViewMode='in'; render(); };
@@ -5242,6 +5243,7 @@ let dealPosting=null, dealEditId=null, dealCarry=null, coopCarry=null, billEditI
 let billMergeSrc=null; // 追加單「分攤→」選目標中
 let billViewMode='in'; // 追加單視角：'in'＝對內（全部內帳）、'out'＝對外（業主看的）
 let billAllocOpen={}; // 目標單底下「內含內帳」收合狀態（點開看）
+let billMoreOpen={}; // 對內視角「⋯更多」按鈕展開狀態（設對外金額/複製收在裡面）
 let billingPhotos={}; // { [billingId]: [dataUrl, ...] }
 let billingPhotosDeleted={}; // { [billingId]: [已刪除的url, ...] } — 刪除記號，避免同步時被雲端補回來
 let billingSigs={}; // { [billingId]: dataUrl }
@@ -5868,12 +5870,11 @@ function viewBillingAdd(){
             <button class="act ${b.settled?'':'muted'}" data-togglesettle="${b.id}" style="${b.settled?'color:var(--accent)':''}">${b.settled?settleLabels(b).on:settleLabels(b).off}</button>
             <button class="act" data-mergestart="${b.id}" title="金額分攤到同案場一或多張追加單，本單內帳保留">分攤→</button>
             ${ms>0?`<button class="act" data-wraptoggle="${b.id}" title="加總：分攤入直接加進對外金額。內含：本單是對外包裝單，分攤入視為內容物不加總，對外＝本單計算式" style="${b.wrapAlloc?'color:#1d4ed8;border:1px solid #1d4ed8;border-radius:6px':''}">${b.wrapAlloc?'內含模式':'分攤入：加總'}</button>`:''}
-            <button class="act" data-printamt="${b.id}" title="對外開單金額（議價/含併入時蓋過計算式）">${(b.printAmount!=null&&b.printAmount!=='')?'改對外金額':'設對外金額'}</button>
-            <button class="act" data-copy-add="${b.id}">複製</button>
             <button class="act" data-billedit-add="${b.id}">改</button>
             <button class="act" data-billprint-int="${b.id}" title="對內視角列印：有內含項目時自動攤開列出（標「內帳版」，勿交業主）；要印給業主的請切「對外」視角再印">列印</button>
-            <button class="act" data-billsign="${b.id}" style="${billingSigs[b.id]?'color:var(--accent)':''}">${billingSigs[b.id]?(billingSigsLocked[b.id]?'🔒 工程師':'✍ 工程師'):'✍ 工程師簽'}</button>
-            <button class="act" data-billsign-so="${b.id}" style="${billingSigs[b.id+'::so']?'color:var(--accent)':''}">${billingSigs[b.id+'::so']?(billingSigsLocked[b.id+'::so']?'🔒 所長':'✍ 所長'):'✍ 所長簽'}</button>
+            ${billMoreOpen[b.id]?`<button class="act" data-printamt="${b.id}" title="對外開單金額（議價/含併入時蓋過計算式）">${(b.printAmount!=null&&b.printAmount!=='')?'改對外金額':'設對外金額'}</button>
+            <button class="act" data-copy-add="${b.id}">複製</button>`:''}
+            <button class="act" data-billmore="${b.id}" title="更多功能（設對外金額、複製）">${billMoreOpen[b.id]?'×':'⋯'}</button>
             <button class="act danger" data-delbill="${b.id}">刪</button>
           </div>
         </div>
