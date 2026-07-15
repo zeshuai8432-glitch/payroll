@@ -454,15 +454,19 @@
   #print-overlay .bluedoc tr.flag-b td { background: #DBEAFE !important; }
   #print-overlay .bluedoc .foot { margin-top: 22px; padding-top: 8px; border-top: 2px solid #1E3A8A; font-size: 11px; color: #64748B; display: flex; justify-content: space-between; }
   @media print {
+    html, body { background: #fff !important; } /* 列印背景一律白，最後一頁不要露出灰底 */
     body > .top, body > .layout { display: none !important; }
     #print-overlay { position: static; padding: 0; }
     #print-overlay .pbar { display: none !important; }
     #sig-section { display: none !important; }
-    @page { size: A4; margin: 16mm; }
+    /* 頁邊距設 0：瀏覽器的頁首（日期/網頁標題）與頁尾（網址/頁碼）印在邊距區，
+       沒有邊距就不會出現；文件邊距改由下方 padding 自己畫 */
+    @page { size: A4; margin: 0; }
+    #print-overlay .bluedoc, #print-overlay .paydoc { padding: 14mm 14mm 12mm; }
     /* 寬表報表（如薪資總表）改橫向列印，避免右側欄位被截掉 */
     #print-overlay.landscape .pdoc { max-width: none; page: landscapePage; }
   }
-  @page landscapePage { size: A4 landscape; margin: 12mm; }
+  @page landscapePage { size: A4 landscape; margin: 0; }
 </style>
 </head>
 <body>
@@ -4668,7 +4672,7 @@ function printBillingDocs(ids){
   if(!ids.length){ alert('請先勾選要列印的追加單'); return; }
   const pages=ids.map((id,i)=>{
     const html=billingDocInner(id); if(!html) return '';
-    return `<div style="${i>0?'page-break-before:always;padding-top:24px':''}">${html}</div>`;
+    return `<div style="${i>0?'page-break-before:always;padding-top:12mm':''}">${html}</div>`;
   }).filter(Boolean).join('');
   const old=document.getElementById('print-overlay'); if(old) old.remove();
   const ov=document.createElement('div');
