@@ -4561,7 +4561,9 @@ function billingDocInner(id){
   const b=state.billings.find(x=>x.id===id); if(!b) return '';
   const type=(b.docType||'請款單');
   const photos=billingPhotos[id]||[];
-  const amt=billingAmount(b);
+  // 已全數分攤的內帳暗單：列印內帳版——金額用原始計算式（對外金額是 0，印出來沒意義）
+  const isDark=isFullyAllocated(b);
+  const amt=isDark?rawBillingAmount(b):billingAmount(b);
   const applyUnit=siteApplyUnit(b.site);
   // 照片依張數自適應：1 張放大單欄（跟表頭簽名同頁）、2 張並排、3 張以上兩張一排，
   // 盡量塞進同一頁 A4，看得清楚為主，不再一張照片吃一頁
@@ -4583,7 +4585,7 @@ function billingDocInner(id){
     <div class="sec">金額</div>
     <table><thead><tr><th>項目</th><th>單位</th><th class="num">數量</th><th class="num">單價</th><th class="num">小計</th></tr></thead>
       <tbody>
-        ${(b.printAmount!=null&&b.printAmount!=='')||(!b.wrapAlloc&&mergedIntoSum(b)>0)||allocOutSum(b)>0
+        ${!isDark&&((b.printAmount!=null&&b.printAmount!=='')||(!b.wrapAlloc&&mergedIntoSum(b)>0)||allocOutSum(b)>0)
           ? `<tr><td>${esc(b.note||type)}</td><td>式</td><td class="num">1</td><td class="num">${money(amt)}</td><td class="num">${money(amt)}</td></tr>`
           : `<tr><td>${esc(b.note||type)}</td><td>${esc(b.unit||'')}</td><td class="num">${b.qty!==undefined?b.qty:'—'}</td><td class="num">${b.unitPrice!==undefined?money(b.unitPrice):'—'}</td><td class="num">${money(amt)}</td></tr>`}
         <tr class="total-row"><td colspan="4">總金額</td><td class="num">${money(amt)}</td></tr>
@@ -5699,7 +5701,32 @@ function viewBillingAdd(){
     // 分攤標籤（→ 目標 $金額 ✕）與「已分攤內帳單」的灰色列（可縮排掛在目標單底下）
     const allocTagsFor=(bb)=>(bb.allocOut||[]).map((a,i)=>{ const tgt=state.billings.find(x=>x.id===a.to);
       return `<span style="display:inline-flex;align-items:center;gap:4px;background:#eef6ff;color:#1d4ed8;border-radius:6px;padding:2px 6px;margin:2px;font-size:12px">→ ${tgt?esc(String(tgt.note||tgt.date||'').slice(0,16)):'（目標已刪）'} ${money(a.amount)}<button data-allocdel="${bb.id}::${i}" style="border:none;background:none;color:var(--danger);cursor:pointer;font-size:12px;padding:0 2px" title="撤銷這筆分攤">✕</button></span>`; }).join('');
-    const allocRow=(bb)=>`<div style="border-top:1px solid var(--line);padding:10px 0;opacity:.75">
+    // 編輯表單（一般列與暗單列共用）
+    const addEditFormFor=(b,sep)=>{
+      const siteOpts=siteSelectOptions(b.site);
+      return `<div style="${sep}padding:14px 0 10px">
+          <div style="font-size:12px;font-weight:700;color:#6366f1;margin-bottom:10px">編輯此筆${isFullyAllocated(b)?'（內帳暗單：改完若金額大於已分攤合計，會浮回一般清單顯示差額）':''}</div>
+          <div class="row">
+            <div class="field"><label>日期</label><input type="date" id="bae-date" value="${b.date||''}"></div>
+            <div class="field" style="flex:1;min-width:140px"><label>案場</label><select id="bae-site">${siteOpts}</select></div>
+            <div class="field"><label>單位</label><input id="bae-unit" value="${esc(b.unit||'式')}" style="width:80px"></div>
+            <div class="field"><label>數量</label><input type="number" id="bae-qty" value="${b.qty!==undefined?b.qty:1}" min="0" step="0.01" style="width:80px"></div>
+            <div class="field"><label>單價</label><input type="number" id="bae-unit-price" value="${b.unitPrice!==undefined?b.unitPrice:billingAmount(b)}" min="0" step="1" style="width:110px"></div>
+            <div class="field"><label>小計</label><div id="bae-subtotal" class="num" style="height:36px;display:flex;align-items:center;font-weight:700">${money(billingAmount(b))}</div></div>
+            <div class="field"><label>業主</label><input id="bae-client" list="client-memory-list" value="${esc(b.client||'')}" style="width:100px"></div>
+            <div class="field" style="flex:1;min-width:180px"><label>說明（追加項目）</label><input id="bae-note" value="${esc(b.note||'')}" placeholder="例：追加防水工程"></div>
+            <div class="field" style="flex:1;min-width:150px"><label>備注（可換行）</label><textarea id="bae-remark" rows="2" placeholder="其他備注">${esc(b.remark||'')}</textarea></div>
+            <div class="field"><label>收款狀態</label><select id="bae-settled"><option value="">未收款</option><option value="1" ${b.settled?'selected':''}>已收款</option></select></div>
+          </div>
+          <div style="display:flex;gap:8px;margin-top:8px">
+            <button class="btn" data-bae-ok="${b.id}">儲存</button>
+            <button class="act muted" data-bae-cancel="1" style="cursor:pointer;height:40px">取消</button>
+          </div>
+        </div>`;
+    };
+    const allocRow=(bb)=>{
+      if(billingAddEditId===bb.id) return `<div style="border-top:1px solid var(--line)">${addEditFormFor(bb,'')}</div>`;
+      return `<div style="border-top:1px solid var(--line);padding:10px 0;opacity:.75">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap">
         <div style="flex:1;min-width:0">
           <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap">
@@ -5713,13 +5740,16 @@ function viewBillingAdd(){
           ${bb.note?`<div style="font-size:13px;color:var(--text);margin-top:4px;font-weight:500">${esc(bb.note)}</div>`:''}
           ${bb.remark?`<div style="font-size:12px;color:var(--muted);margin-top:2px">備注：${escBr(bb.remark)}</div>`:''}
           <div style="margin-top:4px">分攤去向：${allocTagsFor(bb)}</div>
-          <div style="font-size:11px;color:var(--muted);margin-top:2px">內帳備查：金額已灌入目標單對外呈現，不重複計帳；收款以目標單為準。按 ✕ 可撤銷該筆分攤。</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:2px">內帳備查：金額已灌入目標單對外呈現，不重複計帳；收款以目標單為準。按 ✕ 可撤銷該筆分攤；「列印」印的是內帳版（原始計算式與金額）。</div>
         </div>
         <div style="display:flex;gap:4px;flex-wrap:wrap;flex-shrink:0">
+          <button class="act" data-billprint="${bb.id}">列印</button>
+          <button class="act" data-billedit-add="${bb.id}">改</button>
           <button class="act danger" data-delbill="${bb.id}">刪</button>
         </div>
       </div>
     </div>`;
+    };
     // 組一個區塊：一般單照序；已分攤的暗單「收合」在目標單底下（點開看詳細），目標不在本區的收到最後
     const buildSection=(arr)=>{
       const mains=arr.filter(x=>!isFullyAllocated(x));
@@ -5785,28 +5815,7 @@ function viewBillingAdd(){
       const thumbs=photos.map((url,i)=>`<div style="position:relative;display:inline-block;vertical-align:top;margin:3px"><img src="${url}" class="photo-thumb" style="width:80px;height:60px;object-fit:cover;border-radius:8px;border:1px solid var(--line)"><button data-photodel="${b.id}" data-photoidx="${i}" style="position:absolute;top:-5px;right:-5px;width:20px;height:20px;border-radius:50%;border:none;background:var(--danger);color:#fff;font-size:11px;cursor:pointer;padding:0;line-height:20px;text-align:center">✕</button></div>`).join('');
       const sep=idx>0?'border-top:1px solid var(--line);':'';
 
-      if(billingAddEditId===b.id){
-        const siteOpts=siteSelectOptions(b.site);
-        return `<div style="${sep}padding:14px 0 10px">
-          <div style="font-size:12px;font-weight:700;color:#6366f1;margin-bottom:10px">編輯此筆</div>
-          <div class="row">
-            <div class="field"><label>日期</label><input type="date" id="bae-date" value="${b.date||''}"></div>
-            <div class="field" style="flex:1;min-width:140px"><label>案場</label><select id="bae-site">${siteOpts}</select></div>
-            <div class="field"><label>單位</label><input id="bae-unit" value="${esc(b.unit||'式')}" style="width:80px"></div>
-            <div class="field"><label>數量</label><input type="number" id="bae-qty" value="${b.qty!==undefined?b.qty:1}" min="0" step="0.01" style="width:80px"></div>
-            <div class="field"><label>單價</label><input type="number" id="bae-unit-price" value="${b.unitPrice!==undefined?b.unitPrice:billingAmount(b)}" min="0" step="1" style="width:110px"></div>
-            <div class="field"><label>小計</label><div id="bae-subtotal" class="num" style="height:36px;display:flex;align-items:center;font-weight:700">${money(billingAmount(b))}</div></div>
-            <div class="field"><label>業主</label><input id="bae-client" list="client-memory-list" value="${esc(b.client||'')}" style="width:100px"></div>
-            <div class="field" style="flex:1;min-width:180px"><label>說明（追加項目）</label><input id="bae-note" value="${esc(b.note||'')}" placeholder="例：追加防水工程"></div>
-            <div class="field" style="flex:1;min-width:150px"><label>備注（可換行）</label><textarea id="bae-remark" rows="2" placeholder="其他備注">${esc(b.remark||'')}</textarea></div>
-            <div class="field"><label>收款狀態</label><select id="bae-settled"><option value="">未收款</option><option value="1" ${b.settled?'selected':''}>已收款</option></select></div>
-          </div>
-          <div style="display:flex;gap:8px;margin-top:8px">
-            <button class="btn" data-bae-ok="${b.id}">儲存</button>
-            <button class="act muted" data-bae-cancel="1" style="cursor:pointer;height:40px">取消</button>
-          </div>
-        </div>`;
-      }
+      if(billingAddEditId===b.id) return addEditFormFor(b,sep);
 
       const allocList=()=>allocTagsFor(b);
       // 已全數分攤出去：由 buildSection 收合到目標單底下呈現（此分支為保險）
