@@ -420,9 +420,8 @@
   /* 簽名版簽名格：簽名圖放在簽名線「上方」的固定高度格子，有簽沒簽高度都一樣，
      簽了名不會把版面撐到分頁；整個 .sign 也設為不可分頁，避免孤兒簽名獨占一頁 */
   #print-overlay .sign > div.sigcell { border-top: none; padding-top: 0; }
-  #print-overlay .sign:has(.sigcell) { margin-top: 44px; } /* 簽名圖會往上浮 40px，多留一點上緣 */
-  #print-overlay .sigcell .sigbox { position: relative; height: 28px; } /* 版面只佔 28px，簽了名也幾乎不增加整份高度 */
-  #print-overlay .sigcell .sigbox img { position: absolute; left: 6px; bottom: 2px; height: 68px; max-width: 220px; }
+  #print-overlay .sigcell .sigbox { position: relative; height: 64px; } /* 簽名完整包在格子內，換頁時不會被頁縫切半 */
+  #print-overlay .sigcell .sigbox img { position: absolute; left: 6px; bottom: 2px; height: 60px; max-width: 220px; }
   #print-overlay .sigcell .siglabel { border-top: 1px solid #1f2421; padding-top: 6px; }
   #print-overlay .sub { font-size: 11px; color: #777; margin-top: 8px; }
   #print-overlay .sec { font-size: 13px; font-weight: 700; margin: 16px 0 6px; }
@@ -4579,10 +4578,10 @@ function billingDocInner(id, internal){
   const isDark=isFullyAllocated(b);
   const amt=isDark?rawBillingAmount(b):billingAmount(b);
   const applyUnit=siteApplyUnit(b.site);
-  // 照片依張數自適應：1 張放大單欄（跟表頭簽名同頁）、2 張並排、3 張以上兩張一排，
-  // 盡量塞進同一頁 A4，看得清楚為主，不再一張照片吃一頁
-  const pMaxW=photos.length===1?'100%':'48.5%';
-  const pMaxH=photos.length===1?560:(photos.length===2?440:360);
+  // 照片依張數自適應：1 張放大單欄、2 張並排、3 張以上三張一排（直幅手機照三張剛好一排），
+  // 盡量塞進同一頁 A4，看得清楚為主，不再一張照片吃一頁、也不讓落單照片把簽名擠到下一頁
+  const pMaxW=photos.length===1?'100%':(photos.length===2?'48.5%':'32%');
+  const pMaxH=photos.length===1?560:(photos.length===2?440:400);
   const photoSec=photos.length?`<div class="sec">施作照片</div>
     <div style="display:flex;flex-wrap:wrap;gap:10px;margin:8px 0 14px;align-items:flex-start">
       ${photos.map(url=>`<img src="${url}" style="max-width:${pMaxW};width:auto;max-height:${pMaxH}px;object-fit:contain;border:1px solid #ddd;border-radius:4px;page-break-inside:avoid;-webkit-print-color-adjust:exact">`).join('')}
