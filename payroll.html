@@ -414,9 +414,16 @@
   #print-overlay th { background: #eef1ee; text-align: left; font-size: 12px; text-transform: none; letter-spacing: 0; }
   #print-overlay td.num, #print-overlay th.num { text-align: right; font-variant-numeric: tabular-nums; }
   #print-overlay .total-row td { font-weight: 700; background: #f6f7f5; }
-  #print-overlay .sign { margin-top: 32px; font-size: 13px; display: flex; gap: 48px; }
+  #print-overlay .sign { margin-top: 32px; font-size: 13px; display: flex; gap: 48px; page-break-inside: avoid; break-inside: avoid; }
   #print-overlay .sign > div { border-top: 1px solid #1f2421; padding-top: 6px; min-width: 160px; }
   #print-overlay .sign > div div { border-top: none; padding-top: 0; min-width: 0; }
+  /* 簽名版簽名格：簽名圖放在簽名線「上方」的固定高度格子，有簽沒簽高度都一樣，
+     簽了名不會把版面撐到分頁；整個 .sign 也設為不可分頁，避免孤兒簽名獨占一頁 */
+  #print-overlay .sign > div.sigcell { border-top: none; padding-top: 0; }
+  #print-overlay .sign:has(.sigcell) { margin-top: 44px; } /* 簽名圖會往上浮 40px，多留一點上緣 */
+  #print-overlay .sigcell .sigbox { position: relative; height: 28px; } /* 版面只佔 28px，簽了名也幾乎不增加整份高度 */
+  #print-overlay .sigcell .sigbox img { position: absolute; left: 6px; bottom: 2px; height: 68px; max-width: 220px; }
+  #print-overlay .sigcell .siglabel { border-top: 1px solid #1f2421; padding-top: 6px; }
   #print-overlay .sub { font-size: 11px; color: #777; margin-top: 8px; }
   #print-overlay .sec { font-size: 13px; font-weight: 700; margin: 16px 0 6px; }
   #print-overlay h2.sec { font-size: 14px; margin: 18px 0 6px; padding-top: 10px; border-top: 1px solid #cfd2cd; }
@@ -4577,9 +4584,9 @@ function billingDocInner(id, internal){
       ${photos.map(url=>`<img src="${url}" style="max-width:${pMaxW};width:auto;max-height:${pMaxH}px;object-fit:contain;border:1px solid #ddd;border-radius:4px;page-break-inside:avoid;-webkit-print-color-adjust:exact">`).join('')}
     </div>`:'';
   const sig=billingSigs[id]||null;
-  const signImgHtml=sig?`<img src="${sig}" style="display:block;height:72px;max-width:220px;margin-top:6px">`:'';
+  const signImgHtml=sig?`<img src="${sig}">`:''; // 樣式由 .sigbox img 控制：固定高度、貼在簽名線上方
   const soSig=billingSigs[id+'::so']||null; // 所長簽名（追加單專用，另存一個 key）
-  const soSignImgHtml=soSig?`<img src="${soSig}" style="display:block;height:72px;max-width:220px;margin-top:6px">`:'';
+  const soSignImgHtml=soSig?`<img src="${soSig}">`:'';
   // 內帳版：列出所有「分攤入本單」的來源項目
   const allocIns=internal?state.billings.map(x=>({x,inAmt:(Array.isArray(x.allocOut)?x.allocOut:[]).filter(a=>a&&a.to===b.id).reduce((s,a)=>s+(Number(a.amount)||0),0)})).filter(e=>e.x.id!==b.id&&e.inAmt>0):[];
   const internalSec=allocIns.length?`
@@ -4606,12 +4613,12 @@ function billingDocInner(id, internal){
     ${internalSec}
     ${photoSec}
     <div class="sign">
-      <div>申請單位${applyUnit?`<div style="font-size:13px;font-weight:400;margin-top:10px">${esc(applyUnit)}</div>`:''}</div>
+      <div class="sigcell"><div class="sigbox"></div><div class="siglabel">申請單位${applyUnit?`<div style="font-size:13px;font-weight:400;margin-top:10px">${esc(applyUnit)}</div>`:''}</div></div>
       ${type==='追加單'
-        ? `<div>現場工程師確認項目${signImgHtml}</div>
-      <div>所長：${soSignImgHtml}</div>`
-        : `<div>審核</div>
-      <div>業主簽收${signImgHtml}</div>`}
+        ? `<div class="sigcell"><div class="sigbox">${signImgHtml}</div><div class="siglabel">現場工程師確認項目</div></div>
+      <div class="sigcell"><div class="sigbox">${soSignImgHtml}</div><div class="siglabel">所長</div></div>`
+        : `<div class="sigcell"><div class="sigbox"></div><div class="siglabel">審核</div></div>
+      <div class="sigcell"><div class="sigbox">${signImgHtml}</div><div class="siglabel">業主簽收</div></div>`}
     </div>`;
 }
 
@@ -6891,7 +6898,9 @@ document.addEventListener('visibilitychange', ()=>{
 });
 
 (function(){ const v=document.getElementById('app-version'); if(v){ v.textContent=APP_VERSION; v.style.display=''; } })(); // 版本號常駐顯示，方便確認是否拿到新版
-loadLocal(); loadPhotos(); loadSigs(); refreshPrevIds();
+// 先載簽名再載主資料：loadLocal→applyData→mergeBillingSigs 會把「當下記憶體裡的簽名」寫回本機快取，
+// 若簽名還沒載入（空的）會把本機簽名快取洗掉——雲端正常時會補回來所以沒人發現，離線開啟簽名就不見了
+loadSigs(); loadLocal(); loadPhotos(); refreshPrevIds();
 try{ const t=localStorage.getItem(LS_TAB); if(t) state.tab=t; }catch(e){} // 還原上次所在分頁
 setTimeout(()=>{ try{ checkPinyouExpenses(false); }catch(e){} }, 3000); // 開頁自動檢查品佑帳本有沒有新支出（背景、不打擾）
 render(); loadCloud();
