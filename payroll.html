@@ -3922,6 +3922,7 @@ function bind(){
   bindSiteClientAutofill('bae-site','bae-client');
   bindSiteClientAutofill('b-site','b-client');
   document.querySelectorAll('[data-billprint]').forEach(b=>b.onclick=()=>printBillingDoc(b.dataset.billprint));
+  document.querySelectorAll('[data-billprint-int]').forEach(b=>b.onclick=()=>printBillingDoc(b.dataset.billprintInt,true));
   document.querySelectorAll('[data-billsign]').forEach(b=>b.onclick=()=>{
     const id=b.dataset.billsign;
     if(billingSigsLocked[id]){
@@ -4557,7 +4558,8 @@ function openFullscreenSign(onSaved, title){
 }
 
 // 單張追加單 / 請款單的文件 HTML（供單張列印和批次列印共用）
-function billingDocInner(id){
+// internal=true：內帳版——把「分攤入本單」的內含項目逐筆攤開列出（含計算式），文件標「內帳版」，只給自己人看
+function billingDocInner(id, internal){
   const b=state.billings.find(x=>x.id===id); if(!b) return '';
   const type=(b.docType||'請款單');
   const photos=billingPhotos[id]||[];
@@ -4577,7 +4579,16 @@ function billingDocInner(id){
   const signImgHtml=sig?`<img src="${sig}" style="display:block;height:72px;max-width:220px;margin-top:6px">`:'';
   const soSig=billingSigs[id+'::so']||null; // 所長簽名（追加單專用，另存一個 key）
   const soSignImgHtml=soSig?`<img src="${soSig}" style="display:block;height:72px;max-width:220px;margin-top:6px">`:'';
-  return `<h1>${esc(type)}</h1>
+  // 內帳版：列出所有「分攤入本單」的來源項目
+  const allocIns=internal?state.billings.map(x=>({x,inAmt:(Array.isArray(x.allocOut)?x.allocOut:[]).filter(a=>a&&a.to===b.id).reduce((s,a)=>s+(Number(a.amount)||0),0)})).filter(e=>e.x.id!==b.id&&e.inAmt>0):[];
+  const internalSec=allocIns.length?`
+    <div class="sec">內帳明細（內部備查，勿交業主）</div>
+    <table><thead><tr><th>項目</th><th>計算式</th><th class="num">內含金額</th></tr></thead><tbody>
+      ${b.wrapAlloc?'':`<tr><td>本單自身項目</td><td>${billingLineMeta(b)||'—'}</td><td class="num">${money(amt-allocIns.reduce((s,e)=>s+e.inAmt,0))}</td></tr>`}
+      ${allocIns.map(e=>`<tr><td>${esc(e.x.note||'（未填說明）')}</td><td>${billingLineMeta(e.x)||'—'}</td><td class="num">${money(e.inAmt)}</td></tr>`).join('')}
+      <tr class="total-row"><td colspan="2">對外開單金額${b.wrapAlloc?'（以上項目已內含於本單計算式，不另加計）':'（本單＋內含合計）'}</td><td class="num">${money(amt)}</td></tr>
+    </tbody></table>`:'';
+  return `<h1>${esc(type)}${allocIns.length?'<span style="font-size:14px;background:#fde9d4;color:#9a5b1a;border-radius:6px;padding:2px 10px;margin-left:10px;vertical-align:middle">內帳版</span>':''}</h1>
     <div class="meta">日期：${esc(b.date||'')}　|　案場：${esc(siteDisplayLabel(b.site)||'')}</div>
     <table><tbody>
       <tr><th style="width:90px">業主</th><td>${esc(b.client||'')}${type!=='追加單'&&b.method?`　（${esc(b.method)}）`:''}</td></tr>
@@ -4591,6 +4602,7 @@ function billingDocInner(id){
         <tr class="total-row"><td colspan="4">總金額</td><td class="num">${money(amt)}</td></tr>
         ${b.remark?`<tr><td colspan="5" style="padding-top:8px;color:#555;font-size:13px">備注：${escBr(b.remark)}</td></tr>`:''}
       </tbody></table>
+    ${internalSec}
     ${photoSec}
     <div class="sign">
       <div>申請單位${applyUnit?`<div style="font-size:13px;font-weight:400;margin-top:10px">${esc(applyUnit)}</div>`:''}</div>
@@ -4603,10 +4615,10 @@ function billingDocInner(id){
 }
 
 // 列印單張追加單 / 請款單（含業主簽名）
-function printBillingDoc(id){
+function printBillingDoc(id, internal){
   const b=state.billings.find(x=>x.id===id); if(!b) return;
   const isAdd=(b.docType||'請款單')==='追加單';
-  const inner=billingDocInner(id);
+  const inner=billingDocInner(id, internal);
 
   // 一個簽名控制項：key＝簽名儲存鍵，label＝簽名人抬頭（追加單有工程師＋所長兩個）
   const signCtl=(key,label)=> billingSigs[key]
@@ -5860,6 +5872,7 @@ function viewBillingAdd(){
             <button class="act" data-copy-add="${b.id}">複製</button>
             <button class="act" data-billedit-add="${b.id}">改</button>
             <button class="act" data-billprint="${b.id}">列印</button>
+            ${allocInSum(b)>0?`<button class="act" data-billprint-int="${b.id}" style="color:#9a5b1a" title="攤開內含項目逐筆列出（含計算式），文件標「內帳版」，勿交業主">列印內帳版</button>`:''}
             <button class="act" data-billsign="${b.id}" style="${billingSigs[b.id]?'color:var(--accent)':''}">${billingSigs[b.id]?(billingSigsLocked[b.id]?'🔒 工程師':'✍ 工程師'):'✍ 工程師簽'}</button>
             <button class="act" data-billsign-so="${b.id}" style="${billingSigs[b.id+'::so']?'color:var(--accent)':''}">${billingSigs[b.id+'::so']?(billingSigsLocked[b.id+'::so']?'🔒 所長':'✍ 所長'):'✍ 所長簽'}</button>
             <button class="act danger" data-delbill="${b.id}">刪</button>
