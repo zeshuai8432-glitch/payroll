@@ -5871,8 +5871,7 @@ function viewBillingAdd(){
             <button class="act" data-printamt="${b.id}" title="對外開單金額（議價/含併入時蓋過計算式）">${(b.printAmount!=null&&b.printAmount!=='')?'改對外金額':'設對外金額'}</button>
             <button class="act" data-copy-add="${b.id}">複製</button>
             <button class="act" data-billedit-add="${b.id}">改</button>
-            <button class="act" data-billprint="${b.id}">列印</button>
-            ${allocInSum(b)>0?`<button class="act" data-billprint-int="${b.id}" style="color:#9a5b1a" title="攤開內含項目逐筆列出（含計算式），文件標「內帳版」，勿交業主">列印內帳版</button>`:''}
+            <button class="act" data-billprint-int="${b.id}" title="對內視角列印：有內含項目時自動攤開列出（標「內帳版」，勿交業主）；要印給業主的請切「對外」視角再印">列印</button>
             <button class="act" data-billsign="${b.id}" style="${billingSigs[b.id]?'color:var(--accent)':''}">${billingSigs[b.id]?(billingSigsLocked[b.id]?'🔒 工程師':'✍ 工程師'):'✍ 工程師簽'}</button>
             <button class="act" data-billsign-so="${b.id}" style="${billingSigs[b.id+'::so']?'color:var(--accent)':''}">${billingSigs[b.id+'::so']?(billingSigsLocked[b.id+'::so']?'🔒 所長':'✍ 所長'):'✍ 所長簽'}</button>
             <button class="act danger" data-delbill="${b.id}">刪</button>
