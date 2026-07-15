@@ -4578,12 +4578,11 @@ function billingDocInner(id, internal){
   const isDark=isFullyAllocated(b);
   const amt=isDark?rawBillingAmount(b):billingAmount(b);
   const applyUnit=siteApplyUnit(b.site);
-  // 照片依張數自適應：1 張放大單欄、2 張並排、3 張以上三張一排（直幅手機照三張剛好一排），
-  // 盡量塞進同一頁 A4，看得清楚為主，不再一張照片吃一頁、也不讓落單照片把簽名擠到下一頁
+  // 照片起始大小依張數（之後 smartFitBillingPhotos 會實測整份高度、逐級收縮到塞進一頁）
   const pMaxW=photos.length===1?'100%':(photos.length===2?'48.5%':'32%');
   const pMaxH=photos.length===1?560:(photos.length===2?440:400);
   const photoSec=photos.length?`<div class="sec">施作照片</div>
-    <div style="display:flex;flex-wrap:wrap;gap:10px;margin:8px 0 14px;align-items:flex-start">
+    <div data-photosec="1" style="display:flex;flex-wrap:wrap;gap:10px;margin:8px 0 14px;align-items:flex-start">
       ${photos.map(url=>`<img src="${url}" style="max-width:${pMaxW};width:auto;max-height:${pMaxH}px;object-fit:contain;border:1px solid #ddd;border-radius:4px;page-break-inside:avoid;-webkit-print-color-adjust:exact">`).join('')}
     </div>`:'';
   const sig=billingSigs[id]||null;
@@ -4625,6 +4624,25 @@ function billingDocInner(id, internal){
     </div>`;
 }
 
+// 智慧收縮：照片張數/長寬每張單都不同，寫死規則遲早又爆版。
+// 這裡等照片載完後「實際量整份文件的高度」，照片從大到小逐級試（欄數×高度上限），
+// 找到能把整份塞進一頁 A4 的最大尺寸；真的塞不下才用舒適大小自然流到下一頁（照片不切半）。
+async function smartFitBillingPhotos(ov){
+  const PAGE=1000; // A4 可印高度（96dpi、扣掉內建邊距）再留安全餘裕
+  for(const doc of [...ov.querySelectorAll('[data-docfit]')]){
+    const sec=doc.querySelector('[data-photosec]'); if(!sec) continue;
+    const imgs=[...sec.querySelectorAll('img')]; if(!imgs.length) continue;
+    await Promise.all(imgs.map(im=>(im.decode?im.decode():Promise.resolve()).catch(()=>{})));
+    const n=imgs.length;
+    const tries=n===1?[[1,600],[1,520],[1,440],[1,360],[1,300],[1,240]]
+      :n===2?[[2,500],[2,440],[2,380],[2,320],[2,260],[2,210]]
+      :[[3,440],[3,380],[3,320],[3,270],[3,230],[3,190]];
+    const apply=(cols,h)=>imgs.forEach(im=>{ im.style.maxWidth=cols===1?'100%':(Math.floor(100/cols*10)/10-1.5)+'%'; im.style.maxHeight=h+'px'; });
+    let fitted=false;
+    for(const [cols,h] of tries){ apply(cols,h); if(doc.offsetHeight<=PAGE){ fitted=true; break; } }
+    if(!fitted) apply(n===1?1:(n===2?2:3), n===1?520:(n===2?400:320));
+  }
+}
 // 列印單張追加單 / 請款單（含業主簽名）
 function printBillingDoc(id, internal){
   const b=state.billings.find(x=>x.id===id); if(!b) return;
@@ -4647,8 +4665,9 @@ function printBillingDoc(id, internal){
       <button class="btn" id="po-print" style="margin-left:auto">列印 / 存成 PDF</button>
       <button class="act" id="po-close" style="padding:0 14px">關閉</button>
     </div>
-    <div class="pdoc"><div class="bluedoc">${inner}</div></div>`;
+    <div class="pdoc"><div class="bluedoc"><div data-docfit="1">${inner}</div></div></div>`;
   document.body.appendChild(ov);
+  smartFitBillingPhotos(ov);
   document.getElementById('po-print').onclick=()=>window.print();
   document.getElementById('po-close').onclick=()=>ov.remove();
   ov.querySelectorAll('.sig-sign').forEach(btn=>btn.onclick=()=>{
@@ -4671,7 +4690,7 @@ function printBillingDocs(ids){
   if(!ids.length){ alert('請先勾選要列印的追加單'); return; }
   const pages=ids.map((id,i)=>{
     const html=billingDocInner(id); if(!html) return '';
-    return `<div style="${i>0?'page-break-before:always;padding-top:12mm':''}">${html}</div>`;
+    return `<div data-docfit="1" style="${i>0?'page-break-before:always;padding-top:12mm':''}">${html}</div>`;
   }).filter(Boolean).join('');
   const old=document.getElementById('print-overlay'); if(old) old.remove();
   const ov=document.createElement('div');
@@ -4684,6 +4703,7 @@ function printBillingDocs(ids){
     </div>
     <div class="pdoc"><div class="bluedoc">${pages}</div></div>`;
   document.body.appendChild(ov);
+  smartFitBillingPhotos(ov);
   document.getElementById('po-print').onclick=()=>window.print();
   document.getElementById('po-close').onclick=()=>ov.remove();
   ov.scrollTop=0;
