@@ -8,7 +8,7 @@
 <link rel="apple-touch-icon" href="icon.jpg">
 <style>
   :root {
-    --bg: #f0f2f8;
+    --bg: #ffffff;
     --surface: #ffffff;
     --ink: #1a1d2e;
     --muted: #7a7f9a;
@@ -23,8 +23,8 @@
     --radius: 16px;
     --shadow-sm: 0 1px 4px rgba(79,70,229,.07), 0 4px 16px rgba(79,70,229,.06);
     --shadow-md: 0 4px 24px rgba(79,70,229,.13), 0 1px 4px rgba(0,0,0,.06);
-    --grad-top: linear-gradient(135deg, #4f46e5 0%, #7c3aed 45%, #a855f7 100%);
-    --grad-sidebar: linear-gradient(180deg, #f8f7ff 0%, #f0f2f8 100%);
+    --grad-top: #ffffff;
+    --grad-sidebar: #ffffff;
     --metric-1: linear-gradient(135deg, #4f46e5, #7c3aed);
     --metric-2: linear-gradient(135deg, #0e7db0, #06b6d4);
     --metric-3: linear-gradient(135deg, #059669, #10b981);
@@ -40,7 +40,8 @@
   /* ── 頂部漸層列 ── */
   .top {
     background: var(--grad-top);
-    color: #fff;
+    color: var(--ink);
+    border-bottom: 1px solid var(--line);
     padding: 0 24px;
     height: 58px;
     display: flex;
@@ -65,8 +66,8 @@
     letter-spacing: .3px;
     text-shadow: 0 1px 6px rgba(0,0,0,.18);
   }
-  .top .burger { display: none; background: rgba(255,255,255,.2); border: none; color: #fff; font-size: 20px; cursor: pointer; padding: 4px 8px; line-height: 1; border-radius: 8px; }
-  .top .burger:hover { background: rgba(255,255,255,.3); }
+  .top .burger { display: none; background: rgba(0,0,0,.05); border: none; color: var(--ink); font-size: 20px; cursor: pointer; padding: 4px 8px; line-height: 1; border-radius: 8px; }
+  .top .burger:hover { background: rgba(0,0,0,.1); }
 
   /* ── 側邊欄 ── */
   .layout { display: flex; min-height: calc(100vh - 58px); }
@@ -351,7 +352,7 @@
   <div style="margin-left:auto;display:flex;align-items:center;gap:10px">
     <span id="cloud-status" style="font-size:12px;opacity:.9">本機模式</span>
     <span id="app-version" style="font-size:11px;opacity:.7;white-space:nowrap"></span>
-    <button id="cloud-refresh" style="background:rgba(255,255,255,.18);color:#fff;border:none;border-radius:6px;padding:5px 10px;cursor:pointer;font-size:13px">↻ 重新整理</button>
+    <button id="cloud-refresh" style="background:#fff;color:var(--ink);border:1px solid var(--line2);border-radius:6px;padding:5px 10px;cursor:pointer;font-size:13px">↻ 重新整理</button>
   </div>
 </div>
 <div class="layout">
@@ -872,7 +873,7 @@ function tabsBar(){
   const groups=[
     ['總覽',[['dash','首頁總覽'],['search','全域搜尋']]],
     ['薪資作業',[['entry','登記出工'],['payroll','員工薪資']]],
-    ['財務管理',[['loans','借支管理'],['yearincome','年度收入'],['park','品佑收支明細']]],
+    ['財務管理',[['loans','借支管理'],['yearincome','年度收入'],['park','公司收支明細']]],
     ['單據',[['billingReq','請款單'],['billingAdd','追加單'],['meas','計量明細']]],
     ['設定',[['sites','案場成本'],['manage','員工/案場']]],
   ];
@@ -1100,7 +1101,7 @@ function viewDash(){
     ${card('payroll','本期實發薪資', money(netSum), headcount+' 人出工', true)}
     ${card('loans','借支未還總額', money(loanOutstanding), loanPeople+' 人未還清')}
     ${card('sites','案場總成本', money(totalSiteCost), siteCostList.length+' 個案場')}
-    ${card('park','品佑收支餘額', money(parkBal))}
+    ${card('park','公司收支餘額', money(parkBal))}
   </div>
   ${costRows?`<div class="card">
     <div style="font-size:14px;font-weight:600;margin-bottom:2px">各案場成本</div>
@@ -1136,7 +1137,7 @@ function viewSearch(){
   const park=state.parkLedger.filter(t=>hit((t.note||''),t.amount))
     .sort((a,b)=>(b.date||'').localeCompare(a.date||'')).slice(0,50)
     .map(t=>({date:t.date||'', desc:esc(t.note||''), amt:(t.kind==='in'?'+':'−')+mny(t.amount)}));
-  push('品佑收支','park',park);
+  push('公司收支','park',park);
 
   const bills=state.billings.filter(b=>hit(parentSiteName(b.site)+' '+(b.client||'')+' '+(b.note||''),billingAmount(b)))
     .sort((a,b)=>(b.date||'').localeCompare(a.date||'')).slice(0,50)
@@ -2415,7 +2416,7 @@ function viewPark(){
   <details class="card">
     <summary>記一筆收支</summary>
     <div class="card-body">
-      <p class="sub">手動記品佑帳戶的收入與支出，系統自動算餘額（餘額＝期初＋收入−支出）。期初餘額是承接先前的金額，下方可設定。</p>
+      <p class="sub">手動記公司帳戶的收入與支出，系統自動算餘額（餘額＝期初＋收入−支出）。期初餘額是承接先前的金額，下方可設定。</p>
       <div class="row" style="margin-bottom:10px">
         <div class="field"><label>期初餘額</label><input type="number" id="park-opening" value="${state.parkOpening||0}" step="1000" style="width:140px"></div>
       </div>
@@ -2454,7 +2455,7 @@ function exportParkPDF(){
     return `<tr><td>${esc(t.date)}</td><td>${esc(t.note||'')}</td>
       <td class="num">${t.kind==='in'?money(t.amount):'-'}</td><td class="num">${t.kind==='out'?money(t.amount):'-'}</td></tr>`;
   }).join('');
-  const inner=`<h1>品佑收支明細</h1>
+  const inner=`<h1>公司收支明細</h1>
     <div class="meta">期間：${range}　|　期初餘額：${money(state.parkOpening||0)}　|　目前餘額：${money(parkBalance())}　|　列印日：${localISODate()}</div>
     <table><thead><tr><th>日期</th><th>說明</th><th class="num">收入</th><th class="num">支出</th></tr></thead>
     <tbody>${rows}
@@ -2462,7 +2463,7 @@ function exportParkPDF(){
       <tr class="total-row"><td colspan="2">區間淨額（收−支）</td><td class="num" colspan="2">${money(tin-tout)}</td></tr>
     </tbody></table>
     <p class="sub">金額四捨五入至整數。</p>`;
-  printHTML('品佑收支明細', inner);
+  printHTML('公司收支明細', inner);
 }
 
 function openSidebar(){ document.getElementById('sidebar').classList.add('open'); document.getElementById('scrim').classList.add('show'); }
