@@ -1,0 +1,2492 @@
+﻿<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>點工薪資管理系統</title>
+<link rel="icon" type="image/jpeg" href="icon.jpg">
+<link rel="apple-touch-icon" href="icon.jpg">
+<style>
+  :root {
+    --bg: #f0f2f8;
+    --surface: #ffffff;
+    --ink: #1a1d2e;
+    --muted: #7a7f9a;
+    --line: #e2e6f0;
+    --line2: #c8cedf;
+    --accent: #4f46e5;
+    --accent2: #e5466b;
+    --warn-bg: #fff8e6;
+    --warn-ink: #92600a;
+    --danger: #d63f3f;
+    --info: #0e7db0;
+    --radius: 16px;
+    --shadow-sm: 0 1px 4px rgba(79,70,229,.07), 0 4px 16px rgba(79,70,229,.06);
+    --shadow-md: 0 4px 24px rgba(79,70,229,.13), 0 1px 4px rgba(0,0,0,.06);
+    --grad-top: linear-gradient(135deg, #4f46e5 0%, #7c3aed 45%, #a855f7 100%);
+    --grad-sidebar: linear-gradient(180deg, #f8f7ff 0%, #f0f2f8 100%);
+    --metric-1: linear-gradient(135deg, #4f46e5, #7c3aed);
+    --metric-2: linear-gradient(135deg, #0e7db0, #06b6d4);
+    --metric-3: linear-gradient(135deg, #059669, #10b981);
+    --metric-4: linear-gradient(135deg, #d97706, #f59e0b);
+    --metric-5: linear-gradient(135deg, #e5466b, #f43f5e);
+    --metric-6: linear-gradient(135deg, #7c3aed, #a855f7);
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", sans-serif;
+    line-height: 1.6; }
+
+  /* ── 頂部漸層列 ── */
+  .top {
+    background: var(--grad-top);
+    color: #fff;
+    padding: 0 24px;
+    height: 58px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    box-shadow: 0 2px 20px rgba(79,70,229,.35);
+  }
+  .top::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(90deg, rgba(255,255,255,.08) 0%, transparent 60%);
+    pointer-events: none;
+  }
+  .top h1 {
+    margin: 0;
+    font-size: 17px;
+    font-weight: 700;
+    letter-spacing: .3px;
+    text-shadow: 0 1px 6px rgba(0,0,0,.18);
+  }
+  .top .burger { display: none; background: rgba(255,255,255,.2); border: none; color: #fff; font-size: 20px; cursor: pointer; padding: 4px 8px; line-height: 1; border-radius: 8px; }
+  .top .burger:hover { background: rgba(255,255,255,.3); }
+
+  /* ── 側邊欄 ── */
+  .layout { display: flex; min-height: calc(100vh - 58px); }
+  .sidebar {
+    width: 220px;
+    flex-shrink: 0;
+    background: var(--grad-sidebar);
+    border-right: 1px solid var(--line);
+    padding: 18px 0 14px;
+    overflow-y: auto;
+  }
+  .nav-group { margin-bottom: 8px; }
+  .nav-group-label {
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--accent);
+    padding: 10px 20px 5px;
+    letter-spacing: 1.2px;
+    text-transform: uppercase;
+    opacity: .7;
+  }
+  .nav-item {
+    display: block;
+    width: 100%;
+    text-align: left;
+    padding: 9px 20px 9px 22px;
+    font-size: 13.5px;
+    cursor: pointer;
+    border: none;
+    background: none;
+    color: var(--ink);
+    border-left: 3px solid transparent;
+    transition: all .18s;
+    border-radius: 0 10px 10px 0;
+    margin-right: 10px;
+  }
+  .nav-item:hover { background: rgba(79,70,229,.07); color: var(--accent); }
+  .nav-item.active {
+    border-left-color: var(--accent);
+    background: linear-gradient(90deg, rgba(79,70,229,.12), rgba(79,70,229,.04));
+    color: var(--accent);
+    font-weight: 700;
+  }
+  .main { flex: 1; min-width: 0; padding: 24px 28px 60px; max-width: 1080px; }
+  .scrim { display: none; }
+  @media (max-width: 760px) {
+    .top .burger { display: block; }
+    .sidebar { position: fixed; top: 58px; left: 0; bottom: 0; z-index: 60; transform: translateX(-100%); transition: transform .22s cubic-bezier(.4,0,.2,1); box-shadow: 4px 0 24px rgba(79,70,229,.18); }
+    .sidebar.open { transform: translateX(0); }
+    .scrim.show { display: block; position: fixed; inset: 58px 0 0 0; background: rgba(30,27,75,.35); z-index: 55; backdrop-filter: blur(2px); }
+    .main { padding: 16px; }
+  }
+
+  /* ── 卡片 ── */
+  .container { max-width: 1080px; margin: 0 auto; padding: 24px 28px 60px; }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 20px 24px;
+    margin-bottom: 18px;
+    box-shadow: var(--shadow-sm);
+    transition: box-shadow .2s;
+  }
+  .card:hover { box-shadow: var(--shadow-md); }
+
+  /* ── 表單 ── */
+  .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end; }
+  .field { display: flex; flex-direction: column; gap: 5px; }
+  .field label { font-size: 11.5px; font-weight: 600; color: var(--muted); letter-spacing: .3px; }
+  input, select {
+    height: 38px;
+    padding: 0 12px;
+    border: 1.5px solid var(--line2);
+    border-radius: 10px;
+    font-size: 14px;
+    background: #fff;
+    font-family: inherit;
+    color: var(--ink);
+    transition: border-color .15s, box-shadow .15s;
+  }
+  input:focus, select:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(79,70,229,.12); }
+  input[type=checkbox] { width: 18px; height: 18px; accent-color: var(--accent); }
+  /* 觸控裝置（平板／手機）欄位字級至少 16px：iOS/iPadOS 聚焦小於 16px 的欄位會自動放大頁面，
+     造成版面亂跳、鍵盤看起來變小、打字卡卡。設 16px 可根治，桌機不受影響。 */
+  @media (pointer: coarse){
+    input, select, textarea { font-size: 16px; }
+  }
+
+  /* ── 統計數字卡片（彩色漸層） ── */
+  .metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(155px, 1fr)); gap: 14px; margin-bottom: 20px; }
+  .metric {
+    background: var(--surface);
+    border: none;
+    border-radius: 14px;
+    padding: 18px 20px;
+    box-shadow: var(--shadow-sm);
+    position: relative;
+    overflow: hidden;
+    transition: transform .18s, box-shadow .18s;
+  }
+  .metric:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); }
+  .metric::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 4px;
+    background: var(--metric-1);
+  }
+  .metric:nth-child(6n+2)::before { background: var(--metric-2); }
+  .metric:nth-child(6n+3)::before { background: var(--metric-3); }
+  .metric:nth-child(6n+4)::before { background: var(--metric-4); }
+  .metric:nth-child(6n+5)::before { background: var(--metric-5); }
+  .metric:nth-child(6n+6)::before { background: var(--metric-6); }
+  .metric .l { font-size: 11.5px; font-weight: 600; color: var(--muted); letter-spacing: .3px; text-transform: uppercase; }
+  .metric .v {
+    font-size: 26px;
+    font-weight: 800;
+    margin-top: 6px;
+    background: var(--metric-1);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    line-height: 1.2;
+  }
+  .metric:nth-child(6n+2) .v { background: var(--metric-2); -webkit-background-clip: text; background-clip: text; }
+  .metric:nth-child(6n+3) .v { background: var(--metric-3); -webkit-background-clip: text; background-clip: text; }
+  .metric:nth-child(6n+4) .v { background: var(--metric-4); -webkit-background-clip: text; background-clip: text; }
+  .metric:nth-child(6n+5) .v { background: var(--metric-5); -webkit-background-clip: text; background-clip: text; }
+  .metric:nth-child(6n+6) .v { background: var(--metric-6); -webkit-background-clip: text; background-clip: text; }
+
+  /* ── 表格 ── */
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th {
+    text-align: left;
+    color: var(--muted);
+    font-weight: 700;
+    font-size: 11.5px;
+    letter-spacing: .5px;
+    text-transform: uppercase;
+    padding: 10px 10px;
+    border-bottom: 2px solid var(--line);
+    white-space: nowrap;
+    background: #fafbff;
+  }
+  td { padding: 10px 10px; border-bottom: 1px solid var(--line); transition: background .12s; }
+  tr:hover td { background: rgba(79,70,229,.03); }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+
+  /* ── 按鈕 ── */
+  .btn {
+    height: 38px;
+    background: var(--grad-top);
+    color: #fff;
+    border: none;
+    border-radius: 10px;
+    padding: 0 20px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 600;
+    font-family: inherit;
+    box-shadow: 0 2px 12px rgba(79,70,229,.28);
+    transition: opacity .15s, transform .12s, box-shadow .15s;
+  }
+  .btn:hover { opacity: .9; transform: translateY(-1px); box-shadow: 0 4px 18px rgba(79,70,229,.38); }
+  .btn:active { transform: translateY(0); }
+  .act {
+    cursor: pointer;
+    background: none;
+    border: none;
+    font-size: 13px;
+    padding: 3px 8px;
+    color: var(--accent);
+    font-family: inherit;
+    border-radius: 6px;
+    transition: background .12s;
+  }
+  .act:hover { background: rgba(79,70,229,.08); }
+  .act.danger { color: var(--danger); }
+  .act.danger:hover { background: rgba(214,63,63,.08); }
+  .act.muted { color: var(--muted); cursor: default; }
+  .act.muted:hover { background: none; }
+
+  /* ── 標籤、訊息 ── */
+  .tag {
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 10px;
+    border-radius: 999px;
+    background: linear-gradient(135deg, #fff8e6, #fef3c7);
+    color: var(--warn-ink);
+    border: 1px solid #fde68a;
+    margin-left: 6px;
+  }
+  .empty { color: var(--muted); font-size: 14px; padding: 36px 0; text-align: center; }
+  .sub { font-size: 12px; color: var(--muted); margin: 0 0 14px; }
+  details summary { cursor: pointer; font-size: 13px; color: var(--accent); font-weight: 600; }
+  .moon { color: var(--info); }
+  .scroll { overflow-x: auto; border-radius: 10px; }
+  .inline { display: flex; gap: 6px; align-items: center; }
+  .inline input { height: 32px; width: 100px; }
+
+  /* ── 可收合卡片 ── */
+  details.card { padding: 0; }
+  details.card > summary {
+    padding: 16px 24px;
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+    list-style: none;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    border-radius: var(--radius);
+    user-select: none;
+    color: var(--ink);
+  }
+  details.card > summary::-webkit-details-marker { display: none; }
+  details.card > summary::before {
+    content: '▶';
+    font-size: 10px;
+    color: var(--accent);
+    transition: transform .18s;
+    flex-shrink: 0;
+  }
+  details.card[open] > summary::before { transform: rotate(90deg); }
+  details.card[open] > summary { border-bottom: 1px solid var(--line); border-radius: var(--radius) var(--radius) 0 0; }
+  details.card > summary:hover { background: rgba(79,70,229,.04); border-radius: var(--radius); }
+  details.card[open] > summary:hover { border-radius: var(--radius) var(--radius) 0 0; }
+  .card-body { padding: 16px 24px 20px; }
+
+  /* ── 列印用浮層 ── */
+  #print-overlay { position: fixed; inset: 0; background: #fff; z-index: 9999; overflow: auto; padding: 24px; }
+  #print-overlay .pbar { position: sticky; top: 0; background: #fff; padding-bottom: 12px; margin-bottom: 12px; border-bottom: 1px solid var(--line2); display: flex; gap: 10px; justify-content: flex-end; }
+  #print-overlay .pdoc { max-width: 800px; margin: 0 auto; color: #1f2421; }
+  #print-overlay h1 { font-size: 18px; margin: 0 0 2px; }
+  #print-overlay .meta { font-size: 12px; color: #555; margin-bottom: 16px; }
+  #print-overlay table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  #print-overlay th, #print-overlay td { border: 1px solid #cfd2cd; padding: 6px 8px; }
+  #print-overlay th { background: #eef1ee; text-align: left; font-size: 12px; text-transform: none; letter-spacing: 0; }
+  #print-overlay td.num, #print-overlay th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  #print-overlay .total-row td { font-weight: 700; background: #f6f7f5; }
+  #print-overlay .sign { margin-top: 32px; font-size: 13px; display: flex; gap: 48px; page-break-inside: avoid; break-inside: avoid; }
+  #print-overlay .sign div { border-top: 1px solid #1f2421; padding-top: 6px; min-width: 160px; }
+  /* 簽名格：簽名圖放在簽名線「上方」的固定格子，有簽沒簽高度一樣、換頁不切半 */
+  #print-overlay .sign > div.sigcell { border-top: none; padding-top: 0; }
+  #print-overlay .sigcell .sigbox { position: relative; height: 64px; border: none; min-width: 0; }
+  #print-overlay .sigcell .sigbox img { position: absolute; left: 6px; bottom: 2px; height: 60px; max-width: 220px; }
+  #print-overlay .sigcell .siglabel { border-top: 1px solid #1f2421; padding-top: 6px; min-width: 160px; }
+  #print-overlay .sub { font-size: 11px; color: #777; margin-top: 8px; }
+  #print-overlay .sec { font-size: 13px; font-weight: 700; margin: 16px 0 6px; }
+  #print-overlay h2.sec { font-size: 14px; margin: 18px 0 6px; padding-top: 10px; border-top: 1px solid #cfd2cd; }
+  #print-overlay .paydoc h1 { color: #1f3a5f; border-bottom: 3px solid #dbeafe; padding-bottom: 8px; margin-bottom: 8px; }
+  #print-overlay .paydoc .sec { padding: 7px 10px; border-radius: 8px; background: #eef6ff; color: #1e3a5f; border-left: 4px solid #60a5fa; }
+  #print-overlay .paydoc .sec.add-sec { background: #eefaf4; color: #166534; border-left-color: #34d399; }
+  #print-overlay .paydoc .sec.ded-sec { background: #fff1f2; color: #991b1b; border-left-color: #fb7185; }
+  #print-overlay .paydoc .sec.summary-sec { background: #f8fafc; color: #334155; border-left-color: #94a3b8; }
+  #print-overlay .paydoc th { background: #f1f5f9; color: #334155; }
+  #print-overlay .paydoc tr.add-row td, #print-overlay .paydoc .add-amt { color: #047857; background: #f0fdf4; }
+  #print-overlay .paydoc tr.ded-row td, #print-overlay .paydoc .ded-amt { color: #b91c1c; background: #fff1f2; }
+  #print-overlay .paydoc .night-check { color: #0f766e; font-weight: 800; font-size: 14px; }
+  #print-overlay .site-pill { display:inline-block; padding:2px 8px; border-radius:999px; font-weight:700; font-size:11px; border:1px solid transparent; }
+  @media print {
+    html, body { background: #fff !important; } /* 列印背景一律白，最後一頁不露灰底 */
+    body > .top, body > .layout { display: none !important; }
+    #print-overlay { position: static; padding: 0; }
+    #print-overlay .pbar { display: none !important; }
+    /* 頁邊距設 0：瀏覽器的頁首（日期/標題）頁尾（網址/頁碼）印在邊距區，
+       沒有邊距就不會出現；文件邊距改由 .pdoc 自己內建 */
+    @page { size: A4; margin: 0; }
+    #print-overlay .pdoc { padding: 14mm 14mm 12mm; }
+    #print-overlay.landscape .pdoc { max-width: none; page: landscapePage; }
+  }
+  @page landscapePage { size: A4 landscape; margin: 0; }
+</style>
+</head>
+<body>
+<div class="top">
+  <button class="burger" id="burger" aria-label="選單">☰</button>
+  <h1>點工薪資管理系統</h1>
+  <div style="margin-left:auto;display:flex;align-items:center;gap:10px">
+    <span id="cloud-status" style="font-size:12px;opacity:.9">本機模式</span>
+    <span id="app-version" style="font-size:11px;opacity:.7;white-space:nowrap"></span>
+    <button id="cloud-refresh" style="background:rgba(255,255,255,.18);color:#fff;border:none;border-radius:6px;padding:5px 10px;cursor:pointer;font-size:13px">↻ 重新整理</button>
+  </div>
+</div>
+<div class="layout">
+  <nav class="sidebar" id="sidebar"></nav>
+  <div class="scrim" id="scrim"></div>
+  <main class="main" id="body"></main>
+</div>
+
+<script>
+const LS = 'pm2_payroll_v1';
+const LS_TAB = 'pm2_tab_v1'; // 記住目前分頁（僅本機，重整後留在同一頁）
+const LS_PHOTOS = 'pm2_billing_photos_v1';
+const LS_SIGS = 'pm2_billing_sigs_v1';
+const LS_SIGS_LOCKED = 'pm2_billing_sigs_locked_v1';
+const LS_SIG_META = 'pm2_billing_sig_meta_v1';
+const LS_DIRTY = 'pm2_cloud_dirty_v1';
+// ↓↓↓ 把這裡換成你自己的 Google Apps Script 網址（/exec 結尾）。留空則只用本機儲存。
+const CLOUD_URL = ''; // ← 部署好新的 GAS 後，把 /exec 網址貼進引號裡（空字串＝純本機模式）
+let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], parkLedger:[], parkOpening:0, billings:[], measurements:[], billingPhotoDeleted:{}, deletedIds:[], textMemory:{clients:[],companies:[]}, tab:'dash' };
+let cloudStatus = CLOUD_URL ? '連線中…' : '本機模式';
+let localDirty=false, lastCloudTs=0;
+let entryDate='', entrySite='', entryEmp=''; // 登記出工：記住上次選的日期、案場、員工
+let entryOpenDates={}, entryEditId=null; // 出工紀錄分組收合狀態與正在編輯的紀錄
+let entryType='work'; // 'work' | '請假' | '休假'
+let entryNight=false;
+let payslipShowWorkDetails=false;
+let formOpen={}, billingReqDraft=null, billingAddDraft=null, billingAddEditId=null;
+let billingPhotos={}, billingSigs={}, billingSigsLocked={}, billingSigMeta={}, localSigPending={};
+
+const round = n => Math.round(n);
+const money = n => '$' + round(n).toLocaleString();
+// 工數顯示：工數 = 工時÷8，用分數符號。例：9h → 1⅛ 工
+const FRAC8={1:'⅛',2:'¼',3:'⅜',4:'½',5:'⅝',6:'¾',7:'⅞'};
+function gongStr(hours){
+  const h=Number(hours)||0;
+  if(h===0) return '0 工';
+  const whole=Math.floor(h/8);
+  const rem=h-whole*8;
+  let frac='';
+  if(rem>0){
+    if(Number.isInteger(rem)&&FRAC8[rem]) frac=FRAC8[rem];
+    else frac=(rem/8).toString().replace(/^0/,'');
+  }
+  let s;
+  if(whole>0&&frac) s=`${whole}${frac}`;
+  else if(whole>0) s=`${whole}`;
+  else s=frac||'0';
+  return `${s} 工`;
+}
+function gongH(hours){ const h=Number(hours)||0; return `${gongStr(h)}<span style="color:var(--muted);font-size:11px">(${Math.round(h*10)/10}h)</span>`; }
+const esc = s => String(s==null?'':s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2,7);
+const empName = id => { const e=state.employees.find(x=>x.id===id); return e?e.name:'（已移除）'; };
+const siteName = id => { const s=state.sites.find(x=>x.id===id); return s?s.name:'（已移除）'; };
+const recordLabel = r => r.type==='請假'?'請假':r.type==='休假'?'休假':siteName(r.siteId);
+const billingAmount = b => {
+  const qty=Number(b&&b.qty), unitPrice=Number(b&&b.unitPrice);
+  if(b&&b.qty!==undefined&&b.unitPrice!==undefined&&!isNaN(qty)&&qty>0&&!isNaN(unitPrice)&&unitPrice>=0) return qty*unitPrice;
+  return Number(b&&b.amount)||0;
+};
+const billingLineMeta = b => {
+  if(!b||b.qty===undefined||b.unitPrice===undefined) return '';
+  return `${esc(b.unit||'式')} × ${Number(b.qty)||0} × ${money(Number(b.unitPrice)||0)}`;
+};
+function readBillingLine(prefix){
+  const unit=(document.getElementById(prefix+'-unit')||{}).value||'式';
+  const qty=parseFloat((document.getElementById(prefix+'-qty')||{}).value);
+  const unitPrice=parseFloat((document.getElementById(prefix+'-unit-price')||{}).value);
+  return {unit:unit.trim()||'式', qty, unitPrice, amount:qty*unitPrice};
+}
+function bindBillingSubtotal(prefix){
+  const qty=document.getElementById(prefix+'-qty'), unitPrice=document.getElementById(prefix+'-unit-price'), out=document.getElementById(prefix+'-subtotal');
+  if(!qty||!unitPrice||!out) return;
+  const calc=()=>{ const q=parseFloat(qty.value), p=parseFloat(unitPrice.value); out.textContent=(!isNaN(q)&&!isNaN(p))?money(q*p):'$0'; };
+  qty.oninput=calc; unitPrice.oninput=calc; calc();
+}
+const uniqueTexts = arr => [...new Set((arr||[]).map(x=>String(x||'').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'zh-Hant'));
+function rememberText(kind, value){
+  const v=String(value||'').trim(); if(!v) return;
+  state.textMemory=state.textMemory||{clients:[],companies:[]};
+  state.textMemory[kind]=uniqueTexts([v,...(state.textMemory[kind]||[])]).slice(0,80);
+}
+const knownClients = () => uniqueTexts([...(state.textMemory&&state.textMemory.clients||[]), ...state.sites.map(s=>s.clientOwner||s.ownerName||''), ...state.billings.map(b=>b.client||'')]);
+const dataListHtml = (id, arr) => `<datalist id="${id}">${(arr||[]).map(v=>`<option value="${esc(v)}"></option>`).join('')}</datalist>`;
+const parentSiteName = value => String(value||'（未填案場）');
+const siteDisplayLabel = value => parentSiteName(value);
+const siteSelectOptions = selected => `<option value="">請選案場</option>`+state.sites.filter(s=>s.active!==false).map(s=>`<option value="${esc(s.name)}" ${selected===s.name?'selected':''}>${esc(s.name)}</option>`).join('');
+const subSiteTag = () => '';
+function foldBtn(key, label){
+  const open=!!formOpen[key];
+  return `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:${open?'8px':'0'}">
+    <div style="font-size:14px;font-weight:600">${label}</div>
+    <button data-toggle-form="${key}" style="font-size:12px;padding:0 14px;height:28px;background:rgba(100,116,139,.08);border:none;cursor:pointer;color:#64748b;font-weight:600">${open?'▲ 收合':'＋ 展開'}</button>
+  </div>`;
+}
+function loadPhotos(){ try{ const raw=localStorage.getItem(LS_PHOTOS); if(raw) billingPhotos=JSON.parse(raw); }catch(e){} }
+function savePhotos(){ try{ localStorage.setItem(LS_PHOTOS,JSON.stringify(billingPhotos)); }catch(e){} }
+function saveSigMeta(){ try{ localStorage.setItem(LS_SIG_META,JSON.stringify(billingSigMeta)); }catch(e){} }
+function mergeCloudPhotos(cloudPhotos){
+  Object.entries(cloudPhotos||{}).forEach(([id,urls])=>{
+    const existing=billingPhotos[id]||[];
+    const deleted=new Set((state.billingPhotoDeleted&&state.billingPhotoDeleted[id])||[]);
+    billingPhotos[id]=[...new Set([...existing,...(urls||[])])].filter(url=>!deleted.has(url));
+    if(!billingPhotos[id].length) delete billingPhotos[id];
+  });
+  savePhotos();
+}
+function rememberDeletedPhoto(id,url){
+  if(!url) return;
+  state.billingPhotoDeleted=state.billingPhotoDeleted||{};
+  state.billingPhotoDeleted[id]=[...new Set([...(state.billingPhotoDeleted[id]||[]),url])];
+}
+const APP_VERSION='vB2026.07.15a'; // 版本號顯示在右上角，方便確認拿到新版
+// 本地時區的今天（yyyy-mm-dd）。toISOString 是 UTC，台灣早上 8 點前會差一天
+function localISODate(d=new Date()){ return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
+// ── 逐筆(依id)合併，避免裝置互相整包覆蓋造成資料遺失 ──
+const MERGE_COLLECTIONS=['employees','sites','attendance','adjustments','loans','parkLedger','billings','measurements'];
+// 相同 id 依每筆 updatedAt 決定新舊；舊資料沒有 updatedAt 時才退回整份文件時間。
+// （原本先到先贏：A 裝置改過的紀錄，遇到 B 裝置的舊版本可能被舊的蓋回去）
+const recordUpdatedAt=(r,fallback=0)=>Number(r&&r.updatedAt)||Number(fallback)||0;
+const recordComparable=r=>{ if(!r||typeof r!=='object') return ''; const copy={...r}; delete copy.updatedAt; return JSON.stringify(copy); };
+function mergeById(baseArr, addArr, delSet, baseTs=0, addTs=0){
+  const del=delSet||new Set(state.deletedIds||[]);
+  const map=new Map();
+  (baseArr||[]).forEach(r=>{ if(r&&r.id!=null && !del.has(r.id)) map.set(r.id,r); });
+  (addArr||[]).forEach(r=>{
+    if(!r||r.id==null||del.has(r.id)) return;
+    const old=map.get(r.id);
+    if(!old||recordUpdatedAt(r,addTs)>recordUpdatedAt(old,baseTs)) map.set(r.id,r);
+  });
+  return [...map.values()];
+}
+// ── 紀錄刪除記號(tombstone)：自動偵測被刪的 id，同步各裝置，避免合併時被補回 ──
+let _prevIds=null, _recordBaseline=null;
+function collectIds(){ const s=new Set(); MERGE_COLLECTIONS.forEach(k=>(state[k]||[]).forEach(r=>{ if(r&&r.id!=null) s.add(r.id); })); return s; }
+function refreshRecordBaseline(){
+  _recordBaseline={};
+  MERGE_COLLECTIONS.forEach(k=>{ const m=new Map(); (state[k]||[]).forEach(r=>{ if(r&&r.id!=null) m.set(r.id,recordComparable(r)); }); _recordBaseline[k]=m; });
+}
+function refreshPrevIds(){ _prevIds=collectIds(); refreshRecordBaseline(); }
+function stampRecordChanges(){ // 新增或內容有變的紀錄，蓋上本次時間戳
+  const now=Date.now();
+  MERGE_COLLECTIONS.forEach(k=>{
+    const old=_recordBaseline&&_recordBaseline[k];
+    (state[k]||[]).forEach(r=>{
+      if(!r||r.id==null) return;
+      if(!old||!old.has(r.id)||old.get(r.id)!==recordComparable(r)) r.updatedAt=now;
+    });
+  });
+}
+function recordDeletions(){
+  const cur=collectIds();
+  if(_prevIds){ const del=new Set(state.deletedIds||[]); const newlyDel=new Set(); _prevIds.forEach(id=>{ if(!cur.has(id)){ del.add(id); newlyDel.add(id); } }); state.deletedIds=[...del];
+    if(newlyDel.size && state.resurrected && (state.resurrected.ids||[]).length) state.resurrected.ids=state.resurrected.ids.filter(id=>!newlyDel.has(id)); // 救回後又真的刪掉的，不再復活
+  }
+  _prevIds=cur;
+}
+function mergeDeletedTomb(cloudDel){
+  if(!cloudDel) return;
+  state.billingPhotoDeleted=state.billingPhotoDeleted||{};
+  Object.entries(cloudDel).forEach(([id,urls])=>{
+    state.billingPhotoDeleted[id]=[...new Set([...(state.billingPhotoDeleted[id]||[]),...(urls||[])])];
+  });
+}
+// 把雲端文件 cd 與本機逐筆合併：較新一方當底，較舊方只補「缺的筆數」，兩邊都不遺失
+function mergeCloudDoc(cd){
+  const localRaw=localStorage.getItem(LS);
+  const localTs=localRaw?Number((JSON.parse(localRaw)||{}).savedAt)||0:0;
+  const cloudTs=Number(cd.savedAt)||0;
+  const keepLogs={}; MERGE_COLLECTIONS.forEach(k=>keepLogs[k]=(state[k]||[]).slice());
+  const keepDel=JSON.parse(JSON.stringify(state.billingPhotoDeleted||{}));
+  const keepDelIds=(state.deletedIds||[]).slice();
+  // 還原標記：取兩邊較新的「刻意救回」清單（7天內有效），洗墓碑要在 union 之前
+  const keepRes=(state.resurrected&&state.resurrected.at)?state.resurrected:{ids:[],at:0};
+  const resCloud=(cd.resurrected&&Array.isArray(cd.resurrected.ids))?{ids:cd.resurrected.ids,at:Number(cd.resurrected.at)||0}:{ids:[],at:0};
+  const resEff=(resCloud.at>=keepRes.at)?resCloud:keepRes;
+  const resActive=!!(resEff.at && (Date.now()-resEff.at)<7*86400000 && (resEff.ids||[]).length);
+  const rSet=resActive?new Set(resEff.ids):null;
+  const purgeDel=arr=>rSet?arr.filter(id=>!rSet.has(id)):arr;
+  if(cloudTs>=localTs){
+    applyData(cd); // 內含合併簽名/照片（會把 deletedIds 設成雲端的）
+    state.deletedIds=purgeDel([...new Set([...(state.deletedIds||[]),...keepDelIds])]);
+    const del=new Set(state.deletedIds);
+    MERGE_COLLECTIONS.forEach(k=>{ state[k]=mergeById(state[k], keepLogs[k], del, cloudTs, localTs); });
+    mergeDeletedTomb(keepDel); // 補回本機的照片刪除記號
+    state.resurrected=resEff;
+  } else {
+    state.deletedIds=purgeDel([...new Set([...(state.deletedIds||[]),...(cd.deletedIds||[])])]);
+    const del=new Set(state.deletedIds);
+    MERGE_COLLECTIONS.forEach(k=>{ state[k]=mergeById(state[k], cd[k]||[], del, localTs, cloudTs); });
+    mergeBillingSigs(cd.billingSigs||{}, cd.billingSigsLocked||{}, cd.billingSigMeta||{});
+    mergeDeletedTomb(cd.billingPhotoDeleted);
+    if(cd.billingPhotos) mergeCloudPhotos(cd.billingPhotos);
+  }
+  state.resurrected=resEff;
+  // 依紀錄刪除記號清一次各集合（applyData 套用的雲端資料可能含已刪的）
+  const delR=new Set(state.deletedIds||[]);
+  MERGE_COLLECTIONS.forEach(k=>{ state[k]=(state[k]||[]).filter(r=>!(r&&delR.has(r.id))); });
+  // 依照片刪除記號再清一次照片（union 後可能被別台補回）
+  Object.entries(state.billingPhotoDeleted||{}).forEach(([id,urls])=>{
+    if(billingPhotos[id]){ const s=new Set(urls); billingPhotos[id]=billingPhotos[id].filter(u=>!s.has(u)); if(!billingPhotos[id].length) delete billingPhotos[id]; }
+  });
+  savePhotos();
+  refreshPrevIds();
+}
+function mergeBillingSigs(inSigs={}, inLocked={}, inMeta={}){
+  Object.keys(inSigs||{}).forEach(id=>{
+    if(localSigPending[id] && billingSigs[id]) return;
+    if(!inMeta[id] && billingSigs[id]) return;
+    const incomingTs=Number((inMeta[id]||{}).updatedAt)||0;
+    const localTs=Number((billingSigMeta[id]||{}).updatedAt)||0;
+    if(!billingSigs[id] || incomingTs>localTs){
+      billingSigs[id]=inSigs[id];
+      billingSigsLocked[id]=!!inLocked[id];
+      billingSigMeta[id]=inMeta[id]||{updatedAt:incomingTs||0};
+    }
+  });
+  Object.keys(inLocked||{}).forEach(id=>{
+    if(!billingSigsLocked[id] && (!billingSigMeta[id] || !inMeta[id] || Number((inMeta[id]||{}).updatedAt)>=Number((billingSigMeta[id]||{}).updatedAt||0))) billingSigsLocked[id]=!!inLocked[id];
+  });
+  try{ localStorage.setItem(LS_SIGS,JSON.stringify(billingSigs)); }catch(e){}
+  try{ localStorage.setItem(LS_SIGS_LOCKED,JSON.stringify(billingSigsLocked)); }catch(e){}
+  saveSigMeta();
+}
+function applyCloudSigsBeforePush(cloudSigs={}, cloudLocked={}, cloudMeta={}){
+  Object.keys(billingSigs).forEach(id=>{
+    if(localSigPending[id]) return;
+    if(cloudSigs[id]){
+      billingSigs[id]=cloudSigs[id];
+      billingSigsLocked[id]=!!cloudLocked[id];
+      billingSigMeta[id]=cloudMeta[id]||{updatedAt:Number((cloudMeta[id]||{}).updatedAt)||0};
+    } else {
+      delete billingSigs[id];
+      delete billingSigsLocked[id];
+      delete billingSigMeta[id];
+    }
+  });
+  Object.keys(cloudSigs||{}).forEach(id=>{
+    if(localSigPending[id]) return;
+    billingSigs[id]=cloudSigs[id];
+    billingSigsLocked[id]=!!cloudLocked[id];
+    billingSigMeta[id]=cloudMeta[id]||{updatedAt:Number((cloudMeta[id]||{}).updatedAt)||0};
+  });
+  try{ localStorage.setItem(LS_SIGS,JSON.stringify(billingSigs)); }catch(e){}
+  try{ localStorage.setItem(LS_SIGS_LOCKED,JSON.stringify(billingSigsLocked)); }catch(e){}
+  saveSigMeta();
+}
+function loadSigs(){
+  try{ const raw=localStorage.getItem(LS_SIGS); if(raw) billingSigs=JSON.parse(raw); }catch(e){}
+  try{ const raw=localStorage.getItem(LS_SIGS_LOCKED); if(raw) billingSigsLocked=JSON.parse(raw); }catch(e){}
+  try{ const raw=localStorage.getItem(LS_SIG_META); if(raw) billingSigMeta=JSON.parse(raw); }catch(e){}
+  (state.billings||[]).forEach(b=>{ if(b.signedPhoto){ billingSigs[b.id]=b.signedPhoto; billingSigMeta[b.id]=billingSigMeta[b.id]||{updatedAt:Date.now()}; delete b.signedPhoto; } });
+  Object.keys(billingSigs).forEach(id=>{ billingSigMeta[id]=billingSigMeta[id]||{updatedAt:0}; });
+  try{ localStorage.setItem(LS_SIGS,JSON.stringify(billingSigs)); }catch(e){}
+  saveSigMeta();
+}
+function saveSig(id,url){
+  deleteSig(id);
+  billingSigs[id]=url;
+  billingSigsLocked[id]=true;
+  billingSigMeta[id]={updatedAt:Date.now()};
+  localSigPending[id]=true;
+  try{ localStorage.setItem(LS_SIGS,JSON.stringify(billingSigs)); }catch(e){}
+  try{ localStorage.setItem(LS_SIGS_LOCKED,JSON.stringify(billingSigsLocked)); }catch(e){}
+  saveSigMeta();
+}
+function deleteSig(id){
+  delete billingSigs[id];
+  delete billingSigsLocked[id];
+  delete billingSigMeta[id];
+  try{ localStorage.setItem(LS_SIGS,JSON.stringify(billingSigs)); }catch(e){}
+  try{ localStorage.setItem(LS_SIGS_LOCKED,JSON.stringify(billingSigsLocked)); }catch(e){}
+  saveSigMeta();
+}
+const fileToDataURL = file => new Promise((resolve,reject)=>{ const r=new FileReader(); r.onload=()=>resolve(r.result); r.onerror=reject; r.readAsDataURL(file); });
+const loadImage = src => new Promise((resolve,reject)=>{ const img=new Image(); img.onload=()=>resolve(img); img.onerror=reject; img.src=src; });
+// HEIC（iPhone 高效率格式）自動轉檔
+function isHeicFile(file){ const t=(file.type||'').toLowerCase(), n=(file.name||'').toLowerCase(); return t.includes('heic')||t.includes('heif')||/\.hei[cf]$/.test(n); }
+let _heicLibP=null;
+function loadHeicLib(){
+  if(window.heic2any) return Promise.resolve();
+  if(_heicLibP) return _heicLibP;
+  _heicLibP=new Promise((resolve,reject)=>{ const s=document.createElement('script'); s.src='https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js'; s.onload=()=>resolve(); s.onerror=()=>{ _heicLibP=null; reject(new Error('HEIC 轉檔器載入失敗')); }; document.head.appendChild(s); });
+  return _heicLibP;
+}
+async function heicToJpegBlob(file){ await loadHeicLib(); const out=await window.heic2any({blob:file,toType:'image/jpeg',quality:0.85}); return Array.isArray(out)?out[0]:out; }
+async function compressBlobP(blob,maxW,quality,maxBytes){
+  const src=await fileToDataURL(blob);
+  const img=await loadImage(src);
+  let w0=img.naturalWidth||img.width, h0=img.naturalHeight||img.height;
+  if(!w0||!h0) throw new Error('照片讀取失敗');
+  let wLimit=maxW, q=quality, out='';
+  for(let tries=0; tries<8; tries++){
+    const scale=Math.min(1,wLimit/w0);
+    const w=Math.max(1,Math.round(w0*scale)), h=Math.max(1,Math.round(h0*scale));
+    const c=document.createElement('canvas'); c.width=w; c.height=h;
+    c.getContext('2d').drawImage(img,0,0,w,h);
+    out=c.toDataURL('image/jpeg',q);
+    if(Math.ceil(out.length*0.75)<=maxBytes) return out;
+    if(q>0.48) q-=0.08; else wLimit=Math.round(wLimit*0.82);
+  }
+  return out;
+}
+async function compressImageP(file,maxW=1000,quality=0.72,maxBytes=850000){
+  if(!file) throw new Error('請選圖片檔');
+  const looksImage=(file.type&&file.type.startsWith('image/'))||/\.(jpe?g|png|webp|gif|bmp|heic|heif)$/i.test(file.name||'');
+  if(!looksImage) throw new Error('請選圖片檔');
+  try{ return await compressBlobP(file,maxW,quality,maxBytes); } // 原生解碼（新版 Safari 可直接吃 HEIC）
+  catch(e){ if(isHeicFile(file)){ const jpeg=await heicToJpegBlob(file); return await compressBlobP(jpeg,maxW,quality,maxBytes); } throw e; }
+}
+async function uploadBillingPhoto(file){
+  if(!CLOUD_URL) return fileToDataURL(file);
+  const dataUrl=await compressImageP(file,1000,0.72,850000);
+  const res=await fetch(CLOUD_URL,{
+    method:'POST',
+    headers:{'Content-Type':'text/plain;charset=utf-8'},
+    body:JSON.stringify({action:'uploadPhoto',data:dataUrl,name:file.name||'photo.jpg'})
+  });
+  let j=null;
+  try{ j=await res.json(); }catch(e){}
+  if(!res.ok || !j || !j.ok || !j.url) throw new Error((j&&j.error)||('照片上傳失敗 HTTP '+res.status));
+  return j.url;
+}
+function photoDisplayUrl(url){
+  const raw=String(url||'');
+  const m=raw.match(/[?&]id=([^&]+)/) || raw.match(/\/d\/([^/=]+)/);
+  if(m && (raw.includes('drive.google.com') || raw.includes('googleusercontent.com'))){
+    return `https://drive.google.com/thumbnail?id=${encodeURIComponent(m[1])}&sz=w1000`;
+  }
+  return raw;
+}
+
+function applyData(d){
+  if(!d) return;
+  state.employees=d.employees||[]; state.sites=d.sites||[]; state.attendance=d.attendance||[]; state.adjustments=d.adjustments||[]; state.loans=d.loans||[]; state.parkLedger=d.parkLedger||[]; state.parkOpening=Number(d.parkOpening)||0; state.billings=d.billings||[]; state.measurements=d.measurements||[]; state.billingPhotoDeleted=d.billingPhotoDeleted||{}; state.deletedIds=d.deletedIds||[]; if(d.resurrected&&Array.isArray(d.resurrected.ids)) state.resurrected={ids:d.resurrected.ids,at:Number(d.resurrected.at)||0}; else if(!state.resurrected) state.resurrected={ids:[],at:0}; state.textMemory=d.textMemory||{clients:[],companies:[]};
+  state.employees.forEach(e=>{ if(e.active===undefined) e.active=true; });
+  mergeBillingSigs(d.billingSigs||{}, d.billingSigsLocked||{}, d.billingSigMeta||{});
+  if(d.billingPhotos) mergeCloudPhotos(d.billingPhotos);
+}
+function packData(){
+  Object.keys(billingSigs).forEach(id=>{ billingSigMeta[id]=billingSigMeta[id]||{updatedAt:0}; });
+  const photosSync={};
+  Object.entries(billingPhotos).forEach(([id,urls])=>{
+    const driveUrls=(urls||[]).filter(u=>typeof u==='string'&&u.startsWith('http'));
+    if(driveUrls.length) photosSync[id]=driveUrls;
+  });
+  return {employees:state.employees,sites:state.sites,attendance:state.attendance,adjustments:state.adjustments,loans:state.loans,parkLedger:state.parkLedger,parkOpening:state.parkOpening,billings:state.billings,measurements:state.measurements,billingPhotoDeleted:state.billingPhotoDeleted||{},deletedIds:state.deletedIds||[],resurrected:state.resurrected||{ids:[],at:0},textMemory:state.textMemory,billingPhotos:photosSync,billingSigs,billingSigsLocked,billingSigMeta,savedAt:Date.now()};
+}
+
+// 先讀本機快取（讓畫面秒開），再從雲端拉最新
+function loadLocal(){
+  try { localDirty=localStorage.getItem(LS_DIRTY)==='1'; } catch(e){}
+  try { const raw=localStorage.getItem(LS); if(raw) applyData(JSON.parse(raw)); } catch(e){}
+}
+async function loadCloud(){
+  if(!CLOUD_URL){ setCloud('本機模式'); render(); return; }
+  setCloud('讀取雲端中…');
+  try {
+    const res=await fetch(CLOUD_URL, {method:'GET'});
+    const j=await res.json();
+    if(j&&j.ok&&j.data){
+      const cloudData=JSON.parse(j.data);
+      lastCloudTs=Number(cloudData.savedAt)||0;
+      const hadLocal=localDirty;
+      mergeCloudDoc(cloudData); // 逐筆(依id)合併雲端＋本機，兩邊資料都保留、不互相覆蓋
+      try{ localStorage.setItem(LS, JSON.stringify(packData())); }catch(e){}
+      if(hadLocal){
+        // 我有未上傳資料 → 把合併後的完整版回推雲端
+        localDirty=true;
+        if(saveTimer) clearTimeout(saveTimer);
+        saveTimer=setTimeout(pushCloud,400);
+        setCloud('已同步(合併回傳中…)');
+      } else {
+        try{ localStorage.removeItem(LS_DIRTY); localDirty=false; }catch(e){}
+        setCloud('已同步');
+      }
+    }
+    else { setCloud('雲端尚無資料'); }
+  } catch(e){ setCloud('雲端讀取失敗（顯示本機資料）'); }
+  render();
+}
+
+let saveTimer=null, saving=false, pendingSave=false;
+let raiseEmpId=null;
+// 每日本機快照：每天第一次開啟/儲存時留一份當下資料，保留 7 天（雲端是單一檔案沒歷史，這是誤刪保險）
+function keepDailySnapshot(){
+  try{
+    const day=localISODate();
+    const key='pm2_snap_'+day;
+    if(!localStorage.getItem(key)) localStorage.setItem(key, JSON.stringify(packData()));
+    const drop=[];
+    for(let i=0;i<localStorage.length;i++){ const k=localStorage.key(i); if(k&&k.indexOf('pm2_snap_')===0){ const d=k.slice(9); if((Date.now()-new Date(d+'T00:00:00').getTime())>7*86400000) drop.push(k); } }
+    drop.forEach(k=>localStorage.removeItem(k));
+  }catch(e){}
+}
+function listDailySnapshots(){
+  const out=[];
+  try{ for(let i=0;i<localStorage.length;i++){ const k=localStorage.key(i); if(k&&k.indexOf('pm2_snap_')===0) out.push(k.slice(9)); } }catch(e){}
+  return out.sort().reverse();
+}
+function rescueFromDailySnapshot(day){
+  let raw=null; try{ raw=localStorage.getItem('pm2_snap_'+day); }catch(e){}
+  if(!raw){ alert('找不到 '+day+' 的快照。'); return; }
+  let d=null; try{ d=JSON.parse(raw); }catch(e){ alert('快照損壞，無法讀取。'); return; }
+  let added=0; const ids=[]; const detail=[];
+  MERGE_COLLECTIONS.forEach(k=>{
+    const have=new Set((state[k]||[]).map(r=>r&&r.id));
+    let n=0;
+    (Array.isArray(d[k])?d[k]:[]).forEach(r=>{ if(r&&r.id!=null&&!have.has(r.id)){ (state[k]=state[k]||[]).push(r); ids.push(r.id); added++; n++; } });
+    if(n) detail.push(k+' '+n+'筆');
+  });
+  if(!added){ alert('比對完成：'+day+' 的快照裡沒有「現在缺少」的紀錄。'); return; }
+  const prev=(state.resurrected&&state.resurrected.ids)||[];
+  state.resurrected={ids:[...new Set([...prev,...ids])],at:Date.now()};
+  const rs=new Set(state.resurrected.ids);
+  state.deletedIds=(state.deletedIds||[]).filter(x=>!rs.has(x));
+  refreshPrevIds();
+  saveData(); render();
+  alert('已救回 '+added+' 筆（'+detail.join('、')+'），其他裝置同步後也會恢復。');
+}
+let storageWarningShown=false;
+function persistMainLocal(payload){
+  try{ localStorage.setItem(LS_DIRTY,'1'); localStorage.setItem(LS,payload); return true; }
+  catch(e){
+    setCloud('本機儲存空間不足，請保持網路並匯出備份');
+    if(!storageWarningShown){ storageWarningShown=true; setTimeout(()=>alert('本機儲存空間不足，這次資料可能只能暫時留在畫面。請保持網路、確認顯示「已同步」，並盡快匯出備份。'),0); }
+    return false;
+  }
+}
+function saveData(){
+  // 本機立即存（不怕當掉）
+  stampRecordChanges(); // 有變動的紀錄蓋時間戳，合併時「新的贏」
+  recordDeletions(); // 偵測刪除，記入刪除記號，避免合併時被補回
+  localDirty=true;
+  persistMainLocal(JSON.stringify(packData()));
+  refreshRecordBaseline();
+  keepDailySnapshot();
+  if(!CLOUD_URL){ setCloud('已存本機'); return; }
+  // 雲端防抖動：手機常很快切走，縮短等待時間讓資料更早開始上傳。
+  if(saveTimer) clearTimeout(saveTimer);
+  setCloud('儲存中…');
+  saveTimer=setTimeout(pushCloud, 250);
+}
+async function pushCloud(){
+  if(!CLOUD_URL) return;
+  if(saving){ pendingSave=true; return; }
+  if(!localDirty && Object.keys(localSigPending).length===0){ setCloud('已同步'); return; }
+  saving=true;
+  let payloadKB=0, getOK=false; // 診斷用：資料大小、讀取是否也失敗
+  try {
+    try{
+      const gr=await fetch(CLOUD_URL,{method:'GET'});
+      const gj=await gr.json();
+      getOK=true;
+      if(gj&&gj.ok&&gj.data){
+        const cd=JSON.parse(gj.data);
+        applyCloudSigsBeforePush(cd.billingSigs||{}, cd.billingSigsLocked||{}, cd.billingSigMeta||{});
+        mergeCloudDoc(cd); // 逐筆合併雲端已有資料，再寫回union → 不再拒推、也不會蓋掉別人
+        lastCloudTs=Number(cd.savedAt)||lastCloudTs;
+      }
+    }catch(e){}
+    const payload=JSON.stringify(packData());
+    try{ localStorage.setItem(LS,payload); }catch(e){}
+    payloadKB=Math.round(payload.length/1024);
+    const pr=await fetch(CLOUD_URL, {method:'POST', body: payload});
+    // 先取純文字再嘗試解析，讓 GAS 回錯誤頁(HTML)時也能顯示真正原因（狀態碼/資料大小）
+    let pj=null; const rawText=await pr.text();
+    try{ pj=JSON.parse(rawText); }catch(_){}
+    if(pj&&pj.ok){
+      localSigPending={}; localDirty=false;
+      try{ localStorage.removeItem(LS_DIRTY); }catch(e){}
+      try{ lastCloudTs=Number((JSON.parse(payload)||{}).savedAt)||Date.now(); }catch(e){}
+      setCloud('已同步');
+    } else if(pj){
+      setCloud('推送失敗：'+String(pj.error||'未知錯誤').slice(0,60));
+    } else {
+      setCloud(`雲端回應異常 HTTP${pr.status}・資料${payloadKB}KB（GAS未回JSON，多為容量/配額）`);
+    }
+  } catch(e){ setCloud('雲端儲存失敗：'+String((e&&e.message)||e).slice(0,28)+`・資料${payloadKB}KB・讀取${getOK?'OK':'也失敗'}`); }
+  saving=false;
+  if(pendingSave){ pendingSave=false; pushCloud(); }
+}
+function pushCloudSoon(){
+  if(!CLOUD_URL) return;
+  if(saveTimer){ clearTimeout(saveTimer); saveTimer=null; }
+  pushCloud();
+}
+function flushCloudOnExit(){
+  // 退出時只存本機、標記未同步，下次開啟會「先合併再上傳」。
+  // 不再用 sendBeacon 直接推整包：那是未經合併的覆蓋，會把其他裝置剛寫進雲端的資料洗掉
+  //（品佑帳本曾因此掉資料）。visibilitychange 的 pushCloudSoon 仍會在頁面存活時做合併上傳。
+  if(!localDirty && Object.keys(localSigPending).length===0) return;
+  persistMainLocal(JSON.stringify(packData()));
+}
+function setCloud(s){ cloudStatus=s; const el=document.getElementById('cloud-status'); if(el) el.textContent=s; }
+
+function computeRecords(records){
+  const byKey={};
+  records.forEach(r=>{ const k=r.empId+'|'+r.date; (byKey[k]=byKey[k]||[]).push(r); });
+  const out={};
+  Object.values(byKey).forEach(group=>{
+    const attended=group.filter(r=>(Number(r.hours)||0)>0);
+    const totalAllowance=group.filter(r=>r.night).length*400;
+    group.forEach(r=>{
+      const daily=Number(r.dailyRate)||0, hourly=daily/8, h=Number(r.hours)||0;
+      const ot=Number(r.overtime)||0;
+      const baseWage=hourly*h;
+      const overtimePay=hourly*1.33*ot;
+      const wage=baseWage+overtimePay;
+      const allow=(attended.length>0&&h>0)?totalAllowance/attended.length:0;
+      out[r.id]={wage,baseWage,overtimePay,allow,total:wage+allow};
+    });
+  });
+  return out;
+}
+
+function tabsBar(){
+  const groups=[
+    ['總覽',[['dash','首頁總覽'],['search','全域搜尋']]],
+    ['薪資作業',[['entry','登記出工'],['payroll','員工薪資']]],
+    ['財務管理',[['loans','借支管理'],['yearincome','年度收入'],['park','品佑收支明細']]],
+    ['單據',[['billingReq','請款單'],['billingAdd','追加單'],['meas','計量明細']]],
+    ['設定',[['sites','案場成本'],['manage','員工/案場']]],
+  ];
+  return groups.map(([label,items])=>`
+    <div class="nav-group">
+      <div class="nav-group-label">${label}</div>
+      ${items.map(([id,t])=>`<button class="nav-item ${state.tab===id?'active':''}" data-tab="${id}">${t}</button>`).join('')}
+    </div>`).join('');
+}
+function render(){
+  const _sx=window.scrollX,_sy=window.scrollY; // 重繪後還原捲動位置，避免畫面跳動
+  try{ localStorage.setItem(LS_TAB, state.tab||'entry'); }catch(e){} // 記住目前分頁，重整後留在同一頁
+  const openKeys=new Set();
+  document.querySelectorAll('details.card[open]').forEach(d=>{
+    const s=d.querySelector(':scope>summary');
+    if(s) openKeys.add(state.tab+'|'+s.textContent.trim().slice(0,40));
+  });
+  document.getElementById('sidebar').innerHTML=tabsBar();
+  const body=document.getElementById('body');
+  body.innerHTML = state.tab==='dash'?viewDash():state.tab==='search'?viewSearch():state.tab==='entry'?viewEntry():state.tab==='payroll'?viewPayroll():state.tab==='sites'?viewSites():state.tab==='loans'?viewLoans():state.tab==='yearincome'?viewYearIncome():state.tab==='park'?viewPark():state.tab==='billingReq'?viewBillingReq():state.tab==='billingAdd'?viewBillingAdd():state.tab==='meas'?viewMeasurements():viewManage();
+  if(openKeys.size) document.querySelectorAll('details.card').forEach(d=>{
+    const s=d.querySelector(':scope>summary');
+    if(s && openKeys.has(state.tab+'|'+s.textContent.trim().slice(0,40))) d.open=true;
+  });
+  bind();
+  window.scrollTo(_sx,_sy); // 還原捲動位置
+}
+
+function viewEntry(){
+  const activeEmps=state.employees.filter(e=>e.active);
+  const activeSites=state.sites.filter(s=>s.active!==false);
+  const needEmp=activeEmps.length===0;
+  const needSite=activeSites.length===0 && entryType==='work';
+  const noSetup=needEmp||needSite;
+  let setupMsg='';
+  if(noSetup){
+    const missing=[needEmp?'在職員工':null, needSite?'啟用中的案場（工地）':null].filter(Boolean).join(' 和 ');
+    setupMsg=`<div style="text-align:center;padding:24px 12px">
+      <div style="font-size:15px;font-weight:600;margin-bottom:6px">還不能登記出工</div>
+      <div class="sub" style="margin-bottom:14px">登記出工前，需要先建立 <b>${missing}</b>。${needSite?'（若案場都被暫停了，到「員工/案場」把要用的案場切回啟用。）':''}</div>
+      <button class="btn" id="goto-manage">前往「員工/案場」設定 →</button>
+    </div>`;
+  }
+  const today=localISODate();
+  const curDate=entryDate||today;
+  const curSite=entrySite|| (activeSites[0]?activeSites[0].id:'');
+  // 今天(所選日期)這個案場已登記哪幾位
+  let todayNote='';
+  if(curSite){
+    const done=state.attendance.filter(r=>r.date===curDate&&r.siteId===curSite);
+    if(done.length>0){
+      const names=done.map(r=>`${esc(empName(r.empId))}${r.hours?`(${gongStr(r.hours)})`:''}`).join('、');
+      todayNote=`<div class="sub" style="margin:8px 0 0;padding:8px 10px;background:var(--bg);border-radius:8px">📋 ${esc(siteName(curSite))}・${esc(curDate)} 已登記 ${done.length} 位：${names}</div>`;
+    } else {
+      todayNote=`<div class="sub" style="margin:8px 0 0">📋 ${esc(siteName(curSite))}・${esc(curDate)} 尚無人登記。</div>`;
+    }
+  }
+  const comp=computeRecords(state.attendance);
+  // 依日期分組（新到舊）
+  const byDate={};
+  state.attendance.forEach(r=>{ (byDate[r.date]=byDate[r.date]||[]).push(r); });
+  const dateKeys=Object.keys(byDate).sort((a,b)=>b.localeCompare(a));
+  const WD=['日','一','二','三','四','五','六'];
+  const groupsHtml=dateKeys.map((dk,idx)=>{
+    const list=byDate[dk].sort((a,b)=>(siteName(a.siteId)).localeCompare(siteName(b.siteId)));
+    const dayHours=list.reduce((s,r)=>s+(Number(r.hours)||0),0);
+    const dayTotal=list.reduce((s,r)=>s+((comp[r.id]||{}).total||0),0);
+    const wd=WD[new Date(dk+'T00:00:00').getDay()];
+    const open=(entryOpenDates[dk]!==undefined)?entryOpenDates[dk]:(idx<2); // 預設展開最近2天
+    const rows=list.map(r=>{
+      const c=comp[r.id]||{wage:0,allow:0,total:0};
+      const isLeave=r.type==='請假'||r.type==='休假';
+      const editing=(!isLeave)&&(entryEditId===r.id);
+      const hoursCell=isLeave?'—':editing
+        ? `<span class="inline" style="flex-wrap:wrap;gap:4px"><input type="number" id="edit-hours" value="${r.hours}" min="0" max="24" step="1" style="width:65px;height:30px"><span style="font-size:11px;color:var(--muted)">h +</span><input type="number" id="edit-ot" value="${r.overtime||0}" min="0" max="12" step="1" style="width:55px;height:30px"><span style="font-size:11px;color:var(--muted)">h加班</span><button class="act" id="edit-ok" data-editok="${r.id}">✓</button><button class="act muted" id="edit-cancel" style="cursor:pointer">✕</button></span>`
+        : `${gongH(r.hours)}${r.overtime?`<span style="font-size:11px;color:#d97706;margin-left:3px">+${r.overtime}h加班</span>`:''} <button class="act" data-edithours="${r.id}" style="font-size:12px">改</button>`;
+      return `<tr>
+        <td>${isLeave?`<span style="color:var(--info);font-weight:500">${r.type}</span>`:esc(siteName(r.siteId))}</td>
+        <td>${esc(empName(r.empId))}</td>
+        <td class="num">${hoursCell}</td>
+        <td class="num">${isLeave?'—':(r.night?'<span class="moon">●夜</span>':'—')}</td>
+        <td class="num">${isLeave?'—':money(c.wage)}</td>
+        <td class="num">${isLeave?'—':(c.allow>0?money(c.allow):'—')}</td>
+        <td class="num" style="font-weight:600">${isLeave?'—':money(c.total)}</td>
+        <td><button class="act danger" data-del="${r.id}">刪</button></td>
+      </tr>`;
+    }).join('');
+    return `<div style="margin-bottom:10px;border:1px solid var(--line);border-radius:8px;overflow:hidden">
+      <div data-togglegroup="${dk}" style="cursor:pointer;background:var(--bg);padding:10px 12px;display:flex;justify-content:space-between;align-items:center">
+        <div style="font-weight:600;font-size:14px">${open?'▼':'▶'} ${esc(dk)}（週${wd}）</div>
+        <div class="sub" style="margin:0">${list.length} 人 · ${gongStr(dayHours)} · ${money(dayTotal)}</div>
+      </div>
+      ${open?`<div class="scroll"><table>
+        <thead><tr><th>案場</th><th>員工</th><th class="num">工數</th><th class="num">過夜</th><th class="num">工資</th><th class="num">津貼</th><th class="num">小計</th><th></th></tr></thead>
+        <tbody>${rows}</tbody></table></div>`:''}
+    </div>`;
+  }).join('');
+  const curEmp=entryEmp||(activeEmps[0]?activeEmps[0].id:'');
+  const curEmpObj=activeEmps.find(e=>e.id===curEmp);
+  const empOptsSel=activeEmps.map(e=>`<option value="${e.id}" ${e.id===curEmp?'selected':''}>${esc(e.name)}（日薪 ${e.daily}）</option>`).join('');
+  const siteOptsSel=activeSites.map(s=>`<option value="${s.id}" ${s.id===curSite?'selected':''}>${esc(s.name)}</option>`).join('');
+  const leaveWarning=(entryType==='請假'&&curEmpObj&&!curEmpObj.partner)?`<div style="margin-top:8px;padding:8px 10px;background:var(--warn-bg);color:var(--warn-ink);border-radius:8px;font-size:13px">⚠️ 此員工請假將影響全勤獎金，若有全勤獎金請在薪資頁面手動扣除。</div>`:'' ;
+  return `
+  <div class="card">
+    <p class="sub">登記出工、請假或休假。出工時日期與案場會保留方便連續登記。</p>
+    ${noSetup?setupMsg:`
+    <div class="row">
+      <div class="field"><label>類型</label><select id="f-type">
+        <option value="work" ${entryType==='work'?'selected':''}>出工</option>
+        <option value="請假" ${entryType==='請假'?'selected':''}>請假</option>
+        <option value="休假" ${entryType==='休假'?'selected':''}>休假</option>
+      </select></div>
+      <div class="field"><label>日期</label><input type="date" id="f-date" value="${curDate}"></div>
+      <div class="field"><label>員工</label><select id="f-emp">${empOptsSel}</select></div>
+      ${entryType==='work'?`
+        <div class="field"><label>案場</label><select id="f-site">${siteOptsSel}</select></div>
+        <div class="field"><label>工時（小時，整數）</label><input type="number" id="f-hours" min="0" max="24" step="1" value="8" style="width:110px"></div>
+        <div class="field"><label>加班（小時）</label><input type="number" id="f-overtime" min="0" max="12" step="1" value="0" style="width:90px"></div>
+        <div class="field"><label>過夜外宿</label><div style="height:36px;display:flex;align-items:center"><input type="checkbox" id="f-night" ${entryNight?'checked':''}></div></div>
+      `:''}
+      <button class="btn" id="f-add">＋ 新增</button>
+      <button class="btn" id="f-allvac" style="background:var(--muted)">全員休假</button>
+    </div>
+    ${leaveWarning}
+    ${todayNote}`}
+  </div>
+  <div class="card">
+    <div style="font-size:14px;font-weight:600;margin-bottom:8px">出工紀錄（依日期分組，點日期可收合）</div>
+    ${state.attendance.length===0?'<div class="empty">尚無出工紀錄。</div>':groupsHtml}
+  </div>`;
+}
+
+// 計薪週期以每月 11 號起算：一個週期 = 某月11號 ～ 次月10號
+// 「本月週期」：找出包含今天的那個週期
+function cycleContaining(d){
+  const day=d.getDate();
+  let startY=d.getFullYear(), startM=d.getMonth();
+  if(day>=11){
+    // 11號（含）之後，屬於本月11號起算的新週期
+  } else {
+    // 今天在 1~10 號，仍屬於上個月11號起算的週期
+    startM-=1; if(startM<0){ startM=11; startY-=1; }
+  }
+  const from=new Date(startY,startM,11);
+  const to=new Date(startY,startM+1,10);
+  const fmt=x=>`${x.getFullYear()}-${String(x.getMonth()+1).padStart(2,'0')}-${String(x.getDate()).padStart(2,'0')}`;
+  return {from:fmt(from),to:fmt(to)};
+}
+function defaultPayRange(){ return cycleContaining(new Date()); }
+function prevPayRange(){
+  const cur=cycleContaining(new Date());
+  const f=new Date(cur.from+'T00:00:00');
+  const pf=new Date(f.getFullYear(),f.getMonth()-1,11);
+  const pt=new Date(f.getFullYear(),f.getMonth(),10);
+  const fmt=x=>`${x.getFullYear()}-${String(x.getMonth()+1).padStart(2,'0')}-${String(x.getDate()).padStart(2,'0')}`;
+  return {from:fmt(pf),to:fmt(pt)};
+}
+// 預設調整項類型
+const ADD_TYPES=['獎金','全勤獎金','其他加給'];
+const DED_TYPES=['借支扣還','勞保自負額','健保自負額','工具遺失賠償','其他扣款'];
+
+// 建立某計薪區間的完整發薪資料（基本工資 + 系統加項 + 手動加扣項 = 實發）
+function buildPayroll(from,to){
+  const inRange=d=> (!from||d>=from) && (!to||d<=to);
+  const comp=computeRecords(state.attendance);
+  const byEmp={};
+  state.attendance.filter(r=>inRange(r.date)).forEach(r=>{ const c=comp[r.id]; if(!c)return;
+    const e=byEmp[r.empId]=byEmp[r.empId]||{empId:r.empId,hours:0,wage:0,overtimeHours:0,overtimePay:0,allow:0,gross:0,days:new Set(),adds:[],deds:[],systemAdds:[]};
+    const h=Number(r.hours)||0, ot=Number(r.overtime)||0;
+    e.hours+=h; e.overtimeHours+=ot; e.wage+=Number(c.baseWage)||0; e.overtimePay+=Number(c.overtimePay)||0; e.allow+=c.allow; e.gross+=Number(c.baseWage)||0;
+    if((Number(r.hours)||0)>0) e.days.add(r.date);
+  });
+  // 套用區間內的調整項
+  state.adjustments.filter(a=>inRange(a.date)).forEach(a=>{
+    const e=byEmp[a.empId]=byEmp[a.empId]||{empId:a.empId,hours:0,wage:0,overtimeHours:0,overtimePay:0,allow:0,gross:0,days:new Set(),adds:[],deds:[],systemAdds:[]};
+    (a.kind==='add'?e.adds:e.deds).push(a);
+  });
+  Object.values(byEmp).forEach(e=>{
+    const travelDays=e.allow>0?e.allow/400:0;
+    e.systemAdds=[];
+    if(e.allow>0) e.systemAdds.push({label:'出差外宿津貼',note:`共 ${travelDays.toLocaleString()} 天 × $400`,amount:e.allow});
+    if(e.overtimePay>0) e.systemAdds.push({label:'加班費',note:`共 ${e.overtimeHours.toLocaleString()} 小時 × 時薪 × 1.33`,amount:e.overtimePay});
+    e.manualAddTotal=e.adds.reduce((s,a)=>s+(Number(a.amount)||0),0);
+    e.systemAddTotal=e.systemAdds.reduce((s,a)=>s+(Number(a.amount)||0),0);
+    e.addTotal=e.manualAddTotal+e.systemAddTotal;
+    e.dedTotal=e.deds.reduce((s,a)=>s+(Number(a.amount)||0),0);
+    e.net=e.gross+e.addTotal-e.dedTotal;
+  });
+  return byEmp;
+}
+
+// ---- 首頁總覽儀表板 ----
+function viewDash(){
+  if(!state.payFrom||!state.payTo){ const d=defaultPayRange(); state.payFrom=d.from; state.payTo=d.to; }
+  const byEmp=buildPayroll(state.payFrom,state.payTo);
+  const ids=Object.keys(byEmp);
+  const netSum=ids.reduce((s,id)=>s+byEmp[id].net,0);
+  const headcount=ids.filter(id=>byEmp[id].days.size>0).length;
+  const loanOutstanding=state.loans.reduce((s,l)=>s+loanBalance(l),0);
+  const loanPeople=new Set(state.loans.filter(l=>loanBalance(l)>0).map(l=>l.empId)).size;
+  // 案場成本＝期初＋出勤工資津貼（累計）
+  const comp=computeRecords(state.attendance);
+  const bySite={};
+  state.sites.forEach(s=>{ if(s.active!==false) bySite[s.id]={name:s.name,total:Number(s.opening)||0}; });
+  state.attendance.forEach(r=>{ const c=comp[r.id]; if(!c) return; if(bySite[r.siteId]) bySite[r.siteId].total+=c.total; });
+  const siteCostList=Object.values(bySite).sort((a,b)=>b.total-a.total);
+  const totalSiteCost=siteCostList.reduce((s,x)=>s+x.total,0);
+  const parkBal=parkBalance();
+
+  const card=(goto,label,val,sub,accent)=>`<div class="metric" data-goto="${goto}" style="cursor:pointer${accent?';background:var(--accent);color:#fff':''}"><div class="l"${accent?' style="color:#fff;opacity:.85"':''}>${label}</div><div class="v" style="font-size:20px">${val}</div>${sub?`<div class="l"${accent?' style="color:#fff;opacity:.8"':''} style="margin-top:2px;font-weight:400">${sub}</div>`:''}</div>`;
+  const costRows=siteCostList.filter(x=>x.total!==0).map(x=>`<tr><td>${esc(x.name)}</td><td class="num">${money(x.total)}</td></tr>`).join('');
+
+  return `
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+      <div style="font-size:15px;font-weight:600">總覽 · 本期 ${esc(state.payFrom||'')} ～ ${esc(state.payTo||'')}</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        <button class="act" id="dash-thisperiod" style="height:34px;padding:0 12px">本期</button>
+        <button class="act" id="dash-lastperiod" style="height:34px;padding:0 12px">上期</button>
+      </div>
+    </div>
+    <p class="sub" style="margin:6px 0 0">點卡片可跳到對應分頁。本期實發、出工人數依上方期間計算。</p>
+  </div>
+  <div class="metrics">
+    ${card('payroll','本期實發薪資', money(netSum), headcount+' 人出工', true)}
+    ${card('loans','借支未還總額', money(loanOutstanding), loanPeople+' 人未還清')}
+    ${card('sites','案場總成本', money(totalSiteCost), siteCostList.length+' 個案場')}
+    ${card('park','品佑收支餘額', money(parkBal))}
+  </div>
+  ${costRows?`<div class="card">
+    <div style="font-size:14px;font-weight:600;margin-bottom:2px">各案場成本</div>
+    <p class="sub" style="margin:0 0 6px">案場成本＝期初人事成本＋出勤工資與津貼（累計至今）。</p>
+    <div class="scroll"><table><thead><tr><th>案場</th><th class="num">成本</th></tr></thead><tbody>${costRows}</tbody></table></div>
+  </div>`:''}`;
+}
+
+// ---- 全域搜尋 ----
+let searchQuery='';
+function viewSearch(){
+  const q=(searchQuery||'').trim().toLowerCase();
+  const qNum=q.replace(/[$,\s]/g,'');
+  const hit=(hay,amt)=>{ if(!q) return false; const h=String(hay||'').toLowerCase(); if(h.includes(q)) return true; if(qNum&&/\d/.test(qNum)&&String(round(Number(amt)||0)).includes(qNum)) return true; return false; };
+  const groups=[]; const push=(label,goto,items)=>{ if(items.length) groups.push({label,goto,items}); };
+  const mny=v=>money(Number(v)||0);
+
+  const att=state.attendance.filter(r=>hit(empName(r.empId)+' '+siteName(r.siteId)+' '+(r.date||'')+' '+(r.note||''),0))
+    .sort((a,b)=>(b.date||'').localeCompare(a.date||'')).slice(0,50)
+    .map(r=>({date:r.date||'', desc:`${esc(empName(r.empId))}　${esc(siteName(r.siteId))}　${r.type&&r.type!=='工作'?esc(r.type):gongStr(Number(r.hours)||0)}`, amt:''}));
+  push('出工','entry',att);
+
+  const loans=state.loans.filter(l=>hit(empName(l.empId)+' '+(l.note||'')+' 借支',l.amount))
+    .sort((a,b)=>(b.date||'').localeCompare(a.date||'')).slice(0,50)
+    .map(l=>({date:l.date||'', desc:`${esc(empName(l.empId))}　${esc(l.note||'借支')}　未還 ${mny(loanBalance(l))}`, amt:mny(l.amount)}));
+  push('借支','loans',loans);
+
+  const adj=state.adjustments.filter(a=>hit(empName(a.empId)+' '+(a.label||'')+' '+(a.note||''),a.amount))
+    .sort((a,b)=>(b.date||'').localeCompare(a.date||'')).slice(0,50)
+    .map(a=>({date:a.date||'', desc:`${esc(empName(a.empId))}　${a.kind==='add'?'加項':'扣項'} ${esc(a.label||'')}${a.note?'　'+esc(a.note):''}`, amt:(a.kind==='add'?'+':'−')+mny(a.amount)}));
+  push('薪資加扣項','payroll',adj);
+
+  const park=state.parkLedger.filter(t=>hit((t.note||''),t.amount))
+    .sort((a,b)=>(b.date||'').localeCompare(a.date||'')).slice(0,50)
+    .map(t=>({date:t.date||'', desc:esc(t.note||''), amt:(t.kind==='in'?'+':'−')+mny(t.amount)}));
+  push('品佑收支','park',park);
+
+  const bills=state.billings.filter(b=>hit(parentSiteName(b.site)+' '+(b.client||'')+' '+(b.note||''),billingAmount(b)))
+    .sort((a,b)=>(b.date||'').localeCompare(a.date||'')).slice(0,50)
+    .map(b=>({date:b.date||'', desc:`${esc(parentSiteName(b.site))}　${esc(b.docType||'請款單')}${b.client?'　'+esc(b.client):''}${b.settled?'':'　未收款'}`, amt:mny(billingAmount(b))}));
+  push('請款','billingReq',bills);
+
+  const totalHits=groups.reduce((s,g)=>s+g.items.length,0);
+  const resultHTML=!q
+    ? '<div class="empty">輸入員工、案場、項目或金額開始搜尋。</div>'
+    : (totalHits===0
+      ? '<div class="empty">找不到符合「'+esc(searchQuery)+'」的資料。</div>'
+      : groups.map(g=>`<div class="card">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+            <div style="font-size:14px;font-weight:600">${g.label}　<span style="color:var(--muted);font-size:12px">${g.items.length} 筆</span></div>
+            <button class="act" data-goto="${g.goto}" style="border:1px solid var(--accent);color:var(--accent);border-radius:6px;padding:2px 10px">前往${g.label} →</button>
+          </div>
+          <div class="scroll"><table>
+            <thead><tr><th style="width:100px">日期</th><th>內容</th><th class="num">金額</th></tr></thead>
+            <tbody>${g.items.map(it=>`<tr><td>${esc(it.date)}</td><td>${it.desc}</td><td class="num">${it.amt}</td></tr>`).join('')}</tbody>
+          </table></div>
+        </div>`).join(''));
+
+  return `
+  <div class="card">
+    <div style="font-size:15px;font-weight:600;margin-bottom:6px">全域搜尋</div>
+    <div class="row">
+      <div class="field" style="flex:1;min-width:220px"><label>關鍵字（員工／案場／項目／金額）</label>
+        <input id="search-input" value="${esc(searchQuery)}" placeholder="例：張三、某工地、48000、住宿" autocomplete="off"></div>
+      ${q?`<button class="act" id="search-clear" style="height:36px;padding:0 14px;align-self:flex-end">清除</button>`:''}
+    </div>
+    ${q?`<p class="sub" style="margin:8px 0 0">共 ${totalHits} 筆結果（每類最多顯示 50 筆）。</p>`:''}
+  </div>
+  ${resultHTML}`;
+}
+
+// ---- 員工年度收入彙總（逐月 + 全年合計，可匯出 PDF / CSV）----
+let yearIncomeYear=new Date().getFullYear();
+function yearIncomeData(year){
+  const byId={}; const monthTotals=Array(12).fill(0);
+  const fmt=x=>`${x.getFullYear()}-${String(x.getMonth()+1).padStart(2,'0')}-${String(x.getDate()).padStart(2,'0')}`;
+  for(let m=0;m<12;m++){
+    // 「m+1月」＝計薪週期（m月11日～m+1月10日），跟員工薪資頁同一套
+    const from=fmt(new Date(year, m-1, 11));
+    const to=fmt(new Date(year, m, 10));
+    const be=buildPayroll(from,to);
+    Object.keys(be).forEach(id=>{ const e=be[id];
+      // 年度收入＝基本工資＋加項，不含任何扣項（借支扣還、賠償等內部代扣不減收入）
+      const inc=(Number(e.gross)||0)+(Number(e.addTotal)||0);
+      if(inc===0 && e.days.size===0) return;
+      byId[id]=byId[id]||{id,name:empName(id),months:Array(12).fill(0),total:0};
+      byId[id].months[m]+=inc; byId[id].total+=inc; monthTotals[m]+=inc;
+    });
+  }
+  const emps=Object.values(byId).sort((a,b)=>b.total-a.total);
+  const grand=emps.reduce((s,e)=>s+e.total,0);
+  return {emps,monthTotals,grand};
+}
+function printYearIncome(){
+  const data=yearIncomeData(yearIncomeYear);
+  if(data.emps.length===0){ alert(`${yearIncomeYear} 年沒有薪資資料。`); return; }
+  const mHead=Array.from({length:12},(_,i)=>`<th class="num">${i+1}月</th>`).join('');
+  const rows=data.emps.map(e=>`<tr><td>${esc(e.name)}</td>${e.months.map(v=>`<td class="num">${v?money(v):'-'}</td>`).join('')}<td class="num" style="font-weight:700">${money(e.total)}</td></tr>`).join('');
+  const totalRow=`<tr class="total-row"><td>合計</td>${data.monthTotals.map(v=>`<td class="num">${v?money(v):'-'}</td>`).join('')}<td class="num">${money(data.grand)}</td></tr>`;
+  const inner=`<h1>員工年度收入彙總 ${yearIncomeYear}</h1>
+    <div class="meta">各月＝計薪週期（前月11日～當月10日）收入，不含扣項　|　列印日期：${localISODate()}　|　共 ${data.emps.length} 人</div>
+    <table><thead><tr><th>員工</th>${mHead}<th class="num">全年合計</th></tr></thead>
+    <tbody>${rows}${totalRow}</tbody></table>
+    <p class="sub">各月金額＝該計薪週期（前月11日～當月10日）的收入＝基本工資＋加項，不含任何扣項（借支扣還、賠償等為內部代扣）。</p>`;
+  printHTML('員工年度收入 '+yearIncomeYear, inner, {landscape:true});
+}
+function exportYearIncomeCSV(){
+  const data=yearIncomeData(yearIncomeYear);
+  if(data.emps.length===0){ alert(`${yearIncomeYear} 年沒有薪資資料。`); return; }
+  const csv=s=>{ const t=String(s==null?'':s); return /[",\n]/.test(t)?'"'+t.replace(/"/g,'""')+'"':t; };
+  const head=['員工',...Array.from({length:12},(_,i)=>`${i+1}月`),'全年合計'];
+  const lines=[head.map(csv).join(',')];
+  data.emps.forEach(e=>{ lines.push([csv(e.name),...e.months.map(v=>round(v)),round(e.total)].join(',')); });
+  lines.push([csv('合計'),...data.monthTotals.map(v=>round(v)),round(data.grand)].join(','));
+  const text='﻿'+lines.join('\r\n');
+  try{
+    const blob=new Blob([text],{type:'text/csv;charset=utf-8'});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');
+    a.href=url; a.download=`員工年度收入-${yearIncomeYear}.csv`;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(()=>URL.revokeObjectURL(url),1000);
+  }catch(e){ alert('匯出失敗：'+e.message); }
+}
+function viewYearIncome(){
+  const data=yearIncomeData(yearIncomeYear);
+  const mHead=Array.from({length:12},(_,i)=>`<th class="num">${i+1}月</th>`).join('');
+  const rows=data.emps.map(e=>`<tr><td>${esc(e.name)}</td>${e.months.map(v=>`<td class="num">${v?money(v):'-'}</td>`).join('')}<td class="num" style="font-weight:700">${money(e.total)}</td></tr>`).join('');
+  const totalRow=data.emps.length?`<tr class="total-row"><td>合計</td>${data.monthTotals.map(v=>`<td class="num">${v?money(v):'-'}</td>`).join('')}<td class="num">${money(data.grand)}</td></tr>`:'';
+  return `
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+      <div style="font-size:15px;font-weight:600">員工年度收入彙總</div>
+      <div style="display:flex;align-items:center;gap:6px">
+        <button class="act" id="yi-prev" style="height:34px;padding:0 12px">‹ 前一年</button>
+        <input type="number" id="yi-year" value="${yearIncomeYear}" style="width:100px;text-align:center" min="2000" max="2100">
+        <button class="act" id="yi-next" style="height:34px;padding:0 12px">後一年 ›</button>
+      </div>
+    </div>
+    <p class="sub" style="margin:6px 0 0">每位員工整年收入＝基本工資＋加項，不含任何扣項；各月＝計薪週期（例：7月欄＝6/11～7/10），與員工薪資頁同一套週期。</p>
+    <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+      <button class="btn" id="yi-pdf" ${data.emps.length?'':'disabled style="opacity:.5"'}>匯出 PDF</button>
+      <button class="act" id="yi-csv" ${data.emps.length?'':'disabled style="opacity:.5"'} style="border:1px solid var(--accent);color:var(--accent)">匯出 CSV（Excel）</button>
+    </div>
+  </div>
+  <div class="card">
+    ${data.emps.length===0?`<div class="empty">${yearIncomeYear} 年沒有薪資資料。</div>`:`
+    <div class="scroll"><table>
+      <thead><tr><th>員工</th>${mHead}<th class="num">全年合計</th></tr></thead>
+      <tbody>${rows}${totalRow}</tbody></table></div>`}
+  </div>`;
+}
+
+function viewPayroll(){
+  if(!state.payFrom||!state.payTo){ const d=defaultPayRange(); state.payFrom=d.from; state.payTo=d.to; }
+  const byEmp=buildPayroll(state.payFrom,state.payTo);
+  const allIds=Object.keys(byEmp).sort((a,b)=>byEmp[b].net-byEmp[a].net);
+  // 股東照常計入薪資表與總額（只保留標記）
+  const grossSum=allIds.reduce((s,id)=>s+byEmp[id].gross,0);
+  const netSum=allIds.reduce((s,id)=>s+byEmp[id].net,0);
+
+  const rowFor=(id)=>{ const e=byEmp[id]; const emp=state.employees.find(x=>x.id===id);
+    return `<tr><td>${esc(empName(id))}${emp&&emp.partner?'<span class="tag" style="background:#e3efe9;color:var(--accent)">股東</span>':''}${emp&&!emp.active?'<span class="tag">已停用</span>':''}</td>
+      <td class="num">${e.days.size}</td><td class="num">${gongStr(e.hours)}</td>
+      <td class="num">${money(e.gross)}</td>
+      <td class="num" style="color:var(--accent)">${e.addTotal?'+'+money(e.addTotal):'—'}</td>
+      <td class="num" style="color:var(--danger)">${e.dedTotal?'−'+money(e.dedTotal):'—'}</td>
+      <td class="num" style="font-weight:600">${money(e.net)}</td>
+      <td><button class="act" data-payslip="${id}">明細單</button></td></tr>`;
+  };
+  const rows=allIds.map(id=>rowFor(id)).join('');
+
+  // 調整項輸入區
+  const activeEmps=state.employees.filter(e=>e.active);
+  const empOpts=activeEmps.map(e=>`<option value="${e.id}">${esc(e.name)}</option>`).join('');
+  const addOpts=ADD_TYPES.map(t=>`<option value="${t}">${t}</option>`).join('');
+  const dedOpts=DED_TYPES.map(t=>`<option value="${t}">${t}</option>`).join('');
+  const inRange=d=> (!state.payFrom||d>=state.payFrom) && (!state.payTo||d<=state.payTo);
+  const adjRows=state.adjustments.filter(a=>inRange(a.date)).sort((a,b)=>b.date.localeCompare(a.date)).map(a=>`<tr>
+    <td>${esc(a.date)}</td><td>${esc(empName(a.empId))}</td>
+    <td><span class="tag" style="background:${a.kind==='add'?'#e3efe9':'#f6e1e1'};color:${a.kind==='add'?'var(--accent)':'var(--danger)'}">${a.kind==='add'?'加項':'扣項'}</span> ${esc(a.label)}</td>
+    <td class="num">${a.kind==='add'?'+':'−'}${money(a.amount)}</td>
+    <td>${esc(a.note||'')}</td>
+    <td><button class="act danger" data-deladj="${a.id}">刪</button></td>
+  </tr>`).join('');
+
+  // 本期借支扣款提示：尚未還清、且本期還沒扣過的借支
+  const loanReminders=state.loans.filter(l=>loanBalance(l)>0 && !loanDeductedInRange(l.id,state.payFrom,state.payTo)).map(l=>{
+    const bal=loanBalance(l);
+    return `<tr>
+      <td>${esc(empName(l.empId))}</td>
+      <td class="num">${money(bal)}</td>
+      <td class="num"><input type="number" data-loanpay="${l.id}" min="0" max="${bal}" step="500" placeholder="本期扣多少" style="width:120px;text-align:right"></td>
+      <td><button class="act" data-repay="${l.id}" style="border:1px solid var(--accent);border-radius:6px;padding:3px 10px;color:var(--accent)">加入扣款</button></td>
+    </tr>`;
+  }).join('');
+  const loanDebtRows=state.employees.map(emp=>{
+    const debt=state.loans.filter(l=>l.empId===emp.id).reduce((s,l)=>s+loanBalance(l),0);
+    const pay=byEmp[emp.id]?Number(byEmp[emp.id].net)||0:0;
+    const over=debt-pay;
+    if(debt<=0||over<=0) return '';
+    return `<tr>
+      <td>${esc(emp.name)}${!emp.active?'<span class="tag">已停用</span>':''}</td>
+      <td class="num">${money(pay)}</td>
+      <td class="num">${money(debt)}</td>
+      <td class="num" style="font-weight:700;color:var(--danger)">${money(over)}</td>
+    </tr>`;
+  }).join('');
+
+  return `
+  <div class="card">
+    <div style="font-size:14px;font-weight:600;margin-bottom:4px">計薪期間</div>
+    <p class="sub">計薪週期以每月 11 號起算（本期＝上月11號～本月10號）。可隨時手動改起訖日期。</p>
+    <div class="row">
+      <div class="field"><label>起</label><input type="date" id="pay-from" value="${state.payFrom}"></div>
+      <div class="field"><label>訖</label><input type="date" id="pay-to" value="${state.payTo}"></div>
+      <button class="act" id="pay-thismonth" style="height:36px;border:1px solid var(--line2);border-radius:8px;padding:0 12px">本期</button>
+      <button class="act" id="pay-lastmonth" style="height:36px;border:1px solid var(--line2);border-radius:8px;padding:0 12px">上期</button>
+      <button class="act" id="pay-all" style="height:36px;border:1px solid var(--line2);border-radius:8px;padding:0 12px">全部</button>
+    </div>
+  </div>
+  <div class="metrics">
+    <div class="metric"><div class="l">區間</div><div class="v" style="font-size:15px">${state.payFrom||'—'} ～ ${state.payTo||'—'}</div></div>
+    <div class="metric"><div class="l">員工數</div><div class="v">${allIds.length}</div></div>
+    <div class="metric"><div class="l">基本工資</div><div class="v" style="font-size:20px">${money(grossSum)}</div></div>
+    <div class="metric"><div class="l">實發總額</div><div class="v">${money(netSum)}</div></div>
+  </div>
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;gap:8px;flex-wrap:wrap">
+      <div style="font-size:14px;font-weight:600">本期薪資</div>
+      <div style="display:flex;gap:8px">
+        <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);white-space:nowrap"><input type="checkbox" id="payslip-workdetails" ${payslipShowWorkDetails?'checked':''} style="width:15px;height:15px">明細單顯示出工明細</label>
+        <button class="btn" id="export-summary" ${rows===''?'disabled style="opacity:.5"':''}>匯出總表 PDF</button>
+      </div>
+    </div>
+    ${rows===''?'<div class="empty">此區間內尚無可計算的薪資。</div>':`
+    <div class="scroll"><table>
+      <thead><tr><th>員工</th><th class="num">出勤天</th><th class="num">總工數</th><th class="num">基本工資</th><th class="num">加項</th><th class="num">扣項</th><th class="num">實發金額</th><th></th></tr></thead>
+      <tbody>${rows}</tbody></table></div>
+    <p class="sub" style="margin:10px 0 0">基本工資＝正常工時薪資；加項＝出差外宿津貼＋加班費＋手動加項；實發＝基本工資＋加項−扣項。</p>`}
+  </div>
+  ${loanDebtRows===''?'':`<div class="card" style="border-color:var(--danger)">
+    <div style="font-size:14px;font-weight:600;margin-bottom:4px;color:var(--danger)">借支超過本期薪資</div>
+    <p class="sub">以下員工目前未還借支已大於本期實發薪資；若本期薪資全數扣還，仍會欠公司右側金額。</p>
+    <div class="scroll"><table>
+      <thead><tr><th>員工</th><th class="num">本期實發</th><th class="num">未還借支</th><th class="num">仍欠公司</th></tr></thead>
+      <tbody>${loanDebtRows}</tbody></table></div>
+  </div>`}
+  ${loanReminders===''?'':`<details class="card" style="border-color:var(--accent)">
+    <summary>💡 本期借支扣款提示</summary>
+    <div class="card-body">
+      <p class="sub">以下員工有未還清借支、且本期尚未扣款。輸入本期要扣的金額後按「加入扣款」，系統會帶入本期扣項。</p>
+      <div class="scroll"><table>
+        <thead><tr><th>員工</th><th class="num">尚欠</th><th class="num">本期扣款</th><th></th></tr></thead>
+        <tbody>${loanReminders}</tbody></table></div>
+    </div>
+  </details>`}
+  <details class="card">
+    <summary>本期加項／扣項</summary>
+    <div class="card-body">
+      <p class="sub">獎金、全勤為加項；借支扣還、勞健保自負額等為扣項。日期請填在本計薪區間內，才會算進本期。</p>
+      <div class="row" style="margin-bottom:10px">
+        <div class="field"><label>日期</label><input type="date" id="adj-date" value="${state.payTo||''}"></div>
+        <div class="field"><label>員工</label><select id="adj-emp">${empOpts}</select></div>
+        <div class="field"><label>性質</label><select id="adj-kind"><option value="add">加項（+）</option><option value="ded">扣項（−）</option></select></div>
+        <div class="field"><label>項目</label><select id="adj-label">${addOpts}</select></div>
+        <div class="field"><label>金額</label><input type="number" id="adj-amount" min="0" step="100" style="width:120px"></div>
+        <div class="field" style="flex:1;min-width:140px"><label>備註（選填）</label><input id="adj-note" placeholder="例：6月借支"></div>
+        <button class="btn" id="adj-add">＋ 新增</button>
+      </div>
+      ${adjRows===''?'<div class="empty">本期尚無加扣項。</div>':`<div class="scroll"><table>
+        <thead><tr><th>日期</th><th>員工</th><th>項目</th><th class="num">金額</th><th>備註</th><th></th></tr></thead>
+        <tbody>${adjRows}</tbody></table></div>`}
+    </div>
+  </details>`;
+}
+
+function viewSites(){
+  const comp=computeRecords(state.attendance);
+  const bySite={};
+  state.sites.forEach(s=>{ bySite[s.id]={hours:0,wage:0,allow:0,total:0,emp:{},opening:Number(s.opening)||0,manual:0}; });
+  state.attendance.forEach(r=>{ const c=comp[r.id]; if(!c)return;
+    const s=bySite[r.siteId]=bySite[r.siteId]||{hours:0,wage:0,allow:0,total:0,emp:{},opening:0,manual:0};
+    s.hours+=Number(r.hours)||0; s.wage+=c.wage; s.allow+=c.allow; s.total+=c.total;
+    s.emp[r.empId]=(s.emp[r.empId]||0)+c.total;
+  });
+  Object.values(bySite).forEach(s=>{ s.grandTotal=s.total+(s.opening||0)+(s.manual||0); });
+  const grand=Object.values(bySite).reduce((s,x)=>s+x.grandTotal,0);
+  const ids=Object.keys(bySite).sort((a,b)=>bySite[b].grandTotal-bySite[a].grandTotal);
+  const cardFor=(sid)=>{ const s=bySite[sid];
+    const empBreak=Object.entries(s.emp).sort((a,b)=>b[1]-a[1]).map(([eid,v])=>`<tr><td>${esc(empName(eid))}</td><td class="num">${money(v)}</td></tr>`).join('');
+    const pct=grand>0?Math.round(s.grandTotal/grand*100):0;
+    return `<details class="card">
+      <summary>${esc(siteName(sid))}<span style="margin-left:auto;font-size:16px;font-weight:700;color:var(--ink)">${money(s.grandTotal)}</span></summary>
+      <div class="card-body">
+        <p class="sub">總工數 ${gongStr(s.hours)}・系統工資 ${money(s.wage)}・津貼 ${money(s.allow)}${s.opening>0?`・期初 ${money(s.opening)}`:''}・占總成本 ${pct}%</p>
+        <div class="row" style="margin-bottom:6px">
+          <div class="field"><label>期初人事成本（從Excel抄入，選填）</label><input type="number" data-opening="${sid}" value="${s.opening||''}" placeholder="未設定" min="0" step="1000" style="width:170px"></div>
+        </div>
+        ${empBreak?`<details><summary>系統內各員工金額明細</summary>
+          <table style="margin-top:8px"><thead><tr><th>員工</th><th class="num">金額</th></tr></thead><tbody>${empBreak}</tbody></table>
+        </details>`:''}
+      </div>
+    </details>`;
+  };
+  const isPaused=sid=>{ const st=state.sites.find(x=>x.id===sid); return st&&st.active===false; };
+  const activeIds=ids.filter(sid=>!isPaused(sid));
+  const pausedIds=ids.filter(sid=>isPaused(sid));
+  const cards=activeIds.map(cardFor).join('');
+  const pausedCards=pausedIds.length?`<details style="margin-top:10px"><summary style="cursor:pointer;font-weight:600;padding:8px 0">已暫停案場（${pausedIds.length}）</summary>${pausedIds.map(cardFor).join('')}</details>`:'';
+  return `
+  <div class="metrics">
+    <div class="metric"><div class="l">案場數</div><div class="v">${activeIds.length}${pausedIds.length?`<span style="font-size:12px;color:var(--muted)"> +${pausedIds.length}暫停</span>`:''}</div></div>
+    <div class="metric"><div class="l">總成本</div><div class="v">${money(grand)}</div></div>
+  </div>
+  <p class="sub" style="margin:-6px 0 12px">案場成本＝期初人事成本＋出勤工資與津貼。<button class="btn" id="export-sites" style="margin-left:10px" ${ids.length===0?'disabled style="opacity:.5"':''}>匯出 PDF</button></p>
+  ${cards===''&&pausedCards===''?'<div class="card"><div class="empty">尚無案場成本資料。</div></div>':cards}${pausedCards}`;
+}
+
+function viewManage(){
+  const todayStr=localISODate();
+  const empRows=state.employees.map(e=>{
+    const hasRecords=state.attendance.some(r=>r.empId===e.id);
+    const delBtn=hasRecords?'<span class="act muted" title="已有出工紀錄，無法刪除">🔒</span>':`<button class="act danger" data-delemp="${e.id}">刪</button>`;
+    const toggle=e.active?`<button class="act" data-toggle="${e.id}">停用</button>`:`<button class="act" data-toggle="${e.id}">復用</button>`;
+    const curRate=effectiveDaily(e,todayStr);
+    const upcoming=(e.rateHistory||[]).filter(h=>h.date>todayStr).sort((a,b)=>a.date.localeCompare(b.date));
+    const pendingTag=upcoming.length?`<span class="tag" style="background:#fef3c7;color:#92400e" title="生效日 ${upcoming[0].date}">↑${upcoming[0].date.slice(5).replace('-','/')} ${money(upcoming[0].daily)}</span>`:'';
+    return `<tr><td>${esc(e.name)}${e.partner?'<span class="tag" style="background:#e3efe9;color:var(--accent)">股東</span>':''}${!e.active?'<span class="tag">已停用</span>':''}</td>
+      <td class="num">${money(curRate)}${pendingTag}</td>
+      <td><button class="act" data-renemp="${e.id}">改名</button></td>
+      <td><button class="act" data-raise="${e.id}">調薪</button></td>
+      <td><button class="act" data-partner="${e.id}">${e.partner?'取消股東':'設為股東'}</button></td>
+      <td>${toggle}</td><td>${delBtn}</td></tr>`;
+  }).join('');
+  const siteRowFor=(s)=>{
+    const hasRecords=state.attendance.some(r=>r.siteId===s.id);
+    const delBtn=hasRecords?'<span class="act muted" title="已有出工紀錄，無法刪除">🔒</span>':`<button class="act danger" data-delsite="${s.id}">刪</button>`;
+    const paused=s.active===false;
+    const toggle=`<button class="act" data-togglesite="${s.id}">${paused?'恢復啟用':'暫停'}</button>`;
+    const nameCell=`${esc(s.name)}${paused?'<span class="tag" style="background:var(--warn-bg);color:var(--warn-ink)">已暫停</span>':''}`;
+    return `<tr${paused?' style="color:var(--muted)"':''}><td>${nameCell}</td><td><button class="act" data-rensite="${s.id}">改名</button></td><td>${toggle}</td><td>${delBtn}</td></tr>`;
+  };
+  const activeSitesList=state.sites.filter(s=>s.active!==false);
+  const pausedSitesList=state.sites.filter(s=>s.active===false);
+  const siteRows=activeSitesList.map(siteRowFor).join('');
+  const pausedSiteTable=pausedSitesList.length?`<details style="margin-top:10px"><summary style="cursor:pointer;font-weight:600;padding:8px 0">已暫停案場（${pausedSitesList.length}）</summary><table><tbody>${pausedSitesList.map(siteRowFor).join('')}</tbody></table></details>`:'';
+  return `
+  <details class="card">
+    <summary>員工</summary>
+    <div class="card-body">
+      <p class="sub">調薪只影響之後登記的出工，舊紀錄維持當時日薪。離職請用「停用」保留歷史；只有從沒登記過出工的員工才能真正刪除。「股東」只是標記，薪資照常計算。</p>
+      <div class="row" style="margin-bottom:10px">
+        <div class="field"><label>姓名</label><input id="e-name" placeholder="例：王小明"></div>
+        <div class="field"><label>日薪</label><input id="e-daily" type="number" min="0" step="100" value="3000" style="width:120px"></div>
+        <button class="btn" id="e-add">＋ 新增員工</button>
+      </div>
+      ${(()=>{ const re=raiseEmpId?state.employees.find(x=>x.id===raiseEmpId):null; if(!re) return ''; const hist=[...(re.rateHistory||[])].sort((a,b)=>a.date.localeCompare(b.date)); return `<div class="card" style="border:2px solid var(--accent);margin:0 0 12px"><div style="font-size:14px;font-weight:700;margin-bottom:10px">調薪：${esc(re.name)}</div><div class="row"><div class="field"><label>生效日</label><input type="date" id="raise-date" value="${todayStr}"></div><div class="field"><label>新日薪</label><input type="number" id="raise-in" min="0" step="100" value="${effectiveDaily(re,todayStr)}" style="width:120px"></div><button class="btn" id="raise-ok">確認</button><button class="btn" id="raise-cancel" style="background:var(--line2);color:var(--text)">取消</button></div>${hist.length?`<div style="margin-top:10px;font-size:12px;color:var(--muted)">調薪紀錄：${hist.map(h=>`${h.date} ${money(h.daily)}`).join(' → ')}</div>`:''}</div>`; })()}
+      ${state.employees.length===0?'<div class="empty">尚無員工。</div>':`<div class="scroll"><table><thead><tr><th>姓名</th><th class="num">目前日薪</th><th></th><th></th><th></th><th></th><th></th></tr></thead><tbody>${empRows}</tbody></table></div>`}
+    </div>
+  </details>
+  <details class="card">
+    <summary>案場</summary>
+    <div class="card-body">
+      <p class="sub">建立工地/案場，登記出工與計算成本時會用到。改名會套用到所有相關紀錄。暫時不用的案場可「暫停」，它就不會出現在出工登記，但歷史紀錄保留。</p>
+      <div class="row" style="margin-bottom:10px">
+        <div class="field" style="flex:1;min-width:200px"><label>案場名稱</label><input id="s-name" placeholder="例：台北富邦"></div>
+        <button class="btn" id="s-add">＋ 新增案場</button>
+      </div>
+      ${state.sites.length===0?'<div class="empty">尚無案場。</div>':`${activeSitesList.length?`<table><thead><tr><th>名稱</th><th></th><th></th><th></th></tr></thead><tbody>${siteRows}</tbody></table>`:'<div class="empty">沒有啟用中的案場。</div>'}${pausedSiteTable}`}
+    </div>
+  </details>
+  <div class="card">
+    <div style="font-size:14px;font-weight:600;margin-bottom:4px">🚑 本機每日快照（誤刪救援）</div>
+    <p class="sub" style="margin:0 0 8px">這台裝置每天第一次開啟時自動留一份資料快照，保留 7 天。誤刪資料時選一天按「合併救回」：只補回「快照有、現在沒有」的紀錄，不覆蓋現有資料，救回後同步到各裝置也不會被再刪。</p>
+    <div style="display:flex;gap:6px;flex-wrap:wrap">${listDailySnapshots().map(d=>`<button class="act" data-snaprestore="${d}" style="border:1px solid var(--danger);border-radius:8px;padding:0 12px;height:34px;color:var(--danger)">${d} 合併救回</button>`).join('')||'<span class="sub" style="margin:0">尚無快照（每天第一次開啟自動留存）。</span>'}</div>
+  </div>`;
+}
+
+function bind(){
+  document.querySelectorAll('[data-snaprestore]').forEach(btn=>btn.onclick=()=>{
+    const day=btn.dataset.snaprestore;
+    if(!confirm('用 '+day+' 的本機快照做「合併救回」？\n只會補回「快照有、現在沒有」的紀錄，不覆蓋現有資料。')) return;
+    rescueFromDailySnapshot(day);
+  });
+  document.querySelectorAll('[data-toggle-form]').forEach(b=>b.onclick=()=>{ const k=b.dataset.toggleForm; formOpen[k]=!formOpen[k]; render(); });
+  bindBillingSubtotal('bnr'); bindBillingSubtotal('bna'); bindBillingSubtotal('bae');
+  ['meas-type','meas-width','meas-height','meas-qty','meas-price'].forEach(id=>{ const el=document.getElementById(id); if(el) el.oninput=updateMeasurePreview; if(el) el.onchange=updateMeasurePreview; });
+  updateMeasurePreview();
+  const bnrAdd=document.getElementById('bnr-add');
+  if(bnrAdd) bnrAdd.onclick=()=>{
+    const date=document.getElementById('bnr-date').value;
+    const site=document.getElementById('bnr-site').value.trim();
+    const line=readBillingLine('bnr');
+    const method=document.getElementById('bnr-method').value.trim();
+    const client=document.getElementById('bnr-client').value.trim();
+    const note=document.getElementById('bnr-note').value.trim();
+    const settled=document.getElementById('bnr-settled').value==='1';
+    if(!date||!site||isNaN(line.qty)||line.qty<=0||isNaN(line.unitPrice)||line.unitPrice<0){ alert('請填日期、案場、數量與單價'); return; }
+    rememberText('clients',client);
+    state.billings.push({id:uid(),docType:'請款單',date,site,unit:line.unit,qty:line.qty,unitPrice:line.unitPrice,amount:line.amount,method,client,note,settled});
+    billingReqDraft=null; saveData(); render();
+  };
+  document.querySelectorAll('[data-copy-req]').forEach(b=>b.onclick=()=>{
+    const bill=state.billings.find(x=>x.id===b.dataset.copyReq); if(!bill) return;
+    billingReqDraft={date:bill.date||localISODate(),method:bill.method||'',client:bill.client||'',note:bill.note||'',settled:!!bill.settled};
+    formOpen.bnr=true; render();
+  });
+  const bnaAdd=document.getElementById('bna-add');
+  if(bnaAdd) bnaAdd.onclick=()=>{
+    const date=document.getElementById('bna-date').value;
+    const site=document.getElementById('bna-site').value.trim();
+    const line=readBillingLine('bna');
+    const client=document.getElementById('bna-client').value.trim();
+    const note=document.getElementById('bna-note').value.trim();
+    const remark=document.getElementById('bna-remark').value.trim();
+    const settled=document.getElementById('bna-settled').value==='1';
+    if(!date||!site||isNaN(line.qty)||line.qty<=0||isNaN(line.unitPrice)||line.unitPrice<0){ alert('請填日期、案場、數量與單價'); return; }
+    rememberText('clients',client);
+    state.billings.push({id:uid(),docType:'追加單',date,site,unit:line.unit,qty:line.qty,unitPrice:line.unitPrice,amount:line.amount,client,note,remark,settled});
+    billingAddDraft=null; saveData(); render();
+  };
+  document.querySelectorAll('[data-copy-add]').forEach(b=>b.onclick=()=>{
+    const bill=state.billings.find(x=>x.id===b.dataset.copyAdd); if(!bill) return;
+    billingAddDraft={date:bill.date||localISODate(),client:bill.client||'',note:bill.note||'',remark:bill.remark||'',settled:!!bill.settled};
+    formOpen.bna=true; render();
+  });
+  document.querySelectorAll('[data-billedit-add]').forEach(b=>b.onclick=()=>{ billingAddEditId=b.dataset.billeditAdd; render(); });
+  document.querySelectorAll('[data-bae-cancel]').forEach(b=>b.onclick=()=>{ billingAddEditId=null; render(); });
+  document.querySelectorAll('[data-bae-ok]').forEach(b=>b.onclick=()=>{
+    const bill=state.billings.find(x=>x.id===b.dataset.baeOk); if(!bill) return;
+    const line=readBillingLine('bae');
+    if(isNaN(line.qty)||line.qty<=0||isNaN(line.unitPrice)||line.unitPrice<0){ alert('請填數量與單價'); return; }
+    bill.date=document.getElementById('bae-date').value;
+    bill.site=document.getElementById('bae-site').value.trim();
+    bill.unit=line.unit; bill.qty=line.qty; bill.unitPrice=line.unitPrice; bill.amount=line.amount;
+    bill.client=document.getElementById('bae-client').value.trim();
+    bill.note=document.getElementById('bae-note').value.trim();
+    bill.remark=document.getElementById('bae-remark').value.trim();
+    bill.settled=document.getElementById('bae-settled').value==='1';
+    rememberText('clients',bill.client);
+    billingAddEditId=null; saveData(); render();
+  });
+  const measAdd=document.getElementById('meas-add');
+  if(measAdd) measAdd.onclick=()=>{
+    const date=document.getElementById('meas-date').value, site=document.getElementById('meas-site').value.trim();
+    const item=document.getElementById('meas-item').value.trim(), unit=document.getElementById('meas-unit').value.trim()||'㎡';
+    const measureType=document.getElementById('meas-type').value, width=parseFloat((document.getElementById('meas-width')||{}).value), height=parseFloat((document.getElementById('meas-height')||{}).value);
+    const qty=parseFloat(document.getElementById('meas-qty').value), price=parseFloat(document.getElementById('meas-price').value), note=document.getElementById('meas-note').value.trim();
+    const sizeText=(document.getElementById('meas-size')||{}).value||'';
+    if(!date||!site||!item||isNaN(qty)||qty<=0||isNaN(price)||price<0){ alert('請填日期、案場、項目、數量與單價'); return; }
+    if(measureType==='partition'&&(isNaN(width)||width<=0||isNaN(height)||height<=0)){ alert('隔間請填寬度與高度'); return; }
+    state.measurements.push({id:uid(),date,site,item,unit,qty,unitPrice:price,note,measureType,sizeText:measureType==='carry'?sizeText.trim():'',width:measureType==='partition'?width:null,height:measureType==='partition'?height:null});
+    saveData(); render();
+  };
+  document.querySelectorAll('[data-del-meas]').forEach(b=>b.onclick=()=>{ if(!confirm('確定刪除這筆計量明細？')) return; state.measurements=state.measurements.filter(m=>m.id!==b.dataset.delMeas); saveData(); render(); });
+  const measPickAll=document.getElementById('meas-pick-all');
+  if(measPickAll) measPickAll.onclick=()=>{ document.querySelectorAll('[data-meas-pick]').forEach(x=>x.checked=true); };
+  const measExportAll=document.getElementById('meas-export-all');
+  if(measExportAll) measExportAll.onclick=()=>printMeasurementsPDF(state.measurements.map(m=>m.id));
+  const measExportSelected=document.getElementById('meas-export-selected');
+  if(measExportSelected) measExportSelected.onclick=()=>{
+    const ids=[...document.querySelectorAll('[data-meas-pick]:checked')].map(x=>x.dataset.measPick);
+    if(ids.length===0){ alert('請先勾選要匯出的計量明細'); return; }
+    printMeasurementsPDF(ids);
+  };
+  document.querySelectorAll('[data-billprint]').forEach(b=>b.onclick=()=>printBillingDoc(b.dataset.billprint));
+  document.querySelectorAll('[data-batch-add]').forEach(b=>b.onclick=()=>{
+    const site=b.dataset.batchAdd;
+    const ids=state.billings.filter(x=>(x.docType||'請款單')==='追加單'&&parentSiteName(x.site)===site).sort((a,c)=>(a.date||'').localeCompare(c.date||'')).map(x=>x.id);
+    printBillingDocs(ids);
+  });
+  document.querySelectorAll('[data-billsign]').forEach(b=>b.onclick=()=>openFullscreenSign(dataUrl=>{ saveSig(b.dataset.billsign,dataUrl); saveData(); pushCloud(); render(); }));
+  document.querySelectorAll('[data-photoup]').forEach(b=>b.onclick=()=>{
+    const id=b.dataset.photoup;
+    const inp=document.createElement('input'); inp.type='file'; inp.accept='image/*'; inp.multiple=true;
+    inp.onchange=async()=>{
+      const files=[...inp.files]; if(!files.length) return;
+      const arr=(billingPhotos[id]||[]).slice();
+      let ok=0, fail=0;
+      setCloud(`上傳照片中 (0/${files.length})`);
+      for(let i=0;i<files.length;i++){
+        try{
+          setCloud(`上傳照片中 (${i+1}/${files.length})`);
+          arr.push(await uploadBillingPhoto(files[i]));
+          ok++;
+        }catch(e){
+          fail++;
+          console.warn('photo upload failed', e);
+        }
+      }
+      billingPhotos[id]=arr;
+      savePhotos();
+      if(ok>0) saveData();
+      setCloud(fail?`照片部分上傳：成功 ${ok}、失敗 ${fail}`:`照片已上傳 ${ok} 張`);
+      if(fail) alert(`有 ${fail} 張照片上傳失敗，請稍後再試。`);
+      render();
+    };
+    inp.click();
+  });
+  document.querySelectorAll('[data-photodel]').forEach(b=>b.onclick=()=>{ const id=b.dataset.photodel, idx=Number(b.dataset.photoidx); if(!billingPhotos[id]) return; const removed=billingPhotos[id][idx]; rememberDeletedPhoto(id,removed); billingPhotos[id].splice(idx,1); if(!billingPhotos[id].length) delete billingPhotos[id]; savePhotos(); saveData(); render(); });
+  document.querySelectorAll('[data-togglesettle]').forEach(b=>b.onclick=()=>{ const bill=state.billings.find(x=>x.id===b.dataset.togglesettle); if(!bill) return; bill.settled=!bill.settled; saveData(); render(); });
+  document.querySelectorAll('[data-delbill]').forEach(b=>b.onclick=()=>{ if(!confirm('確定刪除這筆單據？')) return; const id=b.dataset.delbill; (billingPhotos[id]||[]).forEach(url=>rememberDeletedPhoto(id,url)); state.billings=state.billings.filter(x=>x.id!==id); delete billingPhotos[id]; deleteSig(id); savePhotos(); saveData(); render(); });
+  document.querySelectorAll('.nav-item').forEach(b=>b.onclick=()=>{ state.tab=b.dataset.tab; closeSidebar(); render(); });
+  document.querySelectorAll('[data-goto]').forEach(b=>b.onclick=()=>{ state.tab=b.dataset.goto; render(); });
+  const dtp=document.getElementById('dash-thisperiod'); if(dtp) dtp.onclick=()=>{ const d=defaultPayRange(); state.payFrom=d.from; state.payTo=d.to; render(); };
+  const dlp=document.getElementById('dash-lastperiod'); if(dlp) dlp.onclick=()=>{ const d=prevPayRange(); state.payFrom=d.from; state.payTo=d.to; render(); };
+  const si=document.getElementById('search-input'); if(si) si.oninput=()=>{ searchQuery=si.value; render(); const n=document.getElementById('search-input'); if(n){ n.focus(); const v=n.value; try{ n.setSelectionRange(v.length,v.length); }catch(e){} } };
+  const sc=document.getElementById('search-clear'); if(sc) sc.onclick=()=>{ searchQuery=''; render(); const n=document.getElementById('search-input'); if(n) n.focus(); };
+  const yiPrev=document.getElementById('yi-prev'); if(yiPrev) yiPrev.onclick=()=>{ yearIncomeYear--; render(); };
+  const yiNext=document.getElementById('yi-next'); if(yiNext) yiNext.onclick=()=>{ yearIncomeYear++; render(); };
+  const yiYear=document.getElementById('yi-year'); if(yiYear) yiYear.onchange=()=>{ const v=parseInt(yiYear.value,10); if(v>=2000&&v<=2100){ yearIncomeYear=v; render(); } };
+  const yiPdf=document.getElementById('yi-pdf'); if(yiPdf) yiPdf.onclick=()=>printYearIncome();
+  const yiCsv=document.getElementById('yi-csv'); if(yiCsv) yiCsv.onclick=()=>exportYearIncomeCSV();
+
+  const pf=document.getElementById('pay-from'); if(pf) pf.onchange=()=>{ state.payFrom=pf.value; render(); };
+  const pt=document.getElementById('pay-to'); if(pt) pt.onchange=()=>{ state.payTo=pt.value; render(); };
+  const pm=document.getElementById('pay-thismonth'); if(pm) pm.onclick=()=>{ const d=defaultPayRange(); state.payFrom=d.from; state.payTo=d.to; render(); };
+  const plm=document.getElementById('pay-lastmonth'); if(plm) plm.onclick=()=>{ const d=prevPayRange(); state.payFrom=d.from; state.payTo=d.to; render(); };
+  const pa=document.getElementById('pay-all'); if(pa) pa.onclick=()=>{ state.payFrom=''; state.payTo=''; render(); };
+
+  // 加扣項：性質改變時切換項目清單
+  const adjKind=document.getElementById('adj-kind'), adjLabel=document.getElementById('adj-label');
+  if(adjKind&&adjLabel) adjKind.onchange=()=>{
+    const opts=(adjKind.value==='add'?ADD_TYPES:DED_TYPES).map(t=>`<option value="${t}">${t}</option>`).join('');
+    adjLabel.innerHTML=opts;
+  };
+  const adjAdd=document.getElementById('adj-add');
+  if(adjAdd) adjAdd.onclick=()=>{
+    const date=document.getElementById('adj-date').value;
+    const empId=document.getElementById('adj-emp').value;
+    const kind=document.getElementById('adj-kind').value;
+    const label=document.getElementById('adj-label').value;
+    const amount=parseFloat(document.getElementById('adj-amount').value);
+    const note=document.getElementById('adj-note').value.trim();
+    if(!date||!empId||!label||isNaN(amount)||amount<0) return;
+    state.adjustments.push({id:uid(),date,empId,kind,label,amount,note});
+    saveData(); render();
+  };
+  document.querySelectorAll('[data-deladj]').forEach(b=>b.onclick=()=>{ if(!confirm('確定刪除這筆加扣項？')) return; state.adjustments=state.adjustments.filter(a=>a.id!==b.dataset.deladj); saveData(); render(); });
+  const esi=document.getElementById('export-sites'); if(esi) esi.onclick=()=>exportSitesPDF();
+  const psw=document.getElementById('payslip-workdetails'); if(psw) psw.onchange=()=>{ payslipShowWorkDetails=psw.checked; };
+  const es=document.getElementById('export-summary'); if(es) es.onclick=()=>exportSummaryPDF();
+  document.querySelectorAll('[data-payslip]').forEach(b=>b.onclick=()=>exportPayslipPDF(b.dataset.payslip));
+
+  const gotoM=document.getElementById('goto-manage'); if(gotoM) gotoM.onclick=()=>{ state.tab='manage'; render(); };
+
+  const fDate=document.getElementById('f-date');
+  if(fDate){
+    fDate.oninput=()=>{ entryDate=fDate.value; };
+    fDate.onchange=()=>{ entryDate=fDate.value; };
+    fDate.onblur=()=>{ entryDate=fDate.value; const fe=document.getElementById('f-emp'); if(fe) entryEmp=fe.value; render(); };
+  }
+  const fType=document.getElementById('f-type');
+  if(fType) fType.onchange=()=>{ entryType=fType.value; const fe=document.getElementById('f-emp'); if(fe) entryEmp=fe.value; render(); };
+  const fSite=document.getElementById('f-site'); if(fSite) fSite.onchange=()=>{ entrySite=fSite.value; const fe=document.getElementById('f-emp'); if(fe) entryEmp=fe.value; render(); };
+  const fEmp=document.getElementById('f-emp'); if(fEmp) fEmp.onchange=()=>{ entryEmp=fEmp.value; if(entryType==='請假') render(); };
+  const fNight=document.getElementById('f-night'); if(fNight) fNight.onchange=()=>{ entryNight=fNight.checked; };
+
+  const add=document.getElementById('f-add');
+  if(add) add.onclick=()=>{
+    const date=document.getElementById('f-date').value;
+    const empId=document.getElementById('f-emp').value;
+    const emp=state.employees.find(e=>e.id===empId);
+    if(!date||!empId||!emp) return;
+    if(entryType==='請假'||entryType==='休假'){
+      const existing=state.attendance.find(r=>r.empId===empId&&r.date===date&&(r.type==='請假'||r.type==='休假'));
+      if(existing){ if(!confirm(`${emp.name} 在 ${date} 已有${existing.type}紀錄，確定再記一筆？`)) return; }
+      state.attendance.push({id:uid(),date,empId,type:entryType,hours:0,siteId:null,night:false,dailyRate:0});
+      entryDate=date;
+      if(entryType==='請假') entryType='work'; // 請假後恢復出工預設
+      saveData(); render();
+      return;
+    }
+    const siteId=document.getElementById('f-site').value;
+    const hours=parseFloat(document.getElementById('f-hours').value);
+    const overtime=parseFloat(document.getElementById('f-overtime').value)||0;
+    const night=document.getElementById('f-night').checked;
+    if(!siteId||isNaN(hours)||isNaN(overtime)) return;
+    if(!Number.isInteger(hours)||!Number.isInteger(overtime)){ alert('工時與加班請輸入整數小時（例如 8、9），不接受小數。'); return; }
+    // 防呆：同人同日是否已登記（只比對出工紀錄）
+    const sameDay=state.attendance.filter(r=>r.empId===empId&&r.date===date&&r.type!=='請假'&&r.type!=='休假');
+    if(sameDay.length>0){
+      const sameSite=sameDay.find(r=>r.siteId===siteId);
+      let msg;
+      if(sameSite){
+        msg=`${emp.name} 在 ${date} 的「${siteName(siteId)}」已經登記過 ${sameSite.hours} 小時了。\n\n這很可能是重複登記。確定還要再記一筆嗎？`;
+      } else {
+        const where=sameDay.map(r=>`${siteName(r.siteId)} ${r.hours}h`).join('、');
+        msg=`${emp.name} 在 ${date} 已經登記過：${where}。\n\n如果他今天還跑了「${siteName(siteId)}」這個案場，可以繼續；否則請取消。\n\n確定要再記一筆嗎？`;
+      }
+      if(!confirm(msg)) return;
+    }
+    state.attendance.push({id:uid(),date,empId,siteId,hours,overtime,night,dailyRate:effectiveDaily(emp,date)});
+    entryDate=date; entrySite=siteId; entryEmp='';
+    entryNight=night; // 保留過夜外宿狀態
+    saveData(); render();
+  };
+  const allVac=document.getElementById('f-allvac');
+  if(allVac) allVac.onclick=()=>{
+    const date=document.getElementById('f-date').value;
+    if(!date){ alert('請先選擇日期'); return; }
+    const emps=state.employees.filter(e=>e.active);
+    if(emps.length===0){ alert('沒有在職員工'); return; }
+    const toAdd=emps.filter(e=>!state.attendance.some(r=>r.empId===e.id&&r.date===date));
+    const skipped=emps.filter(e=>state.attendance.some(r=>r.empId===e.id&&r.date===date));
+    let msg=`確定將 ${date} 設為全員休假？\n新增 ${toAdd.length} 人`;
+    if(skipped.length>0) msg+=`（跳過已有紀錄的 ${skipped.length} 人：${skipped.map(e=>e.name).join('、')}）`;
+    msg+='。';
+    if(!confirm(msg)) return;
+    toAdd.forEach(emp=>state.attendance.push({id:uid(),date,empId:emp.id,type:'休假',hours:0,siteId:null,night:false,dailyRate:0}));
+    entryDate=date;
+    saveData(); render();
+  };
+  document.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>{ const r=state.attendance.find(x=>x.id===b.dataset.del); if(!confirm(`確定刪除這筆紀錄？\n${r?esc(r.date)+'・'+empName(r.empId)+'・'+recordLabel(r):''}`)) return; state.attendance=state.attendance.filter(r=>r.id!==b.dataset.del); saveData(); render(); });
+  document.querySelectorAll('[data-togglegroup]').forEach(b=>b.onclick=()=>{
+    const dk=b.dataset.togglegroup;
+    const isOpen=b.textContent.trim().startsWith('▼');
+    entryOpenDates[dk]=!isOpen; render();
+  });
+  document.querySelectorAll('[data-edithours]').forEach(b=>b.onclick=()=>{ entryEditId=b.dataset.edithours; render(); });
+  document.querySelectorAll('[data-editok]').forEach(b=>b.onclick=()=>{
+    const r=state.attendance.find(x=>x.id===b.dataset.editok); if(!r) return;
+    const v=parseFloat(document.getElementById('edit-hours').value);
+    const otv=parseFloat(document.getElementById('edit-ot').value)||0;
+    if(!Number.isInteger(v)||!Number.isInteger(otv)){ alert('工時與加班請輸入整數小時。'); return; }
+    if(!isNaN(v)&&v>=0&&!isNaN(otv)&&otv>=0){ r.hours=v; r.overtime=otv; saveData(); }
+    entryEditId=null; render();
+  });
+  const ecancel=document.getElementById('edit-cancel'); if(ecancel) ecancel.onclick=()=>{ entryEditId=null; render(); };
+
+  const ea=document.getElementById('e-add');
+  if(ea) ea.onclick=()=>{
+    const name=document.getElementById('e-name').value.trim();
+    const daily=parseFloat(document.getElementById('e-daily').value);
+    if(!name||isNaN(daily)) return;
+    if(state.employees.some(e=>e.name===name) && !confirm(`已經有一位員工叫「${name}」。\n同名員工的出工、借支很容易登記錯人。\n\n確定還是要新增嗎？`)) return;
+    state.employees.push({id:uid(),name,daily,active:true}); saveData(); render();
+  };
+  document.querySelectorAll('[data-raise]').forEach(b=>b.onclick=()=>{ raiseEmpId=b.dataset.raise; render(); });
+  const raiseOk=document.getElementById('raise-ok');
+  if(raiseOk) raiseOk.onclick=()=>{
+    const e=state.employees.find(x=>x.id===raiseEmpId);
+    if(e){
+      const v=parseFloat(document.getElementById('raise-in').value);
+      const d=document.getElementById('raise-date').value;
+      if(!isNaN(v)&&d){
+        if(!e.rateHistory) e.rateHistory=[];
+        e.rateHistory=e.rateHistory.filter(h=>h.date!==d);
+        e.rateHistory.push({date:d,daily:v});
+        e.daily=effectiveDaily(e,localISODate());
+        saveData();
+      }
+    }
+    raiseEmpId=null; render();
+  };
+  const raiseCancel=document.getElementById('raise-cancel');
+  if(raiseCancel) raiseCancel.onclick=()=>{ raiseEmpId=null; render(); };
+  document.querySelectorAll('[data-toggle]').forEach(b=>b.onclick=()=>{ const e=state.employees.find(x=>x.id===b.dataset.toggle); if(e){ e.active=!e.active; saveData(); render(); } });
+  document.querySelectorAll('[data-partner]').forEach(b=>b.onclick=()=>{ const e=state.employees.find(x=>x.id===b.dataset.partner); if(e){ e.partner=!e.partner; saveData(); render(); } });
+  document.querySelectorAll('[data-delemp]').forEach(b=>b.onclick=()=>{
+    const e=state.employees.find(x=>x.id===b.dataset.delemp); if(!e) return;
+    const adjN=state.adjustments.filter(a=>a.empId===e.id).length;
+    const loanN=state.loans.filter(l=>l.empId===e.id).length;
+    const parts=[adjN?`加扣項 ${adjN} 筆`:'',loanN?`借支 ${loanN} 筆`:''].filter(Boolean);
+    const extra=parts.length?`\n\n他名下還有${parts.join('、')}，那些紀錄會保留、名字顯示為「（已移除）」，仍可自行刪除。`:'';
+    if(!confirm(`確定刪除員工「${e.name}」？${extra}`)) return;
+    state.employees=state.employees.filter(x=>x.id!==b.dataset.delemp); saveData(); render();
+  });
+  document.querySelectorAll('[data-renemp]').forEach(b=>b.onclick=()=>{
+    const e=state.employees.find(x=>x.id===b.dataset.renemp); if(!e)return;
+    const cell=b.closest('td');
+    cell.innerHTML=`<span class="inline"><input value="${esc(e.name)}" id="ren-in" style="width:120px"><button class="act" id="ren-ok">✓</button><button class="act muted" id="ren-cancel" style="cursor:pointer">✕</button></span>`;
+    const inp=cell.querySelector('#ren-in'); inp.focus();
+    cell.querySelector('#ren-ok').onclick=()=>{ const v=inp.value.trim(); if(v){ e.name=v; saveData(); } render(); };
+    cell.querySelector('#ren-cancel').onclick=()=>render();
+  });
+
+  const sa=document.getElementById('s-add');
+  if(sa) sa.onclick=()=>{
+    const name=document.getElementById('s-name').value.trim(); if(!name)return;
+    if(state.sites.some(s=>s.name===name) && !confirm(`已經有一個案場叫「${name}」。\n請款、成本都是依案場名歸戶，同名會混在一起。\n\n確定還是要新增嗎？`)) return;
+    state.sites.push({id:uid(),name,active:true}); saveData(); render();
+  };
+  document.querySelectorAll('[data-delsite]').forEach(b=>b.onclick=()=>{
+    const s=state.sites.find(x=>x.id===b.dataset.delsite); if(!s) return;
+    const billN=(state.billings||[]).filter(x=>x.site===s.name).length;
+    const measN=(state.measurements||[]).filter(x=>x.site===s.name).length;
+    const extra=(billN||measN)?`\n\n它名下有請款 ${billN} 筆／計量 ${measN} 筆，會按案場名保留、不會刪除。`:'';
+    if(!confirm(`確定刪除案場「${s.name}」？${extra}`)) return;
+    state.sites=state.sites.filter(x=>x.id!==b.dataset.delsite); saveData(); render();
+  });
+  document.querySelectorAll('[data-togglesite]').forEach(b=>b.onclick=()=>{
+    const s=state.sites.find(x=>x.id===b.dataset.togglesite); if(!s) return;
+    s.active = (s.active===false) ? true : false;
+    saveData(); render();
+  });
+  document.querySelectorAll('[data-opening]').forEach(inp=>inp.onchange=()=>{
+    const s=state.sites.find(x=>x.id===inp.dataset.opening); if(!s) return;
+    const v=parseFloat(inp.value);
+    if(isNaN(v)||v<=0) delete s.opening; else s.opening=v;
+    saveData(); render();
+  });
+  document.querySelectorAll('[data-rensite]').forEach(b=>b.onclick=()=>{
+    const s=state.sites.find(x=>x.id===b.dataset.rensite); if(!s)return;
+    const cell=b.closest('td');
+    cell.innerHTML=`<span class="inline"><input value="${esc(s.name)}" id="rens-in" style="width:160px"><button class="act" id="rens-ok">✓</button><button class="act muted" id="rens-cancel" style="cursor:pointer">✕</button></span>`;
+    const inp=cell.querySelector('#rens-in'); inp.focus();
+    cell.querySelector('#rens-ok').onclick=()=>{ const v=inp.value.trim(); if(v){ s.name=v; saveData(); } render(); };
+    cell.querySelector('#rens-cancel').onclick=()=>render();
+  });
+
+  const la=document.getElementById('loan-add');
+  if(la) la.onclick=()=>{
+    const date=document.getElementById('loan-date').value;
+    const empId=document.getElementById('loan-emp').value;
+    const amount=parseFloat(document.getElementById('loan-amount').value);
+    const note=document.getElementById('loan-note').value.trim();
+    if(!date||!empId||isNaN(amount)||amount<=0) return;
+    const payRange=(state.payFrom&&state.payTo)?{from:state.payFrom,to:state.payTo}:defaultPayRange();
+    const payroll=buildPayroll(payRange.from,payRange.to);
+    const currentPay=payroll[empId]?Number(payroll[empId].net)||0:0;
+    if(amount>currentPay&&!confirm(`借支金額 ${money(amount)} 已超過此員工當期目前實發薪資 ${money(currentPay)}。\n\n計薪期間：${payRange.from} ～ ${payRange.to}\n\n是否仍要新增這筆借支？`)) return;
+    state.loans.push({id:uid(),date,empId,amount,note});
+    saveData(); render();
+  };
+  document.querySelectorAll('[data-delloan]').forEach(b=>b.onclick=()=>{
+    if(!confirm('刪除這筆借支？已扣除的紀錄不會跟著刪除。')) return;
+    state.loans=state.loans.filter(l=>l.id!==b.dataset.delloan); saveData(); render();
+  });
+  document.querySelectorAll('[data-repay]').forEach(b=>b.onclick=()=>{
+    const loan=state.loans.find(l=>l.id===b.dataset.repay); if(!loan) return;
+    const bal=loanBalance(loan);
+    const inp=document.querySelector(`[data-loanpay="${loan.id}"]`);
+    const amt=Math.min(parseFloat(inp&&inp.value), bal);
+    if(isNaN(amt)||amt<=0){ alert('請輸入本期要扣回的金額'); return; }
+    const payroll=buildPayroll(state.payFrom,state.payTo);
+    const available=Math.max(0,Number(payroll[loan.empId]&&payroll[loan.empId].net)||0);
+    if(amt>available){ alert(`本期最多只能扣 ${money(available)}，超過的借支會保留到下期。`); return; }
+    state.adjustments.push({id:uid(),date:state.payTo||localISODate(),empId:loan.empId,kind:'ded',label:'借支扣還',amount:amt,note:(loan.note?loan.note+' ':'')+'借支扣還',loanId:loan.id});
+    saveData(); render();
+  });
+
+  // 品佑收支明細
+  const pOpen=document.getElementById('park-opening'); if(pOpen) pOpen.onchange=()=>{ const v=parseFloat(pOpen.value); state.parkOpening=isNaN(v)?0:v; saveData(); render(); };
+  const pAdd=document.getElementById('park-add');
+  if(pAdd) pAdd.onclick=()=>{
+    const date=document.getElementById('park-date').value;
+    const kind=document.getElementById('park-kind').value;
+    const amount=parseFloat(document.getElementById('park-amount').value);
+    const note=document.getElementById('park-note').value.trim();
+    if(!date||isNaN(amount)||amount<=0){ alert('請填日期與金額'); return; }
+    state.parkLedger.push({id:uid(),date,kind,amount,note});
+    saveData(); render();
+  };
+  document.querySelectorAll('[data-delpark]').forEach(b=>b.onclick=()=>{
+    if(!confirm('確定刪除這筆收支？')) return;
+    state.parkLedger=state.parkLedger.filter(t=>t.id!==b.dataset.delpark); saveData(); render();
+  });
+  document.querySelectorAll('[data-parkedit]').forEach(b=>b.onclick=()=>{ parkEditId=b.dataset.parkedit; render(); });
+  document.querySelectorAll('[data-parkeditcancel]').forEach(b=>b.onclick=()=>{ parkEditId=null; render(); });
+  document.querySelectorAll('[data-parkeditok]').forEach(b=>b.onclick=()=>{
+    const t=state.parkLedger.find(x=>x.id===b.dataset.parkeditok); if(!t) return;
+    const amount=parseFloat(document.getElementById('pe-amount').value);
+    if(isNaN(amount)||amount<=0){ alert('金額請填正數'); return; }
+    t.date=document.getElementById('pe-date').value;
+    t.kind=document.getElementById('pe-kind').value;
+    t.amount=amount;
+    t.note=document.getElementById('pe-note').value.trim();
+    parkEditId=null; saveData(); render();
+  });
+  const pf2=document.getElementById('park-from'); if(pf2) pf2.onchange=()=>{ parkFrom=pf2.value; render(); };
+  const pt2=document.getElementById('park-to'); if(pt2) pt2.onchange=()=>{ parkTo=pt2.value; render(); };
+  const pclr=document.getElementById('park-clear'); if(pclr) pclr.onclick=()=>{ parkFrom=''; parkTo=''; render(); };
+}
+
+// ---- PDF 匯出（以列印視窗產生，可存成 PDF 或直接列印）----
+function printHTML(title, inner, opts){
+  const old=document.getElementById('print-overlay'); if(old) old.remove();
+  const ov=document.createElement('div');
+  ov.id='print-overlay';
+  if(opts&&opts.landscape) ov.classList.add('landscape');
+  ov.innerHTML=`
+    <div class="pbar">
+      <button class="btn" id="po-print">列印 / 存成 PDF</button>
+      <button class="act" id="po-close" style="border:1px solid var(--line2);border-radius:8px;padding:0 14px">關閉</button>
+    </div>
+    <div class="pdoc">${inner}</div>`;
+  document.body.appendChild(ov);
+  document.getElementById('po-print').onclick=()=>window.print();
+  document.getElementById('po-close').onclick=()=>ov.remove();
+  ov.scrollTop=0;
+}
+
+function exportSummaryPDF(){
+  const byEmp=buildPayroll(state.payFrom,state.payTo);
+  const ids=Object.keys(byEmp).sort((a,b)=>byEmp[b].net-byEmp[a].net);
+  if(ids.length===0) return;
+  let gG=0,gA=0,gD=0,gN=0;
+  const rows=ids.map(id=>{ const e=byEmp[id]; gG+=e.gross;gA+=e.addTotal;gD+=e.dedTotal;gN+=e.net;
+    return `<tr><td>${esc(empName(id))}</td><td class="num">${e.days.size}</td><td class="num">${gongStr(e.hours)}</td>
+      <td class="num">${money(e.gross)}</td><td class="num">${e.addTotal?money(e.addTotal):'-'}</td>
+      <td class="num">${e.dedTotal?money(e.dedTotal):'-'}</td><td class="num">${money(e.net)}</td></tr>`;
+  }).join('');
+  const inner=`<h1>薪資總表</h1>
+    <div class="meta">計薪期間：${state.payFrom||'起始'} ～ ${state.payTo||'迄今'}　|　列印日期：${localISODate()}　|　共 ${ids.length} 人</div>
+    <table><thead><tr><th>員工</th><th class="num">出勤天</th><th class="num">總工數</th><th class="num">基本工資</th><th class="num">加項</th><th class="num">扣項</th><th class="num">實發金額</th></tr></thead>
+    <tbody>${rows}
+      <tr class="total-row"><td>合計</td><td class="num"></td><td class="num"></td><td class="num">${money(gG)}</td><td class="num">${money(gA)}</td><td class="num">${money(gD)}</td><td class="num">${money(gN)}</td></tr>
+    </tbody></table>
+    <p class="sub">基本工資＝正常工時薪資；加項＝出差外宿津貼＋加班費＋手動加項；實發＝基本工資＋加項−扣項。金額四捨五入至整數。</p>`;
+  printHTML('薪資總表 '+(state.payFrom||''), inner);
+}
+
+function exportPayslipPDF(empId){
+  const byEmp=buildPayroll(state.payFrom,state.payTo);
+  const e=byEmp[empId]; if(!e) return;
+  const systemAddRows=(e.systemAdds||[]).map(a=>`<tr class="add-row"><td>${esc(a.label)}</td><td>${esc(a.note||'')}</td><td class="num add-amt">+${money(a.amount)}</td></tr>`).join('');
+  const manualAddRows=e.adds.map(a=>`<tr class="add-row"><td>${esc(a.label)}</td><td>${esc(a.note||'')}</td><td class="num add-amt">+${money(a.amount)}</td></tr>`).join('');
+  const addRows=systemAddRows+manualAddRows;
+  const dedRows=e.deds.map(a=>`<tr class="ded-row"><td>${esc(a.label)}</td><td>${esc(a.note||'')}</td><td class="num ded-amt">−${money(a.amount)}</td></tr>`).join('');
+  const inRange=d=> (!state.payFrom||d>=state.payFrom) && (!state.payTo||d<=state.payTo);
+  const comp=computeRecords(state.attendance);
+  const myRecs=state.attendance.filter(r=>r.empId===empId&&inRange(r.date)).sort((a,b)=>a.date.localeCompare(b.date));
+  const showWorkDetails=!!payslipShowWorkDetails;
+  const sitePalette=[
+    {bg:'#eef6ff',ink:'#1d4ed8',line:'#93c5fd'},
+    {bg:'#f0fdf4',ink:'#047857',line:'#86efac'},
+    {bg:'#fff7ed',ink:'#c2410c',line:'#fdba74'},
+    {bg:'#f5f3ff',ink:'#6d28d9',line:'#c4b5fd'},
+    {bg:'#ecfeff',ink:'#0e7490',line:'#67e8f9'},
+    {bg:'#fdf2f8',ink:'#be185d',line:'#f9a8d4'}
+  ];
+  const siteColorMap={};
+  let siteColorIdx=0;
+  const siteBadge=name=>{
+    if(!siteColorMap[name]) siteColorMap[name]=sitePalette[siteColorIdx++%sitePalette.length];
+    const c=siteColorMap[name];
+    return `<span class="site-pill" style="background:${c.bg};color:${c.ink};border-color:${c.line}">${esc(name)}</span>`;
+  };
+  const recRows=myRecs.map(r=>{ const c=comp[r.id]||{baseWage:0,overtimePay:0,allow:0,total:0};
+    const isLeaveR=r.type==='請假'||r.type==='休假';
+    const siteLabel=isLeaveR?r.type:siteBadge(siteName(r.siteId));
+    return `<tr><td>${esc(r.date)}</td><td>${siteLabel}</td><td class="num">${isLeaveR?'—':gongStr(r.hours)}</td><td class="num">${isLeaveR?'—':(r.overtime?`${r.overtime}h`:'—')}</td><td class="num">${isLeaveR?'—':(r.night?'<span class="night-check">✓</span>':'—')}</td>
+      <td class="num">${isLeaveR?'—':money(c.baseWage||0)}</td></tr>`;
+  }).join('');
+  const workDetailSection=showWorkDetails?`
+    <div class="sec">一、出工明細</div>
+    <table><thead><tr><th>日期</th><th>案場</th><th class="num">工數</th><th class="num">加班</th><th class="num">過夜</th><th class="num">基本工資</th></tr></thead>
+    <tbody>${recRows||'<tr><td colspan="6">本期無出工</td></tr>'}
+      <tr class="total-row"><td colspan="5">基本工資小計</td><td class="num">${money(e.gross)}</td></tr>
+    </tbody></table>`:'';
+  const inner=`<div class="paydoc"><h1>薪資明細單</h1>
+    <div style="font-size:23px;font-weight:800;color:#1f3a5f;letter-spacing:1px;margin:6px 0 8px">${esc(empName(empId))}</div>
+    <div class="meta">計薪期間：${state.payFrom||'起始'} ～ ${state.payTo||'迄今'}　|　出勤 ${e.days.size} 天 / ${gongStr(e.hours)}</div>
+    ${workDetailSection}
+    <div class="sec add-sec">${showWorkDetails?'二':'一'}、加項</div>
+    <table><thead><tr><th>項目</th><th>備註</th><th class="num">金額</th></tr></thead>
+    <tbody>${addRows||'<tr><td colspan="3">無</td></tr>'}<tr class="total-row"><td colspan="2">加項小計</td><td class="num add-amt">+${money(e.addTotal)}</td></tr></tbody></table>
+    <div class="sec ded-sec">${showWorkDetails?'三':'二'}、扣項</div>
+    <table><thead><tr><th>項目</th><th>備註</th><th class="num">金額</th></tr></thead>
+    <tbody>${dedRows||'<tr><td colspan="3">無</td></tr>'}<tr class="total-row"><td colspan="2">扣項小計</td><td class="num ded-amt">−${money(e.dedTotal)}</td></tr></tbody></table>
+    <div class="sec summary-sec">${showWorkDetails?'四':'三'}、薪資彙總</div>
+    <table style="margin-top:14px"><tbody>
+      <tr><td>出勤天數</td><td class="num">${e.days.size} 天</td></tr>
+      <tr><td>總工數</td><td class="num">${gongStr(e.hours)}</td></tr>
+      <tr><td>基本工資</td><td class="num">${money(e.gross)}</td></tr>
+      <tr><td>加項合計</td><td class="num add-amt">+${money(e.addTotal)}</td></tr>
+      <tr><td>扣項合計</td><td class="num ded-amt">−${money(e.dedTotal)}</td></tr>
+      <tr class="total-row"><td>實發金額</td><td class="num">${money(e.net)}</td></tr>
+    </tbody></table>
+    <div class="sign"><div>員工簽收</div><div>主管核章</div></div>
+    <p class="sub">本明細之日薪採各筆出工登記當時鎖定金額；基本工資以時薪（日薪÷8）×正常工時計；加班費以加班時數 × 時薪 × 1.33 計；出差外宿津貼每晚400元。金額四捨五入至整數。</p></div>`;
+  printHTML('薪資明細單 '+esc(empName(empId)), inner);
+}
+
+// 案場成本明細 PDF
+function exportSitesPDF(){
+  const comp=computeRecords(state.attendance);
+  const bySite={};
+  state.sites.forEach(s=>{ bySite[s.id]={hours:0,wage:0,allow:0,total:0,emp:{},opening:Number(s.opening)||0,name:s.name}; });
+  state.attendance.forEach(r=>{ const c=comp[r.id]; if(!c)return;
+    const s=bySite[r.siteId]=bySite[r.siteId]||{hours:0,wage:0,allow:0,total:0,emp:{},opening:0,name:siteName(r.siteId)};
+    s.hours+=Number(r.hours)||0; s.wage+=c.wage; s.allow+=c.allow; s.total+=c.total; s.emp[r.empId]=(s.emp[r.empId]||0)+c.total;
+  });
+  const ids=Object.keys(bySite); if(ids.length===0) return;
+  ids.forEach(id=>{ bySite[id].grand=bySite[id].total+bySite[id].opening; });
+  const grand=ids.reduce((s,id)=>s+bySite[id].grand,0);
+  ids.sort((a,b)=>bySite[b].grand-bySite[a].grand);
+  const rows=ids.map(id=>{ const s=bySite[id];
+    return `<tr><td>${esc(s.name||siteName(id))}</td><td class="num">${gongStr(s.hours)}</td><td class="num">${money(s.opening)}</td><td class="num">${money(s.wage)}</td><td class="num">${money(s.allow)}</td><td class="num" style="font-weight:700">${money(s.grand)}</td></tr>`;
+  }).join('');
+  const inner=`<h1>案場人事成本明細</h1>
+    <div class="meta">列印日：${localISODate()}　|　總人事成本 ${money(grand)}</div>
+    <table><thead><tr><th>案場</th><th class="num">系統工數</th><th class="num">期初成本</th><th class="num">系統工資</th><th class="num">津貼</th><th class="num">總成本</th></tr></thead>
+    <tbody>${rows}
+      <tr class="total-row"><td>合計</td><td class="num"></td><td class="num"></td><td class="num"></td><td class="num"></td><td class="num">${money(grand)}</td></tr>
+    </tbody></table>
+    <p class="sub">總成本＝期初人事成本（歷史抄入）＋系統內登記出勤的工資與津貼。金額四捨五入至整數。</p>`;
+  printHTML('案場成本明細', inner);
+}
+
+// ---- 借支 ----
+function loanRepaid(loanId){
+  return state.adjustments.filter(a=>a.loanId===loanId && a.kind==='ded').reduce((s,a)=>s+(Number(a.amount)||0),0);
+}
+function loanBalance(loan){ return Math.max(0, (Number(loan.amount)||0) - loanRepaid(loan.id)); }
+function effectiveDaily(emp, date){
+  if(emp.rateHistory&&emp.rateHistory.length){
+    const hit=emp.rateHistory.filter(h=>h.date<=date).sort((a,b)=>b.date.localeCompare(a.date));
+    if(hit.length) return Number(hit[0].daily)||0;
+  }
+  return Number(emp.daily)||0;
+}
+function loanDeductedInRange(loanId,from,to){
+  const inRange=d=>(!from||d>=from)&&(!to||d<=to);
+  return state.adjustments.some(a=>a.loanId===loanId && a.kind==='ded' && inRange(a.date));
+}
+
+function viewLoans(){
+  const activeEmps=state.employees.filter(e=>e.active);
+  const empOpts=activeEmps.map(e=>`<option value="${e.id}">${esc(e.name)}</option>`).join('');
+  const loans=[...state.loans].sort((a,b)=>b.date.localeCompare(a.date));
+  const outstanding=loans.filter(l=>loanBalance(l)>0).reduce((s,l)=>s+loanBalance(l),0);
+  const rows=loans.map(l=>{
+    const repaid=loanRepaid(l.id), bal=loanBalance(l), done=bal<=0;
+    const pct=l.amount>0?Math.round(repaid/l.amount*100):0;
+    return `<tr>
+      <td>${esc(l.date)}</td><td>${esc(empName(l.empId))}</td>
+      <td class="num">${money(l.amount)}</td>
+      <td class="num">${money(repaid)}（${pct}%）</td>
+      <td class="num" style="font-weight:600;color:${done?'var(--accent)':'var(--danger)'}">${done?'已還清':money(bal)}</td>
+      <td>${esc(l.note||'')}</td>
+      <td><button class="act danger" data-delloan="${l.id}">刪</button></td>
+    </tr>`;
+  }).join('');
+  return `
+  <div class="metrics">
+    <div class="metric"><div class="l">借支筆數</div><div class="v">${loans.length}</div></div>
+    <div class="metric"><div class="l">尚未還清總額</div><div class="v">${money(outstanding)}</div></div>
+  </div>
+  <details class="card">
+    <summary>新增借支</summary>
+    <div class="card-body">
+      <p class="sub">登記一筆借款：借出日與總額。系統會追蹤已扣與剩餘；發薪時可在薪資頁手動輸入本期要扣回的金額。</p>
+      <div class="row" style="margin-bottom:10px">
+        <div class="field"><label>借款日</label><input type="date" id="loan-date" value="${localISODate()}"></div>
+        <div class="field"><label>員工</label><select id="loan-emp">${empOpts}</select></div>
+        <div class="field"><label>借款總額</label><input type="number" id="loan-amount" min="0" step="500" style="width:120px"></div>
+        <div class="field" style="flex:1;min-width:140px"><label>備註（選填）</label><input id="loan-note" placeholder="例：預支生活費"></div>
+        <button class="btn" id="loan-add">＋ 新增借支</button>
+      </div>
+      ${rows===''?'<div class="empty">尚無借支紀錄。</div>':`<div class="scroll"><table>
+        <thead><tr><th>借款日</th><th>員工</th><th class="num">總額</th><th class="num">已扣</th><th class="num">剩餘</th><th>備註</th><th></th></tr></thead>
+        <tbody>${rows}</tbody></table></div>`}
+    </div>
+  </details>`;
+}
+
+// ---- 品佑收支明細 ----
+function billSiteGroups(list){
+  const groups={};
+  list.forEach(b=>{ const k=parentSiteName(b.site); (groups[k]=groups[k]||[]).push(b); });
+  return groups;
+}
+function viewBillingReq(){
+  const list=state.billings.filter(b=>(b.docType||'請款單')==='請款單').sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+  const total=list.reduce((s,b)=>s+billingAmount(b),0);
+  const groups=billSiteGroups(list);
+  const siteCards=Object.keys(groups).sort((a,b)=>a.localeCompare(b,'zh-Hant')).map(name=>{
+    const rows=groups[name].map(b=>`
+      <tr>
+        <td>${esc(b.date||'')}</td>
+        <td>${esc(b.note||'')}<div class="sub" style="margin:0">${billingLineMeta(b)}</div></td>
+        <td>${esc(b.client||'')}</td>
+        <td class="num">${money(billingAmount(b))}</td>
+        <td><button class="act ${b.settled?'':'muted'}" data-togglesettle="${b.id}">${b.settled?'已收款':'未收款'}</button></td>
+        <td><button class="act" data-copy-req="${b.id}">複製</button> <button class="act" data-billprint="${b.id}">列印</button> <button class="act danger" data-delbill="${b.id}">刪</button></td>
+      </tr>`).join('');
+    return `<details class="card" open><summary>${esc(name)}<span style="margin-left:auto;font-size:16px;font-weight:700">${money(groups[name].reduce((s,b)=>s+billingAmount(b),0))}</span></summary><div class="card-body"><div class="scroll"><table><thead><tr><th>日期</th><th>說明</th><th>業主</th><th class="num">金額</th><th>收款</th><th></th></tr></thead><tbody>${rows}</tbody></table></div></div></details>`;
+  }).join('');
+  const siteSelOpts=siteSelectOptions('');
+  return `<div class="metrics">
+    <div class="metric"><div class="l">請款單數</div><div class="v">${list.length}</div></div>
+    <div class="metric"><div class="l">請款總額</div><div class="v" style="font-size:21px">${money(total)}</div></div>
+  </div>
+  <div class="card">
+    ${foldBtn('bnr','新增請款單')}
+    ${formOpen.bnr?`<div class="row" style="margin-top:8px">
+      <div class="field"><label>日期</label><input type="date" id="bnr-date" value="${billingReqDraft?esc(billingReqDraft.date):localISODate()}"></div>
+      <div class="field" style="flex:1;min-width:150px"><label>案場</label><select id="bnr-site">${siteSelOpts}</select></div>
+      <div class="field"><label>單位</label><input id="bnr-unit" value="式" style="width:80px"></div>
+      <div class="field"><label>數量</label><input type="number" id="bnr-qty" min="0" step="0.01" value="${billingReqDraft?'':'1'}" style="width:90px"></div>
+      <div class="field"><label>單價</label><input type="number" id="bnr-unit-price" min="0" step="1" style="width:120px"></div>
+      <div class="field"><label>小計</label><div id="bnr-subtotal" class="num" style="height:38px;display:flex;align-items:center;font-weight:700">$0</div></div>
+      <div class="field"><label>方式</label><input id="bnr-method" placeholder="匯款" value="${billingReqDraft?esc(billingReqDraft.method):''}" style="width:100px"></div>
+      <div class="field"><label>業主</label><input id="bnr-client" list="client-memory-list" placeholder="業主名稱" value="${billingReqDraft?esc(billingReqDraft.client):''}" style="width:120px"></div>
+      <div class="field" style="flex:1;min-width:180px"><label>說明</label><input id="bnr-note" placeholder="例：第一期工程款" value="${billingReqDraft?esc(billingReqDraft.note):''}"></div>
+      <div class="field"><label>收款狀態</label><select id="bnr-settled"><option value="">未收款</option><option value="1" ${billingReqDraft&&billingReqDraft.settled?'selected':''}>已收款</option></select></div>
+    </div>
+    <div class="row" style="margin-top:10px"><button class="btn" id="bnr-add">＋ 新增請款單</button></div>`:''}
+    ${dataListHtml('client-memory-list', knownClients())}
+  </div>
+  ${list.length===0?'<div class="card"><div class="empty">尚無請款單。點上方「新增請款單」開始登記。</div></div>':siteCards}`;
+}
+function viewBillingAdd(){
+  const list=state.billings.filter(b=>(b.docType||'請款單')==='追加單').sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+  const total=list.reduce((s,b)=>s+billingAmount(b),0);
+  const groups=billSiteGroups(list);
+  const siteCards=Object.keys(groups).sort((a,b)=>a.localeCompare(b,'zh-Hant')).map(name=>{
+    const rows=groups[name].map(b=>{
+      const photos=billingPhotos[b.id]||[];
+      if(billingAddEditId===b.id){
+        return `<tr><td colspan="6" style="background:var(--bg)">
+          <div class="row" style="margin:6px 0">
+            <div class="field"><label>日期</label><input type="date" id="bae-date" value="${b.date||''}"></div>
+            <div class="field" style="flex:1;min-width:150px"><label>案場</label><select id="bae-site">${siteSelectOptions(b.site||'')}</select></div>
+            <div class="field"><label>單位</label><input id="bae-unit" value="${esc(b.unit||'式')}" style="width:80px"></div>
+            <div class="field"><label>數量</label><input type="number" id="bae-qty" value="${b.qty||1}" step="0.01" style="width:90px"></div>
+            <div class="field"><label>單價</label><input type="number" id="bae-unit-price" value="${b.unitPrice||0}" step="1" style="width:120px"></div>
+            <div class="field"><label>小計</label><div id="bae-subtotal" class="num" style="height:38px;display:flex;align-items:center;font-weight:700">$0</div></div>
+            <div class="field"><label>業主</label><input id="bae-client" list="client-memory-list" value="${esc(b.client||'')}" style="width:120px"></div>
+            <div class="field" style="flex:1;min-width:180px"><label>說明</label><input id="bae-note" value="${esc(b.note||'')}"></div>
+            <div class="field" style="flex:1;min-width:150px"><label>備注</label><input id="bae-remark" value="${esc(b.remark||'')}"></div>
+            <div class="field"><label>收款狀態</label><select id="bae-settled"><option value="">未收款</option><option value="1" ${b.settled?'selected':''}>已收款</option></select></div>
+            <button class="btn" data-bae-ok="${b.id}">儲存</button><button class="act muted" data-bae-cancel="1" style="height:38px">取消</button>
+          </div>
+        </td></tr>`;
+      }
+      const thumbs=photos.map((url,i)=>`<div style="position:relative;display:inline-block;margin:3px"><img src="${photoDisplayUrl(url)}" class="photo-thumb" style="width:80px;height:60px;object-fit:cover;border-radius:8px;border:1px solid var(--line)"><button data-photodel="${b.id}" data-photoidx="${i}" style="position:absolute;top:-5px;right:-5px;width:20px;height:20px;border:none;background:var(--danger);color:#fff;padding:0;line-height:20px">×</button></div>`).join('');
+      return `<tr>
+        <td>${esc(b.date||'')}</td>
+        <td>${esc(b.note||'')}<div class="sub" style="margin:0">${billingLineMeta(b)} ${b.remark?`｜${esc(b.remark)}`:''}</div>${thumbs}</td>
+        <td>${esc(b.client||'')}</td>
+        <td class="num">${money(billingAmount(b))}</td>
+        <td><button class="act ${b.settled?'':'muted'}" data-togglesettle="${b.id}">${b.settled?'已收款':'未收款'}</button></td>
+        <td><button class="act" data-copy-add="${b.id}">複製</button> <button class="act" data-billedit-add="${b.id}">改</button> <button class="act" data-billprint="${b.id}">列印</button> <button class="act" data-billsign="${b.id}">${billingSigs[b.id]?'已簽':'簽名'}</button> <button class="act" data-photoup="${b.id}">照片</button> <button class="act danger" data-delbill="${b.id}">刪</button></td>
+      </tr>`;
+    }).join('');
+    return `<details class="card" open><summary>${esc(name)}<span style="margin-left:auto;font-size:16px;font-weight:700">${money(groups[name].reduce((s,b)=>s+billingAmount(b),0))}</span></summary><div class="card-body"><div class="scroll"><table><thead><tr><th>日期</th><th>追加項目</th><th>業主</th><th class="num">金額</th><th>收款</th><th></th></tr></thead><tbody>${rows}</tbody></table></div><button class="act" data-batch-add="${esc(name)}" style="margin-top:8px">列印此案場追加單</button></div></details>`;
+  }).join('');
+  return `<div class="metrics">
+    <div class="metric"><div class="l">追加單數</div><div class="v">${list.length}</div></div>
+    <div class="metric"><div class="l">追加總額</div><div class="v" style="font-size:21px">${money(total)}</div></div>
+  </div>
+  <div class="card">
+    ${foldBtn('bna','新增追加單')}
+    ${formOpen.bna?`<div class="row" style="margin-top:8px">
+      <div class="field"><label>日期</label><input type="date" id="bna-date" value="${billingAddDraft?esc(billingAddDraft.date):localISODate()}"></div>
+      <div class="field" style="flex:1;min-width:150px"><label>案場</label><select id="bna-site">${siteSelectOptions('')}</select></div>
+      <div class="field"><label>單位</label><input id="bna-unit" value="式" style="width:80px"></div>
+      <div class="field"><label>數量</label><input type="number" id="bna-qty" min="0" step="0.01" value="${billingAddDraft?'':'1'}" style="width:90px"></div>
+      <div class="field"><label>單價</label><input type="number" id="bna-unit-price" min="0" step="1" style="width:120px"></div>
+      <div class="field"><label>小計</label><div id="bna-subtotal" class="num" style="height:38px;display:flex;align-items:center;font-weight:700">$0</div></div>
+      <div class="field"><label>業主</label><input id="bna-client" list="client-memory-list" placeholder="業主名稱" value="${billingAddDraft?esc(billingAddDraft.client):''}" style="width:120px"></div>
+      <div class="field" style="flex:1;min-width:180px"><label>說明（追加項目）</label><input id="bna-note" placeholder="例：追加防水工程" value="${billingAddDraft?esc(billingAddDraft.note):''}"></div>
+      <div class="field" style="flex:1;min-width:150px"><label>備注</label><input id="bna-remark" placeholder="其他備注" value="${billingAddDraft?esc(billingAddDraft.remark):''}"></div>
+      <div class="field"><label>收款狀態</label><select id="bna-settled"><option value="">未收款</option><option value="1" ${billingAddDraft&&billingAddDraft.settled?'selected':''}>已收款</option></select></div>
+    </div>
+    <div class="row" style="margin-top:10px"><button class="btn" id="bna-add">＋ 新增追加單</button></div>`:''}
+    ${dataListHtml('client-memory-list', knownClients())}
+  </div>
+  ${list.length===0?'<div class="card"><div class="empty">尚無追加單。點上方「新增追加單」開始登記。</div></div>':siteCards}`;
+}
+function updateMeasurePreview(){
+  const type=document.getElementById('meas-type'), width=document.getElementById('meas-width'), height=document.getElementById('meas-height');
+  const widthField=document.getElementById('meas-width-field'), heightField=document.getElementById('meas-height-field'), sizeField=document.getElementById('meas-size-field');
+  const qty=document.getElementById('meas-qty'), price=document.getElementById('meas-price'), out=document.getElementById('meas-subtotal'), unit=document.getElementById('meas-unit');
+  if(!type) return;
+  const isPartition=type.value==='partition', isCarry=type.value==='carry';
+  if(widthField) widthField.style.display=isPartition?'flex':'none';
+  if(heightField) heightField.style.display=isPartition?'flex':'none';
+  if(sizeField) sizeField.style.display=isCarry?'flex':'none';
+  if(unit) unit.value=isCarry?'車':(type.value==='ceiling'?'坪':'㎡');
+  if(isPartition&&width&&height&&qty) qty.value=((parseFloat(width.value)||0)*(parseFloat(height.value)||0)).toFixed(2).replace(/\.00$/,'');
+  if(out){ const q=parseFloat(qty&&qty.value), p=parseFloat(price&&price.value); out.textContent=(!isNaN(q)&&!isNaN(p))?money(q*p):'$0'; }
+}
+function viewMeasurements(){
+  const list=[...state.measurements].sort((a,b)=>(b.date||'').localeCompare(a.date||'')||(a.site||'').localeCompare(b.site||''));
+  const total=list.reduce((s,m)=>s+(Number(m.qty)||0)*(Number(m.unitPrice)||0),0);
+  const bysite={}; list.forEach(m=>{ const k=parentSiteName(m.site); (bysite[k]=bysite[k]||[]).push(m); });
+  const siteCards=Object.keys(bysite).sort((a,b)=>a.localeCompare(b,'zh-Hant')).map(name=>{
+    const rows=bysite[name].map(m=>{
+      const mt=m.measureType==='partition'?'隔間':m.measureType==='ceiling'?'天花板':m.measureType==='carry'?'搬運':'';
+      const size=m.measureType==='partition'?`${m.width||''}m × ${m.height||''}m`:m.sizeText||'';
+      return `<tr><td><input type="checkbox" data-meas-pick="${m.id}" style="width:16px;height:16px"></td><td>${esc(m.date||'')}</td><td>${esc(mt)}</td><td>${esc(m.item||'')}</td><td>${esc(size)}</td><td class="num">${Number(m.qty)||0} ${esc(m.unit||'')}</td><td class="num">${money(m.unitPrice||0)}</td><td class="num">${money((Number(m.qty)||0)*(Number(m.unitPrice)||0))}</td><td>${esc(m.note||'')}</td><td><button class="act danger" data-del-meas="${m.id}">刪</button></td></tr>`;
+    }).join('');
+    const subtotal=bysite[name].reduce((s,m)=>s+(Number(m.qty)||0)*(Number(m.unitPrice)||0),0);
+    return `<details class="card" open><summary>${esc(name)}<span style="margin-left:auto;font-size:16px;font-weight:700">${money(subtotal)}</span></summary><div class="card-body"><div class="scroll"><table><thead><tr><th style="width:34px">選</th><th>日期</th><th>類型</th><th>項目</th><th>尺寸</th><th class="num">數量</th><th class="num">單價</th><th class="num">小計</th><th>備注</th><th></th></tr></thead><tbody>${rows}</tbody></table></div></div></details>`;
+  }).join('');
+  return `<div class="metrics">
+    <div class="metric"><div class="l">計量筆數</div><div class="v">${list.length}</div></div>
+    <div class="metric"><div class="l">計量總額</div><div class="v" style="font-size:21px">${money(total)}</div></div>
+  </div>
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+      ${foldBtn('meas','新增計量明細')}
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="act" id="meas-pick-all" ${list.length===0?'disabled style="opacity:.5"':''}>全選</button>
+        <button class="act" id="meas-export-selected" ${list.length===0?'disabled style="opacity:.5"':''}>匯出勾選 PDF</button>
+        <button class="btn" id="meas-export-all" ${list.length===0?'disabled style="opacity:.5"':''}>全印 PDF</button>
+      </div>
+    </div>
+    ${formOpen.meas?`<div class="row" style="margin-top:8px">
+      <div class="field"><label>類型</label><select id="meas-type" style="width:110px"><option value="partition">隔間</option><option value="ceiling">天花板</option><option value="carry">搬運</option></select></div>
+      <div class="field" style="flex:1;min-width:150px"><label>案場</label><select id="meas-site">${siteSelectOptions('')}</select></div>
+      <div class="field" style="flex:1;min-width:160px"><label>項目</label><input id="meas-item" placeholder="例：矽酸鈣板"></div>
+      <div class="field"><label>單位</label><input id="meas-unit" value="㎡" style="width:90px"></div>
+      <div class="field" id="meas-width-field"><label>寬度（m）</label><input type="number" id="meas-width" min="0" step="0.01" style="width:95px"></div>
+      <div class="field" id="meas-height-field"><label>高度（m）</label><input type="number" id="meas-height" min="0" step="0.01" style="width:95px"></div>
+      <div class="field" id="meas-size-field" style="display:none;flex:1;min-width:130px"><label>尺寸</label><input id="meas-size" placeholder="例：4尺×8尺"></div>
+      <div class="field"><label>數量/面積</label><input type="number" id="meas-qty" min="0" step="0.01" style="width:105px"></div>
+      <div class="field"><label>單價</label><input type="number" id="meas-price" min="0" step="1" style="width:120px"></div>
+      <div class="field"><label>小計</label><div id="meas-subtotal" class="num" style="height:38px;display:flex;align-items:center;font-weight:700">$0</div></div>
+      <div class="field"><label>日期</label><input type="date" id="meas-date" value="${localISODate()}"></div>
+      <div class="field" style="flex:1;min-width:150px"><label>備注</label><input id="meas-note"></div>
+    </div>
+    <div class="row" style="margin-top:10px"><button class="btn" id="meas-add">＋ 新增</button></div>`:''}
+  </div>
+  ${list.length===0?'<div class="card"><div class="empty">尚無計量明細。點上方「新增」開始登記。</div></div>':siteCards}`;
+}
+function buildBillingDocHTML(id){
+  const b=state.billings.find(x=>x.id===id); if(!b) return '';
+  const type=b.docType||'請款單', amount=billingAmount(b), photos=billingPhotos[id]||[], sig=billingSigs[id]||null;
+  // 照片起始大小依張數（之後 smartFitBillingPhotos 會實測整份高度、逐級收縮到塞進一頁）
+  const pMaxW=photos.length===1?'100%':(photos.length===2?'48.5%':'32%');
+  const pMaxH=photos.length===1?560:(photos.length===2?440:400);
+  const photoSec=photos.length?`<div class="sec">施作照片</div><div data-photosec="1" style="display:flex;flex-wrap:wrap;gap:10px;margin:8px 0 14px;align-items:flex-start">${photos.map(url=>`<img src="${photoDisplayUrl(url)}" style="max-width:${pMaxW};width:auto;max-height:${pMaxH}px;object-fit:contain;border:1px solid #ddd;border-radius:4px;page-break-inside:avoid;-webkit-print-color-adjust:exact">`).join('')}</div>`:'';
+  const signImg=sig?`<img src="${sig}">`:''; // 樣式由 .sigbox img 控制：固定高度、貼在簽名線上方
+  return `<h1>${esc(type)}</h1>
+    <div class="meta">列印日：${localISODate()}</div>
+    <table><tbody>
+      <tr><th style="width:90px">日期</th><td>${esc(b.date||'')}</td><th style="width:90px">案場</th><td>${esc(siteDisplayLabel(b.site))}</td></tr>
+      <tr><th>業主</th><td>${esc(b.client||'')}${type!=='追加單'&&b.method?`　（${esc(b.method)}）`:''}</td><th>狀態</th><td>${b.settled?'已收款':'未收款'}</td></tr>
+      <tr><th>項目</th><td colspan="3">${esc(b.note||type)}${b.remark?`<div class="sub">${esc(b.remark)}</div>`:''}</td></tr>
+      <tr><th>單位</th><td>${esc(b.unit||'式')}</td><th>數量</th><td>${Number(b.qty)||0}</td></tr>
+      <tr><th>單價</th><td class="num">${money(b.unitPrice||0)}</td><th>金額</th><td class="num">${money(amount)}</td></tr>
+    </tbody></table>
+    ${photoSec}
+    ${type==='追加單'
+      ? `<div class="sign"><div class="sigcell"><div class="sigbox"></div><div class="siglabel">申請單位</div></div><div class="sigcell"><div class="sigbox"></div><div class="siglabel">現場工程師確認項目</div></div><div class="sigcell"><div class="sigbox">${signImg}</div><div class="siglabel">業主簽收</div></div></div>`
+      : `<div class="sign"><div class="sigcell"><div class="sigbox"></div><div class="siglabel">申請單位</div></div><div class="sigcell"><div class="sigbox">${signImg}</div><div class="siglabel">業主簽收</div></div></div>`}`;
+}
+// 智慧收縮：等照片載完後實際量整份文件高度，照片從大到小逐級試（欄數×高度上限），
+// 找到能塞進一頁 A4 的最大尺寸；真的塞不下才用舒適大小自然流到下一頁（照片不切半）
+async function smartFitBillingPhotos(ov){
+  const PAGE=1000; // A4 可印高度（96dpi、扣掉內建邊距）再留安全餘裕
+  for(const doc of [...ov.querySelectorAll('[data-docfit]')]){
+    const sec=doc.querySelector('[data-photosec]'); if(!sec) continue;
+    const imgs=[...sec.querySelectorAll('img')]; if(!imgs.length) continue;
+    await Promise.all(imgs.map(im=>(im.decode?im.decode():Promise.resolve()).catch(()=>{})));
+    const n=imgs.length;
+    const tries=n===1?[[1,600],[1,520],[1,440],[1,360],[1,300],[1,240]]
+      :n===2?[[2,500],[2,440],[2,380],[2,320],[2,260],[2,210]]
+      :[[3,440],[3,380],[3,320],[3,270],[3,230],[3,190]];
+    const apply=(cols,h)=>imgs.forEach(im=>{ im.style.maxWidth=cols===1?'100%':(Math.floor(100/cols*10)/10-1.5)+'%'; im.style.maxHeight=h+'px'; });
+    let fitted=false;
+    for(const [cols,h] of tries){ apply(cols,h); if(doc.offsetHeight<=PAGE){ fitted=true; break; } }
+    if(!fitted) apply(n===1?1:(n===2?2:3), n===1?520:(n===2?400:320));
+  }
+}
+// 簽名列印時自動裁白邊：存的是整塊簽名板（含大片空白），簽小的印出來幾乎看不見
+const _sigTrimCache={};
+async function trimSignatureUrl(url){
+  if(!url||!url.startsWith('data:')) return url;
+  if(_sigTrimCache[url]!==undefined) return _sigTrimCache[url]||url;
+  try{
+    const img=new Image(); img.src=url;
+    await (img.decode?img.decode():new Promise((res,rej)=>{ img.onload=res; img.onerror=rej; }));
+    const c=document.createElement('canvas'); c.width=img.naturalWidth; c.height=img.naturalHeight;
+    const x=c.getContext('2d'); x.drawImage(img,0,0);
+    const d=x.getImageData(0,0,c.width,c.height).data;
+    let minX=c.width,minY=c.height,maxX=-1,maxY=-1;
+    for(let y=0;y<c.height;y++){ const row=y*c.width; for(let xx=0;xx<c.width;xx++){ const p=(row+xx)*4; if(d[p+3]>10&&(d[p]<235||d[p+1]<235||d[p+2]<235)){ if(xx<minX)minX=xx; if(xx>maxX)maxX=xx; if(y<minY)minY=y; if(y>maxY)maxY=y; } } }
+    if(maxX<0){ _sigTrimCache[url]=''; return url; }
+    const pad=12;
+    minX=Math.max(0,minX-pad); minY=Math.max(0,minY-pad);
+    maxX=Math.min(c.width-1,maxX+pad); maxY=Math.min(c.height-1,maxY+pad);
+    const cw=maxX-minX+1, ch=maxY-minY+1;
+    if(cw>=c.width*0.92&&ch>=c.height*0.92){ _sigTrimCache[url]=''; return url; }
+    const t=document.createElement('canvas'); t.width=cw; t.height=ch;
+    const tc=t.getContext('2d'); tc.fillStyle='#fff'; tc.fillRect(0,0,cw,ch);
+    tc.drawImage(c,minX,minY,cw,ch,0,0,cw,ch);
+    const out=t.toDataURL('image/jpeg',0.85);
+    _sigTrimCache[url]=out; return out;
+  }catch(e){ _sigTrimCache[url]=''; return url; }
+}
+async function trimOverlaySignatures(ov){
+  for(const im of [...ov.querySelectorAll('.sigbox img')]){
+    const t=await trimSignatureUrl(im.src);
+    if(t&&t!==im.src) im.src=t;
+  }
+}
+function printBillingDoc(id){
+  const html=buildBillingDocHTML(id); if(!html) return;
+  printHTML('單據列印', `<div data-docfit="1">${html}</div>`);
+  const ov=document.getElementById('print-overlay');
+  if(ov){ smartFitBillingPhotos(ov); trimOverlaySignatures(ov); }
+}
+function printBillingDocs(ids){
+  const pages=ids.map((id,i)=>`<div data-docfit="1" ${i?'style="page-break-before:always;padding-top:12mm"':''}>${buildBillingDocHTML(id)}</div>`).join('');
+  if(!pages) return;
+  printHTML('批次列印', pages);
+  const ov=document.getElementById('print-overlay');
+  if(ov){ smartFitBillingPhotos(ov); trimOverlaySignatures(ov); }
+}
+function printMeasurementsPDF(ids){
+  const idSet=new Set(ids||[]);
+  const list=state.measurements.filter(m=>idSet.has(m.id)).sort((a,b)=>(a.site||'').localeCompare(b.site||'','zh-Hant')||(a.date||'').localeCompare(b.date||''));
+  if(list.length===0){ alert('沒有可匯出的計量明細'); return; }
+  const total=list.reduce((s,m)=>s+(Number(m.qty)||0)*(Number(m.unitPrice)||0),0);
+  const groups={};
+  list.forEach(m=>{ const k=parentSiteName(m.site); (groups[k]=groups[k]||[]).push(m); });
+  const sections=Object.keys(groups).sort((a,b)=>a.localeCompare(b,'zh-Hant')).map(site=>{
+    const rows=groups[site].map(m=>{
+      const mt=m.measureType==='partition'?'隔間':m.measureType==='ceiling'?'天花板':m.measureType==='carry'?'搬運':'';
+      const size=m.measureType==='partition'?`${m.width||''}m × ${m.height||''}m`:m.sizeText||'';
+      const sub=(Number(m.qty)||0)*(Number(m.unitPrice)||0);
+      return `<tr><td>${esc(m.date||'')}</td><td>${esc(mt)}</td><td>${esc(m.item||'')}</td><td>${esc(size)}</td><td class="num">${Number(m.qty)||0} ${esc(m.unit||'')}</td><td class="num">${money(m.unitPrice||0)}</td><td class="num">${money(sub)}</td><td>${esc(m.note||'')}</td></tr>`;
+    }).join('');
+    const subtotal=groups[site].reduce((s,m)=>s+(Number(m.qty)||0)*(Number(m.unitPrice)||0),0);
+    return `<div class="sec">${esc(site)}</div>
+      <table><thead><tr><th>日期</th><th>類型</th><th>項目</th><th>尺寸</th><th class="num">數量</th><th class="num">單價</th><th class="num">小計</th><th>備注</th></tr></thead>
+      <tbody>${rows}<tr class="total-row"><td colspan="6">案場小計</td><td class="num">${money(subtotal)}</td><td></td></tr></tbody></table>`;
+  }).join('');
+  const inner=`<h1>計量明細</h1>
+    <div class="meta">列印日：${localISODate()}　|　筆數：${list.length}　|　總額：${money(total)}</div>
+    ${sections}
+    <table style="margin-top:14px"><tbody><tr class="total-row"><td>計量總額</td><td class="num">${money(total)}</td></tr></tbody></table>`;
+  printHTML('計量明細', inner);
+}
+function openFullscreenSign(onSaved){
+  const old=document.getElementById('sig-overlay'); if(old) old.remove();
+  const ov=document.createElement('div');
+  ov.id='sig-overlay';
+  ov.style.cssText='position:fixed;inset:0;background:#fff;z-index:10000;display:flex;flex-direction:column;padding:14px';
+  ov.innerHTML=`<div style="display:flex;gap:8px;justify-content:flex-end;margin-bottom:10px"><button class="act" id="sig-clear">清除</button><button class="btn" id="sig-save">儲存簽名</button><button class="act" id="sig-close">取消</button></div><canvas id="sig-canvas" style="flex:1;border:1px solid var(--line2);border-radius:12px;touch-action:none"></canvas>`;
+  document.body.appendChild(ov);
+  const cv=document.getElementById('sig-canvas'), ctx=cv.getContext('2d');
+  const resize=()=>{ const r=cv.getBoundingClientRect(); cv.width=Math.max(1,Math.floor(r.width)); cv.height=Math.max(1,Math.floor(r.height)); ctx.lineWidth=3; ctx.lineCap='round'; ctx.strokeStyle='#111'; };
+  resize();
+  let drawing=false,last=null;
+  const pos=e=>{ const p=e.touches?e.touches[0]:e, r=cv.getBoundingClientRect(); return {x:p.clientX-r.left,y:p.clientY-r.top}; };
+  const down=e=>{ drawing=true; last=pos(e); e.preventDefault(); };
+  const move=e=>{ if(!drawing) return; const p=pos(e); ctx.beginPath(); ctx.moveTo(last.x,last.y); ctx.lineTo(p.x,p.y); ctx.stroke(); last=p; e.preventDefault(); };
+  const up=()=>{ drawing=false; };
+  cv.addEventListener('mousedown',down); cv.addEventListener('mousemove',move); window.addEventListener('mouseup',up);
+  cv.addEventListener('touchstart',down,{passive:false}); cv.addEventListener('touchmove',move,{passive:false}); cv.addEventListener('touchend',up);
+  document.getElementById('sig-clear').onclick=()=>ctx.clearRect(0,0,cv.width,cv.height);
+  document.getElementById('sig-close').onclick=()=>ov.remove();
+  document.getElementById('sig-save').onclick=()=>{
+    // 自動裁掉四周空白：只留有墨水的範圍（含邊距），簽小小的列印也能有合理大小
+    const d=ctx.getImageData(0,0,cv.width,cv.height).data;
+    let minX=cv.width,minY=cv.height,maxX=-1,maxY=-1;
+    for(let y=0;y<cv.height;y++){ const row=y*cv.width; for(let x=0;x<cv.width;x++){ if(d[(row+x)*4+3]>10){ if(x<minX)minX=x; if(x>maxX)maxX=x; if(y<minY)minY=y; if(y>maxY)maxY=y; } } }
+    if(maxX<0){ alert('請先簽名'); return; }
+    const pad=16;
+    minX=Math.max(0,minX-pad); minY=Math.max(0,minY-pad);
+    maxX=Math.min(cv.width-1,maxX+pad); maxY=Math.min(cv.height-1,maxY+pad);
+    const cw=maxX-minX+1, ch=maxY-minY+1;
+    const MAX_W=800, MAX_H=500;
+    const scale=Math.min(MAX_W/cw, MAX_H/ch, 1);
+    const tmp=document.createElement('canvas');
+    tmp.width=Math.max(1,Math.round(cw*scale)); tmp.height=Math.max(1,Math.round(ch*scale));
+    const tc=tmp.getContext('2d'); tc.fillStyle='#fff'; tc.fillRect(0,0,tmp.width,tmp.height);
+    tc.drawImage(cv,minX,minY,cw,ch,0,0,tmp.width,tmp.height);
+    onSaved(tmp.toDataURL('image/jpeg',0.85)); ov.remove();
+  };
+}
+
+let parkFrom='', parkTo='', parkEditId=null;
+function parkBalance(){
+  const opening=Number(state.parkOpening)||0;
+  const delta=state.parkLedger.reduce((s,t)=>s + (t.kind==='in'?1:-1)*(Number(t.amount)||0), 0);
+  return opening+delta;
+}
+function viewPark(){
+  const inRange=d=> (!parkFrom||d>=parkFrom) && (!parkTo||d<=parkTo);
+  const txs=state.parkLedger.filter(t=>inRange(t.date)).sort((a,b)=>b.date.localeCompare(a.date)||b.id.localeCompare(a.id));
+  const allIn=state.parkLedger.filter(t=>t.kind==='in').reduce((s,t)=>s+(Number(t.amount)||0),0);
+  const allOut=state.parkLedger.filter(t=>t.kind==='out').reduce((s,t)=>s+(Number(t.amount)||0),0);
+  const rangeIn=txs.filter(t=>t.kind==='in').reduce((s,t)=>s+(Number(t.amount)||0),0);
+  const rangeOut=txs.filter(t=>t.kind==='out').reduce((s,t)=>s+(Number(t.amount)||0),0);
+  const bal=parkBalance();
+  const txRows=txs.map(t=>{
+    if(parkEditId===t.id){
+      return `<tr><td colspan="5" style="background:var(--bg)">
+        <div class="row" style="margin:6px 0">
+          <div class="field"><label>日期</label><input type="date" id="pe-date" value="${t.date||''}"></div>
+          <div class="field"><label>性質</label><select id="pe-kind"><option value="in" ${t.kind==='in'?'selected':''}>收入（+）</option><option value="out" ${t.kind==='out'?'selected':''}>支出（−）</option></select></div>
+          <div class="field"><label>金額</label><input type="number" id="pe-amount" value="${t.amount||0}" min="0" step="100" style="width:120px"></div>
+          <div class="field" style="flex:1;min-width:160px"><label>說明</label><input id="pe-note" value="${esc(t.note||'')}"></div>
+          <button class="btn" data-parkeditok="${t.id}">儲存</button>
+          <button class="act muted" data-parkeditcancel="1" style="cursor:pointer;height:36px">取消</button>
+        </div>
+      </td></tr>`;
+    }
+    return `<tr>
+      <td>${esc(t.date)}</td>
+      <td>${esc(t.note||'')}</td>
+      <td class="num" style="color:var(--accent)">${t.kind==='in'?money(t.amount):'—'}</td>
+      <td class="num" style="color:var(--danger)">${t.kind==='out'?money(t.amount):'—'}</td>
+      <td><button class="act" data-parkedit="${t.id}">改</button> <button class="act danger" data-delpark="${t.id}">刪</button></td>
+    </tr>`;
+  }).join('');
+  return `
+  <div class="metrics">
+    <div class="metric"><div class="l">目前餘額</div><div class="v" style="color:${bal<0?'var(--danger)':'var(--ink)'}">${money(bal)}</div></div>
+    <div class="metric"><div class="l">累計收入</div><div class="v" style="font-size:20px;color:var(--accent)">${money(allIn)}</div></div>
+    <div class="metric"><div class="l">累計支出</div><div class="v" style="font-size:20px;color:var(--danger)">${money(allOut)}</div></div>
+  </div>
+  <details class="card">
+    <summary>記一筆收支</summary>
+    <div class="card-body">
+      <p class="sub">手動記品佑帳戶的收入與支出，系統自動算餘額（餘額＝期初＋收入−支出）。期初餘額是承接先前的金額，下方可設定。</p>
+      <div class="row" style="margin-bottom:10px">
+        <div class="field"><label>期初餘額</label><input type="number" id="park-opening" value="${state.parkOpening||0}" step="1000" style="width:140px"></div>
+      </div>
+      <div class="row">
+        <div class="field"><label>日期</label><input type="date" id="park-date" value="${localISODate()}"></div>
+        <div class="field"><label>性質</label><select id="park-kind"><option value="out">支出（−）</option><option value="in">收入（+）</option></select></div>
+        <div class="field"><label>金額</label><input type="number" id="park-amount" min="0" step="100" style="width:120px"></div>
+        <div class="field" style="flex:1;min-width:200px"><label>說明</label><input id="park-note" placeholder="例：收到工程款、Hilti租金、台北住宿"></div>
+        <button class="btn" id="park-add">＋ 記帳</button>
+      </div>
+    </div>
+  </details>
+  <details class="card">
+    <summary><span style="flex:1">收支清單</span><button class="btn" onclick="event.preventDefault();exportParkPDF()" ${state.parkLedger.length===0?'disabled style="opacity:.5"':''} style="height:30px;font-size:12px">匯出 PDF</button></summary>
+    <div class="card-body">
+      <div class="row" style="margin-bottom:10px">
+        <div class="field"><label>起</label><input type="date" id="park-from" value="${parkFrom}"></div>
+        <div class="field"><label>訖</label><input type="date" id="park-to" value="${parkTo}"></div>
+        <button class="act" id="park-clear" style="height:36px;border:1px solid var(--line2);border-radius:8px;padding:0 12px">清除日期</button>
+        ${(parkFrom||parkTo)?`<div class="sub" style="margin:0;align-self:center">區間內　收入 ${money(rangeIn)}・支出 ${money(rangeOut)}・淨額 ${money(rangeIn-rangeOut)}</div>`:''}
+      </div>
+      ${txRows===''?'<div class="empty">尚無收支紀錄。</div>':`<div class="scroll"><table>
+        <thead><tr><th>日期</th><th>說明</th><th class="num">收入</th><th class="num">支出</th><th></th></tr></thead>
+        <tbody>${txRows}</tbody></table></div>`}
+    </div>
+  </details>`;
+}
+
+function exportParkPDF(){
+  const inRange=d=> (!parkFrom||d>=parkFrom) && (!parkTo||d<=parkTo);
+  const txs=state.parkLedger.filter(t=>inRange(t.date)).sort((a,b)=>a.date.localeCompare(b.date)||a.id.localeCompare(b.id));
+  if(txs.length===0) return;
+  const range=(parkFrom||parkTo)?`${parkFrom||'起始'} ～ ${parkTo||'迄今'}`:'全部期間';
+  let tin=0,tout=0;
+  const rows=txs.map(t=>{ tin+=t.kind==='in'?(Number(t.amount)||0):0; tout+=t.kind==='out'?(Number(t.amount)||0):0;
+    return `<tr><td>${esc(t.date)}</td><td>${esc(t.note||'')}</td>
+      <td class="num">${t.kind==='in'?money(t.amount):'-'}</td><td class="num">${t.kind==='out'?money(t.amount):'-'}</td></tr>`;
+  }).join('');
+  const inner=`<h1>品佑收支明細</h1>
+    <div class="meta">期間：${range}　|　期初餘額：${money(state.parkOpening||0)}　|　目前餘額：${money(parkBalance())}　|　列印日：${localISODate()}</div>
+    <table><thead><tr><th>日期</th><th>說明</th><th class="num">收入</th><th class="num">支出</th></tr></thead>
+    <tbody>${rows}
+      <tr class="total-row"><td colspan="2">區間合計</td><td class="num">${money(tin)}</td><td class="num">${money(tout)}</td></tr>
+      <tr class="total-row"><td colspan="2">區間淨額（收−支）</td><td class="num" colspan="2">${money(tin-tout)}</td></tr>
+    </tbody></table>
+    <p class="sub">金額四捨五入至整數。</p>`;
+  printHTML('品佑收支明細', inner);
+}
+
+function openSidebar(){ document.getElementById('sidebar').classList.add('open'); document.getElementById('scrim').classList.add('show'); }
+function closeSidebar(){ document.getElementById('sidebar').classList.remove('open'); document.getElementById('scrim').classList.remove('show'); }
+document.getElementById('burger').onclick=()=>{
+  const sb=document.getElementById('sidebar');
+  if(sb.classList.contains('open')) closeSidebar(); else openSidebar();
+};
+document.getElementById('scrim').onclick=closeSidebar;
+document.getElementById('cloud-refresh').onclick=()=>loadCloud();
+window.addEventListener('beforeunload', ()=>flushCloudOnExit());
+window.addEventListener('pagehide', ()=>{ pushCloudSoon(); flushCloudOnExit(); });
+window.addEventListener('blur', ()=>pushCloudSoon());
+document.addEventListener('visibilitychange', ()=>{
+  if(document.visibilityState==='hidden'){ pushCloudSoon(); flushCloudOnExit(); }
+});
+document.addEventListener('freeze', ()=>{ pushCloudSoon(); flushCloudOnExit(); });
+
+// 先載簽名再載主資料：loadLocal→applyData→mergeBillingSigs 會把「當下記憶體裡（還是空的）簽名」
+// 寫回本機快取，順序反了本機簽名每次開機都被洗掉、全靠雲端補回，離線開啟簽名就不見
+loadSigs(); loadLocal(); loadPhotos(); refreshPrevIds(); keepDailySnapshot();
+(function(){ const v=document.getElementById('app-version'); if(v) v.textContent=APP_VERSION; })();
+try{ const t=localStorage.getItem(LS_TAB); if(t) state.tab=t; }catch(e){} // 還原上次所在分頁
+render(); loadCloud();
+</script>
+</body>
+</html>
