@@ -508,7 +508,7 @@ const FS_ROOT = 'https://firestore.googleapis.com/v1/projects/'+FS_PROJECT+'/dat
 const FS_DOC_BASE = FS_ROOT+'payroll/';
 const FS_SIG_BASE = FS_ROOT+'payrollSignatures/';
 const FS_REST_URL = FS_DOC_BASE+'main?key='+FS_KEY;
-const APP_VERSION = 'v2026.07.15e-e2ee';
+const APP_VERSION = 'v2026.07.15f-e2ee-legacy';
 let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], tools:[], locations:[], assets:[], advances:[], accounts:[], ledger:[], deals:[], billings:[], measurements:[], contracts:{}, costs:[], textMemory:{clients:[],companies:[]}, parkAccId:'', oweBonus:{}, minFund:'', payrollSnapshots:[], yearIncomeAdj:[], deletedIds:[], resurrected:{ids:[],at:0}, tab:'dash' };
 let cloudStatus='連線中…';
 let localDirty=false, lastCloudTs=0;
@@ -1237,6 +1237,52 @@ function e2eDisable(){
   if(!confirm('解除雲端加密？\n下次上傳起雲端改回明文。解鎖鑰匙會保留在這台裝置，舊的加密備份仍讀得到。')) return;
   try{ localStorage.removeItem(LS_E2E_ON); }catch(e){}
   localDirty=true; saveData();
+}
+// 把「啟用加密之前」留在雲端的舊文件（歷史快照/救援備份/簽名）原地加密。
+// 啟用只會加密之後上傳的；舊快照仍是明文公開，要按這個掃一次才收乾淨。
+async function e2eEncryptLegacy(){
+  if(!e2eOn()||!(await _loadE2eKey())){ alert('請先啟用雲端加密。'); return; }
+  if(!confirm('把加密前留在雲端的舊備份（歷史快照、簽名）原地加密？\n加密後救援功能照常可用（會自動解密讀取）。')) return;
+  let done=0,fail=0;
+  try{
+    let tok='';
+    for(let i=0;i<40;i++){ // payroll 集合：hist-*、lostlocal-* 等（已是密文的自動跳過）
+      const r=await fetchT(FS_DOC_BASE.replace(/\/$/,'')+'?pageSize=300&key='+FS_KEY+(tok?('&pageToken='+encodeURIComponent(tok)):''),{},20000);
+      const jd=await r.json();
+      for(const x of (jd.documents||[])){
+        const nm=(x.name||'').split('/').pop();
+        const f=x.fields||{}; const js=f.json&&f.json.stringValue;
+        if(!js||isEncBlob(js)) continue;
+        setCloud(`加密舊備份中… ${done+fail+1}`);
+        try{
+          const body={fields:{...f, json:{stringValue:await e2eEncrypt(js)}}};
+          const pr=await fetchT(FS_DOC_BASE+encodeURIComponent(nm)+'?key='+FS_KEY,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)},20000);
+          if(pr.ok) done++; else fail++;
+        }catch(e){ fail++; }
+      }
+      tok=jd.nextPageToken||''; if(!tok) break;
+    }
+    tok='';
+    for(let i=0;i<20;i++){ // 簽名集合
+      const r=await fetchT(FS_ROOT+'payrollSignatures?pageSize=300&key='+FS_KEY+(tok?('&pageToken='+encodeURIComponent(tok)):''),{},20000);
+      if(r.status===404) break;
+      const jd=await r.json();
+      for(const x of (jd.documents||[])){
+        const id=(x.name||'').split('/').pop();
+        const f=x.fields||{}; const dv=f.data&&f.data.stringValue;
+        if(!dv||isEncBlob(dv)) continue;
+        setCloud(`加密舊簽名中… ${done+fail+1}`);
+        try{
+          const body={fields:{...f, data:{stringValue:await e2eEncrypt(dv)}}};
+          const pr=await fetchT(FS_SIG_BASE+encodeURIComponent(id)+'?key='+FS_KEY,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)},20000);
+          if(pr.ok) done++; else fail++;
+        }catch(e){ fail++; }
+      }
+      tok=jd.nextPageToken||''; if(!tok) break;
+    }
+  }catch(e){ alert('過程出錯：'+String(e&&e.message||e).slice(0,80)); }
+  setCloud('已同步');
+  alert(`舊備份加密完成：成功 ${done} 份${fail?`、失敗 ${fail} 份（網路穩定時再按一次可重試，已加密的會自動跳過）`:''}。`);
 }
 async function cloudGet(){
   if(window.__fb&&window.__fb.ok){
@@ -2605,7 +2651,7 @@ function viewManage(){
       <p class="sub" style="margin:0 0 8px">啟用後資料先在瀏覽器加密才上雲端，雲端只存密文——公開網頁裡的網址被撈到也讀不到內容。三個系統（payroll／品佑帳本／簡化版）用同一組密碼，各裝置第一次開啟輸入一次即可。<b>密碼忘了雲端資料就解不開</b>，本機資料與匯出備份不受影響；照片檔不在加密範圍。</p>
       <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
         ${e2eOn()
-          ?'<button class="act" id="e2e-off" style="border:1px solid var(--line2);border-radius:8px;padding:0 14px;height:38px">解除加密</button>'
+          ?'<button class="act" id="e2e-legacy" style="border:1px solid var(--accent);border-radius:8px;padding:0 14px;height:38px;color:var(--accent)">把加密前的舊備份也加密</button> <button class="act" id="e2e-off" style="border:1px solid var(--line2);border-radius:8px;padding:0 14px;height:38px">解除加密</button>'
           :'<button class="act" id="e2e-on" style="border:1px solid var(--accent);border-radius:8px;padding:0 14px;height:38px;color:var(--accent)">🔐 啟用雲端加密…</button>'}
       </div>
     </div>
@@ -2620,6 +2666,7 @@ function bind(){
   const rsl=document.getElementById('rescue-local'); if(rsl) rsl.onclick=()=>rescueFromLocalSnapshot();
   const e2on=document.getElementById('e2e-on'); if(e2on) e2on.onclick=()=>e2eEnable().then(()=>render());
   const e2off=document.getElementById('e2e-off'); if(e2off) e2off.onclick=()=>{ e2eDisable(); render(); };
+  const e2leg=document.getElementById('e2e-legacy'); if(e2leg) e2leg.onclick=()=>e2eEncryptLegacy();
   document.querySelectorAll('.nav-item').forEach(b=>b.onclick=()=>{ state.tab=b.dataset.tab; closeSidebar(); render(); });
   document.querySelectorAll('[data-goto]').forEach(b=>b.onclick=()=>{ state.tab=b.dataset.goto; render(); });
   document.querySelectorAll('[data-sitetoggle]').forEach(b=>b.onclick=()=>{ const id=b.dataset.sitetoggle; dashSiteOpen[id]=!dashSiteOpen[id]; render(); });
