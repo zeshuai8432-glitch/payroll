@@ -508,7 +508,7 @@ const FS_ROOT = 'https://firestore.googleapis.com/v1/projects/'+FS_PROJECT+'/dat
 const FS_DOC_BASE = FS_ROOT+'payroll/';
 const FS_SIG_BASE = FS_ROOT+'payrollSignatures/';
 const FS_REST_URL = FS_DOC_BASE+'main?key='+FS_KEY;
-const APP_VERSION = 'v2026.07.15d-sig-trim';
+const APP_VERSION = 'v2026.07.15e-e2ee';
 let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], tools:[], locations:[], assets:[], advances:[], accounts:[], ledger:[], deals:[], billings:[], measurements:[], contracts:{}, costs:[], textMemory:{clients:[],companies:[]}, parkAccId:'', oweBonus:{}, minFund:'', payrollSnapshots:[], yearIncomeAdj:[], deletedIds:[], resurrected:{ids:[],at:0}, tab:'dash' };
 let cloudStatus='連線中…';
 let localDirty=false, lastCloudTs=0;
@@ -1084,12 +1084,12 @@ async function rescueFromCloudSnapshots(){
     for(let i=0;i<20;i++){
       const r=await fetchT(FS_DOC_BASE.replace(/\/$/,'')+'?pageSize=300&key='+FS_KEY+(tok?('&pageToken='+encodeURIComponent(tok)):''),{},20000);
       const jd=await r.json();
-      (jd.documents||[]).forEach(x=>{
+      for(const x of (jd.documents||[])){
         const nm=(x.name||'').split('/').pop();
-        if(!/^hist-/.test(nm)) return;
-        const js=x.fields&&x.fields.json&&x.fields.json.stringValue; if(!js) return;
-        try{ const dd=JSON.parse(js); docs.push({nm,dd,savedAt:Number(dd.savedAt)||0}); }catch(e){}
-      });
+        if(!/^hist-/.test(nm)) continue;
+        let js=x.fields&&x.fields.json&&x.fields.json.stringValue; if(!js) continue;
+        try{ js=await e2eDecrypt(js); const dd=JSON.parse(js); docs.push({nm,dd,savedAt:Number(dd.savedAt)||0}); }catch(e){ if(e&&e.locked) throw e; }
+      }
       tok=jd.nextPageToken||'';
       if(!tok) break;
     }
@@ -1114,7 +1114,12 @@ async function checkPinyouExpenses(showFail){
     const r=await fetchT(PINYOU_CLOUD_URL,{},20000);
     const j=await r.json();
     if(!j||!j.ok||!j.data) throw new Error('品佑雲端無資料');
-    const dd=JSON.parse(j.data);
+    let raw=j.data;
+    if(isEncBlob(raw)){ // 品佑帳本也加密時用同一把鑰匙解；還沒解鎖就先跳過這次背景檢查
+      const key=await _loadE2eKey(); if(!key){ pyChecking=false; return; }
+      try{ raw=await _tryE2eDecrypt(key,raw); }catch(e){ pyChecking=false; return; }
+    }
+    const dd=JSON.parse(raw);
     const exps=Array.isArray(dd.expenses)?dd.expenses:[];
     const del=new Set(state.deletedIds||[]);
     const have=new Set((state.costs||[]).map(c=>c&&c.id));
@@ -1163,22 +1168,95 @@ function fetchT(url,opts={},ms=10000){
   const t=setTimeout(()=>ctrl.abort(),ms);
   return fetch(url,{...opts,signal:ctrl.signal}).finally(()=>clearTimeout(t));
 }
+// ── 雲端端對端加密（payroll／品佑帳本／簡化版共用同一組密碼；照片檔除外）──
+// 推上雲端前先在瀏覽器內 AES-GCM 加密（先 gzip 壓縮），雲端只存密文；
+// 公開 repo 裡的網址被撈到也只能拿到亂碼。本機資料維持明文（裝置視為可信）。
+const E2E_SALT='PMENC1|dz-gx-py|2026';
+const LS_E2E_KEY='pm_e2e_key_v1', LS_E2E_ON='pm_e2e_on_v1';
+let _encKey=null, _unlockP=null;
+const _b64=u8=>{ let s=''; for(let i=0;i<u8.length;i+=0x8000) s+=String.fromCharCode.apply(null,u8.subarray(i,i+0x8000)); return btoa(s); };
+const _ub64=s=>Uint8Array.from(atob(s),c=>c.charCodeAt(0));
+async function _gzip(u8,mode){ const st=new Blob([u8]).stream().pipeThrough(mode==='d'?new DecompressionStream('gzip'):new CompressionStream('gzip')); return new Uint8Array(await new Response(st).arrayBuffer()); }
+async function _deriveE2eKey(pass){
+  const base=await crypto.subtle.importKey('raw',new TextEncoder().encode(pass),'PBKDF2',false,['deriveKey']);
+  return crypto.subtle.deriveKey({name:'PBKDF2',salt:new TextEncoder().encode(E2E_SALT),iterations:200000,hash:'SHA-256'},base,{name:'AES-GCM',length:256},true,['encrypt','decrypt']);
+}
+async function _loadE2eKey(){
+  if(_encKey) return _encKey;
+  try{ const raw=localStorage.getItem(LS_E2E_KEY); if(raw) _encKey=await crypto.subtle.importKey('raw',_ub64(raw),'AES-GCM',true,['encrypt','decrypt']); }catch(e){}
+  return _encKey;
+}
+async function _storeE2eKey(key){ _encKey=key; try{ localStorage.setItem(LS_E2E_KEY,_b64(new Uint8Array(await crypto.subtle.exportKey('raw',key)))); }catch(e){} }
+const e2eOn=()=>{ try{ return localStorage.getItem(LS_E2E_ON)==='1'; }catch(e){ return false; } };
+const isEncBlob=s=>{ if(typeof s!=='string') return false; const t=s.trim(); if(t[0]!=='{'||t.indexOf('PMENC1')<0) return false; try{ const o=JSON.parse(t); return !!o&&o.v==='PMENC1'; }catch(e){ return false; } };
+async function e2eEncrypt(plain){
+  if(!e2eOn()||typeof plain!=='string'||isEncBlob(plain)) return plain;
+  const key=await _loadE2eKey(); if(!key) return plain;
+  const iv=crypto.getRandomValues(new Uint8Array(12));
+  let body=new TextEncoder().encode(plain), z=0;
+  try{ if(typeof CompressionStream!=='undefined'){ body=await _gzip(body); z=1; } }catch(e){}
+  const ct=new Uint8Array(await crypto.subtle.encrypt({name:'AES-GCM',iv},key,body));
+  return JSON.stringify({v:'PMENC1',z,iv:_b64(iv),ct:_b64(ct)});
+}
+async function _tryE2eDecrypt(key,blob){
+  const o=JSON.parse(blob);
+  let pt=new Uint8Array(await crypto.subtle.decrypt({name:'AES-GCM',iv:_ub64(o.iv)},key,_ub64(o.ct)));
+  if(o.z) pt=await _gzip(pt,'d');
+  return new TextDecoder().decode(pt);
+}
+async function e2eDecrypt(str){
+  if(!isEncBlob(str)) return str;
+  let key=await _loadE2eKey();
+  if(key){ try{ return await _tryE2eDecrypt(key,str); }catch(e){ _encKey=null; } } // 鑰匙不對（密碼被改過）→ 重新問
+  if(_unlockP) { await _unlockP; return e2eDecrypt(str); } // 同時多路解密只跳一次輸入框
+  let done; _unlockP=new Promise(r=>done=r);
+  try{
+    while(true){
+      const p=prompt('☁ 雲端資料已加密。\n請輸入三個系統共用的解鎖密碼：');
+      if(p===null){ const err=new Error('已加密，尚未解鎖'); err.locked=true; throw err; }
+      const k=await _deriveE2eKey(p);
+      try{
+        const out=await _tryE2eDecrypt(k,str);
+        await _storeE2eKey(k);
+        try{ localStorage.setItem(LS_E2E_ON,'1'); }catch(e){}
+        return out;
+      }catch(e){ alert('密碼不對，請再試一次。'); }
+    }
+  } finally { done(); _unlockP=null; }
+}
+async function e2eEnable(){
+  const p1=prompt('設定雲端加密密碼（payroll／品佑帳本／簡化版請用同一組）：'); if(!p1) return;
+  const p2=prompt('再輸入一次確認：'); if(p2===null) return;
+  if(p1!==p2){ alert('兩次輸入不一樣，已取消。'); return; }
+  await _storeE2eKey(await _deriveE2eKey(p1));
+  try{ localStorage.setItem(LS_E2E_ON,'1'); }catch(e){}
+  alert('已啟用雲端加密 ✓\n\n・這次上傳開始，雲端存的就是密文\n・其他裝置與另外兩個系統第一次開啟會要求輸入同一組密碼\n・⚠️ 密碼忘了雲端資料就解不開，請抄下來收好（本機資料與匯出備份不受影響）');
+  localDirty=true; saveData();
+}
+function e2eDisable(){
+  if(!confirm('解除雲端加密？\n下次上傳起雲端改回明文。解鎖鑰匙會保留在這台裝置，舊的加密備份仍讀得到。')) return;
+  try{ localStorage.removeItem(LS_E2E_ON); }catch(e){}
+  localDirty=true; saveData();
+}
 async function cloudGet(){
   if(window.__fb&&window.__fb.ok){
     try{
       const snap=await withTimeout(window.__fb.doc.get(),6000,'SDK 逾時');
       const updateTime=snap.updateTime&&snap.updateTime.toDate?snap.updateTime.toDate().toISOString():'';
-      return snap.exists?{ok:true,data:snap.data().json,updateTime}:{ok:false,updateTime:''};
-    }catch(e){ /* SDK 失敗或逾時，改走 REST */ }
+      return snap.exists?{ok:true,data:await e2eDecrypt(snap.data().json),updateTime}:{ok:false,updateTime:''};
+    }catch(e){ if(e&&e.locked) throw e; /* SDK 失敗或逾時，改走 REST */ }
   }
   const r=await fetchT(FS_REST_URL,{},10000);
   if(r.status===404) return {ok:false,updateTime:''};
   if(!r.ok) throw new Error('HTTP '+r.status);
   const d=await r.json();
   const f=d.fields||{};
-  return {ok:!!(f.json&&f.json.stringValue),data:f.json?f.json.stringValue:null,updateTime:d.updateTime||''};
+  const raw=f.json?f.json.stringValue:null;
+  const data=raw?await e2eDecrypt(raw):null;
+  return {ok:!!data,data,updateTime:d.updateTime||''};
 }
 async function cloudSet(payload, expectedVersion){
+  payload=await e2eEncrypt(payload); // 啟用加密時：gzip＋AES-GCM 後才出門
   const bytes=typeof TextEncoder!=='undefined'?new TextEncoder().encode(payload).length:payload.length;
   if(bytes>900000) throw new Error(`主資料已達 ${Math.round(bytes/1024)}KB，接近雲端上限，請先匯出備份並整理舊資料`);
   const savedAt=Date.now();
@@ -1206,7 +1284,7 @@ async function cloudSignatureSet(id){
     updatedAt:{integerValue:String(Number(meta.updatedAt)||Date.now())},
     deleted:{booleanValue:deleted}
   };
-  if(!deleted){ fields.data={stringValue:billingSigs[id]}; fields.locked={booleanValue:!!billingSigsLocked[id]}; }
+  if(!deleted){ fields.data={stringValue:await e2eEncrypt(billingSigs[id])}; fields.locked={booleanValue:!!billingSigsLocked[id]}; }
   const url=FS_SIG_BASE+encodeURIComponent(id)+'?key='+FS_KEY;
   const r=await fetchT(url,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({fields})},15000);
   if(!r.ok) throw new Error('簽名 HTTP '+r.status);
@@ -1219,21 +1297,21 @@ async function loadCloudSignatures(){
     if(r.status===404) break;
     if(!r.ok) throw new Error('簽名讀取 HTTP '+r.status);
     const j=await r.json();
-    (j.documents||[]).forEach(doc=>{
-      const id=(doc.name||'').split('/').pop(); if(!id) return;
+    for(const doc of (j.documents||[])){
+      const id=(doc.name||'').split('/').pop(); if(!id) continue;
       found.add(id);
       const f=doc.fields||{}, incomingTs=Number(f.updatedAt&&f.updatedAt.integerValue)||0;
       const localTs=Number((billingSigMeta[id]||{}).updatedAt)||0;
-      if(localSigPending[id]||incomingTs<localTs) return;
+      if(localSigPending[id]||incomingTs<localTs) continue;
       if(f.deleted&&f.deleted.booleanValue){
         delete billingSigs[id]; delete billingSigsLocked[id];
         billingSigMeta[id]={updatedAt:incomingTs,deleted:true};
       }else if(f.data&&f.data.stringValue){
-        billingSigs[id]=f.data.stringValue;
+        billingSigs[id]=await e2eDecrypt(f.data.stringValue);
         billingSigsLocked[id]=!!(f.locked&&f.locked.booleanValue);
         billingSigMeta[id]={updatedAt:incomingTs};
       }
-    });
+    }
     token=j.nextPageToken||''; if(!token) break;
   }
   // 主文件裡的舊簽名尚未拆檔時，自動排入一次搬移。
@@ -1254,6 +1332,7 @@ async function cloudBackup(payload, keyOverride){
     let last=0; try{ last=Number(localStorage.getItem(LS_BACKUP_AT))||0; }catch(e){}
     if(now-last<6*3600000) return;
   }
+  try{ payload=await e2eEncrypt(payload); }catch(e){}
   const d=new Date(), bucket=Math.floor(d.getHours()/6)*6;
   const key=keyOverride||(`hist-${localISODate(d)}-${String(bucket).padStart(2,'0')}`);
   const savedAt=Date.now();
@@ -1355,7 +1434,11 @@ async function loadCloud(){
       if(hasLocal){ localDirty=true; if(saveTimer) clearTimeout(saveTimer); saveTimer=setTimeout(pushCloud,400); setCloud('雲端尚無資料，正在上傳本機…'); }
       else setCloud('雲端尚無資料');
     }
-  } catch(e){ settled=true; clearTimeout(watchdog); setCloud('雲端讀取失敗：'+String(e&&e.message||e).slice(0,60)); }
+  } catch(e){
+    settled=true; clearTimeout(watchdog);
+    if(e&&e.locked) setCloud('🔒 雲端已加密未解鎖（僅本機使用；重新整理可再輸入密碼）');
+    else setCloud('雲端讀取失敗：'+String(e&&e.message||e).slice(0,60));
+  }
 }
 
 let saveTimer=null, saving=false, pendingSave=false;
@@ -1429,7 +1512,10 @@ async function pushCloud(){
     refreshPrevIds();
     setCloud('已同步');
     if(merged) safeRender(); // 合併後畫面同步更新（打字中則延後）
-  } catch(e){ setCloud('雲端儲存失敗：'+String(e&&e.message||e).slice(0,50)); }
+  } catch(e){
+    if(e&&e.locked) setCloud('🔒 已加密未解鎖，暫停上傳（資料已存本機）');
+    else setCloud('雲端儲存失敗：'+String(e&&e.message||e).slice(0,50));
+  }
   saving=false;
   if(pendingSave){ pendingSave=false; pushCloud(); }
 }
@@ -2514,6 +2600,15 @@ function viewManage(){
         <button class="act" id="rescue-local" style="border:1px solid var(--danger);border-radius:8px;padding:0 14px;height:38px;color:var(--danger)">檢查本機救援快照</button>
       </div>
     </div>
+    <div style="margin-top:12px;padding-top:10px;border-top:1px dashed var(--line)">
+      <div style="font-size:13px;font-weight:600;margin-bottom:4px">🔐 雲端加密${e2eOn()?'<span class="tag" style="background:#e3efe9;color:var(--accent);margin-left:8px">已啟用</span>':'<span class="tag" style="margin-left:8px">未啟用</span>'}</div>
+      <p class="sub" style="margin:0 0 8px">啟用後資料先在瀏覽器加密才上雲端，雲端只存密文——公開網頁裡的網址被撈到也讀不到內容。三個系統（payroll／品佑帳本／簡化版）用同一組密碼，各裝置第一次開啟輸入一次即可。<b>密碼忘了雲端資料就解不開</b>，本機資料與匯出備份不受影響；照片檔不在加密範圍。</p>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+        ${e2eOn()
+          ?'<button class="act" id="e2e-off" style="border:1px solid var(--line2);border-radius:8px;padding:0 14px;height:38px">解除加密</button>'
+          :'<button class="act" id="e2e-on" style="border:1px solid var(--accent);border-radius:8px;padding:0 14px;height:38px;color:var(--accent)">🔐 啟用雲端加密…</button>'}
+      </div>
+    </div>
   </div>`;
 }
 
@@ -2523,6 +2618,8 @@ function bind(){
   if(bkBtn&&bkFile){ bkBtn.onclick=()=>bkFile.click(); bkFile.onchange=()=>{ if(bkFile.files&&bkFile.files[0]) importBackup(bkFile.files[0]); bkFile.value=''; }; }
   const rsc=document.getElementById('rescue-cloud'); if(rsc) rsc.onclick=()=>rescueFromCloudSnapshots();
   const rsl=document.getElementById('rescue-local'); if(rsl) rsl.onclick=()=>rescueFromLocalSnapshot();
+  const e2on=document.getElementById('e2e-on'); if(e2on) e2on.onclick=()=>e2eEnable().then(()=>render());
+  const e2off=document.getElementById('e2e-off'); if(e2off) e2off.onclick=()=>{ e2eDisable(); render(); };
   document.querySelectorAll('.nav-item').forEach(b=>b.onclick=()=>{ state.tab=b.dataset.tab; closeSidebar(); render(); });
   document.querySelectorAll('[data-goto]').forEach(b=>b.onclick=()=>{ state.tab=b.dataset.goto; render(); });
   document.querySelectorAll('[data-sitetoggle]').forEach(b=>b.onclick=()=>{ const id=b.dataset.sitetoggle; dashSiteOpen[id]=!dashSiteOpen[id]; render(); });
