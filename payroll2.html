@@ -465,7 +465,7 @@ function rememberDeletedPhoto(id,url){
   state.billingPhotoDeleted=state.billingPhotoDeleted||{};
   state.billingPhotoDeleted[id]=[...new Set([...(state.billingPhotoDeleted[id]||[]),url])];
 }
-const APP_VERSION='vB2026.07.15a'; // 版本號顯示在右上角，方便確認拿到新版
+const APP_VERSION='vB2026.07.15b-ins'; // 版本號顯示在右上角，方便確認拿到新版
 // 本地時區的今天（yyyy-mm-dd）。toISOString 是 UTC，台灣早上 8 點前會差一天
 function localISODate(d=new Date()){ return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
 // ── 逐筆(依id)合併，避免裝置互相整包覆蓋造成資料遺失 ──
@@ -687,7 +687,7 @@ function photoDisplayUrl(url){
 
 function applyData(d){
   if(!d) return;
-  state.employees=d.employees||[]; state.sites=d.sites||[]; state.attendance=d.attendance||[]; state.adjustments=d.adjustments||[]; state.loans=d.loans||[]; state.parkLedger=d.parkLedger||[]; state.parkOpening=Number(d.parkOpening)||0; state.billings=d.billings||[]; state.measurements=d.measurements||[]; state.billingPhotoDeleted=d.billingPhotoDeleted||{}; state.deletedIds=d.deletedIds||[]; if(d.resurrected&&Array.isArray(d.resurrected.ids)) state.resurrected={ids:d.resurrected.ids,at:Number(d.resurrected.at)||0}; else if(!state.resurrected) state.resurrected={ids:[],at:0}; state.textMemory=d.textMemory||{clients:[],companies:[]};
+  state.employees=d.employees||[]; state.sites=d.sites||[]; state.attendance=d.attendance||[]; state.adjustments=d.adjustments||[]; state.loans=d.loans||[]; state.parkLedger=d.parkLedger||[]; state.parkOpening=Number(d.parkOpening)||0; state.insuranceAllowance=Number(d.insuranceAllowance)||0; state.billings=d.billings||[]; state.measurements=d.measurements||[]; state.billingPhotoDeleted=d.billingPhotoDeleted||{}; state.deletedIds=d.deletedIds||[]; if(d.resurrected&&Array.isArray(d.resurrected.ids)) state.resurrected={ids:d.resurrected.ids,at:Number(d.resurrected.at)||0}; else if(!state.resurrected) state.resurrected={ids:[],at:0}; state.textMemory=d.textMemory||{clients:[],companies:[]};
   state.employees.forEach(e=>{ if(e.active===undefined) e.active=true; });
   mergeBillingSigs(d.billingSigs||{}, d.billingSigsLocked||{}, d.billingSigMeta||{});
   if(d.billingPhotos) mergeCloudPhotos(d.billingPhotos);
@@ -699,7 +699,7 @@ function packData(){
     const driveUrls=(urls||[]).filter(u=>typeof u==='string'&&u.startsWith('http'));
     if(driveUrls.length) photosSync[id]=driveUrls;
   });
-  return {employees:state.employees,sites:state.sites,attendance:state.attendance,adjustments:state.adjustments,loans:state.loans,parkLedger:state.parkLedger,parkOpening:state.parkOpening,billings:state.billings,measurements:state.measurements,billingPhotoDeleted:state.billingPhotoDeleted||{},deletedIds:state.deletedIds||[],resurrected:state.resurrected||{ids:[],at:0},textMemory:state.textMemory,billingPhotos:photosSync,billingSigs,billingSigsLocked,billingSigMeta,savedAt:Date.now()};
+  return {employees:state.employees,sites:state.sites,attendance:state.attendance,adjustments:state.adjustments,loans:state.loans,parkLedger:state.parkLedger,parkOpening:state.parkOpening,insuranceAllowance:Number(state.insuranceAllowance)||0,billings:state.billings,measurements:state.measurements,billingPhotoDeleted:state.billingPhotoDeleted||{},deletedIds:state.deletedIds||[],resurrected:state.resurrected||{ids:[],at:0},textMemory:state.textMemory,billingPhotos:photosSync,billingSigs,billingSigsLocked,billingSigMeta,savedAt:Date.now()};
 }
 
 // 先讀本機快取（讓畫面秒開），再從雲端拉最新
@@ -1475,6 +1475,15 @@ function viewManage(){
     </div>
   </details>
   <div class="card">
+    <div style="font-size:14px;font-weight:600;margin-bottom:4px">勞健保津貼顯示</div>
+    <p class="sub" style="margin:0 0 10px">日薪內含的勞健保津貼（每出工日）。設定後<b>薪水計算完全不變</b>，只有「明細單」會把基本工資拆成「基本工資＋勞健保津貼」兩行分開顯示，讓員工白紙黑字看到津貼已給付。設 0 ＝不拆行。</p>
+    <div class="row">
+      <div class="field"><label>每出工日津貼（元）</label><input type="number" id="ins-allow" value="${Number(state.insuranceAllowance)||0}" min="0" step="10" style="width:140px"></div>
+      <button class="btn" id="ins-allow-save">儲存</button>
+      <span class="sub" id="ins-allow-saved" style="margin:0;display:none;color:var(--accent)">已儲存 ✓</span>
+    </div>
+  </div>
+  <div class="card">
     <div style="font-size:14px;font-weight:600;margin-bottom:4px">🚑 本機每日快照（誤刪救援）</div>
     <p class="sub" style="margin:0 0 8px">這台裝置每天第一次開啟時自動留一份資料快照，保留 7 天。誤刪資料時選一天按「合併救回」：只補回「快照有、現在沒有」的紀錄，不覆蓋現有資料，救回後同步到各裝置也不會被再刪。</p>
     <div style="display:flex;gap:6px;flex-wrap:wrap">${listDailySnapshots().map(d=>`<button class="act" data-snaprestore="${d}" style="border:1px solid var(--danger);border-radius:8px;padding:0 12px;height:34px;color:var(--danger)">${d} 合併救回</button>`).join('')||'<span class="sub" style="margin:0">尚無快照（每天第一次開啟自動留存）。</span>'}</div>
@@ -1487,6 +1496,13 @@ function bind(){
     if(!confirm('用 '+day+' 的本機快照做「合併救回」？\n只會補回「快照有、現在沒有」的紀錄，不覆蓋現有資料。')) return;
     rescueFromDailySnapshot(day);
   });
+  const insSave=document.getElementById('ins-allow-save');
+  if(insSave) insSave.onclick=()=>{
+    const v=parseFloat((document.getElementById('ins-allow')||{}).value);
+    state.insuranceAllowance=isNaN(v)||v<0?0:v; saveData();
+    const tag=document.getElementById('ins-allow-saved');
+    if(tag){ tag.style.display='inline'; setTimeout(()=>{ if(tag) tag.style.display='none'; },2500); }
+  };
   document.querySelectorAll('[data-toggle-form]').forEach(b=>b.onclick=()=>{ const k=b.dataset.toggleForm; formOpen[k]=!formOpen[k]; render(); });
   bindBillingSubtotal('bnr'); bindBillingSubtotal('bna'); bindBillingSubtotal('bae');
   ['meas-type','meas-width','meas-height','meas-qty','meas-price'].forEach(id=>{ const el=document.getElementById(id); if(el) el.oninput=updateMeasurePreview; if(el) el.onchange=updateMeasurePreview; });
@@ -1968,13 +1984,19 @@ function exportPayslipPDF(empId){
     <table style="margin-top:14px"><tbody>
       <tr><td>出勤天數</td><td class="num">${e.days.size} 天</td></tr>
       <tr><td>總工數</td><td class="num">${gongStr(e.hours)}</td></tr>
-      <tr><td>基本工資</td><td class="num">${money(e.gross)}</td></tr>
+      ${(()=>{ // 日薪內含勞健保津貼：明細單拆兩行顯示（金額不變），員工白紙黑字看到津貼已給付
+        const insAmt=Number(state.insuranceAllowance)||0;
+        const insTotal=insAmt>0?e.days.size*insAmt:0;
+        return (insTotal>0&&insTotal<e.gross)
+          ?`<tr><td>基本工資（不含勞健保津貼）</td><td class="num">${money(e.gross-insTotal)}</td></tr>
+      <tr><td>勞健保津貼（出工 ${e.days.size} 天 × ${money(insAmt)}）</td><td class="num">${money(insTotal)}</td></tr>`
+          :`<tr><td>基本工資</td><td class="num">${money(e.gross)}</td></tr>`; })()}
       <tr><td>加項合計</td><td class="num add-amt">+${money(e.addTotal)}</td></tr>
       <tr><td>扣項合計</td><td class="num ded-amt">−${money(e.dedTotal)}</td></tr>
       <tr class="total-row"><td>實發金額</td><td class="num">${money(e.net)}</td></tr>
     </tbody></table>
     <div class="sign"><div>員工簽收</div><div>主管核章</div></div>
-    <p class="sub">本明細之日薪採各筆出工登記當時鎖定金額；基本工資以時薪（日薪÷8）×正常工時計；加班費以加班時數 × 時薪 × 1.33 計；出差外宿津貼每晚400元。金額四捨五入至整數。</p></div>`;
+    <p class="sub">本明細之日薪採各筆出工登記當時鎖定金額；基本工資以時薪（日薪÷8）×正常工時計；加班費以加班時數 × 時薪 × 1.33 計；出差外宿津貼每晚400元。${(Number(state.insuranceAllowance)||0)>0?`日薪內含勞健保津貼每出工日 ${money(state.insuranceAllowance)}，於本明細分列顯示。`:''}金額四捨五入至整數。</p></div>`;
   printHTML('薪資明細單 '+esc(empName(empId)), inner);
 }
 
