@@ -310,8 +310,13 @@
   #print-overlay th { background: #eef1ee; text-align: left; font-size: 12px; text-transform: none; letter-spacing: 0; }
   #print-overlay td.num, #print-overlay th.num { text-align: right; font-variant-numeric: tabular-nums; }
   #print-overlay .total-row td { font-weight: 700; background: #f6f7f5; }
-  #print-overlay .sign { margin-top: 32px; font-size: 13px; display: flex; gap: 48px; }
+  #print-overlay .sign { margin-top: 32px; font-size: 13px; display: flex; gap: 48px; page-break-inside: avoid; break-inside: avoid; }
   #print-overlay .sign div { border-top: 1px solid #1f2421; padding-top: 6px; min-width: 160px; }
+  /* 簽名格：簽名圖放在簽名線「上方」的固定格子，有簽沒簽高度一樣、換頁不切半 */
+  #print-overlay .sign > div.sigcell { border-top: none; padding-top: 0; }
+  #print-overlay .sigcell .sigbox { position: relative; height: 64px; border: none; min-width: 0; }
+  #print-overlay .sigcell .sigbox img { position: absolute; left: 6px; bottom: 2px; height: 60px; max-width: 220px; }
+  #print-overlay .sigcell .siglabel { border-top: 1px solid #1f2421; padding-top: 6px; min-width: 160px; }
   #print-overlay .sub { font-size: 11px; color: #777; margin-top: 8px; }
   #print-overlay .sec { font-size: 13px; font-weight: 700; margin: 16px 0 6px; }
   #print-overlay h2.sec { font-size: 14px; margin: 18px 0 6px; padding-top: 10px; border-top: 1px solid #cfd2cd; }
@@ -326,13 +331,17 @@
   #print-overlay .paydoc .night-check { color: #0f766e; font-weight: 800; font-size: 14px; }
   #print-overlay .site-pill { display:inline-block; padding:2px 8px; border-radius:999px; font-weight:700; font-size:11px; border:1px solid transparent; }
   @media print {
+    html, body { background: #fff !important; } /* 列印背景一律白，最後一頁不露灰底 */
     body > .top, body > .layout { display: none !important; }
     #print-overlay { position: static; padding: 0; }
     #print-overlay .pbar { display: none !important; }
-    @page { size: A4; margin: 16mm; }
+    /* 頁邊距設 0：瀏覽器的頁首（日期/標題）頁尾（網址/頁碼）印在邊距區，
+       沒有邊距就不會出現；文件邊距改由 .pdoc 自己內建 */
+    @page { size: A4; margin: 0; }
+    #print-overlay .pdoc { padding: 14mm 14mm 12mm; }
     #print-overlay.landscape .pdoc { max-width: none; page: landscapePage; }
   }
-  @page landscapePage { size: A4 landscape; margin: 12mm; }
+  @page landscapePage { size: A4 landscape; margin: 0; }
 </style>
 </head>
 <body>
@@ -341,6 +350,7 @@
   <h1>點工薪資管理系統</h1>
   <div style="margin-left:auto;display:flex;align-items:center;gap:10px">
     <span id="cloud-status" style="font-size:12px;opacity:.9">本機模式</span>
+    <span id="app-version" style="font-size:11px;opacity:.7;white-space:nowrap"></span>
     <button id="cloud-refresh" style="background:rgba(255,255,255,.18);color:#fff;border:none;border-radius:6px;padding:5px 10px;cursor:pointer;font-size:13px">↻ 重新整理</button>
   </div>
 </div>
@@ -454,6 +464,7 @@ function rememberDeletedPhoto(id,url){
   state.billingPhotoDeleted=state.billingPhotoDeleted||{};
   state.billingPhotoDeleted[id]=[...new Set([...(state.billingPhotoDeleted[id]||[]),url])];
 }
+const APP_VERSION='vN2026.07.15a-print'; // 版本號顯示在右上角，方便確認拿到新版
 // 本地時區的今天（yyyy-mm-dd）。toISOString 是 UTC，台灣早上 8 點前會差一天
 function localISODate(d=new Date()){ return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
 // ── 逐筆(依id)合併，避免裝置互相整包覆蓋造成資料遺失 ──
@@ -1750,7 +1761,15 @@ function bind(){
   if(raiseCancel) raiseCancel.onclick=()=>{ raiseEmpId=null; render(); };
   document.querySelectorAll('[data-toggle]').forEach(b=>b.onclick=()=>{ const e=state.employees.find(x=>x.id===b.dataset.toggle); if(e){ e.active=!e.active; saveData(); render(); } });
   document.querySelectorAll('[data-partner]').forEach(b=>b.onclick=()=>{ const e=state.employees.find(x=>x.id===b.dataset.partner); if(e){ e.partner=!e.partner; saveData(); render(); } });
-  document.querySelectorAll('[data-delemp]').forEach(b=>b.onclick=()=>{ const e=state.employees.find(x=>x.id===b.dataset.delemp); if(!confirm(`確定刪除員工「${e?esc(e.name):''}」？`)) return; state.employees=state.employees.filter(e=>e.id!==b.dataset.delemp); saveData(); render(); });
+  document.querySelectorAll('[data-delemp]').forEach(b=>b.onclick=()=>{
+    const e=state.employees.find(x=>x.id===b.dataset.delemp); if(!e) return;
+    const adjN=state.adjustments.filter(a=>a.empId===e.id).length;
+    const loanN=state.loans.filter(l=>l.empId===e.id).length;
+    const parts=[adjN?`加扣項 ${adjN} 筆`:'',loanN?`借支 ${loanN} 筆`:''].filter(Boolean);
+    const extra=parts.length?`\n\n他名下還有${parts.join('、')}，那些紀錄會保留、名字顯示為「（已移除）」，仍可自行刪除。`:'';
+    if(!confirm(`確定刪除員工「${e.name}」？${extra}`)) return;
+    state.employees=state.employees.filter(x=>x.id!==b.dataset.delemp); saveData(); render();
+  });
   document.querySelectorAll('[data-renemp]').forEach(b=>b.onclick=()=>{
     const e=state.employees.find(x=>x.id===b.dataset.renemp); if(!e)return;
     const cell=b.closest('td');
@@ -1766,7 +1785,14 @@ function bind(){
     if(state.sites.some(s=>s.name===name) && !confirm(`已經有一個案場叫「${name}」。\n請款、成本都是依案場名歸戶，同名會混在一起。\n\n確定還是要新增嗎？`)) return;
     state.sites.push({id:uid(),name,active:true}); saveData(); render();
   };
-  document.querySelectorAll('[data-delsite]').forEach(b=>b.onclick=()=>{ const s=state.sites.find(x=>x.id===b.dataset.delsite); if(!confirm(`確定刪除案場「${s?esc(s.name):''}」？`)) return; state.sites=state.sites.filter(s=>s.id!==b.dataset.delsite); saveData(); render(); });
+  document.querySelectorAll('[data-delsite]').forEach(b=>b.onclick=()=>{
+    const s=state.sites.find(x=>x.id===b.dataset.delsite); if(!s) return;
+    const billN=(state.billings||[]).filter(x=>x.site===s.name).length;
+    const measN=(state.measurements||[]).filter(x=>x.site===s.name).length;
+    const extra=(billN||measN)?`\n\n它名下有請款 ${billN} 筆／計量 ${measN} 筆，會按案場名保留、不會刪除。`:'';
+    if(!confirm(`確定刪除案場「${s.name}」？${extra}`)) return;
+    state.sites=state.sites.filter(x=>x.id!==b.dataset.delsite); saveData(); render();
+  });
   document.querySelectorAll('[data-togglesite]').forEach(b=>b.onclick=()=>{
     const s=state.sites.find(x=>x.id===b.dataset.togglesite); if(!s) return;
     s.active = (s.active===false) ? true : false;
@@ -2199,8 +2225,11 @@ function viewMeasurements(){
 function buildBillingDocHTML(id){
   const b=state.billings.find(x=>x.id===id); if(!b) return '';
   const type=b.docType||'請款單', amount=billingAmount(b), photos=billingPhotos[id]||[], sig=billingSigs[id]||null;
-  const photoSec=photos.length?`<div class="sec">施作照片</div><div style="display:flex;flex-direction:column;gap:12px;margin:8px 0 16px">${photos.map(url=>`<img src="${photoDisplayUrl(url)}" style="max-width:100%;width:auto;max-height:640px;object-fit:contain;border:1px solid #ddd;border-radius:4px;page-break-inside:avoid;-webkit-print-color-adjust:exact">`).join('')}</div>`:'';
-  const signImg=sig?`<img src="${sig}" style="max-width:180px;max-height:70px;display:block;margin-top:4px">`:'';
+  // 照片起始大小依張數（之後 smartFitBillingPhotos 會實測整份高度、逐級收縮到塞進一頁）
+  const pMaxW=photos.length===1?'100%':(photos.length===2?'48.5%':'32%');
+  const pMaxH=photos.length===1?560:(photos.length===2?440:400);
+  const photoSec=photos.length?`<div class="sec">施作照片</div><div data-photosec="1" style="display:flex;flex-wrap:wrap;gap:10px;margin:8px 0 14px;align-items:flex-start">${photos.map(url=>`<img src="${photoDisplayUrl(url)}" style="max-width:${pMaxW};width:auto;max-height:${pMaxH}px;object-fit:contain;border:1px solid #ddd;border-radius:4px;page-break-inside:avoid;-webkit-print-color-adjust:exact">`).join('')}</div>`:'';
+  const signImg=sig?`<img src="${sig}">`:''; // 樣式由 .sigbox img 控制：固定高度、貼在簽名線上方
   return `<h1>${esc(type)}</h1>
     <div class="meta">列印日：${localISODate()}</div>
     <table><tbody>
@@ -2212,13 +2241,71 @@ function buildBillingDocHTML(id){
     </tbody></table>
     ${photoSec}
     ${type==='追加單'
-      ? `<div class="sign"><div>申請單位</div><div>現場工程師確認項目</div><div>業主簽收${signImg}</div></div>`
-      : `<div class="sign"><div>申請單位</div><div>業主簽收${signImg}</div></div>`}`;
+      ? `<div class="sign"><div class="sigcell"><div class="sigbox"></div><div class="siglabel">申請單位</div></div><div class="sigcell"><div class="sigbox"></div><div class="siglabel">現場工程師確認項目</div></div><div class="sigcell"><div class="sigbox">${signImg}</div><div class="siglabel">業主簽收</div></div></div>`
+      : `<div class="sign"><div class="sigcell"><div class="sigbox"></div><div class="siglabel">申請單位</div></div><div class="sigcell"><div class="sigbox">${signImg}</div><div class="siglabel">業主簽收</div></div></div>`}`;
 }
-function printBillingDoc(id){ const html=buildBillingDocHTML(id); if(html) printHTML('單據列印', html); }
+// 智慧收縮：等照片載完後實際量整份文件高度，照片從大到小逐級試（欄數×高度上限），
+// 找到能塞進一頁 A4 的最大尺寸；真的塞不下才用舒適大小自然流到下一頁（照片不切半）
+async function smartFitBillingPhotos(ov){
+  const PAGE=1000; // A4 可印高度（96dpi、扣掉內建邊距）再留安全餘裕
+  for(const doc of [...ov.querySelectorAll('[data-docfit]')]){
+    const sec=doc.querySelector('[data-photosec]'); if(!sec) continue;
+    const imgs=[...sec.querySelectorAll('img')]; if(!imgs.length) continue;
+    await Promise.all(imgs.map(im=>(im.decode?im.decode():Promise.resolve()).catch(()=>{})));
+    const n=imgs.length;
+    const tries=n===1?[[1,600],[1,520],[1,440],[1,360],[1,300],[1,240]]
+      :n===2?[[2,500],[2,440],[2,380],[2,320],[2,260],[2,210]]
+      :[[3,440],[3,380],[3,320],[3,270],[3,230],[3,190]];
+    const apply=(cols,h)=>imgs.forEach(im=>{ im.style.maxWidth=cols===1?'100%':(Math.floor(100/cols*10)/10-1.5)+'%'; im.style.maxHeight=h+'px'; });
+    let fitted=false;
+    for(const [cols,h] of tries){ apply(cols,h); if(doc.offsetHeight<=PAGE){ fitted=true; break; } }
+    if(!fitted) apply(n===1?1:(n===2?2:3), n===1?520:(n===2?400:320));
+  }
+}
+// 簽名列印時自動裁白邊：存的是整塊簽名板（含大片空白），簽小的印出來幾乎看不見
+const _sigTrimCache={};
+async function trimSignatureUrl(url){
+  if(!url||!url.startsWith('data:')) return url;
+  if(_sigTrimCache[url]!==undefined) return _sigTrimCache[url]||url;
+  try{
+    const img=new Image(); img.src=url;
+    await (img.decode?img.decode():new Promise((res,rej)=>{ img.onload=res; img.onerror=rej; }));
+    const c=document.createElement('canvas'); c.width=img.naturalWidth; c.height=img.naturalHeight;
+    const x=c.getContext('2d'); x.drawImage(img,0,0);
+    const d=x.getImageData(0,0,c.width,c.height).data;
+    let minX=c.width,minY=c.height,maxX=-1,maxY=-1;
+    for(let y=0;y<c.height;y++){ const row=y*c.width; for(let xx=0;xx<c.width;xx++){ const p=(row+xx)*4; if(d[p+3]>10&&(d[p]<235||d[p+1]<235||d[p+2]<235)){ if(xx<minX)minX=xx; if(xx>maxX)maxX=xx; if(y<minY)minY=y; if(y>maxY)maxY=y; } } }
+    if(maxX<0){ _sigTrimCache[url]=''; return url; }
+    const pad=12;
+    minX=Math.max(0,minX-pad); minY=Math.max(0,minY-pad);
+    maxX=Math.min(c.width-1,maxX+pad); maxY=Math.min(c.height-1,maxY+pad);
+    const cw=maxX-minX+1, ch=maxY-minY+1;
+    if(cw>=c.width*0.92&&ch>=c.height*0.92){ _sigTrimCache[url]=''; return url; }
+    const t=document.createElement('canvas'); t.width=cw; t.height=ch;
+    const tc=t.getContext('2d'); tc.fillStyle='#fff'; tc.fillRect(0,0,cw,ch);
+    tc.drawImage(c,minX,minY,cw,ch,0,0,cw,ch);
+    const out=t.toDataURL('image/jpeg',0.85);
+    _sigTrimCache[url]=out; return out;
+  }catch(e){ _sigTrimCache[url]=''; return url; }
+}
+async function trimOverlaySignatures(ov){
+  for(const im of [...ov.querySelectorAll('.sigbox img')]){
+    const t=await trimSignatureUrl(im.src);
+    if(t&&t!==im.src) im.src=t;
+  }
+}
+function printBillingDoc(id){
+  const html=buildBillingDocHTML(id); if(!html) return;
+  printHTML('單據列印', `<div data-docfit="1">${html}</div>`);
+  const ov=document.getElementById('print-overlay');
+  if(ov){ smartFitBillingPhotos(ov); trimOverlaySignatures(ov); }
+}
 function printBillingDocs(ids){
-  const pages=ids.map((id,i)=>`<div ${i?'style="page-break-before:always"':''}>${buildBillingDocHTML(id)}</div>`).join('');
-  if(pages) printHTML('批次列印', pages);
+  const pages=ids.map((id,i)=>`<div data-docfit="1" ${i?'style="page-break-before:always;padding-top:12mm"':''}>${buildBillingDocHTML(id)}</div>`).join('');
+  if(!pages) return;
+  printHTML('批次列印', pages);
+  const ov=document.getElementById('print-overlay');
+  if(ov){ smartFitBillingPhotos(ov); trimOverlaySignatures(ov); }
 }
 function printMeasurementsPDF(ids){
   const idSet=new Set(ids||[]);
@@ -2264,7 +2351,24 @@ function openFullscreenSign(onSaved){
   cv.addEventListener('touchstart',down,{passive:false}); cv.addEventListener('touchmove',move,{passive:false}); cv.addEventListener('touchend',up);
   document.getElementById('sig-clear').onclick=()=>ctx.clearRect(0,0,cv.width,cv.height);
   document.getElementById('sig-close').onclick=()=>ov.remove();
-  document.getElementById('sig-save').onclick=()=>{ onSaved(cv.toDataURL('image/png')); ov.remove(); };
+  document.getElementById('sig-save').onclick=()=>{
+    // 自動裁掉四周空白：只留有墨水的範圍（含邊距），簽小小的列印也能有合理大小
+    const d=ctx.getImageData(0,0,cv.width,cv.height).data;
+    let minX=cv.width,minY=cv.height,maxX=-1,maxY=-1;
+    for(let y=0;y<cv.height;y++){ const row=y*cv.width; for(let x=0;x<cv.width;x++){ if(d[(row+x)*4+3]>10){ if(x<minX)minX=x; if(x>maxX)maxX=x; if(y<minY)minY=y; if(y>maxY)maxY=y; } } }
+    if(maxX<0){ alert('請先簽名'); return; }
+    const pad=16;
+    minX=Math.max(0,minX-pad); minY=Math.max(0,minY-pad);
+    maxX=Math.min(cv.width-1,maxX+pad); maxY=Math.min(cv.height-1,maxY+pad);
+    const cw=maxX-minX+1, ch=maxY-minY+1;
+    const MAX_W=800, MAX_H=500;
+    const scale=Math.min(MAX_W/cw, MAX_H/ch, 1);
+    const tmp=document.createElement('canvas');
+    tmp.width=Math.max(1,Math.round(cw*scale)); tmp.height=Math.max(1,Math.round(ch*scale));
+    const tc=tmp.getContext('2d'); tc.fillStyle='#fff'; tc.fillRect(0,0,tmp.width,tmp.height);
+    tc.drawImage(cv,minX,minY,cw,ch,0,0,tmp.width,tmp.height);
+    onSaved(tmp.toDataURL('image/jpeg',0.85)); ov.remove();
+  };
 }
 
 let parkFrom='', parkTo='', parkEditId=null;
@@ -2377,7 +2481,10 @@ document.addEventListener('visibilitychange', ()=>{
 });
 document.addEventListener('freeze', ()=>{ pushCloudSoon(); flushCloudOnExit(); });
 
-loadLocal(); loadPhotos(); loadSigs(); refreshPrevIds(); keepDailySnapshot();
+// 先載簽名再載主資料：loadLocal→applyData→mergeBillingSigs 會把「當下記憶體裡（還是空的）簽名」
+// 寫回本機快取，順序反了本機簽名每次開機都被洗掉、全靠雲端補回，離線開啟簽名就不見
+loadSigs(); loadLocal(); loadPhotos(); refreshPrevIds(); keepDailySnapshot();
+(function(){ const v=document.getElementById('app-version'); if(v) v.textContent=APP_VERSION; })();
 try{ const t=localStorage.getItem(LS_TAB); if(t) state.tab=t; }catch(e){} // 還原上次所在分頁
 render(); loadCloud();
 </script>

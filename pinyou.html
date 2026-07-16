@@ -100,16 +100,19 @@
     #print-overlay .pdoc table.sum{width:100%;min-width:0}
     #print-overlay .pdoc .bankblk{width:100%;min-width:0;box-sizing:border-box}
   }
-  @media print{ body>*:not(#print-overlay){display:none!important} #print-overlay{position:static;padding:0;overflow:visible;background:#fff} #print-overlay .pbar{display:none!important} #print-overlay .pdoc{max-width:none;width:auto;box-shadow:none;padding:0;border-radius:0;zoom:1} #print-overlay .pdoc .itemsc{overflow:visible;border:none} #print-overlay .pdoc table.items{min-width:0} @page{size:A4;margin:16mm} }
+  /* 頁邊距設 0：瀏覽器的頁首（日期/標題）頁尾（網址/頁碼）印在邊距區，沒有邊距就不會出現；文件邊距改由 .pdoc 自己內建 */
+  @media print{ html,body{background:#fff!important} body>*:not(#print-overlay){display:none!important} #print-overlay{position:static;padding:0;overflow:visible;background:#fff} #print-overlay .pbar{display:none!important} #print-overlay .pdoc{max-width:none;width:auto;box-shadow:none;padding:14mm 14mm 12mm;border-radius:0;zoom:1} #print-overlay .pdoc .itemsc{overflow:visible;border:none} #print-overlay .pdoc table.items{min-width:0} @page{size:A4;margin:0} }
 </style>
 <div class="top">
   <h1>品佑帳本</h1>
   <span id="cloud-status" style="font-size:11px;opacity:.85;margin-left:10px;white-space:nowrap;max-width:40vw;overflow:hidden;text-overflow:ellipsis"></span>
+  <span id="app-version" style="font-size:10px;opacity:.6;margin-left:6px;white-space:nowrap"></span>
   <div class="bal"><span id="bal-l">帳面淨額</span><b id="bal-v">—</b></div>
 </div>
 <nav id="nav"></nav>
 <main id="app"></main>
 <script>
+const APP_VERSION='vP2026.07.15a-print'; // 版本號顯示在頁首，方便確認拿到新版
 const LS='pinyou_data_v1';
 const LS_CLOUD='pinyou_cloud_url';
 const LS_DIRTY='pinyou_dirty';
@@ -970,6 +973,7 @@ function prAddExpense(f){
 }
 
 load(); keepDailySnapshot(); render();
+(function(){ const v=document.getElementById('app-version'); if(v) v.textContent=APP_VERSION; })();
 setStatus(cloudUrl?'連線中…':'本機模式');
 if(cloudUrl) loadCloud();
 setTimeout(()=>{ try{ checkPayrollCosts(false); }catch(e){} }, 3000); // 開頁自動檢查 PAYROLL 有沒有新成本（背景、不打擾）
