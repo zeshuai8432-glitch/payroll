@@ -370,7 +370,7 @@ const LS_SIGS_LOCKED = 'pm2_billing_sigs_locked_v1';
 const LS_SIG_META = 'pm2_billing_sig_meta_v1';
 const LS_DIRTY = 'pm2_cloud_dirty_v1';
 // ↓↓↓ 把這裡換成你自己的 Google Apps Script 網址（/exec 結尾）。留空則只用本機儲存。
-const CLOUD_URL = ''; // ← 部署好新的 GAS 後，把 /exec 網址貼進引號裡（空字串＝純本機模式）
+const CLOUD_URL = 'https://script.google.com/macros/s/AKfycbzn0cDg8yhc8kHZ0AQlGI30rO9fCSf9mJZT3YRWb_jmhVEj7IvOozQFXgSKD6tYObl1gA/exec'; // 同行版獨立 GAS（與本人資料完全分開）
 let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], parkLedger:[], parkOpening:0, billings:[], measurements:[], billingPhotoDeleted:{}, deletedIds:[], textMemory:{clients:[],companies:[]}, tab:'dash' };
 let cloudStatus = CLOUD_URL ? '連線中…' : '本機模式';
 let localDirty=false, lastCloudTs=0;
