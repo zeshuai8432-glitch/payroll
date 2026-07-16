@@ -508,7 +508,7 @@ const FS_ROOT = 'https://firestore.googleapis.com/v1/projects/'+FS_PROJECT+'/dat
 const FS_DOC_BASE = FS_ROOT+'payroll/';
 const FS_SIG_BASE = FS_ROOT+'payrollSignatures/';
 const FS_REST_URL = FS_DOC_BASE+'main?key='+FS_KEY;
-const APP_VERSION = 'v2026.07.15b-int-pick';
+const APP_VERSION = 'v2026.07.15c-int-calc';
 let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], tools:[], locations:[], assets:[], advances:[], accounts:[], ledger:[], deals:[], billings:[], measurements:[], contracts:{}, costs:[], textMemory:{clients:[],companies:[]}, parkAccId:'', oweBonus:{}, minFund:'', payrollSnapshots:[], yearIncomeAdj:[], deletedIds:[], resurrected:{ids:[],at:0}, tab:'dash' };
 let cloudStatus='連線中…';
 let localDirty=false, lastCloudTs=0;
@@ -568,7 +568,7 @@ function migrateBillingMerges(){
 }
 const billingLineMeta = b => {
   if(!b||b.qty===undefined||b.unitPrice===undefined) return '';
-  return `${esc(b.unit||'式')} × ${Number(b.qty)||0} × ${money(Number(b.unitPrice)||0)}`;
+  return `${Number(b.qty)||0} ${esc(b.unit||'式')} × ${money(Number(b.unitPrice)||0)}`; // 「69 間 × $1,100」順著唸
 };
 function readBillingLine(prefix){
   const unit=(document.getElementById(prefix+'-unit')||{}).value||'式';
@@ -4600,7 +4600,8 @@ function billingDocInner(id, internal, pick){
     <div class="sec">內帳明細（內部備查）</div>
     <table><thead><tr><th>項目</th><th>計算式</th><th class="num">內含金額</th></tr></thead><tbody>
       ${b.wrapAlloc?'':`<tr><td>本單自身項目</td><td>${billingLineMeta(b)||'—'}</td><td class="num">${money(ownPart)}</td></tr>`}
-      ${allocIns.map(e=>`<tr><td>${esc(e.x.note||'（未填說明）')}</td><td>${billingLineMeta(e.x)||'—'}</td><td class="num">${money(e.inAmt)}</td></tr>`).join('')}
+      ${allocIns.map(e=>{ const raw=rawBillingAmount(e.x); const meta=billingLineMeta(e.x);
+        return `<tr><td>${esc(e.x.note||'（未填說明）')}</td><td>${meta?`${meta} ＝ ${money(raw)}`:'—'}${Math.round(raw)!==Math.round(e.inAmt)?`<div style="font-size:11px;color:#9a5b1a">此筆只內含 ${money(e.inAmt)}（計算式全額 ${money(raw)}，差額仍在原單）</div>`:''}</td><td class="num">${money(e.inAmt)}</td></tr>`; }).join('')}
       ${b.wrapAlloc
         ?`<tr class="total-row"><td colspan="2">對外開單金額（以上項目已內含於本單計算式，不另加計）</td><td class="num">${money(amt)}</td></tr>`
         :(partial
