@@ -508,7 +508,7 @@ const FS_ROOT = 'https://firestore.googleapis.com/v1/projects/'+FS_PROJECT+'/dat
 const FS_DOC_BASE = FS_ROOT+'payroll/';
 const FS_SIG_BASE = FS_ROOT+'payrollSignatures/';
 const FS_REST_URL = FS_DOC_BASE+'main?key='+FS_KEY;
-const APP_VERSION = 'v2026.07.15a-print-smartfit';
+const APP_VERSION = 'v2026.07.15b-int-pick';
 let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], tools:[], locations:[], assets:[], advances:[], accounts:[], ledger:[], deals:[], billings:[], measurements:[], contracts:{}, costs:[], textMemory:{clients:[],companies:[]}, parkAccId:'', oweBonus:{}, minFund:'', payrollSnapshots:[], yearIncomeAdj:[], deletedIds:[], resurrected:{ids:[],at:0}, tab:'dash' };
 let cloudStatus='連線中…';
 let localDirty=false, lastCloudTs=0;
@@ -4570,7 +4570,8 @@ function openFullscreenSign(onSaved, title){
 
 // 單張追加單 / 請款單的文件 HTML（供單張列印和批次列印共用）
 // internal=true：內帳版——把「分攤入本單」的內含項目逐筆攤開列出（含計算式），文件標「內帳版」，只給自己人看
-function billingDocInner(id, internal){
+// pick：內帳版要列出的內含項目 id 集合（Set；null＝全部）。沒全列時合計改標「小計（僅列出項目）」
+function billingDocInner(id, internal, pick){
   const b=state.billings.find(x=>x.id===id); if(!b) return '';
   const type=(b.docType||'請款單');
   const photos=billingPhotos[id]||[];
@@ -4589,14 +4590,22 @@ function billingDocInner(id, internal){
   const signImgHtml=sig?`<img src="${sig}">`:''; // 樣式由 .sigbox img 控制：固定高度、貼在簽名線上方
   const soSig=billingSigs[id+'::so']||null; // 所長簽名（追加單專用，另存一個 key）
   const soSignImgHtml=soSig?`<img src="${soSig}">`:'';
-  // 內帳版：列出所有「分攤入本單」的來源項目
-  const allocIns=internal?state.billings.map(x=>({x,inAmt:(Array.isArray(x.allocOut)?x.allocOut:[]).filter(a=>a&&a.to===b.id).reduce((s,a)=>s+(Number(a.amount)||0),0)})).filter(e=>e.x.id!==b.id&&e.inAmt>0):[];
+  // 內帳版：列出「分攤入本單」的來源項目（pick 有給就只列勾選的）
+  const allocInsAll=internal?state.billings.map(x=>({x,inAmt:(Array.isArray(x.allocOut)?x.allocOut:[]).filter(a=>a&&a.to===b.id).reduce((s,a)=>s+(Number(a.amount)||0),0)})).filter(e=>e.x.id!==b.id&&e.inAmt>0):[];
+  const allocIns=pick?allocInsAll.filter(e=>pick.has(e.x.id)):allocInsAll;
+  const partial=!!pick&&allocIns.length<allocInsAll.length;
+  const ownPart=amt-allocInsAll.reduce((s,e)=>s+e.inAmt,0); // 本單自身＝對外−全部內含（不受勾選影響）
+  const shownSum=ownPart+allocIns.reduce((s,e)=>s+e.inAmt,0);
   const internalSec=allocIns.length?`
     <div class="sec">內帳明細（內部備查）</div>
     <table><thead><tr><th>項目</th><th>計算式</th><th class="num">內含金額</th></tr></thead><tbody>
-      ${b.wrapAlloc?'':`<tr><td>本單自身項目</td><td>${billingLineMeta(b)||'—'}</td><td class="num">${money(amt-allocIns.reduce((s,e)=>s+e.inAmt,0))}</td></tr>`}
+      ${b.wrapAlloc?'':`<tr><td>本單自身項目</td><td>${billingLineMeta(b)||'—'}</td><td class="num">${money(ownPart)}</td></tr>`}
       ${allocIns.map(e=>`<tr><td>${esc(e.x.note||'（未填說明）')}</td><td>${billingLineMeta(e.x)||'—'}</td><td class="num">${money(e.inAmt)}</td></tr>`).join('')}
-      <tr class="total-row"><td colspan="2">對外開單金額${b.wrapAlloc?'（以上項目已內含於本單計算式，不另加計）':'（本單＋內含合計）'}</td><td class="num">${money(amt)}</td></tr>
+      ${b.wrapAlloc
+        ?`<tr class="total-row"><td colspan="2">對外開單金額（以上項目已內含於本單計算式，不另加計）</td><td class="num">${money(amt)}</td></tr>`
+        :(partial
+          ?`<tr class="total-row"><td colspan="2">小計（僅列出項目）</td><td class="num">${money(shownSum)}</td></tr>`
+          :`<tr class="total-row"><td colspan="2">對外開單金額（本單＋內含合計）</td><td class="num">${money(amt)}</td></tr>`)}
     </tbody></table>`:'';
   return `<h1>${esc(type)}${allocIns.length?'<span style="font-size:14px;background:#fde9d4;color:#9a5b1a;border-radius:6px;padding:2px 10px;margin-left:10px;vertical-align:middle">內帳版</span>':''}</h1>
     <div class="meta">日期：${esc(b.date||'')}　|　案場：${esc(siteDisplayLabel(b.site)||'')}</div>
@@ -4647,6 +4656,9 @@ async function smartFitBillingPhotos(ov){
 function printBillingDoc(id, internal){
   const b=state.billings.find(x=>x.id===id); if(!b) return;
   const isAdd=(b.docType||'請款單')==='追加單';
+  // 內帳版：有內含項目時可勾選要列出哪些（預設全列）
+  const intSrcs=internal?state.billings.filter(x=>x.id!==id&&Array.isArray(x.allocOut)&&x.allocOut.some(a=>a&&a.to===id&&(Number(a.amount)||0)>0)):[];
+  const intPick=new Set(intSrcs.map(x=>x.id));
   const inner=billingDocInner(id, internal);
 
   // 一個簽名控制項：key＝簽名儲存鍵，label＝簽名人抬頭（追加單有工程師＋所長兩個）
@@ -4659,15 +4671,27 @@ function printBillingDoc(id, internal){
   const old=document.getElementById('print-overlay'); if(old) old.remove();
   const ov=document.createElement('div');
   ov.id='print-overlay';
+  const pickerBar=intSrcs.length?`
+    <div class="pbar" style="border-top:1px solid var(--line)">
+      <span style="font-size:13px;font-weight:700;color:#9a5b1a">內帳版要列出：</span>
+      ${intSrcs.map(x=>`<label style="display:flex;align-items:center;gap:5px;cursor:pointer;font-size:13px"><input type="checkbox" data-intpick="${x.id}" checked style="width:16px;height:16px">${esc(String(x.note||x.date||'').slice(0,16))}</label>`).join('')}
+      <span class="sub" style="margin:0">（沒全勾時合計會改標「小計（僅列出項目）」）</span>
+    </div>`:'';
   ov.innerHTML=`
     <div class="pbar">
       ${controls}
       <button class="btn" id="po-print" style="margin-left:auto">列印 / 存成 PDF</button>
       <button class="act" id="po-close" style="padding:0 14px">關閉</button>
     </div>
+    ${pickerBar}
     <div class="pdoc"><div class="bluedoc"><div data-docfit="1">${inner}</div></div></div>`;
   document.body.appendChild(ov);
   smartFitBillingPhotos(ov);
+  ov.querySelectorAll('[data-intpick]').forEach(cb=>cb.onchange=()=>{
+    if(cb.checked) intPick.add(cb.dataset.intpick); else intPick.delete(cb.dataset.intpick);
+    const wrap=ov.querySelector('[data-docfit]');
+    if(wrap){ wrap.innerHTML=billingDocInner(id, internal, intPick); smartFitBillingPhotos(ov); }
+  });
   document.getElementById('po-print').onclick=()=>window.print();
   document.getElementById('po-close').onclick=()=>ov.remove();
   ov.querySelectorAll('.sig-sign').forEach(btn=>btn.onclick=()=>{
