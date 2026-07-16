@@ -508,7 +508,7 @@ const FS_ROOT = 'https://firestore.googleapis.com/v1/projects/'+FS_PROJECT+'/dat
 const FS_DOC_BASE = FS_ROOT+'payroll/';
 const FS_SIG_BASE = FS_ROOT+'payrollSignatures/';
 const FS_REST_URL = FS_DOC_BASE+'main?key='+FS_KEY;
-const APP_VERSION = 'v2026.07.15c-int-calc';
+const APP_VERSION = 'v2026.07.15d-sig-trim';
 let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], tools:[], locations:[], assets:[], advances:[], accounts:[], ledger:[], deals:[], billings:[], measurements:[], contracts:{}, costs:[], textMemory:{clients:[],companies:[]}, parkAccId:'', oweBonus:{}, minFund:'', payrollSnapshots:[], yearIncomeAdj:[], deletedIds:[], resurrected:{ids:[],at:0}, tab:'dash' };
 let cloudStatus='連線中…';
 let localDirty=false, lastCloudTs=0;
@@ -4556,13 +4556,21 @@ function openFullscreenSign(onSaved, title){
   document.getElementById('fs-done').onclick=()=>{
     const d=ctx.getImageData(0,0,cv.width,cv.height).data;
     if(!d.some((v,i)=>i%4===3&&v>10)){ alert('請先簽名或寫上補充說明'); return; }
+    // 自動裁掉四周空白：只留有墨水的範圍（含邊距）。整塊簽名板存下來的話，
+    // 簽小小的一筆列印時會跟著整張縮，變得幾乎看不見
+    let minX=cv.width,minY=cv.height,maxX=-1,maxY=-1;
+    for(let y=0;y<cv.height;y++){ const row=y*cv.width; for(let x=0;x<cv.width;x++){ if(d[(row+x)*4+3]>10){ if(x<minX)minX=x; if(x>maxX)maxX=x; if(y<minY)minY=y; if(y>maxY)maxY=y; } } }
+    const pad=16;
+    minX=Math.max(0,minX-pad); minY=Math.max(0,minY-pad);
+    maxX=Math.min(cv.width-1,maxX+pad); maxY=Math.min(cv.height-1,maxY+pad);
+    const cw=maxX-minX+1, ch=maxY-minY+1;
     // 縮小到最大 800×500 再存，控制檔案大小讓雲端同步正常
     const MAX_W=800, MAX_H=500;
-    const scale=Math.min(MAX_W/cv.width, MAX_H/cv.height, 1);
+    const scale=Math.min(MAX_W/cw, MAX_H/ch, 1);
     const tmp=document.createElement('canvas');
-    tmp.width=Math.round(cv.width*scale); tmp.height=Math.round(cv.height*scale);
+    tmp.width=Math.max(1,Math.round(cw*scale)); tmp.height=Math.max(1,Math.round(ch*scale));
     const tc=tmp.getContext('2d'); tc.fillStyle='#fff'; tc.fillRect(0,0,tmp.width,tmp.height);
-    tc.drawImage(cv,0,0,tmp.width,tmp.height);
+    tc.drawImage(cv,minX,minY,cw,ch,0,0,tmp.width,tmp.height);
     closeSig();
     onSaved(tmp.toDataURL('image/jpeg',0.85));
   };
@@ -4634,6 +4642,39 @@ function billingDocInner(id, internal, pick){
     </div>`;
 }
 
+// 舊簽名列印時自動裁白邊：以前存的是整塊簽名板（含大片空白），簽小的印出來幾乎看不見。
+// 這裡把非白色墨水的範圍裁出來再顯示，簽名就能撐滿簽名格；結果快取避免重算。
+const _sigTrimCache={};
+async function trimSignatureUrl(url){
+  if(!url||!url.startsWith('data:')) return url;
+  if(_sigTrimCache[url]!==undefined) return _sigTrimCache[url]||url;
+  try{
+    const img=new Image(); img.src=url;
+    await (img.decode?img.decode():new Promise((res,rej)=>{ img.onload=res; img.onerror=rej; }));
+    const c=document.createElement('canvas'); c.width=img.naturalWidth; c.height=img.naturalHeight;
+    const x=c.getContext('2d'); x.drawImage(img,0,0);
+    const d=x.getImageData(0,0,c.width,c.height).data;
+    let minX=c.width,minY=c.height,maxX=-1,maxY=-1;
+    for(let y=0;y<c.height;y++){ const row=y*c.width; for(let xx=0;xx<c.width;xx++){ const p=(row+xx)*4; if(d[p]<235||d[p+1]<235||d[p+2]<235){ if(xx<minX)minX=xx; if(xx>maxX)maxX=xx; if(y<minY)minY=y; if(y>maxY)maxY=y; } } }
+    if(maxX<0){ _sigTrimCache[url]=''; return url; } // 全白（不太可能），原樣
+    const pad=12;
+    minX=Math.max(0,minX-pad); minY=Math.max(0,minY-pad);
+    maxX=Math.min(c.width-1,maxX+pad); maxY=Math.min(c.height-1,maxY+pad);
+    const cw=maxX-minX+1, ch=maxY-minY+1;
+    if(cw>=c.width*0.92&&ch>=c.height*0.92){ _sigTrimCache[url]=''; return url; } // 本來就幾乎滿版，不用裁
+    const t=document.createElement('canvas'); t.width=cw; t.height=ch;
+    const tc=t.getContext('2d'); tc.fillStyle='#fff'; tc.fillRect(0,0,cw,ch);
+    tc.drawImage(c,minX,minY,cw,ch,0,0,cw,ch);
+    const out=t.toDataURL('image/jpeg',0.85);
+    _sigTrimCache[url]=out; return out;
+  }catch(e){ _sigTrimCache[url]=''; return url; }
+}
+async function trimOverlaySignatures(ov){
+  for(const im of [...ov.querySelectorAll('.sigbox img')]){
+    const t=await trimSignatureUrl(im.src);
+    if(t&&t!==im.src) im.src=t;
+  }
+}
 // 智慧收縮：照片張數/長寬每張單都不同，寫死規則遲早又爆版。
 // 這裡等照片載完後「實際量整份文件的高度」，照片從大到小逐級試（欄數×高度上限），
 // 找到能把整份塞進一頁 A4 的最大尺寸；真的塞不下才用舒適大小自然流到下一頁（照片不切半）。
@@ -4687,11 +4728,11 @@ function printBillingDoc(id, internal){
     ${pickerBar}
     <div class="pdoc"><div class="bluedoc"><div data-docfit="1">${inner}</div></div></div>`;
   document.body.appendChild(ov);
-  smartFitBillingPhotos(ov);
+  smartFitBillingPhotos(ov); trimOverlaySignatures(ov);
   ov.querySelectorAll('[data-intpick]').forEach(cb=>cb.onchange=()=>{
     if(cb.checked) intPick.add(cb.dataset.intpick); else intPick.delete(cb.dataset.intpick);
     const wrap=ov.querySelector('[data-docfit]');
-    if(wrap){ wrap.innerHTML=billingDocInner(id, internal, intPick); smartFitBillingPhotos(ov); }
+    if(wrap){ wrap.innerHTML=billingDocInner(id, internal, intPick); smartFitBillingPhotos(ov); trimOverlaySignatures(ov); }
   });
   document.getElementById('po-print').onclick=()=>window.print();
   document.getElementById('po-close').onclick=()=>ov.remove();
@@ -4728,7 +4769,7 @@ function printBillingDocs(ids){
     </div>
     <div class="pdoc"><div class="bluedoc">${pages}</div></div>`;
   document.body.appendChild(ov);
-  smartFitBillingPhotos(ov);
+  smartFitBillingPhotos(ov); trimOverlaySignatures(ov);
   document.getElementById('po-print').onclick=()=>window.print();
   document.getElementById('po-close').onclick=()=>ov.remove();
   ov.scrollTop=0;
