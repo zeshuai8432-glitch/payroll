@@ -64,20 +64,20 @@ details.blk .inner{padding:0 14px 12px;overflow-x:auto}
 body.printing>*{display:none}
 body.printing #print-overlay{display:block;position:absolute;inset:0;background:#f1f5f9;z-index:100;min-height:100vh}
 .pdoc{background:#fff;color:#111;width:210mm;min-height:290mm;margin:0 auto;padding:14mm 14mm 12mm;font-size:12px;line-height:1.5;-webkit-print-color-adjust:exact;print-color-adjust:exact}
-.pdoc h2{font-size:18px;text-align:center;letter-spacing:4px;margin-bottom:2px;color:#1e40af}
-.pdoc .sub{text-align:center;color:#2563eb;font-size:11px;margin-bottom:10px}
+.pdoc h2{font-size:18px;text-align:center;letter-spacing:4px;margin-bottom:2px;color:#1e3a8a}
+.pdoc .sub{text-align:center;color:#64748b;font-size:11px;margin-bottom:10px}
 .pdoc table{width:100%;border-collapse:collapse;font-size:11px;margin-bottom:10px}
-.pdoc th,.pdoc td{border:1px solid #93c5fd;padding:3px 5px;color:#111}
-.pdoc th{background:#2563eb;color:#fff;font-size:10.5px;border-color:#2563eb}
+.pdoc th,.pdoc td{border:1px solid #c7d4e8;padding:3px 5px;color:#111}
+.pdoc th{background:#e8f0fb;color:#1e3a8a;font-size:10.5px}
 .pdoc td.num,.pdoc th.num{text-align:right;font-variant-numeric:tabular-nums}
-.pdoc .bchap td{background:#eff6ff;color:#1d4ed8;font-weight:600}
-.pdoc .bhead td{background:#1e40af;color:#fff;font-weight:700;border-color:#1e40af}
-.pdoc .tot td{font-weight:700;background:#fef3c7;color:#92400e}
+.pdoc .bchap td{background:#f6f9fd;color:#3b5b8f;font-weight:600}
+.pdoc .bhead td{background:#dbe7f6;color:#1e3a8a;font-weight:700}
+.pdoc .tot td{font-weight:700;background:#fbf7ea;color:#6b5312}
 .pdoc .sign{display:flex;gap:24px;margin-top:26px;break-inside:avoid;page-break-inside:avoid}
 .pdoc .sign>div{flex:1;font-size:12px;text-align:center}
 .pdoc .sign .sigslot{height:58px;display:flex;align-items:flex-end;justify-content:center}
 .pdoc .sign .sigslot img{max-height:56px;max-width:100%}
-.pdoc .sign .lbl{border-top:1.5px solid #1e40af;color:#1e3a8a;padding-top:6px;margin-top:2px}
+.pdoc .sign .lbl{border-top:1px solid #334155;color:#1f2937;padding-top:6px;margin-top:2px}
 @media print{.no-print{display:none!important}}
 #sigmodal{position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:200;display:flex;align-items:center;justify-content:center;padding:14px}
 #sigmodal .sbox{background:#fff;border-radius:14px;padding:14px;max-width:640px;width:100%}
@@ -101,7 +101,7 @@ body.printing #print-overlay{display:block;position:absolute;inset:0;background:
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.07.17h';
+const APP_VERSION='vG2026.07.17i';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,8);
@@ -470,9 +470,9 @@ function printDoc(proj){
     let h=`<div class="pdoc">
       <h2>工程估驗請款單</h2>
       <div class="sub">第 ${c.period.no} 期　${esc(c.period.date)}</div>
-      <table><tr><td style="width:14%;background:#dbeafe;color:#1e3a8a;font-weight:600">工程名稱</td><td>${esc(proj.name)}</td></tr>
-      ${proj.owner?`<tr><td style="background:#dbeafe;color:#1e3a8a;font-weight:600">業主（甲方）</td><td>${esc(proj.owner)}</td></tr>`:''}
-      ${proj.vendor?`<tr><td style="background:#dbeafe;color:#1e3a8a;font-weight:600">承攬（乙方）</td><td>${esc(proj.vendor)}</td></tr>`:''}</table>
+      <table><tr><td style="width:14%;background:#e8f0fb;color:#1e3a8a;font-weight:600">工程名稱</td><td>${esc(proj.name)}</td></tr>
+      ${proj.owner?`<tr><td style="background:#e8f0fb;color:#1e3a8a;font-weight:600">業主（甲方）</td><td>${esc(proj.owner)}</td></tr>`:''}
+      ${proj.vendor?`<tr><td style="background:#e8f0fb;color:#1e3a8a;font-weight:600">承攬（乙方）</td><td>${esc(proj.vendor)}</td></tr>`:''}</table>
       <table><tr><th>區塊</th><th class="num">合約金額</th><th class="num">前期累計</th><th class="num">本期請款</th><th class="num">累計請款</th><th class="num">完成%</th></tr>`;
     for(const cb of c.blocks){
       if(!showAll&&!cb.cum&&!cb.pre)continue;
@@ -480,7 +480,7 @@ function printDoc(proj){
     }
     h+=`<tr class="tot"><td>合計</td><td class="num">${money(c.V)}</td><td class="num">${money(c.pre)}</td><td class="num">${money(sum)}</td><td class="num">${money(c.cum)}</td><td class="num">${pfmt(c.V?c.cum/c.V:0)}</td></tr>`;
     if(taxMode==='incl'){
-      h+=`<tr><td colspan="3" style="border:none;background:#fff"></td><td class="num" style="background:#dbeafe;color:#1e3a8a;font-weight:600">營業稅 5%</td><td class="num" colspan="2">${money(tax)}</td></tr>
+      h+=`<tr><td colspan="3" style="border:none;background:#fff"></td><td class="num" style="background:#e8f0fb;color:#1e3a8a;font-weight:600">營業稅 5%</td><td class="num" colspan="2">${money(tax)}</td></tr>
       <tr class="tot"><td colspan="3" style="border:none;background:#fff"></td><td class="num">本期含稅請款</td><td class="num" colspan="2">${money(sum+tax)}</td></tr>`;
     }
     h+=`</table>
