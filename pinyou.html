@@ -112,7 +112,7 @@
 <nav id="nav"></nav>
 <main id="app"></main>
 <script>
-const APP_VERSION='vP2026.07.15b-e2ee'; // 版本號顯示在頁首，方便確認拿到新版
+const APP_VERSION = 'vP2026.07.17a-lockfix'; // 版本號顯示在頁首，方便確認拿到新版
 const LS='pinyou_data_v1';
 // ── 雲端端對端加密（與 payroll／簡化版共用同一組密碼與鑰匙；同網域共用 localStorage，解鎖一次三系統都通）──
 const E2E_SALT='PMENC1|dz-gx-py|2026';
@@ -349,7 +349,7 @@ async function loadCloud(){
 async function pushCloud(){
   if(!cloudUrl) return;
   if(saving){ pendingSave=true; return; }
-  if(!localDirty){ setStatus('已同步'); return; }
+  if(!localDirty){ if(!/未解鎖|加密/.test(cloudStatus||'')) setStatus('已同步'); return; }
   saving=true;
   let kb=0, getOK=false;
   try{

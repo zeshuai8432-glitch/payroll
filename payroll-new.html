@@ -464,7 +464,7 @@ function rememberDeletedPhoto(id,url){
   state.billingPhotoDeleted=state.billingPhotoDeleted||{};
   state.billingPhotoDeleted[id]=[...new Set([...(state.billingPhotoDeleted[id]||[]),url])];
 }
-const APP_VERSION='vN2026.07.16a-sync3'; // 版本號顯示在右上角，方便確認拿到新版
+const APP_VERSION='vN2026.07.17a-lockfix'; // 版本號顯示在右上角，方便確認拿到新版
 // 本地時區的今天（yyyy-mm-dd）。toISOString 是 UTC，台灣早上 8 點前會差一天
 function localISODate(d=new Date()){ return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
 // 單價可打算式（例：1200*1.1）
@@ -789,7 +789,10 @@ async function loadCloud(){
     const res=await fetch(CLOUD_URL, {method:'GET'});
     const j=await res.json();
     if(j&&j.ok&&j.data){
-      const cloudData=JSON.parse(await e2eDecrypt(j.data));
+      let rawCd=j.data;
+      try{ rawCd=await e2eDecrypt(rawCd); }
+      catch(err){ if(err&&err.locked){ setCloud('🔒 已加密未解鎖（重新整理後輸入密碼）'); render(); return; } throw err; }
+      const cloudData=JSON.parse(rawCd);
       lastCloudTs=Number(cloudData.savedAt)||0;
       const hadLocal=localDirty;
       mergeCloudDoc(cloudData); // 逐筆(依id)合併雲端＋本機，兩邊資料都保留、不互相覆蓋
@@ -918,7 +921,7 @@ function saveData(){
 async function pushCloud(){
   if(!CLOUD_URL) return;
   if(saving){ pendingSave=true; return; }
-  if(!localDirty && Object.keys(localSigPending).length===0){ setCloud('已同步'); return; }
+  if(!localDirty && Object.keys(localSigPending).length===0){ if(!/未解鎖|加密/.test(cloudStatus||'')) setCloud('已同步'); return; }
   saving=true;
   let payloadKB=0, getOK=false; // 診斷用：資料大小、讀取是否也失敗
   try {
