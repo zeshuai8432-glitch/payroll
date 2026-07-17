@@ -91,6 +91,7 @@ body.printing #print-overlay{display:block;position:absolute;inset:0;background:
 <div class="top">
   <h1>📐 工程進度請款系統</h1>
   <span class="ver" id="ver"></span>
+  <span class="ver" id="cloud-status" style="cursor:pointer" title="點一下重試連線/解鎖"></span>
   <span style="flex:1"></span>
   <select id="proj-sel" style="max-width:280px"></select>
   <button class="btn sub sm" id="btn-import">＋ 匯入合約 Excel</button>
@@ -101,9 +102,11 @@ body.printing #print-overlay{display:block;position:absolute;inset:0;background:
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.07.17i';
+const APP_VERSION='vG2026.07.17j';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
+const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
+const FS_URL='https://firestore.googleapis.com/v1/projects/payroll-d1abe/databases/(default)/documents/progress/main?key='+FS_KEY;
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,8);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const money=n=>'$'+Math.round(n||0).toLocaleString('en-US');
@@ -117,7 +120,7 @@ function load(){
   try{const d=JSON.parse(localStorage.getItem(LS)||'null');if(d&&Array.isArray(d.projects))return d;}catch(e){}
   return {projects:[],cur:null,tab:'items'};
 }
-function save(){ state.savedAt=Date.now(); localStorage.setItem(LS,JSON.stringify(state)); }
+function save(){ state.savedAt=Date.now(); localStorage.setItem(LS,JSON.stringify(state)); schedulePush(); }
 const curProj=()=>state.projects.find(p=>p.id===state.cur)||null;
 
 /* ═══════════ xlsx 解析（純瀏覽器，不用外部程式庫） ═══════════ */
@@ -450,8 +453,13 @@ function viewSet(proj){
     <div class="rowline">業主／甲方 <input id="set-owner" style="min-width:220px" value="${esc(proj.owner||'')}" placeholder="請款對象"></div>
     <div class="rowline">承攬／乙方 <input id="set-vendor" style="min-width:220px" value="${esc(proj.vendor||'')}" placeholder="自己公司名"></div>
     <button class="btn" id="set-save">儲存</button></div>
+  <div class="card"><h3>☁ 雲端同步（Firestore）</h3>
+    <div class="muted" style="font-size:13px;margin-bottom:8px">開頁自動下載最新、修改後自動上傳，多裝置共用。雲端內容以密文儲存（與 payroll 共用同一組解鎖密碼；在這台裝置解鎖過任一系統就不用再輸入）。</div>
+    <div class="rowline"><span class="muted" style="font-size:13px">狀態：${esc(cloudStatus)}</span></div>
+    <button class="btn sub" id="cloud-push">立即上傳</button>
+    <button class="btn sub" id="cloud-pull">從雲端下載（覆蓋本機）</button></div>
   <div class="card"><h3>備份／還原</h3>
-    <div class="muted" style="font-size:13px;margin-bottom:8px">資料存在這台裝置的瀏覽器裡。換裝置或怕遺失，請定期匯出備份檔。</div>
+    <div class="muted" style="font-size:13px;margin-bottom:8px">除了雲端同步，也可以手動匯出備份檔另外保存。</div>
     <button class="btn sub" id="backup-export">匯出備份（JSON）</button>
     <button class="btn sub" id="backup-import-btn">匯入備份</button>
     <input type="file" id="backup-import" accept=".json" style="display:none"></div>
@@ -648,7 +656,7 @@ function setProgInput(proj,blkId,itemId,kind,val){
 }
 
 document.addEventListener('click',async e=>{
-  const t=e.target.closest('[data-tab],[data-editblk],[data-delblk],[data-edititem],[data-delitem],[data-additem],[data-bapply],#btn-import,#btn-import2,#btn-addblk,#btn-addperiod,#btn-delperiod,#btn-print,#set-save,#backup-export,#backup-import-btn,#proj-del');
+  const t=e.target.closest('[data-tab],[data-editblk],[data-delblk],[data-edititem],[data-delitem],[data-additem],[data-bapply],#btn-import,#btn-import2,#btn-addblk,#btn-addperiod,#btn-delperiod,#btn-print,#set-save,#backup-export,#backup-import-btn,#proj-del,#cloud-push,#cloud-pull');
   if(!t)return;
   const proj=curProj();
   if(t.dataset.tab){state.tab=t.dataset.tab;save();render();return;}
@@ -731,6 +739,16 @@ document.addEventListener('click',async e=>{
     a.download=`進度請款備份_${today()}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),3000);return;
   }
   if(t.id==='backup-import-btn'){document.getElementById('backup-import').click();return;}
+  if(t.id==='cloud-push'){clearTimeout(pushTimer);doPush();return;}
+  if(t.id==='cloud-pull'){
+    if(!confirm('從雲端下載並覆蓋本機資料？'))return;
+    try{
+      const remote=await cloudPull();
+      if(!remote){alert('雲端目前沒有資料。');return;}
+      applyRemote(remote);setCloud('已同步（手動下載）');alert('已下載 ✓');
+    }catch(err){alert(err&&err.locked?'雲端資料已加密，尚未解鎖。':'下載失敗：'+(err&&err.message||err));}
+    return;
+  }
   if(t.id==='proj-del'){
     if(!confirm(`刪除整個專案「${proj.name}」？所有細項與各期進度都會消失。`))return;
     if(!confirm('再確認一次：真的要刪除？'))return;
@@ -773,7 +791,146 @@ document.addEventListener('change',e=>{
   };
   rd.readAsText(f);
 });
+
+/* ═══════════ 雲端端對端加密（與 payroll 同一套、同一組密碼、同鑰匙共用） ═══════════ */
+const E2E_SALT='PMENC1|dz-gx-py|2026';
+const LS_E2E_KEY='pm_e2e_key_v1', LS_E2E_ON='pm_e2e_on_v1';
+let _encKey=null,_unlockP=null;
+const _b64=u8=>{let s='';for(let i=0;i<u8.length;i+=0x8000)s+=String.fromCharCode.apply(null,u8.subarray(i,i+0x8000));return btoa(s);};
+const _ub64=s=>Uint8Array.from(atob(s),c=>c.charCodeAt(0));
+async function _gzip(u8,mode){const st=new Blob([u8]).stream().pipeThrough(mode==='d'?new DecompressionStream('gzip'):new CompressionStream('gzip'));return new Uint8Array(await new Response(st).arrayBuffer());}
+async function _deriveE2eKey(pass){
+  const base=await crypto.subtle.importKey('raw',new TextEncoder().encode(pass),'PBKDF2',false,['deriveKey']);
+  return crypto.subtle.deriveKey({name:'PBKDF2',salt:new TextEncoder().encode(E2E_SALT),iterations:200000,hash:'SHA-256'},base,{name:'AES-GCM',length:256},true,['encrypt','decrypt']);
+}
+async function _loadE2eKey(){
+  if(_encKey)return _encKey;
+  try{const raw=localStorage.getItem(LS_E2E_KEY);if(raw)_encKey=await crypto.subtle.importKey('raw',_ub64(raw),'AES-GCM',true,['encrypt','decrypt']);}catch(e){}
+  return _encKey;
+}
+async function _storeE2eKey(key){_encKey=key;try{localStorage.setItem(LS_E2E_KEY,_b64(new Uint8Array(await crypto.subtle.exportKey('raw',key))));}catch(e){}}
+const e2eOn=()=>{try{return localStorage.getItem(LS_E2E_ON)==='1';}catch(e){return false;}};
+const isEncBlob=s=>{if(typeof s!=='string')return false;const t=s.trim();if(t[0]!=='{'||t.indexOf('PMENC1')<0)return false;try{const o=JSON.parse(t);return !!o&&o.v==='PMENC1';}catch(e){return false;}};
+async function e2eEncrypt(plain){
+  if(!e2eOn()||typeof plain!=='string'||isEncBlob(plain))return plain;
+  const key=await _loadE2eKey();if(!key)return plain;
+  const iv=crypto.getRandomValues(new Uint8Array(12));
+  let body=new TextEncoder().encode(plain),z=0;
+  try{if(typeof CompressionStream!=='undefined'){body=await _gzip(body);z=1;}}catch(e){}
+  const ct=new Uint8Array(await crypto.subtle.encrypt({name:'AES-GCM',iv},key,body));
+  return JSON.stringify({v:'PMENC1',z,iv:_b64(iv),ct:_b64(ct)});
+}
+async function _tryE2eDecrypt(key,blob){
+  const o=JSON.parse(blob);
+  let pt=new Uint8Array(await crypto.subtle.decrypt({name:'AES-GCM',iv:_ub64(o.iv)},key,_ub64(o.ct)));
+  if(o.z)pt=await _gzip(pt,'d');
+  return new TextDecoder().decode(pt);
+}
+async function e2eDecrypt(str){
+  if(!isEncBlob(str))return str;
+  let key=await _loadE2eKey();
+  if(key){try{return await _tryE2eDecrypt(key,str);}catch(e){_encKey=null;}}
+  if(_unlockP){await _unlockP;return e2eDecrypt(str);}
+  let done;_unlockP=new Promise(r=>done=r);
+  try{
+    while(true){
+      const p=prompt('☁ 雲端資料已加密。\n請輸入與 payroll 共用的解鎖密碼：');
+      if(p===null){const err=new Error('已加密，尚未解鎖');err.locked=true;throw err;}
+      const k=await _deriveE2eKey(p);
+      try{
+        const out=await _tryE2eDecrypt(k,str);
+        await _storeE2eKey(k);
+        try{localStorage.setItem(LS_E2E_ON,'1');}catch(e){}
+        return out;
+      }catch(e){alert('密碼不對，請再試一次。');}
+    }
+  }finally{done();_unlockP=null;}
+}
+
+/* ═══════════ Firestore 雲端同步 ═══════════ */
+let cloudStatus='連線中…',lastUpdateTime='',pushTimer=null,cloudLocked=false,pushing=false,pendingPush=false;
+function setCloud(s){
+  cloudStatus=s;
+  const el=document.getElementById('cloud-status');
+  if(el)el.textContent='☁ '+s;
+}
+async function fetchT(url,opt={},ms=15000){
+  const c=new AbortController();const t=setTimeout(()=>c.abort(),ms);
+  try{return await fetch(url,{...opt,signal:c.signal});}finally{clearTimeout(t);}
+}
+async function cloudPull(){
+  const r=await fetchT(FS_URL);
+  if(r.status===404)return null;
+  if(!r.ok)throw new Error('HTTP '+r.status);
+  const jd=await r.json();
+  lastUpdateTime=jd.updateTime||'';
+  const raw=jd.fields&&jd.fields.json&&jd.fields.json.stringValue||'';
+  if(!raw)return null;
+  const txt=await e2eDecrypt(raw); // 密文會要求解鎖；取消會丟 locked
+  cloudLocked=false;
+  const d=JSON.parse(txt);
+  if(!d||!Array.isArray(d.projects))throw new Error('雲端資料格式不符');
+  return d;
+}
+function applyRemote(remote){
+  const keepTab=state.tab;
+  state=remote;state.tab=keepTab;
+  if(!state.projects.some(p=>p.id===state.cur))state.cur=state.projects[0]?state.projects[0].id:null;
+  localStorage.setItem(LS,JSON.stringify(state)); // 直接落地，不觸發上傳
+  render();
+}
+function schedulePush(){clearTimeout(pushTimer);pushTimer=setTimeout(doPush,1500);}
+async function doPush(){
+  if(pushing){pendingPush=true;return;}
+  if(cloudLocked){setCloud('已加密未解鎖（改動只在本機）');return;}
+  pushing=true;
+  try{
+    setCloud('上傳中…');
+    const payload=await e2eEncrypt(JSON.stringify(state));
+    if(payload.length>900000)setCloud('⚠ 資料量偏大，仍嘗試上傳…');
+    const body=JSON.stringify({fields:{json:{stringValue:payload}}});
+    const pre=lastUpdateTime?'&currentDocument.updateTime='+encodeURIComponent(lastUpdateTime):'';
+    let r=await fetchT(FS_URL+pre,{method:'PATCH',headers:{'Content-Type':'application/json'},body},20000);
+    if(r.status===400||r.status===409){
+      // 版本衝突：先看雲端是不是更新
+      const remote=await cloudPull().catch(()=>null);
+      if(remote&&(remote.savedAt||0)>(state.savedAt||0)){
+        if(confirm('雲端有比本機新的資料（可能在其他裝置改過）。\n\n按「確定」→ 改用雲端資料（這台剛才的修改會被蓋掉）\n按「取消」→ 用本機資料覆蓋雲端')){
+          applyRemote(remote);setCloud('已同步（採用雲端）');return;
+        }
+      }
+      const pre2=lastUpdateTime?'&currentDocument.updateTime='+encodeURIComponent(lastUpdateTime):'';
+      r=await fetchT(FS_URL+pre2,{method:'PATCH',headers:{'Content-Type':'application/json'},body},20000);
+    }
+    if(!r.ok)throw new Error('HTTP '+r.status);
+    const jd=await r.json();
+    lastUpdateTime=jd.updateTime||lastUpdateTime;
+    setCloud('已同步 '+new Date().toLocaleTimeString('zh-TW',{hour:'2-digit',minute:'2-digit'}));
+  }catch(e){
+    if(e&&e.locked){cloudLocked=true;setCloud('已加密未解鎖（改動只在本機）');}
+    else{setCloud('上傳失敗，稍後重試');clearTimeout(pushTimer);pushTimer=setTimeout(doPush,30000);}
+  }finally{
+    pushing=false;
+    if(pendingPush){pendingPush=false;schedulePush();}
+  }
+}
+async function initCloud(){
+  setCloud('連線中…');
+  try{
+    const remote=await cloudPull();
+    if(remote&&(remote.savedAt||0)>(state.savedAt||0)){applyRemote(remote);setCloud('已同步（載入雲端）');}
+    else if((state.savedAt||0)>((remote&&remote.savedAt)||0)&&state.projects.length){setCloud('已連線');schedulePush();}
+    else setCloud('已同步');
+  }catch(e){
+    if(e&&e.locked){cloudLocked=true;setCloud('已加密未解鎖（點此輸入密碼）');}
+    else setCloud('離線（僅本機）');
+  }
+}
+document.getElementById('cloud-status').onclick=()=>{
+  if(/加密|離線|失敗/.test(cloudStatus)){cloudLocked=false;initCloud();}
+};
 render();
+initCloud();
 </script>
 </body>
 </html>
