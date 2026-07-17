@@ -92,7 +92,7 @@ body.printing #print-overlay{display:block;position:absolute;inset:0;background:
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.07.17a';
+const APP_VERSION='vG2026.07.17b';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,8);
@@ -446,7 +446,7 @@ function printDoc(proj){
   const perIdx=Math.min(proj.curPeriod??proj.periods.length-1,proj.periods.length-1);
   const c=calc(proj,perIdx);
   const ov=document.getElementById('print-overlay');
-  const build=(taxMode)=>{
+  const build=(taxMode,showAll)=>{
     const sum=c.thisAmt;
     const tax=Math.round(sum*0.05);
     let h=`<div class="pdoc">
@@ -457,7 +457,7 @@ function printDoc(proj){
       ${proj.vendor?`<tr><td style="background:#eef2f7">承攬（乙方）</td><td>${esc(proj.vendor)}</td></tr>`:''}</table>
       <table><tr><th>區塊</th><th class="num">合約金額</th><th class="num">前期累計</th><th class="num">本期請款</th><th class="num">累計請款</th><th class="num">完成%</th></tr>`;
     for(const cb of c.blocks){
-      if(!cb.cum&&!cb.pre)continue;
+      if(!showAll&&!cb.cum&&!cb.pre)continue;
       h+=`<tr><td>${esc(cb.blk.name)}（${qfmt(cb.blk.count)} ${esc(cb.blk.unit)}）</td><td class="num">${money(cb.V)}</td><td class="num">${money(cb.pre)}</td><td class="num"><b>${money(cb.thisAmt)}</b></td><td class="num">${money(cb.cum)}</td><td class="num">${pfmt(cb.V?cb.cum/cb.V:0)}</td></tr>`;
     }
     h+=`<tr class="tot"><td>合計</td><td class="num">${money(c.V)}</td><td class="num">${money(c.pre)}</td><td class="num">${money(sum)}</td><td class="num">${money(c.cum)}</td><td class="num">${pfmt(c.V?c.cum/c.V:0)}</td></tr>`;
@@ -467,9 +467,9 @@ function printDoc(proj){
     }
     h+=`</table>
       <div style="font-size:11px;color:#555;margin:2px 0 8px">本期請款金額＝各細項 合約金額 ×（累計完成％ − 前期完成％）加總${taxMode==='incl'?'；含稅金額另計 5% 營業稅':'（未稅）'}。</div>
-      <div style="font-weight:700;font-size:12.5px;margin:10px 0 4px">進度明細（僅列有進度之項目）</div>`;
+      <div style="font-weight:700;font-size:12.5px;margin:10px 0 4px">進度明細${showAll?'（全部項目）':'（僅列有進度之項目）'}</div>`;
     for(const cb of c.blocks){
-      const rows=cb.items.filter(ci=>ci.p>0);
+      const rows=showAll?cb.items:cb.items.filter(ci=>ci.p>0);
       if(!rows.length)continue;
       h+=`<table><tr class="bhead"><td colspan="9">${esc(cb.blk.name)}（${qfmt(cb.blk.count)} ${esc(cb.blk.unit)}）</td></tr>
       <tr><th>項次</th><th>名稱及規格</th><th>單位</th><th class="num">合約總量</th><th class="num">合約金額</th><th class="num">累計完成量</th><th class="num">完成%</th><th class="num">前期已請</th><th class="num">本期請款</th></tr>`;
@@ -490,11 +490,13 @@ function printDoc(proj){
     return h;
   };
   let taxMode=proj.taxMode||'excl';
-  const redraw=()=>{ov.querySelector('.pcontent').innerHTML=build(taxMode);};
+  let showAll=!!proj.printAll;
+  const redraw=()=>{ov.querySelector('.pcontent').innerHTML=build(taxMode,showAll);};
   ov.innerHTML=`<div class="pbar">
     <b style="color:var(--ink)">列印預覽</b>
     <label style="color:var(--ink);font-size:13px"><input type="radio" name="ptax" value="excl"${taxMode==='excl'?' checked':''}> 未稅</label>
     <label style="color:var(--ink);font-size:13px"><input type="radio" name="ptax" value="incl"${taxMode==='incl'?' checked':''}> 含 5% 稅</label>
+    <label style="color:var(--ink);font-size:13px"><input type="checkbox" id="pshowall"${showAll?' checked':''}> 連 0 進度項目一起印</label>
     <span style="flex:1"></span>
     <button class="btn" id="do-print">🖨 列印 / 存 PDF</button>
     <button class="btn sub" id="close-print">關閉</button></div>
@@ -502,6 +504,7 @@ function printDoc(proj){
   redraw();
   document.body.classList.add('printing');
   ov.querySelectorAll('[name=ptax]').forEach(r=>r.onchange=()=>{taxMode=r.value;proj.taxMode=taxMode;save();redraw();});
+  ov.querySelector('#pshowall').onchange=e2=>{showAll=e2.target.checked;proj.printAll=showAll;save();redraw();};
   ov.querySelector('#do-print').onclick=()=>window.print();
   ov.querySelector('#close-print').onclick=()=>{document.body.classList.remove('printing');ov.innerHTML='';};
 }
