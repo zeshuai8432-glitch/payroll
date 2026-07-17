@@ -508,7 +508,7 @@ const FS_ROOT = 'https://firestore.googleapis.com/v1/projects/'+FS_PROJECT+'/dat
 const FS_DOC_BASE = FS_ROOT+'payroll/';
 const FS_SIG_BASE = FS_ROOT+'payrollSignatures/';
 const FS_REST_URL = FS_DOC_BASE+'main?key='+FS_KEY;
-const APP_VERSION = 'v2026.07.16a-loan-lender';
+const APP_VERSION = 'v2026.07.16b-lender-sum';
 let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], tools:[], locations:[], assets:[], advances:[], accounts:[], ledger:[], deals:[], billings:[], measurements:[], contracts:{}, costs:[], textMemory:{clients:[],companies:[]}, parkAccId:'', oweBonus:{}, minFund:'', payrollSnapshots:[], yearIncomeAdj:[], deletedIds:[], resurrected:{ids:[],at:0}, tab:'dash' };
 let cloudStatus='連線中…';
 let localDirty=false, lastCloudTs=0;
@@ -5077,10 +5077,15 @@ function viewLoans(){
     return `<option value="${eid}">${esc(empName(eid))}（未還 ${money(sub)}）</option>`;
   }).join('');
   const clearedRows=cleared.map(l=>rowFor(l,true,false)).join('');
+  // 未還清依資金來源小計（每間公司借出去多少還沒回來）
+  const byLender={}; unpaid.forEach(l=>{ const k=l.lender||'（未指定）'; byLender[k]=(byLender[k]||0)+loanBalance(l); });
+  const showLender=Object.keys(byLender).some(k=>k!=='（未指定）');
+  const lenderCards=showLender?Object.entries(byLender).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`<div class="metric"><div class="l">${esc(k)} 借出未回收</div><div class="v" style="font-size:18px">${money(v)}</div></div>`).join(''):'';
   return `
   <div class="metrics">
     <div class="metric"><div class="l">未還清筆數</div><div class="v">${unpaid.length}</div></div>
     <div class="metric"><div class="l">尚未還清總額</div><div class="v">${money(outstanding)}</div></div>
+    ${lenderCards}
   </div>
   ${unpaid.length?`<div class="card" style="border-left:3px solid var(--accent)">
     <div style="font-size:14px;font-weight:600;margin-bottom:4px">快速還款（現金，不扣薪）</div>
