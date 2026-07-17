@@ -92,7 +92,7 @@ body.printing #print-overlay{display:block;position:absolute;inset:0;background:
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.07.17e';
+const APP_VERSION='vG2026.07.17f';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,8);
@@ -352,7 +352,7 @@ function viewItems(proj){
       <span style="flex:1"></span><b>${money(bv)}</b>
       <button class="btn sub sm" data-editblk="${b.id}">編輯</button>
       <button class="btn bad sm" data-delblk="${b.id}">刪除</button></summary>
-    <div class="inner"><table><tr><th>項次</th><th>名稱及規格</th><th>單位</th><th class="num">數量</th><th class="num">單價</th><th class="num">複價</th><th>備註</th><th></th></tr>`;
+    <div class="inner"><table><tr><th>項次</th><th>名稱及規格</th><th>單位</th><th class="num">數量</th><th class="num">單價</th><th class="num">總價</th><th>備註</th><th></th></tr>`;
     let ch='';
     for(const it of b.items){
       if(proj.hideZero&&it.amount===0)continue;
@@ -411,7 +411,7 @@ function viewProg(proj){
         <span class="muted" style="font-size:12px">（會把區塊內每條細項的完成％都設成 完成${esc(b.unit)}數 ÷ ${qfmt(b.count)}，之後仍可逐條微調）</span></div>`;
     }
     const hasR=b.count>1;const cols=hasR?9:9;
-    h+=`<table><tr><th>項次</th><th>名稱及規格</th><th>單位</th><th class="num">數量</th><th class="num">複價</th><th class="num">前期%</th><th class="num">${hasR?`完成${esc(b.unit)}數`:'累計完成量'}</th><th class="num">累計%</th><th class="num">本期金額</th></tr>`;
+    h+=`<table><tr><th>項次</th><th>名稱及規格</th><th>單位</th><th class="num">數量</th><th class="num">單價</th><th class="num">前期%</th><th class="num">${hasR?`完成${esc(b.unit)}數`:'累計完成量'}</th><th class="num">累計%</th><th class="num">本期金額</th></tr>`;
     let ch='';
     for(const ci of cb.items){
       const it=ci.it;
@@ -422,7 +422,7 @@ function viewProg(proj){
       const pr=progOf(period,it.id);
       const rVal=pr.p?+(pr.p*b.count).toFixed(2):'';
       h+=`<tr class="${zero?'zero':''}"><td>${esc(it.no)}</td><td>${esc(it.name)}</td><td>${esc(it.unit)}</td>
-        <td class="num">${qfmt(it.qty)}</td><td class="num">${qfmt(it.amount)}</td>
+        <td class="num">${qfmt(it.qty)}</td><td class="num">${it.price?qfmt(it.price):''}</td>
         <td class="num muted">${pfmt(ci.pp)}</td>
         <td class="num">${hasR
           ?(editable&&!zero?`<input class="pin pct" data-r="${b.id}::${it.id}" inputmode="decimal" value="${rVal}" placeholder="0">`:(rVal||'—'))
@@ -475,7 +475,7 @@ function printDoc(proj){
       <tr class="tot"><td colspan="3" style="border:none;background:#fff"></td><td class="num">本期含稅請款</td><td class="num" colspan="2">${money(sum+tax)}</td></tr>`;
     }
     h+=`</table>
-      <div style="font-size:11px;color:#555;margin:2px 0 8px">本期請款金額＝各細項 複價 × 合約間（層）數 ×（累計完成％ − 前期完成％）加總${taxMode==='incl'?'；含稅金額另計 5% 營業稅':'（未稅）'}。</div>
+      <div style="font-size:11px;color:#555;margin:2px 0 8px">本期請款金額＝各細項 總價 × 合約間（層）數 ×（累計完成％ − 前期完成％）加總${taxMode==='incl'?'；含稅金額另計 5% 營業稅':'（未稅）'}。</div>
       <div style="font-weight:700;font-size:12.5px;margin:10px 0 4px">進度明細${showAll?'（全部項目）':'（僅列有進度之項目）'}</div>`;
     for(const cb of c.blocks){
       const base=proj.hideZero?cb.items.filter(ci=>ci.v>0):cb.items;
@@ -483,7 +483,7 @@ function printDoc(proj){
       if(!rows.length)continue;
       const hasR=cb.blk.count>1;
       h+=`<table><tr class="bhead"><td colspan="10">${esc(cb.blk.name)}（${qfmt(cb.blk.count)} ${esc(cb.blk.unit)}）</td></tr>
-      <tr><th>項次</th><th>名稱及規格</th><th>單位</th><th class="num">數量</th><th class="num">單價</th><th class="num">複價</th><th class="num">${hasR?`完成${esc(cb.blk.unit)}數`:'累計完成量'}</th><th class="num">完成%</th><th class="num">前期已請</th><th class="num">本期請款</th></tr>`;
+      <tr><th>項次</th><th>名稱及規格</th><th>單位</th><th class="num">數量</th><th class="num">單價</th><th class="num">總價</th><th class="num">${hasR?`完成${esc(cb.blk.unit)}數`:'累計完成量'}</th><th class="num">完成%</th><th class="num">前期已請</th><th class="num">本期請款</th></tr>`;
       let ch='';
       for(const ci of rows){
         const it=ci.it;
