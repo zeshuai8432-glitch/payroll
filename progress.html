@@ -92,7 +92,7 @@ body.printing #print-overlay{display:block;position:absolute;inset:0;background:
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.07.17c';
+const APP_VERSION='vG2026.07.17d';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,8);
@@ -410,18 +410,21 @@ function viewProg(proj){
         <button class="btn sub sm" data-bapply="${b.id}">套用到整個區塊</button>
         <span class="muted" style="font-size:12px">（會把區塊內每條細項的完成％都設成 完成${esc(b.unit)}數 ÷ ${qfmt(b.count)}，之後仍可逐條微調）</span></div>`;
     }
-    h+=`<table><tr><th>項次</th><th>名稱及規格</th><th>單位</th><th class="num">合約總量</th><th class="num">金額</th><th class="num">前期%</th><th class="num">累計完成量</th><th class="num">累計%</th><th class="num">本期金額</th></tr>`;
+    const hasR=b.count>1;const cols=hasR?10:9;
+    h+=`<table><tr><th>項次</th><th>名稱及規格</th><th>單位</th><th class="num">合約總量</th><th class="num">金額</th><th class="num">前期%</th>${hasR?`<th class="num">完成${esc(b.unit)}數</th>`:''}<th class="num">累計完成量</th><th class="num">累計%</th><th class="num">本期金額</th></tr>`;
     let ch='';
     for(const ci of cb.items){
       const it=ci.it;
       if(proj.hideZero&&ci.v===0)continue;
-      if(it.chapter!==ch){ch=it.chapter;if(ch)h+=`<tr class="chapter"><td colspan="9">${esc(ch)}</td></tr>`;}
+      if(it.chapter!==ch){ch=it.chapter;if(ch)h+=`<tr class="chapter"><td colspan="${cols}">${esc(ch)}</td></tr>`;}
       const zero=ci.v===0;
       const tq=itemTotalQty(it,b);
       const pr=progOf(period,it.id);
+      const rVal=pr.p?+(pr.p*b.count).toFixed(2):'';
       h+=`<tr class="${zero?'zero':''}"><td>${esc(it.no)}</td><td>${esc(it.name)}</td><td>${esc(it.unit)}</td>
         <td class="num">${qfmt(tq)}</td><td class="num">${money(ci.v)}</td>
         <td class="num muted">${pfmt(ci.pp)}</td>
+        ${hasR?`<td class="num">${editable&&!zero?`<input class="pin pct" data-r="${b.id}::${it.id}" inputmode="decimal" value="${rVal}" placeholder="0">`:(rVal||'—')}</td>`:''}
         <td class="num">${editable&&!zero?`<input class="pin" data-q="${b.id}::${it.id}" inputmode="decimal" value="${pr.p?qfmt(pr.q||tq*pr.p):''}" placeholder="0">`:qfmt(pr.q||tq*pr.p)}</td>
         <td class="num">${editable&&!zero?`<input class="pin pct" data-p="${b.id}::${it.id}" inputmode="decimal" value="${pr.p?+(pr.p*100).toFixed(1):''}" placeholder="0">`:pfmt(ci.p)}</td>
         <td class="num" data-c="ti-${it.id}">${ci.thisAmt?money(ci.thisAmt):'—'}</td></tr>`;
@@ -564,6 +567,7 @@ function setProgInput(proj,blkId,itemId,kind,val){
   const tq=itemTotalQty(it,b);
   let p,q;
   if(kind==='q'){ q=Math.max(0,Math.min(num(val),tq)); p=tq?q/tq:0; }
+  else if(kind==='r'){ const n=Math.max(0,Math.min(num(val),b.count)); p=b.count?n/b.count:0; q=tq*p; }
   else{ p=Math.max(0,Math.min(num(val),100))/100; q=tq*p; }
   period.prog||(period.prog={});
   if(p>0)period.prog[itemId]={p,q:+q.toFixed(2)};else delete period.prog[itemId];
@@ -578,9 +582,10 @@ function setProgInput(proj,blkId,itemId,kind,val){
   }
   setc('g-pre',money(c.pre));setc('g-this',money(c.thisAmt));setc('g-cum',money(c.cum)+'（');
   const gp=document.querySelector('[data-c="g-pct"]');if(gp){gp.textContent=pfmt(c.V?c.cum/c.V:0);gp.parentElement.lastChild.textContent='）';}
-  const qEl=document.querySelector(`[data-q="${blkId}::${itemId}"]`),pEl=document.querySelector(`[data-p="${blkId}::${itemId}"]`);
-  if(kind==='q'&&pEl)pEl.value=p?+(p*100).toFixed(1):'';
-  if(kind==='p'&&qEl)qEl.value=p?qfmt(q):'';
+  const qEl=document.querySelector(`[data-q="${blkId}::${itemId}"]`),pEl=document.querySelector(`[data-p="${blkId}::${itemId}"]`),rEl=document.querySelector(`[data-r="${blkId}::${itemId}"]`);
+  if(kind!=='q'&&qEl)qEl.value=p?qfmt(q):'';
+  if(kind!=='p'&&pEl)pEl.value=p?+(p*100).toFixed(1):'';
+  if(kind!=='r'&&rEl)rEl.value=p?+(p*b.count).toFixed(2):'';
 }
 
 document.addEventListener('click',async e=>{
@@ -683,6 +688,7 @@ document.addEventListener('change',e=>{
   if(t.id==='hide-zero'){proj.hideZero=t.checked;save();render();return;}
   if(t.dataset.q){const [b,i]=t.dataset.q.split('::');setProgInput(proj,b,i,'q',t.value);return;}
   if(t.dataset.p){const [b,i]=t.dataset.p.split('::');setProgInput(proj,b,i,'p',t.value);return;}
+  if(t.dataset.r){const [b,i]=t.dataset.r.split('::');setProgInput(proj,b,i,'r',t.value);return;}
 });
 document.addEventListener('toggle',e=>{
   const d=e.target.closest&&e.target.closest('details[data-blk]');
