@@ -465,11 +465,19 @@ function rememberDeletedPhoto(id,url){
   state.billingPhotoDeleted=state.billingPhotoDeleted||{};
   state.billingPhotoDeleted[id]=[...new Set([...(state.billingPhotoDeleted[id]||[]),url])];
 }
-const APP_VERSION='vB2026.07.15b-ins'; // 版本號顯示在右上角，方便確認拿到新版
+const APP_VERSION='vB2026.07.16a-sync3'; // 版本號顯示在右上角，方便確認拿到新版
 // 本地時區的今天（yyyy-mm-dd）。toISOString 是 UTC，台灣早上 8 點前會差一天
 function localISODate(d=new Date()){ return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
+// 單價可打算式（例：1200*1.1）
+function evalPriceExpr(s){
+  if(s==null) return NaN;
+  s=String(s).trim().replace(/×/g,'*').replace(/÷/g,'/').replace(/[，,]/g,'');
+  if(s==='') return NaN;
+  if(!/^[0-9+\-*/().\s]+$/.test(s)) return NaN;
+  try{ const v=Function('"use strict";return('+s+')')(); return (typeof v==='number'&&isFinite(v))?v:NaN; }catch(e){ return NaN; }
+}
 // ── 逐筆(依id)合併，避免裝置互相整包覆蓋造成資料遺失 ──
-const MERGE_COLLECTIONS=['employees','sites','attendance','adjustments','loans','parkLedger','billings','measurements'];
+const MERGE_COLLECTIONS=['employees','sites','attendance','adjustments','loans','parkLedger','billings','measurements','payrollSnapshots','yearIncomeAdj'];
 // 相同 id 依每筆 updatedAt 決定新舊；舊資料沒有 updatedAt 時才退回整份文件時間。
 // （原本先到先贏：A 裝置改過的紀錄，遇到 B 裝置的舊版本可能被舊的蓋回去）
 const recordUpdatedAt=(r,fallback=0)=>Number(r&&r.updatedAt)||Number(fallback)||0;
@@ -493,13 +501,13 @@ function refreshRecordBaseline(){
   MERGE_COLLECTIONS.forEach(k=>{ const m=new Map(); (state[k]||[]).forEach(r=>{ if(r&&r.id!=null) m.set(r.id,recordComparable(r)); }); _recordBaseline[k]=m; });
 }
 function refreshPrevIds(){ _prevIds=collectIds(); refreshRecordBaseline(); }
-function stampRecordChanges(){ // 新增或內容有變的紀錄，蓋上本次時間戳
+function stampRecordChanges(forceAll=false){ // 新增或內容有變的紀錄，蓋上本次時間戳
   const now=Date.now();
   MERGE_COLLECTIONS.forEach(k=>{
     const old=_recordBaseline&&_recordBaseline[k];
     (state[k]||[]).forEach(r=>{
       if(!r||r.id==null) return;
-      if(!old||!old.has(r.id)||old.get(r.id)!==recordComparable(r)) r.updatedAt=now;
+      if(forceAll||!old||!old.has(r.id)||old.get(r.id)!==recordComparable(r)) r.updatedAt=now;
     });
   });
 }
@@ -687,7 +695,7 @@ function photoDisplayUrl(url){
 
 function applyData(d){
   if(!d) return;
-  state.employees=d.employees||[]; state.sites=d.sites||[]; state.attendance=d.attendance||[]; state.adjustments=d.adjustments||[]; state.loans=d.loans||[]; state.parkLedger=d.parkLedger||[]; state.parkOpening=Number(d.parkOpening)||0; state.insuranceAllowance=Number(d.insuranceAllowance)||0; state.billings=d.billings||[]; state.measurements=d.measurements||[]; state.billingPhotoDeleted=d.billingPhotoDeleted||{}; state.deletedIds=d.deletedIds||[]; if(d.resurrected&&Array.isArray(d.resurrected.ids)) state.resurrected={ids:d.resurrected.ids,at:Number(d.resurrected.at)||0}; else if(!state.resurrected) state.resurrected={ids:[],at:0}; state.textMemory=d.textMemory||{clients:[],companies:[]};
+  state.employees=d.employees||[]; state.sites=d.sites||[]; state.attendance=d.attendance||[]; state.adjustments=d.adjustments||[]; state.loans=d.loans||[]; state.parkLedger=d.parkLedger||[]; state.parkOpening=Number(d.parkOpening)||0; state.insuranceAllowance=Number(d.insuranceAllowance)||0; state.payrollSnapshots=d.payrollSnapshots||[]; state.yearIncomeAdj=d.yearIncomeAdj||[]; state.billings=d.billings||[]; state.measurements=d.measurements||[]; state.billingPhotoDeleted=d.billingPhotoDeleted||{}; state.deletedIds=d.deletedIds||[]; if(d.resurrected&&Array.isArray(d.resurrected.ids)) state.resurrected={ids:d.resurrected.ids,at:Number(d.resurrected.at)||0}; else if(!state.resurrected) state.resurrected={ids:[],at:0}; state.textMemory=d.textMemory||{clients:[],companies:[]};
   state.employees.forEach(e=>{ if(e.active===undefined) e.active=true; });
   mergeBillingSigs(d.billingSigs||{}, d.billingSigsLocked||{}, d.billingSigMeta||{});
   if(d.billingPhotos) mergeCloudPhotos(d.billingPhotos);
@@ -699,7 +707,7 @@ function packData(){
     const driveUrls=(urls||[]).filter(u=>typeof u==='string'&&u.startsWith('http'));
     if(driveUrls.length) photosSync[id]=driveUrls;
   });
-  return {employees:state.employees,sites:state.sites,attendance:state.attendance,adjustments:state.adjustments,loans:state.loans,parkLedger:state.parkLedger,parkOpening:state.parkOpening,insuranceAllowance:Number(state.insuranceAllowance)||0,billings:state.billings,measurements:state.measurements,billingPhotoDeleted:state.billingPhotoDeleted||{},deletedIds:state.deletedIds||[],resurrected:state.resurrected||{ids:[],at:0},textMemory:state.textMemory,billingPhotos:photosSync,billingSigs,billingSigsLocked,billingSigMeta,savedAt:Date.now()};
+  return {employees:state.employees,sites:state.sites,attendance:state.attendance,adjustments:state.adjustments,loans:state.loans,parkLedger:state.parkLedger,parkOpening:state.parkOpening,insuranceAllowance:Number(state.insuranceAllowance)||0,payrollSnapshots:state.payrollSnapshots||[],yearIncomeAdj:state.yearIncomeAdj||[],billings:state.billings,measurements:state.measurements,billingPhotoDeleted:state.billingPhotoDeleted||{},deletedIds:state.deletedIds||[],resurrected:state.resurrected||{ids:[],at:0},textMemory:state.textMemory,billingPhotos:photosSync,billingSigs,billingSigsLocked,billingSigMeta,savedAt:Date.now()};
 }
 
 // 先讀本機快取（讓畫面秒開），再從雲端拉最新
@@ -738,6 +746,47 @@ async function loadCloud(){
 let saveTimer=null, saving=false, pendingSave=false;
 let raiseEmpId=null;
 // 每日本機快照：每天第一次開啟/儲存時留一份當下資料，保留 7 天（雲端是單一檔案沒歷史，這是誤刪保險）
+function exportBackup(){
+  try{
+    const data=packData();
+    data._fullPhotos=billingPhotos; // 連本機完整照片（含 base64）一起備份
+    data._backupVersion=1;
+    data._backupAt=new Date().toISOString();
+    const blob=new Blob([JSON.stringify(data)],{type:'application/json'});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');
+    const stamp=new Date().toISOString().slice(0,16).replace(/[:T]/g,'-');
+    a.href=url; a.download=`點工系統備份-${stamp}.json`;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(()=>URL.revokeObjectURL(url),1000);
+    const st=document.getElementById('backup-status'); if(st){ st.textContent='已匯出 ✓'; st.style.color='var(--accent)'; setTimeout(()=>{ if(st) st.textContent=''; },3000); }
+  }catch(e){ alert('匯出失敗：'+e.message); }
+}
+function importBackup(file){
+  const reader=new FileReader();
+  reader.onload=()=>{
+    try{
+      const data=JSON.parse(reader.result);
+      if(!data || (!data.employees && !data.attendance && !data.billings)){ alert('這個檔案看起來不是有效的備份檔。'); return; }
+      const when=data._backupAt?('\n備份時間：'+data._backupAt.slice(0,16).replace('T',' ')):'';
+      const cnt=`員工${(data.employees||[]).length}・出工${(data.attendance||[]).length}・請款${(data.billings||[]).length}・計量${(data.measurements||[]).length}`;
+      if(!confirm(`確定用這個備份「覆蓋」目前的資料嗎？${when}\n內容：${cnt}\n\n這會取代現在畫面上的所有資料，且無法復原。建議還原前先「匯出備份」現況以防萬一。`)) return;
+      if(data._fullPhotos){ try{ billingPhotos=data._fullPhotos; savePhotos(); }catch(e){} }
+      applyData(data);
+      // 匯入視為「刻意還原」：從刪除記號移除並標記救回，7 天內同步不會被再刪
+      const rIds=[...collectIds()];
+      state.resurrected={ids:rIds,at:Date.now()};
+      const rSet=new Set(rIds);
+      state.deletedIds=(state.deletedIds||[]).filter(id=>!rSet.has(id));
+      stampRecordChanges(true); // 還原是使用者明確選擇，整份備份優先於雲端舊值
+      refreshPrevIds();
+      saveData(); render();
+      alert('已還原備份。資料已更新並同步。');
+    }catch(e){ alert('還原失敗：檔案可能損壞。\n'+e.message); }
+  };
+  reader.onerror=()=>alert('讀取檔案失敗。');
+  reader.readAsText(file);
+}
 function keepDailySnapshot(){
   try{
     const day=localISODate();
@@ -1191,6 +1240,14 @@ function yearIncomeData(year){
       byId[id].months[m]+=inc; byId[id].total+=inc; monthTotals[m]+=inc;
     });
   }
+  // 手動補登（系統啟用前的舊月份）加在系統計算之上
+  (state.yearIncomeAdj||[]).forEach(a=>{
+    if(!a||a.year!==year) return;
+    const mi=(Number(a.month)||0)-1; if(mi<0||mi>11) return;
+    const amt=Number(a.amount)||0; if(!amt) return;
+    byId[a.empId]=byId[a.empId]||{id:a.empId,name:empName(a.empId),months:Array(12).fill(0),total:0};
+    byId[a.empId].months[mi]+=amt; byId[a.empId].total+=amt; monthTotals[mi]+=amt;
+  });
   const emps=Object.values(byId).sort((a,b)=>b.total-a.total);
   const grand=emps.reduce((s,e)=>s+e.total,0);
   return {emps,monthTotals,grand};
@@ -1229,7 +1286,7 @@ function exportYearIncomeCSV(){
 function viewYearIncome(){
   const data=yearIncomeData(yearIncomeYear);
   const mHead=Array.from({length:12},(_,i)=>`<th class="num">${i+1}月</th>`).join('');
-  const rows=data.emps.map(e=>`<tr><td>${esc(e.name)}</td>${e.months.map(v=>`<td class="num">${v?money(v):'-'}</td>`).join('')}<td class="num" style="font-weight:700">${money(e.total)}</td></tr>`).join('');
+  const rows=data.emps.map(e=>`<tr><td>${esc(e.name)}</td>${e.months.map((v,mi)=>`<td class="num" data-yiedit="${e.id}::${mi}" style="cursor:pointer" title="點擊可手動補登（系統啟用前的舊資料）">${v?money(v):'-'}</td>`).join('')}<td class="num" style="font-weight:700">${money(e.total)}</td></tr>`).join('');
   const totalRow=data.emps.length?`<tr class="total-row"><td>合計</td>${data.monthTotals.map(v=>`<td class="num">${v?money(v):'-'}</td>`).join('')}<td class="num">${money(data.grand)}</td></tr>`:'';
   return `
   <div class="card">
@@ -1241,7 +1298,7 @@ function viewYearIncome(){
         <button class="act" id="yi-next" style="height:34px;padding:0 12px">後一年 ›</button>
       </div>
     </div>
-    <p class="sub" style="margin:6px 0 0">每位員工整年收入＝基本工資＋加項，不含任何扣項；各月＝計薪週期（例：7月欄＝6/11～7/10），與員工薪資頁同一套週期。</p>
+    <p class="sub" style="margin:6px 0 0">每位員工整年收入＝基本工資＋加項，不含任何扣項；各月＝計薪週期（例：7月欄＝6/11～7/10），與員工薪資頁同一套週期。<b>點月份格子可手動補登</b>系統啟用前的舊資料（補登金額會加在系統計算之上）。</p>
     <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
       <button class="btn" id="yi-pdf" ${data.emps.length?'':'disabled style="opacity:.5"'}>匯出 PDF</button>
       <button class="act" id="yi-csv" ${data.emps.length?'':'disabled style="opacity:.5"'} style="border:1px solid var(--accent);color:var(--accent)">匯出 CSV（Excel）</button>
@@ -1335,6 +1392,7 @@ function viewPayroll(){
       <div style="display:flex;gap:8px">
         <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);white-space:nowrap"><input type="checkbox" id="payslip-workdetails" ${payslipShowWorkDetails?'checked':''} style="width:15px;height:15px">明細單顯示出工明細</label>
         <button class="btn" id="export-summary" ${rows===''?'disabled style="opacity:.5"':''}>匯出總表 PDF</button>
+        <button class="act" id="snapshot-payroll" ${rows===''?'disabled style="opacity:.5"':''} style="border:1px solid var(--accent);border-radius:8px;padding:0 14px;height:38px;color:var(--accent)">🔒 結算存檔（鎖定）</button>
       </div>
     </div>
     ${rows===''?'<div class="empty">此區間內尚無可計算的薪資。</div>':`
@@ -1343,6 +1401,25 @@ function viewPayroll(){
       <tbody>${rows}</tbody></table></div>
     <p class="sub" style="margin:10px 0 0">基本工資＝正常工時薪資；加項＝出差外宿津貼＋加班費＋手動加項；實發＝基本工資＋加項−扣項。</p>`}
   </div>
+  ${(()=>{
+    const cur=(state.payrollSnapshots||[]).find(x=>x.from===state.payFrom&&x.to===state.payTo);
+    if(!cur) return '';
+    const diff=(cur.totals&&Math.round(cur.totals.net))!==Math.round(netSum);
+    return `<div class="card"><p class="sub" style="margin:0"><span class="tag" style="background:#e3efe9;color:var(--accent)">✓ 本期已存檔鎖定</span> ${new Date(cur.createdAt).toLocaleString()}　存檔實發 ${money(cur.totals.net)}${diff?`　<span style="color:var(--danger)">⚠ 目前計算已與存檔不同（實發 ${money(netSum)}），要更新請再按一次「結算存檔」覆蓋。</span>`:''}</p></div>`;
+  })()}
+  ${(state.payrollSnapshots||[]).length?`<div class="card">
+    <div style="font-size:14px;font-weight:600;margin-bottom:6px">薪資存檔紀錄（已鎖定）</div>
+    <p class="sub" style="margin:0 0 8px">每份存檔是結算當時凍結的數字，之後修改出勤／調整項都不會改變它。</p>
+    <div class="scroll"><table>
+      <thead><tr><th>計薪期間</th><th class="num">人數</th><th class="num">實發合計</th><th>存檔時間</th><th></th></tr></thead>
+      <tbody>${state.payrollSnapshots.slice().sort((a,b)=>(b.from||'').localeCompare(a.from||'')).map(x=>`<tr>
+        <td>${esc(x.from)} ～ ${esc(x.to)}</td>
+        <td class="num">${(x.rows||[]).length}</td>
+        <td class="num">${money((x.totals||{}).net||0)}</td>
+        <td style="font-size:12px;color:var(--muted)">${new Date(x.createdAt).toLocaleString()}</td>
+        <td><button class="act" data-snapprint="${x.id}">列印</button> <button class="act danger" data-snapdel="${x.id}">刪</button></td>
+      </tr>`).join('')}</tbody></table></div>
+  </div>`:''}
   ${loanDebtRows===''?'':`<div class="card" style="border-color:var(--danger)">
     <div style="font-size:14px;font-weight:600;margin-bottom:4px;color:var(--danger)">借支超過本期薪資</div>
     <p class="sub">以下員工目前未還借支已大於本期實發薪資；若本期薪資全數扣還，仍會欠公司右側金額。</p>
@@ -1484,6 +1561,16 @@ function viewManage(){
     </div>
   </div>
   <div class="card">
+    <div style="font-size:14px;font-weight:600;margin-bottom:4px">資料備份與還原</div>
+    <p class="sub" style="margin:0 0 10px">「匯出備份」把目前全部資料（含照片）存成一個檔案下載保存；「匯入還原」讀回備份檔、覆蓋現在的資料。建議每週匯出一份，做大動作前也先匯出。</p>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+      <button class="btn" id="backup-export">⬇︎ 匯出備份</button>
+      <button class="act" id="backup-import-btn" style="border:1px solid var(--info);border-radius:8px;padding:0 14px;height:38px;color:var(--info)">⬆︎ 匯入還原…</button>
+      <input type="file" id="backup-import-file" accept="application/json,.json" style="display:none">
+      <span class="sub" id="backup-status" style="margin:0"></span>
+    </div>
+  </div>
+  <div class="card">
     <div style="font-size:14px;font-weight:600;margin-bottom:4px">🚑 本機每日快照（誤刪救援）</div>
     <p class="sub" style="margin:0 0 8px">這台裝置每天第一次開啟時自動留一份資料快照，保留 7 天。誤刪資料時選一天按「合併救回」：只補回「快照有、現在沒有」的紀錄，不覆蓋現有資料，救回後同步到各裝置也不會被再刪。</p>
     <div style="display:flex;gap:6px;flex-wrap:wrap">${listDailySnapshots().map(d=>`<button class="act" data-snaprestore="${d}" style="border:1px solid var(--danger);border-radius:8px;padding:0 12px;height:34px;color:var(--danger)">${d} 合併救回</button>`).join('')||'<span class="sub" style="margin:0">尚無快照（每天第一次開啟自動留存）。</span>'}</div>
@@ -1566,14 +1653,23 @@ function bind(){
     const date=document.getElementById('meas-date').value, site=document.getElementById('meas-site').value.trim();
     const item=document.getElementById('meas-item').value.trim(), unit=document.getElementById('meas-unit').value.trim()||'㎡';
     const measureType=document.getElementById('meas-type').value, width=parseFloat((document.getElementById('meas-width')||{}).value), height=parseFloat((document.getElementById('meas-height')||{}).value);
-    const qty=parseFloat(document.getElementById('meas-qty').value), price=parseFloat(document.getElementById('meas-price').value), note=document.getElementById('meas-note').value.trim();
+    const qty=parseFloat(document.getElementById('meas-qty').value), note=document.getElementById('meas-note').value.trim();
+    const priceRaw=String(document.getElementById('meas-price').value||'').trim();
+    let price=evalPriceExpr(priceRaw);
+    if(!isNaN(price)) price=Math.round(price*100)/100;
+    const priceExpr=/[+*/()×÷]|\d-/.test(priceRaw)?priceRaw:'';
     const sizeText=(document.getElementById('meas-size')||{}).value||'';
     if(!date||!site||!item||isNaN(qty)||qty<=0||isNaN(price)||price<0){ alert('請填日期、案場、項目、數量與單價'); return; }
     if(measureType==='partition'&&(isNaN(width)||width<=0||isNaN(height)||height<=0)){ alert('隔間請填寬度與高度'); return; }
-    state.measurements.push({id:uid(),date,site,item,unit,qty,unitPrice:price,note,measureType,sizeText:measureType==='carry'?sizeText.trim():'',width:measureType==='partition'?width:null,height:measureType==='partition'?height:null});
+    state.measurements.push({id:uid(),date,site,item,unit,qty,unitPrice:price,priceExpr,note,measureType,sizeText:measureType==='carry'?sizeText.trim():'',width:measureType==='partition'?width:null,height:measureType==='partition'?height:null});
     saveData(); render();
   };
-  document.querySelectorAll('[data-del-meas]').forEach(b=>b.onclick=()=>{ if(!confirm('確定刪除這筆計量明細？')) return; state.measurements=state.measurements.filter(m=>m.id!==b.dataset.delMeas); saveData(); render(); });
+  document.querySelectorAll('[data-del-meas]').forEach(b=>b.onclick=()=>{
+    const m=state.measurements.find(x=>x.id===b.dataset.delMeas);
+    const linked=m&&m.billedTo&&state.billings.some(x=>x.id===m.billedTo);
+    if(!confirm(linked?'這筆計量已帶入請款單。\n刪除計量不會動到請款單（請款金額照舊），差額提醒會出現落差。確定刪除？':'確定刪除這筆計量明細？')) return;
+    state.measurements=state.measurements.filter(x=>x.id!==b.dataset.delMeas); saveData(); render();
+  });
   const measPickAll=document.getElementById('meas-pick-all');
   if(measPickAll) measPickAll.onclick=()=>{ document.querySelectorAll('[data-meas-pick]').forEach(x=>x.checked=true); };
   const measExportAll=document.getElementById('meas-export-all');
@@ -1661,6 +1757,99 @@ function bind(){
   const esi=document.getElementById('export-sites'); if(esi) esi.onclick=()=>exportSitesPDF();
   const psw=document.getElementById('payslip-workdetails'); if(psw) psw.onchange=()=>{ payslipShowWorkDetails=psw.checked; };
   const es=document.getElementById('export-summary'); if(es) es.onclick=()=>exportSummaryPDF();
+  const snapBtn=document.getElementById('snapshot-payroll'); if(snapBtn) snapBtn.onclick=()=>snapshotPayroll();
+  document.querySelectorAll('[data-snapprint]').forEach(b=>b.onclick=()=>printSnapshot(b.dataset.snapprint));
+  document.querySelectorAll('[data-snapdel]').forEach(b=>b.onclick=()=>deleteSnapshot(b.dataset.snapdel));
+  const bkE=document.getElementById('backup-export'); if(bkE) bkE.onclick=()=>exportBackup();
+  const bkBtn=document.getElementById('backup-import-btn'); const bkFile=document.getElementById('backup-import-file');
+  if(bkBtn&&bkFile){ bkBtn.onclick=()=>bkFile.click(); bkFile.onchange=()=>{ if(bkFile.files&&bkFile.files[0]) importBackup(bkFile.files[0]); bkFile.value=''; }; }
+  // 年度收入：點格子手動補登
+  document.querySelectorAll('[data-yiedit]').forEach(td=>td.onclick=()=>{
+    const parts=td.dataset.yiedit.split('::'); const empId=parts[0]; const mi=+parts[1]; const month=mi+1;
+    const aid=`yi-${empId}-${yearIncomeYear}-${month}`;
+    state.yearIncomeAdj=state.yearIncomeAdj||[];
+    const cur=state.yearIncomeAdj.find(a=>a.id===aid);
+    const data=yearIncomeData(yearIncomeYear);
+    const row=data.emps.find(x=>x.id===empId);
+    const sys=(row?(Number(row.months[mi])||0):0)-((cur&&Number(cur.amount))||0);
+    const v=prompt(`${empName(empId)}　${yearIncomeYear}年${month}月（計薪 ${month===1?12:month-1}/11～${month}/10）手動補登\n系統計算：${money(sys)}${cur?`　目前補登：${money(cur.amount)}`:''}\n補登金額會「加在」系統計算之上（給系統啟用前沒資料的月份用）。\n\n輸入金額，留空＝清除補登：`, cur?cur.amount:'');
+    if(v==null) return;
+    const t=String(v).replace(/[,$\s]/g,'');
+    if(t===''){ if(cur){ state.yearIncomeAdj=state.yearIncomeAdj.filter(a=>a.id!==aid); saveData(); render(); } return; }
+    const amt=Math.round(parseFloat(t));
+    if(isNaN(amt)){ alert('金額不對，已取消。'); return; }
+    if(cur) cur.amount=amt;
+    else { state.deletedIds=(state.deletedIds||[]).filter(x=>x!==aid); state.yearIncomeAdj.push({id:aid, empId, year:yearIncomeYear, month, amount:amt}); }
+    saveData(); render();
+  });
+  // 借支：單筆現金還款
+  document.querySelectorAll('[data-loancash]').forEach(b=>b.onclick=()=>{
+    const loan=state.loans.find(l=>l.id===b.dataset.loancash); if(!loan) return;
+    const bal=loanBalance(loan);
+    const raw=prompt(`私下現金還款（不扣薪水）。\n目前未還 ${money(bal)}。\n輸入這次還的金額：`);
+    if(raw===null) return;
+    const amt=Math.min(parseFloat(raw), bal);
+    if(isNaN(amt)||amt<=0){ alert('請輸入正確金額'); return; }
+    if(!Array.isArray(loan.repayments)) loan.repayments=[];
+    loan.repayments.push({date:localISODate(),amount:amt});
+    saveData(); render();
+  });
+  // 借支：快速還款（自動從最舊沖銷）
+  const qp=document.getElementById('loan-quickpay');
+  if(qp) qp.onclick=()=>{
+    const empId=(document.getElementById('qp-emp')||{}).value;
+    const amt=parseFloat((document.getElementById('qp-amount')||{}).value);
+    const date=(document.getElementById('qp-date')||{}).value||localISODate();
+    if(!empId||isNaN(amt)||amt<=0){ alert('請選員工並輸入金額'); return; }
+    const unpaidL=state.loans.filter(l=>l.empId===empId&&loanBalance(l)>0).sort((a,b)=>(a.date||'').localeCompare(b.date||''));
+    const totalBal=unpaidL.reduce((s,l)=>s+loanBalance(l),0);
+    if(!unpaidL.length){ alert('這位員工沒有未還清的借支。'); return; }
+    if(amt>totalBal){ alert(`金額超過未還總額 ${money(totalBal)}，請重新輸入。`); return; }
+    let left=amt; const applied=[];
+    for(const l of unpaidL){
+      if(left<=0) break;
+      const pay=Math.min(left,loanBalance(l));
+      if(pay<=0) continue;
+      if(!Array.isArray(l.repayments)) l.repayments=[];
+      l.repayments.push({date,amount:pay});
+      applied.push(`・${l.date} 那筆：沖 ${money(pay)}${loanBalance(l)<=0?'（已還清 ✓）':`（還剩 ${money(loanBalance(l))}）`}`);
+      left-=pay;
+    }
+    saveData(); render();
+    alert(`已登記 ${empName(empId)} 現金還款 ${money(amt)}：\n\n${applied.join('\n')}`);
+  };
+  // 借支：刪單筆現金還款（登記錯誤的反悔出口）
+  document.querySelectorAll('[data-repaydel]').forEach(b=>b.onclick=()=>{
+    const [lid,idxs]=b.dataset.repaydel.split('::');
+    const loan=state.loans.find(l=>l.id===lid); if(!loan||!Array.isArray(loan.repayments)) return;
+    const i=parseInt(idxs,10); const r=loan.repayments[i]; if(!r) return;
+    if(!confirm(`刪除這筆現金還款（${r.date||''}　${money(r.amount)}）？\n剩餘欠款會加回去。`)) return;
+    loan.repayments.splice(i,1); saveData(); render();
+  });
+  // 計量：勾選帶入請款單
+  const mtb=document.getElementById('meas-tobill');
+  if(mtb) mtb.onclick=()=>{
+    const ids=[...document.querySelectorAll('[data-meas-pick]:checked')].map(x=>x.dataset.measPick);
+    const sel=state.measurements.filter(m=>ids.includes(m.id));
+    if(sel.length===0){ alert('請先勾選要帶入的計量明細。'); return; }
+    const already=sel.filter(m=>m.billedTo&&state.billings.some(b=>b.id===m.billedTo));
+    if(already.length&&!confirm(`勾選中有 ${already.length} 筆之前已帶入過請款單。\n再帶一次會產生重複請款，確定繼續？`)) return;
+    const bySiteK={};
+    sel.forEach(m=>{ const k=parentSiteName(m.site); (bySiteK[k]=bySiteK[k]||[]).push(m); });
+    const today=localISODate();
+    const made=[];
+    Object.entries(bySiteK).forEach(([site,rows2])=>{
+      const amount=Math.round(rows2.reduce((s,m)=>s+(Number(m.qty)||0)*(Number(m.unitPrice)||0),0));
+      const bid=uid();
+      const dates=rows2.map(m=>m.date||'').filter(Boolean).sort();
+      state.billings.push({id:bid,docType:'請款單',date:today,site,unit:'式',qty:1,unitPrice:amount,amount,method:'',client:'',note:`依計量明細 ${rows2.length} 筆${dates.length?`（${dates[0]}～${dates[dates.length-1]}）`:''}`,settled:false,fromMeas:rows2.map(m=>m.id)});
+      rows2.forEach(m=>{ m.billedTo=bid; });
+      made.push(`${site}　${money(amount)}（${rows2.length} 筆計量）`);
+    });
+    saveData();
+    alert(`已生成請款單草稿：\n\n${made.join('\n')}\n\n接下來到「請款單」頁補業主，列印給業主；收到款再按「已收款」。`);
+    state.tab='billingReq'; render();
+  };
   document.querySelectorAll('[data-payslip]').forEach(b=>b.onclick=()=>exportPayslipPDF(b.dataset.payslip));
 
   const gotoM=document.getElementById('goto-manage'); if(gotoM) gotoM.onclick=()=>{ state.tab='manage'; render(); };
@@ -2027,8 +2216,54 @@ function exportSitesPDF(){
 }
 
 // ---- 借支 ----
+// ---- 薪資月結存檔＋鎖定：把本期計算結果凍結，日後回看不受修改影響 ----
+function snapshotPayroll(){
+  const from=state.payFrom||'', to=state.payTo||'';
+  if(!from||!to){ alert('請先在上方選好計薪期間（起訖日）再結算存檔。'); return; }
+  const byEmp=buildPayroll(from,to);
+  const ids=Object.keys(byEmp);
+  if(ids.length===0){ alert('本期沒有員工薪資資料，無法存檔。'); return; }
+  const rows=ids.map(id=>{ const e=byEmp[id]; return {empId:id, name:empName(id), days:e.days.size, hours:e.hours, gross:e.gross, addTotal:e.addTotal, dedTotal:e.dedTotal, net:e.net}; })
+    .sort((a,b)=>b.net-a.net);
+  const totals={ gross:rows.reduce((s,r)=>s+r.gross,0), add:rows.reduce((s,r)=>s+r.addTotal,0), ded:rows.reduce((s,r)=>s+r.dedTotal,0), net:rows.reduce((s,r)=>s+r.net,0) };
+  state.payrollSnapshots=state.payrollSnapshots||[];
+  const existing=state.payrollSnapshots.find(x=>x.from===from&&x.to===to);
+  if(existing){
+    if(!confirm(`這個計薪期間（${from} ～ ${to}）已經存檔過（${new Date(existing.createdAt).toLocaleString()}）。\n\n要用目前的數字覆蓋舊存檔嗎？`)) return;
+    state.payrollSnapshots=state.payrollSnapshots.filter(x=>x!==existing);
+  } else {
+    if(!confirm(`要結算並鎖定本期薪資嗎？\n\n期間：${from} ～ ${to}\n人數：${rows.length} 人\n實發合計：${money(totals.net)}\n\n存檔後回看都是這份凍結的數字，不受之後修改出勤/調整項影響。`)) return;
+  }
+  state.payrollSnapshots.push({ id:uid(), from, to, createdAt:Date.now(), rows, totals });
+  saveData(); render();
+  alert(`已結算存檔並鎖定：${from} ～ ${to}\n實發合計 ${money(totals.net)}`);
+}
+function deleteSnapshot(id){
+  const sp=(state.payrollSnapshots||[]).find(x=>x.id===id); if(!sp) return;
+  if(!confirm(`確定刪除這份存檔嗎？\n期間：${sp.from} ～ ${sp.to}\n\n（只刪除凍結的存檔紀錄，不影響出勤與薪資計算。）`)) return;
+  state.payrollSnapshots=state.payrollSnapshots.filter(x=>x.id!==id);
+  saveData(); render();
+}
+function printSnapshot(id){
+  const sp=(state.payrollSnapshots||[]).find(x=>x.id===id); if(!sp) return;
+  const rows=(sp.rows||[]).map(r=>`<tr><td>${esc(r.name)}</td><td class="num">${r.days}</td><td class="num">${gongStr(r.hours)}</td>
+    <td class="num">${money(r.gross)}</td><td class="num">${r.addTotal?money(r.addTotal):'-'}</td>
+    <td class="num">${r.dedTotal?money(r.dedTotal):'-'}</td><td class="num">${money(r.net)}</td></tr>`).join('');
+  const t=sp.totals||{};
+  const inner=`<h1>薪資總表（已鎖定存檔）</h1>
+    <div class="meta">計薪期間：${sp.from} ～ ${sp.to}　|　存檔時間：${new Date(sp.createdAt).toLocaleString()}　|　共 ${(sp.rows||[]).length} 人</div>
+    <table><thead><tr><th>員工</th><th class="num">出勤天</th><th class="num">總工數</th><th class="num">基本工資</th><th class="num">加項</th><th class="num">扣項</th><th class="num">實發金額</th></tr></thead>
+    <tbody>${rows}
+      <tr class="total-row"><td>合計</td><td class="num"></td><td class="num"></td><td class="num">${money(t.gross||0)}</td><td class="num">${money(t.add||0)}</td><td class="num">${money(t.ded||0)}</td><td class="num">${money(t.net||0)}</td></tr>
+    </tbody></table>
+    <p class="sub">此為結算當時凍結的數字，之後修改出勤／調整項不會改變本存檔。</p>`;
+  printHTML('薪資總表存檔 '+sp.from, inner, {landscape:true});
+}
 function loanRepaid(loanId){
-  return state.adjustments.filter(a=>a.loanId===loanId && a.kind==='ded').reduce((s,a)=>s+(Number(a.amount)||0),0);
+  const bySalary=state.adjustments.filter(a=>a.loanId===loanId && a.kind==='ded').reduce((s,a)=>s+(Number(a.amount)||0),0);
+  const loan=state.loans.find(l=>l.id===loanId);
+  const byCash=loan&&Array.isArray(loan.repayments)?loan.repayments.reduce((s,r)=>s+(Number(r.amount)||0),0):0; // 私下現金還款（不扣薪）
+  return bySalary+byCash;
 }
 function loanBalance(loan){ return Math.max(0, (Number(loan.amount)||0) - loanRepaid(loan.id)); }
 function effectiveDaily(emp, date){
@@ -2046,24 +2281,59 @@ function loanDeductedInRange(loanId,from,to){
 function viewLoans(){
   const activeEmps=state.employees.filter(e=>e.active);
   const empOpts=activeEmps.map(e=>`<option value="${e.id}">${esc(e.name)}</option>`).join('');
-  const loans=[...state.loans].sort((a,b)=>b.date.localeCompare(a.date));
-  const outstanding=loans.filter(l=>loanBalance(l)>0).reduce((s,l)=>s+loanBalance(l),0);
-  const rows=loans.map(l=>{
+  // 未還清：不分日期一律顯示、依員工分組；已還清收進歷史
+  const unpaid=state.loans.filter(l=>loanBalance(l)>0);
+  const outstanding=unpaid.reduce((s,l)=>s+loanBalance(l),0);
+  const cleared=[...state.loans].filter(l=>loanBalance(l)<=0).sort((a,b)=>b.date.localeCompare(a.date));
+  const repayDetail=l=>{
+    const cash=Array.isArray(l.repayments)?l.repayments:[];
+    if(!cash.length) return '';
+    return `<details style="margin-top:2px"><summary style="cursor:pointer;font-size:11px;color:var(--info)">現金還款 ${cash.length} 筆</summary>${cash.map((r,i)=>`<div style="display:flex;justify-content:space-between;gap:8px;font-size:11px;color:var(--muted);padding:2px 0"><span>${esc(r.date||'')}</span><span style="white-space:nowrap">${money(r.amount)} <button class="act danger" data-repaydel="${l.id}::${i}" style="padding:0 6px;font-size:11px">刪</button></span></div>`).join('')}</details>`;
+  };
+  const rowFor=(l,withEmp,withCash)=>{
     const repaid=loanRepaid(l.id), bal=loanBalance(l), done=bal<=0;
     const pct=l.amount>0?Math.round(repaid/l.amount*100):0;
     return `<tr>
-      <td>${esc(l.date)}</td><td>${esc(empName(l.empId))}</td>
+      <td>${esc(l.date)}</td>${withEmp?`<td>${esc(empName(l.empId))}</td>`:''}
       <td class="num">${money(l.amount)}</td>
       <td class="num">${money(repaid)}（${pct}%）</td>
       <td class="num" style="font-weight:600;color:${done?'var(--accent)':'var(--danger)'}">${done?'已還清':money(bal)}</td>
-      <td>${esc(l.note||'')}</td>
-      <td><button class="act danger" data-delloan="${l.id}">刪</button></td>
+      <td>${esc(l.note||'')}${repayDetail(l)}</td>
+      <td style="white-space:nowrap">${withCash?`<button class="act" data-loancash="${l.id}" style="color:var(--accent)">現金還款</button> `:''}<button class="act danger" data-delloan="${l.id}">刪</button></td>
     </tr>`;
+  };
+  const byEmpL={}; unpaid.forEach(l=>{ (byEmpL[l.empId]=byEmpL[l.empId]||[]).push(l); });
+  const empIdsL=Object.keys(byEmpL).sort((a,b)=>empName(a).localeCompare(empName(b),'zh-Hant'));
+  const unpaidRows=empIdsL.map(eid=>{
+    const ls=byEmpL[eid].sort((a,b)=>(a.date||'').localeCompare(b.date||''));
+    const sub=ls.reduce((s,l)=>s+loanBalance(l),0);
+    return `<tr><td colspan="6" style="background:var(--bg);font-weight:700;padding:8px 12px">${esc(empName(eid))}<span style="float:right;color:var(--danger)">未還 ${money(sub)}</span></td></tr>`+ls.map(l=>rowFor(l,false,true)).join('');
   }).join('');
+  const debtors=empIdsL.map(eid=>{
+    const sub=byEmpL[eid].reduce((s,l)=>s+loanBalance(l),0);
+    return `<option value="${eid}">${esc(empName(eid))}（未還 ${money(sub)}）</option>`;
+  }).join('');
+  const clearedRows=cleared.map(l=>rowFor(l,true,false)).join('');
   return `
   <div class="metrics">
-    <div class="metric"><div class="l">借支筆數</div><div class="v">${loans.length}</div></div>
+    <div class="metric"><div class="l">未還清筆數</div><div class="v">${unpaid.length}</div></div>
     <div class="metric"><div class="l">尚未還清總額</div><div class="v">${money(outstanding)}</div></div>
+  </div>
+  ${unpaid.length?`<div class="card" style="border-left:3px solid var(--accent)">
+    <div style="font-size:14px;font-weight:600;margin-bottom:4px">快速還款（現金，不扣薪）</div>
+    <p class="sub" style="margin:0 0 8px">選員工、輸金額，自動從<b>最舊的借支</b>開始沖銷，一筆還完自動沖下一筆；每筆借支會留下還款明細（點「現金還款 N 筆」可展開、可刪）。要指定沖某一筆的話，用下面清單該筆的「現金還款」。</p>
+    <div class="row">
+      <div class="field"><label>員工</label><select id="qp-emp">${debtors}</select></div>
+      <div class="field"><label>還款日</label><input type="date" id="qp-date" value="${localISODate()}"></div>
+      <div class="field"><label>金額</label><input type="number" id="qp-amount" min="0" step="100" style="width:130px"></div>
+      <button class="btn" id="loan-quickpay">登記還款</button>
+    </div>
+  </div>`:''}
+  <div class="card">
+    <div style="font-size:14px;font-weight:600;margin-bottom:4px">未還清借支（${unpaid.length} 筆・不分日期一律顯示）</div>
+    ${unpaid.length===0?'<div class="empty">目前沒有未還清的借支 ✓</div>':`<div class="scroll"><table>
+      <thead><tr><th>借款日</th><th class="num">總額</th><th class="num">已扣</th><th class="num">剩餘</th><th>備註</th><th></th></tr></thead>
+      <tbody>${unpaidRows}</tbody></table></div>`}
   </div>
   <details class="card">
     <summary>新增借支</summary>
@@ -2076,9 +2346,14 @@ function viewLoans(){
         <div class="field" style="flex:1;min-width:140px"><label>備註（選填）</label><input id="loan-note" placeholder="例：預支生活費"></div>
         <button class="btn" id="loan-add">＋ 新增借支</button>
       </div>
-      ${rows===''?'<div class="empty">尚無借支紀錄。</div>':`<div class="scroll"><table>
+    </div>
+  </details>
+  <details class="card">
+    <summary>已還清（歷史紀錄）</summary>
+    <div class="card-body">
+      ${clearedRows===''?'<div class="empty">尚無已還清的借支。</div>':`<div class="scroll"><table>
         <thead><tr><th>借款日</th><th>員工</th><th class="num">總額</th><th class="num">已扣</th><th class="num">剩餘</th><th>備註</th><th></th></tr></thead>
-        <tbody>${rows}</tbody></table></div>`}
+        <tbody>${clearedRows}</tbody></table></div>`}
     </div>
   </details>`;
 }
@@ -2199,7 +2474,7 @@ function updateMeasurePreview(){
   if(sizeField) sizeField.style.display=isCarry?'flex':'none';
   if(unit) unit.value=isCarry?'車':(type.value==='ceiling'?'坪':'㎡');
   if(isPartition&&width&&height&&qty) qty.value=((parseFloat(width.value)||0)*(parseFloat(height.value)||0)).toFixed(2).replace(/\.00$/,'');
-  if(out){ const q=parseFloat(qty&&qty.value), p=parseFloat(price&&price.value); out.textContent=(!isNaN(q)&&!isNaN(p))?money(q*p):'$0'; }
+  if(out){ const q=parseFloat(qty&&qty.value), p=evalPriceExpr(price&&price.value); out.textContent=(!isNaN(q)&&!isNaN(p))?money(q*p):'$0'; }
 }
 function viewMeasurements(){
   const list=[...state.measurements].sort((a,b)=>(b.date||'').localeCompare(a.date||'')||(a.site||'').localeCompare(b.site||''));
@@ -2209,10 +2484,14 @@ function viewMeasurements(){
     const rows=bysite[name].map(m=>{
       const mt=m.measureType==='partition'?'隔間':m.measureType==='ceiling'?'天花板':m.measureType==='carry'?'搬運':'';
       const size=m.measureType==='partition'?`${m.width||''}m × ${m.height||''}m`:m.sizeText||'';
-      return `<tr><td><input type="checkbox" data-meas-pick="${m.id}" style="width:16px;height:16px"></td><td>${esc(m.date||'')}</td><td>${esc(mt)}</td><td>${esc(m.item||'')}</td><td>${esc(size)}</td><td class="num">${Number(m.qty)||0} ${esc(m.unit||'')}</td><td class="num">${money(m.unitPrice||0)}</td><td class="num">${money((Number(m.qty)||0)*(Number(m.unitPrice)||0))}</td><td>${esc(m.note||'')}</td><td><button class="act danger" data-del-meas="${m.id}">刪</button></td></tr>`;
+      return `<tr><td><input type="checkbox" data-meas-pick="${m.id}" style="width:16px;height:16px"></td><td>${esc(m.date||'')}</td><td>${esc(mt)}</td><td>${esc(m.item||'')}</td><td>${esc(size)}</td><td class="num">${Number(m.qty)||0} ${esc(m.unit||'')}</td><td class="num">${money(m.unitPrice||0)}${m.priceExpr?`<div style="font-size:11px;color:var(--muted)">=${esc(m.priceExpr)}</div>`:''}</td><td class="num">${money((Number(m.qty)||0)*(Number(m.unitPrice)||0))}</td><td>${esc(m.note||'')}${m.billedTo&&state.billings.some(b=>b.id===m.billedTo)?'<span class="tag" style="background:#e3efe9;color:var(--accent)">已帶入請款</span>':''}</td><td><button class="act danger" data-del-meas="${m.id}">刪</button></td></tr>`;
     }).join('');
     const subtotal=bysite[name].reduce((s,m)=>s+(Number(m.qty)||0)*(Number(m.unitPrice)||0),0);
-    return `<details class="card" open><summary>${esc(name)}<span style="margin-left:auto;font-size:16px;font-weight:700">${money(subtotal)}</span></summary><div class="card-body"><div class="scroll"><table><thead><tr><th style="width:34px">選</th><th>日期</th><th>類型</th><th>項目</th><th>尺寸</th><th class="num">數量</th><th class="num">單價</th><th class="num">小計</th><th>備注</th><th></th></tr></thead><tbody>${rows}</tbody></table></div></div></details>`;
+    // 計量 vs 已開請款差額提醒（同名案場的請款合計）
+    const billedForSite=state.billings.filter(b=>parentSiteName(b.site)===name).reduce((s,b)=>s+billingAmount(b),0);
+    const diff=subtotal-billedForSite;
+    const diffLine=`<div class="sub" style="margin:0 0 8px;display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap"><span>計量 ${money(subtotal)}　已開請款 ${money(billedForSite)}</span><span>${diff>0?`可請 <b style="color:var(--accent)">${money(diff)}</b>`:(diff<0?`<span style="color:var(--muted)">已超請 ${money(-diff)}</span>`:'已請足')}</span></div>`;
+    return `<details class="card" open><summary>${esc(name)}<span style="margin-left:auto;font-size:16px;font-weight:700">${money(subtotal)}</span></summary><div class="card-body">${diffLine}<div class="scroll"><table><thead><tr><th style="width:34px">選</th><th>日期</th><th>類型</th><th>項目</th><th>尺寸</th><th class="num">數量</th><th class="num">單價</th><th class="num">小計</th><th>備注</th><th></th></tr></thead><tbody>${rows}</tbody></table></div></div></details>`;
   }).join('');
   return `<div class="metrics">
     <div class="metric"><div class="l">計量筆數</div><div class="v">${list.length}</div></div>
@@ -2225,6 +2504,7 @@ function viewMeasurements(){
         <button class="act" id="meas-pick-all" ${list.length===0?'disabled style="opacity:.5"':''}>全選</button>
         <button class="act" id="meas-export-selected" ${list.length===0?'disabled style="opacity:.5"':''}>匯出勾選 PDF</button>
         <button class="btn" id="meas-export-all" ${list.length===0?'disabled style="opacity:.5"':''}>全印 PDF</button>
+        <button class="act" id="meas-tobill" ${list.length===0?'disabled style="opacity:.5"':''} style="border:1px solid var(--accent);color:var(--accent)">勾選帶入請款單 →</button>
       </div>
     </div>
     ${formOpen.meas?`<div class="row" style="margin-top:8px">
@@ -2236,7 +2516,7 @@ function viewMeasurements(){
       <div class="field" id="meas-height-field"><label>高度（m）</label><input type="number" id="meas-height" min="0" step="0.01" style="width:95px"></div>
       <div class="field" id="meas-size-field" style="display:none;flex:1;min-width:130px"><label>尺寸</label><input id="meas-size" placeholder="例：4尺×8尺"></div>
       <div class="field"><label>數量/面積</label><input type="number" id="meas-qty" min="0" step="0.01" style="width:105px"></div>
-      <div class="field"><label>單價</label><input type="number" id="meas-price" min="0" step="1" style="width:120px"></div>
+      <div class="field"><label>單價（可算式）</label><input id="meas-price" placeholder="1200 或 1200*1.1" style="width:130px"></div>
       <div class="field"><label>小計</label><div id="meas-subtotal" class="num" style="height:38px;display:flex;align-items:center;font-weight:700">$0</div></div>
       <div class="field"><label>日期</label><input type="date" id="meas-date" value="${localISODate()}"></div>
       <div class="field" style="flex:1;min-width:150px"><label>備注</label><input id="meas-note"></div>
