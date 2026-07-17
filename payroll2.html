@@ -465,7 +465,7 @@ function rememberDeletedPhoto(id,url){
   state.billingPhotoDeleted=state.billingPhotoDeleted||{};
   state.billingPhotoDeleted[id]=[...new Set([...(state.billingPhotoDeleted[id]||[]),url])];
 }
-const APP_VERSION='vB2026.07.16a-sync3'; // 版本號顯示在右上角，方便確認拿到新版
+const APP_VERSION = 'vB2026.07.17a-e2ee'; // 版本號顯示在右上角，方便確認拿到新版
 // 本地時區的今天（yyyy-mm-dd）。toISOString 是 UTC，台灣早上 8 點前會差一天
 function localISODate(d=new Date()){ return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
 // 單價可打算式（例：1200*1.1）
@@ -477,6 +477,74 @@ function evalPriceExpr(s){
   try{ const v=Function('"use strict";return('+s+')')(); return (typeof v==='number'&&isFinite(v))?v:NaN; }catch(e){ return NaN; }
 }
 // ── 逐筆(依id)合併，避免裝置互相整包覆蓋造成資料遺失 ──
+// ── 雲端端對端加密（此系統獨立一組密碼與鑰匙，與其他系統完全分開）──
+const E2E_SALT='PMENC1|pm2-partner|2026';
+const LS_E2E_KEY='pm2_e2e_key_v1', LS_E2E_ON='pm2_e2e_on_v1';
+let _encKey=null, _unlockP=null;
+const _b64=u8=>{ let s=''; for(let i=0;i<u8.length;i+=0x8000) s+=String.fromCharCode.apply(null,u8.subarray(i,i+0x8000)); return btoa(s); };
+const _ub64=s=>Uint8Array.from(atob(s),c=>c.charCodeAt(0));
+async function _gzip(u8,mode){ const st=new Blob([u8]).stream().pipeThrough(mode==='d'?new DecompressionStream('gzip'):new CompressionStream('gzip')); return new Uint8Array(await new Response(st).arrayBuffer()); }
+async function _deriveE2eKey(pass){
+  const base=await crypto.subtle.importKey('raw',new TextEncoder().encode(pass),'PBKDF2',false,['deriveKey']);
+  return crypto.subtle.deriveKey({name:'PBKDF2',salt:new TextEncoder().encode(E2E_SALT),iterations:200000,hash:'SHA-256'},base,{name:'AES-GCM',length:256},true,['encrypt','decrypt']);
+}
+async function _loadE2eKey(){
+  if(_encKey) return _encKey;
+  try{ const raw=localStorage.getItem(LS_E2E_KEY); if(raw) _encKey=await crypto.subtle.importKey('raw',_ub64(raw),'AES-GCM',true,['encrypt','decrypt']); }catch(e){}
+  return _encKey;
+}
+async function _storeE2eKey(key){ _encKey=key; try{ localStorage.setItem(LS_E2E_KEY,_b64(new Uint8Array(await crypto.subtle.exportKey('raw',key)))); }catch(e){} }
+const e2eOn=()=>{ try{ return localStorage.getItem(LS_E2E_ON)==='1'; }catch(e){ return false; } };
+const isEncBlob=s=>{ if(typeof s!=='string') return false; const t=s.trim(); if(t[0]!=='{'||t.indexOf('PMENC1')<0) return false; try{ const o=JSON.parse(t); return !!o&&o.v==='PMENC1'; }catch(e){ return false; } };
+async function e2eEncrypt(plain){
+  if(!e2eOn()||typeof plain!=='string'||isEncBlob(plain)) return plain;
+  const key=await _loadE2eKey(); if(!key) return plain;
+  const iv=crypto.getRandomValues(new Uint8Array(12));
+  let body=new TextEncoder().encode(plain), z=0;
+  try{ if(typeof CompressionStream!=='undefined'){ body=await _gzip(body); z=1; } }catch(e){}
+  const ct=new Uint8Array(await crypto.subtle.encrypt({name:'AES-GCM',iv},key,body));
+  return JSON.stringify({v:'PMENC1',z,iv:_b64(iv),ct:_b64(ct)});
+}
+async function _tryE2eDecrypt(key,blob){
+  const o=JSON.parse(blob);
+  let pt=new Uint8Array(await crypto.subtle.decrypt({name:'AES-GCM',iv:_ub64(o.iv)},key,_ub64(o.ct)));
+  if(o.z) pt=await _gzip(pt,'d');
+  return new TextDecoder().decode(pt);
+}
+async function e2eDecrypt(str){
+  if(!isEncBlob(str)) return str;
+  let key=await _loadE2eKey();
+  if(key){ try{ return await _tryE2eDecrypt(key,str); }catch(e){ _encKey=null; } }
+  if(_unlockP){ await _unlockP; return e2eDecrypt(str); }
+  let done; _unlockP=new Promise(r=>done=r);
+  try{
+    while(true){
+      const p=prompt('☁ 雲端資料已加密。\n請輸入解鎖密碼：');
+      if(p===null){ const err=new Error('已加密，尚未解鎖'); err.locked=true; throw err; }
+      const k=await _deriveE2eKey(p);
+      try{
+        const out=await _tryE2eDecrypt(k,str);
+        await _storeE2eKey(k);
+        try{ localStorage.setItem(LS_E2E_ON,'1'); }catch(e){}
+        return out;
+      }catch(e){ alert('密碼不對，請再試一次。'); }
+    }
+  } finally { done(); _unlockP=null; }
+}
+async function e2eEnable(){
+  const p1=prompt('設定雲端加密密碼（此系統獨立一組，自己記好）：'); if(!p1) return;
+  const p2=prompt('再輸入一次確認：'); if(p2===null) return;
+  if(p1!==p2){ alert('兩次輸入不一樣，已取消。'); return; }
+  await _storeE2eKey(await _deriveE2eKey(p1));
+  try{ localStorage.setItem(LS_E2E_ON,'1'); }catch(e){}
+  alert('已啟用雲端加密 ✓\n\n・這次上傳開始，雲端存的就是密文\n・其他裝置第一次開啟會要求輸入同一組密碼\n・⚠️ 密碼忘了雲端資料就解不開，請抄下來收好（本機資料與匯出備份不受影響）');
+  localDirty=true; saveData();
+}
+function e2eDisable(){
+  if(!confirm('解除雲端加密？\n下次上傳起雲端改回明文。解鎖鑰匙會保留在這台裝置，舊的加密備份仍讀得到。')) return;
+  try{ localStorage.removeItem(LS_E2E_ON); }catch(e){}
+  localDirty=true; saveData();
+}
 const MERGE_COLLECTIONS=['employees','sites','attendance','adjustments','loans','parkLedger','billings','measurements','payrollSnapshots','yearIncomeAdj'];
 // 相同 id 依每筆 updatedAt 決定新舊；舊資料沒有 updatedAt 時才退回整份文件時間。
 // （原本先到先贏：A 裝置改過的紀錄，遇到 B 裝置的舊版本可能被舊的蓋回去）
@@ -722,7 +790,10 @@ async function loadCloud(){
     const res=await fetch(CLOUD_URL, {method:'GET'});
     const j=await res.json();
     if(j&&j.ok&&j.data){
-      const cloudData=JSON.parse(j.data);
+      let rawCd=j.data;
+      try{ rawCd=await e2eDecrypt(rawCd); }
+      catch(err){ if(err&&err.locked){ setCloud('🔒 已加密未解鎖（重新整理後輸入密碼）'); render(); return; } throw err; }
+      const cloudData=JSON.parse(rawCd);
       lastCloudTs=Number(cloudData.savedAt)||0;
       const hadLocal=localDirty;
       mergeCloudDoc(cloudData); // 逐筆(依id)合併雲端＋本機，兩邊資料都保留、不互相覆蓋
@@ -852,19 +923,26 @@ async function pushCloud(){
   saving=true;
   let payloadKB=0, getOK=false; // 診斷用：資料大小、讀取是否也失敗
   try {
+    let lockedAbort=false;
     try{
       const gr=await fetch(CLOUD_URL,{method:'GET'});
       const gj=await gr.json();
       getOK=true;
       if(gj&&gj.ok&&gj.data){
-        const cd=JSON.parse(gj.data);
-        applyCloudSigsBeforePush(cd.billingSigs||{}, cd.billingSigsLocked||{}, cd.billingSigMeta||{});
-        mergeCloudDoc(cd); // 逐筆合併雲端已有資料，再寫回union → 不再拒推、也不會蓋掉別人
-        lastCloudTs=Number(cd.savedAt)||lastCloudTs;
+        let rawCd=gj.data;
+        try{ rawCd=await e2eDecrypt(rawCd); }catch(err){ if(err&&err.locked) lockedAbort=true; else throw err; }
+        if(!lockedAbort){
+          const cd=JSON.parse(rawCd);
+          applyCloudSigsBeforePush(cd.billingSigs||{}, cd.billingSigsLocked||{}, cd.billingSigMeta||{});
+          mergeCloudDoc(cd); // 逐筆合併雲端已有資料，再寫回union → 不再拒推、也不會蓋掉別人
+          lastCloudTs=Number(cd.savedAt)||lastCloudTs;
+        }
       }
     }catch(e){}
-    const payload=JSON.stringify(packData());
-    try{ localStorage.setItem(LS,payload); }catch(e){}
+    if(lockedAbort){ setCloud('🔒 已加密未解鎖，暫停上傳（資料已存本機）'); saving=false; return; } // 未解鎖不推，避免明文蓋掉密文
+    const plain=JSON.stringify(packData());
+    try{ localStorage.setItem(LS,plain); }catch(e){} // 本機維持明文
+    const payload=await e2eEncrypt(plain);
     payloadKB=Math.round(payload.length/1024);
     const pr=await fetch(CLOUD_URL, {method:'POST', body: payload});
     // 先取純文字再嘗試解析，讓 GAS 回錯誤頁(HTML)時也能顯示真正原因（狀態碼/資料大小）
@@ -1574,6 +1652,15 @@ function viewManage(){
     <div style="font-size:14px;font-weight:600;margin-bottom:4px">🚑 本機每日快照（誤刪救援）</div>
     <p class="sub" style="margin:0 0 8px">這台裝置每天第一次開啟時自動留一份資料快照，保留 7 天。誤刪資料時選一天按「合併救回」：只補回「快照有、現在沒有」的紀錄，不覆蓋現有資料，救回後同步到各裝置也不會被再刪。</p>
     <div style="display:flex;gap:6px;flex-wrap:wrap">${listDailySnapshots().map(d=>`<button class="act" data-snaprestore="${d}" style="border:1px solid var(--danger);border-radius:8px;padding:0 12px;height:34px;color:var(--danger)">${d} 合併救回</button>`).join('')||'<span class="sub" style="margin:0">尚無快照（每天第一次開啟自動留存）。</span>'}</div>
+  </div>
+  <div class="card">
+    <div style="font-size:14px;font-weight:600;margin-bottom:4px">🔐 雲端加密${e2eOn()?'<span class="tag" style="background:#e3efe9;color:var(--accent);margin-left:8px">已啟用</span>':'<span class="tag" style="margin-left:8px">未啟用</span>'}</div>
+    <p class="sub" style="margin:0 0 8px">啟用後資料先在瀏覽器加密才上雲端，雲端只存密文。密碼是這個系統獨立的一組，其他裝置第一次開啟時輸入同一組即可。<b>密碼忘了雲端資料就解不開</b>；照片檔不在加密範圍。</p>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+      ${e2eOn()
+        ?'<button class="act" id="e2e-off" style="border:1px solid var(--line2);border-radius:8px;padding:0 14px;height:38px">解除加密</button>'
+        :'<button class="act" id="e2e-on" style="border:1px solid var(--accent);border-radius:8px;padding:0 14px;height:38px;color:var(--accent)">🔐 啟用雲端加密…</button>'}
+    </div>
   </div>`;
 }
 
@@ -1760,6 +1847,8 @@ function bind(){
   const snapBtn=document.getElementById('snapshot-payroll'); if(snapBtn) snapBtn.onclick=()=>snapshotPayroll();
   document.querySelectorAll('[data-snapprint]').forEach(b=>b.onclick=()=>printSnapshot(b.dataset.snapprint));
   document.querySelectorAll('[data-snapdel]').forEach(b=>b.onclick=()=>deleteSnapshot(b.dataset.snapdel));
+  const e2on=document.getElementById('e2e-on'); if(e2on) e2on.onclick=()=>e2eEnable().then(()=>render());
+  const e2off=document.getElementById('e2e-off'); if(e2off) e2off.onclick=()=>{ e2eDisable(); render(); };
   const bkE=document.getElementById('backup-export'); if(bkE) bkE.onclick=()=>exportBackup();
   const bkBtn=document.getElementById('backup-import-btn'); const bkFile=document.getElementById('backup-import-file');
   if(bkBtn&&bkFile){ bkBtn.onclick=()=>bkFile.click(); bkFile.onchange=()=>{ if(bkFile.files&&bkFile.files[0]) importBackup(bkFile.files[0]); bkFile.value=''; }; }
