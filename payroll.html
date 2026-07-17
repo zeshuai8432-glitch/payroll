@@ -508,7 +508,7 @@ const FS_ROOT = 'https://firestore.googleapis.com/v1/projects/'+FS_PROJECT+'/dat
 const FS_DOC_BASE = FS_ROOT+'payroll/';
 const FS_SIG_BASE = FS_ROOT+'payrollSignatures/';
 const FS_REST_URL = FS_DOC_BASE+'main?key='+FS_KEY;
-const APP_VERSION = 'v2026.07.15f-e2ee-legacy';
+const APP_VERSION = 'v2026.07.16a-loan-lender';
 let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], tools:[], locations:[], assets:[], advances:[], accounts:[], ledger:[], deals:[], billings:[], measurements:[], contracts:{}, costs:[], textMemory:{clients:[],companies:[]}, parkAccId:'', oweBonus:{}, minFund:'', payrollSnapshots:[], yearIncomeAdj:[], deletedIds:[], resurrected:{ids:[],at:0}, tab:'dash' };
 let cloudStatus='連線中…';
 let localDirty=false, lastCloudTs=0;
@@ -3323,14 +3323,19 @@ function bind(){
     const empId=document.getElementById('loan-emp').value;
     const amount=parseFloat(document.getElementById('loan-amount').value);
     const note=document.getElementById('loan-note').value.trim();
+    const lenderSel=(document.getElementById('loan-lender')||{}).value||'';
+    const lender=lenderSel==='__custom__'?String((document.getElementById('loan-lender-name')||{}).value||'').trim():lenderSel;
+    if(lenderSel==='__custom__'&&!lender){ alert('選了「其他」請輸入借款來源名稱。'); return; }
     if(!date||!empId||isNaN(amount)||amount<=0) return;
     const payRange=(state.payFrom&&state.payTo)?{from:state.payFrom,to:state.payTo}:defaultPayRange();
     const payroll=buildPayroll(payRange.from,payRange.to);
     const currentPay=payroll[empId]?Number(payroll[empId].net)||0:0;
     if(amount>currentPay&&!confirm(`借支金額 ${money(amount)} 已超過此員工當期實發薪資 ${money(currentPay)}。\n\n計薪期間：${payRange.from} ～ ${payRange.to}\n\n是否仍要新增這筆借款？`)) return;
-    state.loans.push({id:uid(),date,empId,amount,note});
+    state.loans.push({id:uid(),date,empId,amount,note,lender});
     saveData(); render();
   };
+  const lenderSelEl=document.getElementById('loan-lender');
+  if(lenderSelEl) lenderSelEl.onchange=()=>{ const f=document.getElementById('loan-lender-name-field'); if(f) f.style.display=lenderSelEl.value==='__custom__'?'':'none'; };
   document.querySelectorAll('[data-delloan]').forEach(b=>b.onclick=()=>{
     if(!confirm('刪除這筆借支？已扣除的紀錄不會跟著刪除。')) return;
     state.loans=state.loans.filter(l=>l.id!==b.dataset.delloan); saveData(); render();
@@ -5054,7 +5059,7 @@ function viewLoans(){
       <td class="num">${money(l.amount)}</td>
       <td class="num">${money(repaid)}（${pct}%）</td>
       <td class="num" style="font-weight:600;color:${done?'var(--accent)':'var(--danger)'}">${done?'已還清':money(bal)}</td>
-      <td>${esc(l.note||'')}${repayDetail(l)}</td>
+      <td>${l.lender?`<span class="tag" style="background:#eef2f7;color:var(--info)">跟 ${esc(l.lender)} 借</span> `:''}${esc(l.note||'')}${repayDetail(l)}</td>
       <td style="white-space:nowrap">${withCash?`<button class="act" data-loancash="${l.id}" style="color:var(--accent)">現金還款</button> `:''}<button class="act danger" data-delloan="${l.id}">刪</button></td>
     </tr>`;
   };
@@ -5099,6 +5104,14 @@ function viewLoans(){
     <div class="row" style="margin-bottom:10px">
       <div class="field"><label>借款日</label><input type="date" id="loan-date" value="${localISODate()}"></div>
       <div class="field"><label>員工</label><select id="loan-emp">${empOpts}</select></div>
+      <div class="field"><label>跟誰借（資金來源）</label><select id="loan-lender" style="min-width:150px">
+        <option value="">（未指定）</option>
+        <option value="東澤工程行">東澤工程行</option>
+        <option value="廣昕工程行">廣昕工程行</option>
+        <option value="品佑工程有限公司">品佑工程有限公司</option>
+        <option value="__custom__">其他（手動輸入）…</option>
+      </select></div>
+      <div class="field" id="loan-lender-name-field" style="display:none"><label>借款來源名稱</label><input id="loan-lender-name" placeholder="例：王老闆" style="width:130px"></div>
       <div class="field"><label>借款總額</label><input type="number" id="loan-amount" min="0" step="500" style="width:120px"></div>
       <div class="field" style="flex:1;min-width:140px"><label>備註（選填）</label><input id="loan-note" placeholder="例：預支生活費"></div>
       <button class="btn" id="loan-add">＋ 新增借支</button>
