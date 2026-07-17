@@ -112,7 +112,7 @@
 <nav id="nav"></nav>
 <main id="app"></main>
 <script>
-const APP_VERSION = 'vP2026.07.17a-lockfix'; // 版本號顯示在頁首，方便確認拿到新版
+const APP_VERSION = 'vP2026.07.17b-applock'; // 版本號顯示在頁首，方便確認拿到新版
 const LS='pinyou_data_v1';
 // ── 雲端端對端加密（與 payroll／簡化版共用同一組密碼與鑰匙；同網域共用 localStorage，解鎖一次三系統都通）──
 const E2E_SALT='PMENC1|dz-gx-py|2026';
@@ -816,6 +816,7 @@ function viewSet(){
       <div style="font-size:13px;font-weight:700;margin-bottom:4px">🔐 雲端加密${e2eOn()?'（已啟用）':'（未啟用）'}</div>
       <p class="sub" style="margin:0 0 8px">啟用後資料先在瀏覽器加密才上雲端，雲端只存密文。三個系統（payroll／品佑帳本／簡化版）用同一組密碼，同一台裝置解鎖一次即可。<b>密碼忘了雲端資料就解不開</b>；照片檔不在加密範圍。</p>
       ${e2eOn()?'<button class="act" id="e2e-off">解除加密</button>':'<button class="act" id="e2e-on" style="color:var(--accent);border-color:var(--accent)">🔐 啟用雲端加密…</button>'}
+      <div style="margin-top:10px;font-size:13px"><label style="cursor:pointer"><input type="checkbox" id="app-lock-chk" ${appLockOn()?'checked':''}> <b>開頁鎖</b>：打開先要密碼（四個自己的系統共用）</label></div>
     </div>
     <div style="margin-top:12px;padding-top:10px;border-top:1px dashed var(--line)">
       <div style="font-weight:700;font-size:13px;margin-bottom:4px">🚑 本機每日快照（誤刪救援）</div>
@@ -973,6 +974,7 @@ function bind(){
   on('cloud-force','onclick',()=>{ if(cloudUrl){ localDirty=true; try{ localStorage.setItem(LS_DIRTY,'1'); }catch(e){} setStatus('強制上傳中…'); pushCloud(); } });
   on('e2e-on','onclick',()=>e2eEnable().then(()=>render()));
   on('e2e-off','onclick',()=>{ e2eDisable(); render(); });
+  on('app-lock-chk','onchange',()=>{ appLockToggle(); render(); });
   // 公司資料
   on('myco-save','onclick',()=>{ state.myCompanies.forEach((c,i)=>{ const g=id=>document.getElementById(id+i); if(g('mc-name')) c.name=g('mc-name').value.trim(); if(g('mc-tax')) c.taxId=g('mc-tax').value.trim(); if(g('mc-addr')) c.addr=g('mc-addr').value.trim(); if(g('mc-tel')) c.tel=g('mc-tel').value.trim(); if(g('mc-bankname')) c.bankName=g('mc-bankname').value.trim(); if(g('mc-bankbranch')) c.bankBranch=g('mc-bankbranch').value.trim(); if(g('mc-bankacctname')) c.bankAcctName=g('mc-bankacctname').value.trim(); if(g('mc-bankacctno')) c.bankAcctNo=g('mc-bankacctno').value.trim(); }); save(); alert('公司資料已儲存'); });
   on('myco-add','onclick',()=>{ state.myCompanies.push({id:uid(),name:'新公司',taxId:'',addr:'',tel:'',bank:''}); save(); });
@@ -1065,10 +1067,48 @@ function prAddExpense(f){
   state.expenses.push({id:f.eid, date:c.date||'', site:f.site, item:String(c.item||'PAYROLL成本'), amount:Number(c.amount)||0, account:f.account, method:'', note:'', payrollId:c.id});
 }
 
-load(); keepDailySnapshot(); render();
+
+/* ── App 開頁鎖：沒密碼看不到（沿用雲端加密同一組密碼；只擋畫面，本機資料仍明文） ── */
+const LS_APP_LOCK='pm_app_lock_v1', LS_LOCK_GRACE='pm_lock_grace_v1';
+const LOCK_GRACE_MS=90000;
+const appLockOn=()=>{ try{ return localStorage.getItem(LS_APP_LOCK)==='1'; }catch(e){ return false; } };
+const lockKeyReady=()=>{ try{ return !!localStorage.getItem(LS_E2E_KEY); }catch(e){ return false; } };
+const lockGraceValid=()=>{ try{ return Date.now()-(+localStorage.getItem(LS_LOCK_GRACE)||0)<LOCK_GRACE_MS; }catch(e){ return false; } };
+async function _verifyLockPass(p){
+  try{ const raw=localStorage.getItem(LS_E2E_KEY); if(!raw) return true;
+    const k=await _deriveE2eKey(p);
+    return _b64(new Uint8Array(await crypto.subtle.exportKey('raw',k)))===raw;
+  }catch(e){ return false; }
+}
+function _showLockGate(onOk){
+  if(document.getElementById('app-lock-gate')) return;
+  const ov=document.createElement('div'); ov.id='app-lock-gate';
+  ov.style.cssText='position:fixed;inset:0;z-index:2147483647;background:#0f172a;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:14px;color:#e2e8f0;font-family:inherit;padding:20px';
+  ov.innerHTML='<div style="font-size:44px">🔒</div><div style="font-size:16px">請輸入密碼解鎖</div>'+
+    '<input id="app-lock-pass" type="password" autocomplete="off" style="font-size:16px;padding:11px 12px;border-radius:10px;border:1px solid #334155;background:#1e293b;color:#fff;width:min(300px,82vw);text-align:center">'+
+    '<button id="app-lock-go" style="font-size:15px;padding:10px 22px;border:none;border-radius:9px;background:#3b82f6;color:#fff;cursor:pointer">解鎖</button>'+
+    '<div id="app-lock-msg" style="font-size:13px;color:#f87171;min-height:18px"></div>';
+  document.body.appendChild(ov);
+  const inp=ov.querySelector('#app-lock-pass'), msg=ov.querySelector('#app-lock-msg');
+  const go=async()=>{ if(await _verifyLockPass(inp.value)){ try{ localStorage.setItem(LS_LOCK_GRACE,String(Date.now())); }catch(e){} ov.remove(); if(onOk)onOk(); } else { msg.textContent='密碼不對'; inp.value=''; inp.focus(); } };
+  ov.querySelector('#app-lock-go').onclick=go;
+  inp.addEventListener('keydown',e=>{ if(e.key==='Enter') go(); });
+  setTimeout(()=>inp.focus(),60);
+}
+function appLockGate(onOk){ if(appLockOn()&&lockKeyReady()&&!lockGraceValid()) _showLockGate(onOk); else onOk(); }
+function appLockToggle(){
+  if(appLockOn()){ if(confirm('關閉開頁鎖？之後打開就不用輸入密碼。')){ try{ localStorage.removeItem(LS_APP_LOCK); }catch(e){} return true; } return false; }
+  if(!lockKeyReady()){ alert('請先啟用雲端加密設好密碼，開頁鎖才有密碼可用。'); return false; }
+  try{ localStorage.setItem(LS_APP_LOCK,'1'); localStorage.removeItem(LS_LOCK_GRACE); }catch(e){}
+  alert('已開啟開頁鎖 ✓\\n之後打開這四個系統（payroll／簡化版／品佑帳本／進度請款）都要先輸入密碼。');
+  return true;
+}
+document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='visible') appLockGate(function(){}); });
+
+load(); keepDailySnapshot();
 (function(){ const v=document.getElementById('app-version'); if(v) v.textContent=APP_VERSION; })();
 setStatus(cloudUrl?'連線中…':'本機模式');
-if(cloudUrl) loadCloud();
+appLockGate(function(){ render(); if(cloudUrl) loadCloud(); });
 setTimeout(()=>{ try{ checkPayrollCosts(false); }catch(e){} }, 3000); // 開頁自動檢查 PAYROLL 有沒有新成本（背景、不打擾）
 // 離開頁面時「不」盲目覆蓋雲端（sendBeacon 無法先讀取合併，會把另一台裝置剛新增的紀錄洗掉）。
 // 未存變更已用 LS_DIRTY 記在本機，下次開啟或切回前景時 loadCloud→pushCloud 會安全合併回推。

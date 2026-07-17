@@ -102,7 +102,7 @@ body.printing #print-overlay{display:block;position:absolute;inset:0;background:
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.07.17j';
+const APP_VERSION='vG2026.07.17k';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -457,7 +457,8 @@ function viewSet(proj){
     <div class="muted" style="font-size:13px;margin-bottom:8px">開頁自動下載最新、修改後自動上傳，多裝置共用。雲端內容以密文儲存（與 payroll 共用同一組解鎖密碼；在這台裝置解鎖過任一系統就不用再輸入）。</div>
     <div class="rowline"><span class="muted" style="font-size:13px">狀態：${esc(cloudStatus)}</span></div>
     <button class="btn sub" id="cloud-push">立即上傳</button>
-    <button class="btn sub" id="cloud-pull">從雲端下載（覆蓋本機）</button></div>
+    <button class="btn sub" id="cloud-pull">從雲端下載（覆蓋本機）</button>
+    <div style="margin-top:10px;font-size:13px"><label style="cursor:pointer"><input type="checkbox" id="app-lock-chk" ${appLockOn()?'checked':''}> <b>開頁鎖</b>：打開先要密碼（與 payroll 共用同一組）</label></div></div>
   <div class="card"><h3>備份／還原</h3>
     <div class="muted" style="font-size:13px;margin-bottom:8px">除了雲端同步，也可以手動匯出備份檔另外保存。</div>
     <button class="btn sub" id="backup-export">匯出備份（JSON）</button>
@@ -758,6 +759,7 @@ document.addEventListener('click',async e=>{
 });
 document.addEventListener('change',e=>{
   const t=e.target;const proj=curProj();
+  if(t.id==='app-lock-chk'){ appLockToggle(); render(); return; }
   if(t.id==='proj-sel'){state.cur=t.value;save();render();return;}
   if(!proj)return;
   if(t.id==='period-sel'){proj.curPeriod=+t.value;save();render();return;}
@@ -929,8 +931,45 @@ async function initCloud(){
 document.getElementById('cloud-status').onclick=()=>{
   if(/加密|離線|失敗/.test(cloudStatus)){cloudLocked=false;initCloud();}
 };
-render();
-initCloud();
+
+/* ── App 開頁鎖：沒密碼看不到（沿用雲端加密同一組密碼；只擋畫面，本機資料仍明文） ── */
+const LS_APP_LOCK='pm_app_lock_v1', LS_LOCK_GRACE='pm_lock_grace_v1';
+const LOCK_GRACE_MS=90000;
+const appLockOn=()=>{ try{ return localStorage.getItem(LS_APP_LOCK)==='1'; }catch(e){ return false; } };
+const lockKeyReady=()=>{ try{ return !!localStorage.getItem(LS_E2E_KEY); }catch(e){ return false; } };
+const lockGraceValid=()=>{ try{ return Date.now()-(+localStorage.getItem(LS_LOCK_GRACE)||0)<LOCK_GRACE_MS; }catch(e){ return false; } };
+async function _verifyLockPass(p){
+  try{ const raw=localStorage.getItem(LS_E2E_KEY); if(!raw) return true;
+    const k=await _deriveE2eKey(p);
+    return _b64(new Uint8Array(await crypto.subtle.exportKey('raw',k)))===raw;
+  }catch(e){ return false; }
+}
+function _showLockGate(onOk){
+  if(document.getElementById('app-lock-gate')) return;
+  const ov=document.createElement('div'); ov.id='app-lock-gate';
+  ov.style.cssText='position:fixed;inset:0;z-index:2147483647;background:#0f172a;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:14px;color:#e2e8f0;font-family:inherit;padding:20px';
+  ov.innerHTML='<div style="font-size:44px">🔒</div><div style="font-size:16px">請輸入密碼解鎖</div>'+
+    '<input id="app-lock-pass" type="password" autocomplete="off" style="font-size:16px;padding:11px 12px;border-radius:10px;border:1px solid #334155;background:#1e293b;color:#fff;width:min(300px,82vw);text-align:center">'+
+    '<button id="app-lock-go" style="font-size:15px;padding:10px 22px;border:none;border-radius:9px;background:#3b82f6;color:#fff;cursor:pointer">解鎖</button>'+
+    '<div id="app-lock-msg" style="font-size:13px;color:#f87171;min-height:18px"></div>';
+  document.body.appendChild(ov);
+  const inp=ov.querySelector('#app-lock-pass'), msg=ov.querySelector('#app-lock-msg');
+  const go=async()=>{ if(await _verifyLockPass(inp.value)){ try{ localStorage.setItem(LS_LOCK_GRACE,String(Date.now())); }catch(e){} ov.remove(); if(onOk)onOk(); } else { msg.textContent='密碼不對'; inp.value=''; inp.focus(); } };
+  ov.querySelector('#app-lock-go').onclick=go;
+  inp.addEventListener('keydown',e=>{ if(e.key==='Enter') go(); });
+  setTimeout(()=>inp.focus(),60);
+}
+function appLockGate(onOk){ if(appLockOn()&&lockKeyReady()&&!lockGraceValid()) _showLockGate(onOk); else onOk(); }
+function appLockToggle(){
+  if(appLockOn()){ if(confirm('關閉開頁鎖？之後打開就不用輸入密碼。')){ try{ localStorage.removeItem(LS_APP_LOCK); }catch(e){} return true; } return false; }
+  if(!lockKeyReady()){ alert('請先啟用雲端加密設好密碼，開頁鎖才有密碼可用。'); return false; }
+  try{ localStorage.setItem(LS_APP_LOCK,'1'); localStorage.removeItem(LS_LOCK_GRACE); }catch(e){}
+  alert('已開啟開頁鎖 ✓\\n之後打開這四個系統（payroll／簡化版／品佑帳本／進度請款）都要先輸入密碼。');
+  return true;
+}
+document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='visible') appLockGate(function(){}); });
+
+appLockGate(function(){ render(); initCloud(); });
 </script>
 </body>
 </html>
