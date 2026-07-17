@@ -1,0 +1,704 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>工程進度請款系統</title>
+<style>
+:root{
+  --bg:#0f172a; --card:#1e293b; --card2:#243247; --line:#334155;
+  --ink:#e2e8f0; --muted:#94a3b8; --accent:#3b82f6; --accent2:#60a5fa;
+  --ok:#34d399; --warn:#fbbf24; --bad:#f87171;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:"Noto Sans TC","Microsoft JhengHei",system-ui,sans-serif;background:linear-gradient(160deg,#0f172a,#1e1b4b 130%);color:var(--ink);min-height:100vh;font-size:15px}
+.top{display:flex;align-items:center;gap:12px;padding:12px 18px;background:rgba(15,23,42,.85);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:20;flex-wrap:wrap}
+.top h1{font-size:18px;letter-spacing:1px}
+.top .ver{font-size:11px;color:var(--muted)}
+.wrap{max-width:1180px;margin:0 auto;padding:16px}
+.tabs{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap}
+.tab{padding:8px 16px;border-radius:10px;background:var(--card);border:1px solid var(--line);color:var(--muted);cursor:pointer;font-size:14px}
+.tab.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:14px}
+.card h3{font-size:15px;margin-bottom:10px;color:var(--accent2)}
+.btn{display:inline-block;padding:8px 14px;border-radius:9px;border:none;background:var(--accent);color:#fff;font-size:14px;cursor:pointer;font-family:inherit}
+.btn.sub{background:var(--card2);color:var(--ink);border:1px solid var(--line)}
+.btn.warn{background:#b45309}
+.btn.bad{background:#b91c1c}
+.btn.sm{padding:4px 10px;font-size:12.5px;border-radius:7px}
+input,select{background:#0f172a;border:1px solid var(--line);border-radius:8px;color:var(--ink);padding:7px 9px;font-size:14px;font-family:inherit}
+input:focus,select:focus{outline:none;border-color:var(--accent)}
+table{width:100%;border-collapse:collapse;font-size:13.5px}
+th,td{padding:6px 8px;border-bottom:1px solid var(--line);text-align:left;vertical-align:middle}
+th{color:var(--muted);font-weight:600;font-size:12.5px;white-space:nowrap}
+td.num,th.num{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+.muted{color:var(--muted)} .ok{color:var(--ok)} .warn-t{color:var(--warn)} .bad-t{color:var(--bad)}
+.tag{display:inline-block;padding:1px 7px;border-radius:99px;font-size:11px;background:var(--card2);border:1px solid var(--line);color:var(--muted);margin-left:6px}
+details.blk{border:1px solid var(--line);border-radius:12px;margin-bottom:10px;background:var(--card)}
+details.blk>summary{cursor:pointer;padding:10px 14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;list-style:none}
+details.blk>summary::-webkit-details-marker{display:none}
+details.blk>summary::before{content:'▸';color:var(--muted)}
+details.blk[open]>summary::before{content:'▾'}
+details.blk .inner{padding:0 14px 12px;overflow-x:auto}
+.chapter td{background:var(--card2);color:var(--accent2);font-size:12.5px;font-weight:600}
+.rowline{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px}
+.stat{background:var(--card2);border:1px solid var(--line);border-radius:12px;padding:10px 14px;min-width:150px}
+.stat .l{font-size:12px;color:var(--muted)} .stat .v{font-size:18px;font-weight:700;margin-top:2px}
+.grid{display:flex;gap:10px;flex-wrap:wrap}
+.pin{width:86px;text-align:right}
+.pin.pct{width:70px}
+.zero{opacity:.45}
+#modal{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:50;display:flex;align-items:center;justify-content:center;padding:20px}
+#modal .box{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px;max-width:760px;width:100%;max-height:85vh;overflow:auto}
+.notice{background:rgba(251,191,36,.08);border:1px solid rgba(251,191,36,.35);border-radius:10px;padding:10px 12px;font-size:13px;margin-bottom:10px}
+/* ── 列印 ── */
+#print-overlay{display:none}
+.pbar{position:sticky;top:0;background:var(--card);border-bottom:1px solid var(--line);padding:10px 16px;display:flex;gap:12px;align-items:center;flex-wrap:wrap;z-index:5}
+@media print{
+  @page{margin:0}
+  body{background:#fff}
+  body.printing>*{display:none!important}
+  body.printing #print-overlay{display:block!important}
+  .pbar{display:none!important}
+}
+body.printing>*{display:none}
+body.printing #print-overlay{display:block;position:absolute;inset:0;background:#f1f5f9;z-index:100;min-height:100vh}
+.pdoc{background:#fff;color:#111;width:210mm;min-height:290mm;margin:0 auto;padding:14mm 14mm 12mm;font-size:12px;line-height:1.5}
+.pdoc h2{font-size:18px;text-align:center;letter-spacing:4px;margin-bottom:2px}
+.pdoc .sub{text-align:center;color:#555;font-size:11px;margin-bottom:10px}
+.pdoc table{width:100%;border-collapse:collapse;font-size:11px;margin-bottom:10px}
+.pdoc th,.pdoc td{border:1px solid #999;padding:3px 5px;color:#111}
+.pdoc th{background:#eef2f7;font-size:10.5px}
+.pdoc td.num,.pdoc th.num{text-align:right;font-variant-numeric:tabular-nums}
+.pdoc .bchap td{background:#f5f7fa;font-weight:600}
+.pdoc .bhead td{background:#e2e8f0;font-weight:700}
+.pdoc .tot td{font-weight:700;background:#f8fafc}
+.pdoc .sign{display:flex;gap:24px;margin-top:26px;break-inside:avoid;page-break-inside:avoid}
+.pdoc .sign>div{flex:1;border-top:1px solid #333;padding-top:6px;font-size:12px;text-align:center;min-height:56px}
+@media screen and (max-width:760px){ .pdoc{width:100%;min-height:auto;padding:16px} }
+</style>
+</head>
+<body>
+<div class="top">
+  <h1>📐 工程進度請款系統</h1>
+  <span class="ver" id="ver"></span>
+  <span style="flex:1"></span>
+  <select id="proj-sel" style="max-width:280px"></select>
+  <button class="btn sub sm" id="btn-import">＋ 匯入合約 Excel</button>
+</div>
+<div class="wrap" id="app"></div>
+<div id="print-overlay"></div>
+<input type="file" id="xlsx-file" accept=".xlsx" style="display:none">
+
+<script>
+'use strict';
+const APP_VERSION='vG2026.07.17a';
+document.getElementById('ver').textContent=APP_VERSION;
+const LS='pm_progress_v1';
+const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,8);
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const money=n=>'$'+Math.round(n||0).toLocaleString('en-US');
+const num=v=>{const n=parseFloat(String(v??'').replace(/,/g,''));return isFinite(n)?n:0;};
+const qfmt=n=>{n=+(+n||0).toFixed(2);return n.toLocaleString('en-US',{maximumFractionDigits:2});};
+const pfmt=p=>{const v=+(p*100).toFixed(1);return (Number.isInteger(v)?v.toFixed(0):v.toFixed(1))+'%';};
+const today=()=>new Date().toISOString().slice(0,10);
+
+let state=load();
+function load(){
+  try{const d=JSON.parse(localStorage.getItem(LS)||'null');if(d&&Array.isArray(d.projects))return d;}catch(e){}
+  return {projects:[],cur:null,tab:'items'};
+}
+function save(){ state.savedAt=Date.now(); localStorage.setItem(LS,JSON.stringify(state)); }
+const curProj=()=>state.projects.find(p=>p.id===state.cur)||null;
+
+/* ═══════════ xlsx 解析（純瀏覽器，不用外部程式庫） ═══════════ */
+async function unzip(buf){
+  const dv=new DataView(buf),u8=new Uint8Array(buf);
+  let e=-1;
+  for(let i=buf.byteLength-22;i>=Math.max(0,buf.byteLength-22-65536);i--){ if(dv.getUint32(i,true)===0x06054b50){e=i;break;} }
+  if(e<0)throw new Error('不是有效的 xlsx 檔');
+  const count=dv.getUint16(e+10,true);let off=dv.getUint32(e+16,true);
+  const td=new TextDecoder();const entries={};
+  for(let i=0;i<count;i++){
+    if(dv.getUint32(off,true)!==0x02014b50)throw new Error('xlsx 目錄損壞');
+    const method=dv.getUint16(off+10,true),csize=dv.getUint32(off+20,true),
+      nlen=dv.getUint16(off+28,true),elen=dv.getUint16(off+30,true),clen=dv.getUint16(off+32,true),
+      lho=dv.getUint32(off+42,true);
+    entries[td.decode(u8.subarray(off+46,off+46+nlen))]={method,csize,lho};
+    off+=46+nlen+elen+clen;
+  }
+  return {
+    async text(name){
+      const en=entries[name];if(!en)return null;
+      const lnlen=dv.getUint16(en.lho+26,true),lelen=dv.getUint16(en.lho+28,true);
+      const start=en.lho+30+lnlen+lelen;
+      const data=u8.slice(start,start+en.csize);
+      if(en.method===0)return td.decode(data);
+      if(en.method!==8)throw new Error('不支援的壓縮方式');
+      return await new Response(new Blob([data]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).text();
+    },
+    names:Object.keys(entries)
+  };
+}
+const colIdx=ref=>{let n=0;for(const ch of ref){const c=ch.charCodeAt(0);if(c>=65&&c<=90)n=n*26+c-64;else break;}return n;};
+function parseSheetXml(xml,sst){
+  const doc=new DOMParser().parseFromString(xml,'application/xml');
+  const rows={};let maxR=0;
+  for(const c of doc.getElementsByTagName('c')){
+    const ref=c.getAttribute('r');if(!ref)continue;
+    const col=colIdx(ref),r=parseInt(ref.replace(/^[A-Z]+/,''),10);
+    const t=c.getAttribute('t');let v=null;
+    if(t==='inlineStr'){ v=Array.from(c.getElementsByTagName('t')).map(x=>x.textContent).join(''); }
+    else{
+      const vEl=c.getElementsByTagName('v')[0];if(!vEl)continue;
+      const raw=vEl.textContent;
+      if(t==='s')v=sst[+raw]??'';
+      else if(t==='str')v=raw;
+      else if(t==='b')v=raw==='1';
+      else v=parseFloat(raw);
+    }
+    if(v===null||v==='')continue;
+    (rows[r]||(rows[r]={}))[col]=v;
+    if(r>maxR)maxR=r;
+  }
+  return {rows,maxR};
+}
+async function readXlsx(buf){
+  const z=await unzip(buf);
+  const wbXml=await z.text('xl/workbook.xml');
+  const relXml=await z.text('xl/_rels/workbook.xml.rels');
+  if(!wbXml||!relXml)throw new Error('讀不到活頁簿結構');
+  const rels={};
+  for(const m of relXml.matchAll(/<Relationship[^>]*Id="([^"]+)"[^>]*Target="([^"]+)"/g)) rels[m[1]]=m[2];
+  const sheets=[];
+  for(const m of wbXml.matchAll(/<sheet[^>]*name="([^"]+)"[^>]*r:id="([^"]+)"/g)){
+    let t=rels[m[2]]||'';if(t.startsWith('/'))t=t.slice(1);else if(!t.startsWith('xl/'))t='xl/'+t;
+    sheets.push({name:m[1].replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>'),target:t});
+  }
+  let sst=[];
+  const sstXml=await z.text('xl/sharedStrings.xml');
+  if(sstXml){
+    const doc=new DOMParser().parseFromString(sstXml,'application/xml');
+    sst=Array.from(doc.getElementsByTagName('si')).map(si=>Array.from(si.getElementsByTagName('t')).map(t=>t.textContent).join(''));
+  }
+  const out=[];
+  for(const s of sheets){
+    const xml=await z.text(s.target);if(!xml)continue;
+    const parsed=parseSheetXml(xml,sst);
+    out.push({name:s.name,rows:parsed.rows,maxR:parsed.maxR});
+  }
+  return out;
+}
+
+/* ═══════════ 合約結構分析 ═══════════ */
+const KANJI=/^[一二三四五六七八九十]+$/;
+const SUBHD=/^[（(][一二三四五六七八九十]+[)）]$/;
+function detectCols(rows,maxR){
+  // 找表頭列（含 單位＋數量），對照欄位；找不到就用預設 B~H
+  for(let r=1;r<=Math.min(maxR,30);r++){
+    const row=rows[r];if(!row)continue;
+    const vals=Object.entries(row).map(([c,v])=>[+c,String(v)]);
+    const find=kw=>{const hit=vals.find(([c,v])=>v.includes(kw));return hit?hit[0]:0;};
+    if(find('單位')&&find('數量')){
+      return {
+        no:find('項目')||find('Item')||2,
+        name:find('名')||find('規格')||3,
+        unit:find('單位'),qty:find('數量'),
+        price:find('單價'),amt:find('總價')||find('複價')||find('金額'),
+        remark:find('備註')||find('Remark')||8,
+        tag:Math.max(1,(find('項目')||2)-1)
+      };
+    }
+  }
+  return {tag:1,no:2,name:3,unit:4,qty:5,price:6,amt:7,remark:8};
+}
+function analyzeSheet(sheet){
+  const {rows,maxR}=sheet;
+  const C=detectCols(rows,maxR);
+  const cell=(r,k)=>{const row=rows[r];return row?row[C[k]]:undefined;};
+  const txt=(r,k)=>String(cell(r,k)??'').trim();
+  const isNum=v=>typeof v==='number'&&isFinite(v);
+  // ① 找區塊：名稱以「合計」結尾、單位為 間/層、數量為正數
+  const blocks=[];const subtotals={};
+  for(let r=1;r<=maxR;r++){
+    const name=txt(r,'name');if(!name)continue;
+    if(/小\s*計\s*$/.test(name)){
+      const key=name.replace(/小\s*計\s*$/,'').trim();
+      if(key&&isNum(cell(r,'amt')))subtotals[key]=cell(r,'amt');
+      continue;
+    }
+    if(/合\s*計\s*$/.test(name)){
+      const unit=txt(r,'unit'),qty=cell(r,'qty');
+      if((unit==='間'||unit==='層')&&isNum(qty)&&qty>0){
+        const key=name.replace(/合\s*計\s*$/,'').trim();
+        blocks.push({key,unit,count:qty,row:r,amount:isNum(cell(r,'amt'))?cell(r,'amt'):0,headerRow:0,display:key});
+      }
+    }
+  }
+  blocks.sort((a,b)=>a.row-b.row);
+  // ② 找每個區塊的標題列（合計列往前找同名獨立列，例：TYPE-SK 標準大床）
+  for(const b of blocks){
+    for(let r=b.row-1;r>=Math.max(1,b.row-400);r--){
+      const name=txt(r,'name');
+      if(name&&name.startsWith(b.key)&&!/[小合]\s*計/.test(name)&&!isNum(cell(r,'qty'))){
+        b.headerRow=r;b.display=name;break;
+      }
+    }
+  }
+  // ③ 撈細項：每個區塊的細項在「該區塊合計列之後、下一區塊標題列之前」
+  const warnings=[];const outBlocks=[];
+  const grabItems=(r1,r2)=>{
+    let chapter='';const items=[];
+    for(let r=r1;r<=r2;r++){
+      const name=txt(r,'name');if(!name)continue;
+      const no=txt(r,'no');
+      if(KANJI.test(no)){chapter=name;continue;}
+      if(SUBHD.test(no)){continue;}
+      if(/[小合]\s*計\s*$/.test(name)||/^總\s*價/.test(name))continue;
+      const qty=cell(r,'qty');
+      if(!isNum(qty))continue;
+      const price=isNum(cell(r,'price'))?cell(r,'price'):0;
+      let amt=isNum(cell(r,'amt'))?cell(r,'amt'):qty*price;
+      items.push({id:uid(),no,tag:txt(r,'tag'),chapter,name,unit:txt(r,'unit'),qty,price,amount:amt,remark:txt(r,'remark')});
+    }
+    return items;
+  };
+  for(let i=0;i<blocks.length;i++){
+    const b=blocks[i];
+    const next=blocks[i+1];
+    const end=next?(next.headerRow||next.row)-1:maxR;
+    const items=grabItems(b.row+1,end);
+    const sum=items.reduce((s,it)=>s+it.amount,0);
+    const sub=subtotals[b.key];
+    if(sub!==undefined&&Math.abs(sum-sub)>1)
+      warnings.push(`「${b.display}」細項加總 ${money(sum)} 與合約小計 ${money(sub)} 不符，請匯入後檢查`);
+    outBlocks.push({id:uid(),name:b.display,unit:b.unit,count:b.count,contractAmt:b.amount||sum*b.count,items});
+  }
+  // 沒抓到任何區塊 → 全部細項當一個區塊
+  if(!outBlocks.length){
+    const items=grabItems(1,maxR);
+    if(items.length)outBlocks.push({id:uid(),name:'全部項目',unit:'式',count:1,contractAmt:items.reduce((s,i)=>s+i.amount,0),items});
+  }
+  // 專案名稱猜測：前幾列最長的文字
+  let title='';
+  for(let r=1;r<=5;r++){for(const k of['no','name']){const t=txt(r,k);if(t.length>title.length&&!t.includes('單位'))title=t;}}
+  // 總價列
+  let grand=0;
+  for(let r=1;r<=Math.min(maxR,30);r++){ if(/^總\s*價/.test(txt(r,'name'))){const v=cell(r,'amt');if(isNum(v))grand=v;break;} }
+  return {blocks:outBlocks,warnings,title,grand};
+}
+
+/* ═══════════ 計算 ═══════════ */
+const itemTotalQty=(it,blk)=>it.qty*blk.count;
+const itemValue=(it,blk)=>it.amount*blk.count;
+function periodOf(p,idx){return p.periods[idx]||null;}
+function progOf(period,itemId){return (period&&period.prog&&period.prog[itemId])||{p:0,q:0};}
+function calc(proj,perIdx){
+  const period=proj.periods[perIdx];
+  const prev=perIdx>0?proj.periods[perIdx-1]:null;
+  const blocks=proj.blocks.map(blk=>{
+    let V=0,cum=0,pre=0;
+    const items=blk.items.map(it=>{
+      const v=itemValue(it,blk);
+      const p=progOf(period,it.id).p, pp=progOf(prev,it.id).p;
+      const cumAmt=Math.round(v*p), preAmt=Math.round(v*pp);
+      V+=v;cum+=cumAmt;pre+=preAmt;
+      return {it,v,p,pp,cumAmt,preAmt,thisAmt:cumAmt-preAmt};
+    });
+    return {blk,V,cum,pre,thisAmt:cum-pre,items};
+  });
+  const V=blocks.reduce((s,b)=>s+b.V,0), cum=blocks.reduce((s,b)=>s+b.cum,0), pre=blocks.reduce((s,b)=>s+b.pre,0);
+  return {blocks,V,cum,pre,thisAmt:cum-pre,period,prev};
+}
+
+/* ═══════════ 畫面 ═══════════ */
+const openBlk=new Set();
+function render(){
+  const app=document.getElementById('app');
+  const sel=document.getElementById('proj-sel');
+  sel.innerHTML=state.projects.map(p=>`<option value="${p.id}"${p.id===state.cur?' selected':''}>${esc(p.name)}</option>`).join('')||'<option value="">（尚無專案）</option>';
+  const proj=curProj();
+  if(!proj){
+    app.innerHTML=`<div class="card" style="text-align:center;padding:44px 20px">
+      <div style="font-size:38px;margin-bottom:10px">📐</div>
+      <div style="font-size:16px;margin-bottom:6px">還沒有專案</div>
+      <div class="muted" style="font-size:13px;margin-bottom:16px">匯入合約 Excel，程式會自動抓出所有細項；之後每期填進度，自動算出請款金額。</div>
+      <button class="btn" id="btn-import2">＋ 匯入合約 Excel</button></div>`;
+    return;
+  }
+  const tabs=[['items','合約明細'],['prog','進度請款'],['set','設定/備份']];
+  let h=`<div class="tabs">${tabs.map(([k,l])=>`<div class="tab${state.tab===k?' on':''}" data-tab="${k}">${l}</div>`).join('')}</div>`;
+  if(state.tab==='items')h+=viewItems(proj);
+  else if(state.tab==='prog')h+=viewProg(proj);
+  else h+=viewSet(proj);
+  app.innerHTML=h;
+}
+
+function viewItems(proj){
+  const V=proj.blocks.reduce((s,b)=>s+b.items.reduce((x,i)=>x+itemValue(i,b),0),0);
+  const nItems=proj.blocks.reduce((s,b)=>s+b.items.length,0);
+  let h=`<div class="grid" style="margin-bottom:12px">
+    <div class="stat"><div class="l">合約總額（未稅）</div><div class="v">${money(V)}</div></div>
+    <div class="stat"><div class="l">區塊</div><div class="v">${proj.blocks.length}</div></div>
+    <div class="stat"><div class="l">細項</div><div class="v">${nItems}</div></div>
+  </div>`;
+  for(const b of proj.blocks){
+    const bv=b.items.reduce((s,i)=>s+itemValue(i,b),0);
+    h+=`<details class="blk"${openBlk.has(b.id)?' open':''} data-blk="${b.id}"><summary>
+      <b>${esc(b.name)}</b><span class="tag">${qfmt(b.count)} ${esc(b.unit)}</span>
+      <span class="tag">每${esc(b.unit)} ${money(bv/(b.count||1))}</span>
+      <span style="flex:1"></span><b>${money(bv)}</b>
+      <button class="btn sub sm" data-editblk="${b.id}">編輯</button>
+      <button class="btn bad sm" data-delblk="${b.id}">刪除</button></summary>
+    <div class="inner"><table><tr><th>項次</th><th>名稱及規格</th><th>單位</th><th class="num">單${esc(b.unit)}數量</th><th class="num">合約總量</th><th class="num">單價</th><th class="num">金額（×${qfmt(b.count)}）</th><th>備註</th><th></th></tr>`;
+    let ch='';
+    for(const it of b.items){
+      if(it.chapter!==ch){ch=it.chapter;if(ch)h+=`<tr class="chapter"><td colspan="9">${esc(ch)}</td></tr>`;}
+      const zero=it.amount===0;
+      h+=`<tr class="${zero?'zero':''}"><td>${esc(it.no)}</td><td>${esc(it.name)}${it.tag?`<span class="tag">${esc(it.tag)}</span>`:''}</td>
+        <td>${esc(it.unit)}</td><td class="num">${qfmt(it.qty)}</td><td class="num">${qfmt(itemTotalQty(it,b))}</td>
+        <td class="num">${money(it.price)}</td><td class="num">${money(itemValue(it,b))}</td>
+        <td class="muted" style="font-size:12px">${esc(it.remark)}</td>
+        <td><button class="btn sub sm" data-edititem="${b.id}::${it.id}">改</button> <button class="btn bad sm" data-delitem="${b.id}::${it.id}">刪</button></td></tr>`;
+    }
+    h+=`</table><div style="margin-top:8px"><button class="btn sub sm" data-additem="${b.id}">＋ 手動加細項</button></div></div></details>`;
+  }
+  h+=`<button class="btn sub" id="btn-addblk">＋ 手動加區塊</button>`;
+  return h;
+}
+
+function viewProg(proj){
+  if(!proj.periods.length){
+    return `<div class="card" style="text-align:center;padding:34px">
+      <div style="margin-bottom:12px">還沒有請款期別。建立第 1 期後，填各細項的完成量或百分比，程式會自動算請款金額。</div>
+      <button class="btn" id="btn-addperiod">＋ 建立第 1 期</button></div>`;
+  }
+  const perIdx=Math.min(proj.curPeriod??proj.periods.length-1,proj.periods.length-1);
+  const c=calc(proj,perIdx);
+  const period=c.period;
+  const editable=perIdx===proj.periods.length-1;
+  let h=`<div class="rowline">
+    <select id="period-sel">${proj.periods.map((p,i)=>`<option value="${i}"${i===perIdx?' selected':''}>第 ${p.no} 期（${esc(p.date)}）</option>`).join('')}</select>
+    ${editable?`<input type="date" id="period-date" value="${esc(period.date)}">`:''}
+    <button class="btn sub sm" id="btn-addperiod">＋ 新增一期</button>
+    ${editable&&proj.periods.length?`<button class="btn bad sm" id="btn-delperiod">刪除本期</button>`:''}
+    <span style="flex:1"></span>
+    <button class="btn" id="btn-print">🖨 列印請款單</button>
+  </div>
+  ${editable?'':'<div class="notice">這是舊期別，唯讀。要修改請切到最新一期。</div>'}
+  <div class="grid" style="margin-bottom:12px">
+    <div class="stat"><div class="l">合約總額</div><div class="v">${money(c.V)}</div></div>
+    <div class="stat"><div class="l">前期累計已請</div><div class="v" data-c="g-pre">${money(c.pre)}</div></div>
+    <div class="stat"><div class="l">本期請款</div><div class="v ok" data-c="g-this">${money(c.thisAmt)}</div></div>
+    <div class="stat"><div class="l">累計請款</div><div class="v" data-c="g-cum">${money(c.cum)}（<span data-c="g-pct">${pfmt(c.V?c.cum/c.V:0)}</span>）</div></div>
+  </div>`;
+  for(const cb of c.blocks){
+    const b=cb.blk;
+    h+=`<details class="blk"${openBlk.has(b.id)?' open':''} data-blk="${b.id}"><summary>
+      <b>${esc(b.name)}</b><span class="tag">${qfmt(b.count)} ${esc(b.unit)}</span>
+      <span style="flex:1"></span>
+      <span class="muted" style="font-size:12.5px">本期 <b class="ok" data-c="bt-${b.id}">${money(cb.thisAmt)}</b>｜累計 <span data-c="bc-${b.id}">${money(cb.cum)}</span> / ${money(cb.V)}（<span data-c="bp-${b.id}">${pfmt(cb.V?cb.cum/cb.V:0)}</span>）</span></summary>
+    <div class="inner">`;
+    if(editable&&b.count>1){
+      h+=`<div class="rowline" style="margin:4px 0 8px">
+        <span class="muted" style="font-size:13px">整批填：完成</span>
+        <input class="pin" data-bfill="${b.id}" inputmode="decimal" placeholder="0"> <span class="muted">/ ${qfmt(b.count)} ${esc(b.unit)}</span>
+        <button class="btn sub sm" data-bapply="${b.id}">套用到整個區塊</button>
+        <span class="muted" style="font-size:12px">（會把區塊內每條細項的完成％都設成 完成${esc(b.unit)}數 ÷ ${qfmt(b.count)}，之後仍可逐條微調）</span></div>`;
+    }
+    h+=`<table><tr><th>項次</th><th>名稱及規格</th><th>單位</th><th class="num">合約總量</th><th class="num">金額</th><th class="num">前期%</th><th class="num">累計完成量</th><th class="num">累計%</th><th class="num">本期金額</th></tr>`;
+    let ch='';
+    for(const ci of cb.items){
+      const it=ci.it;
+      if(it.chapter!==ch){ch=it.chapter;if(ch)h+=`<tr class="chapter"><td colspan="9">${esc(ch)}</td></tr>`;}
+      const zero=ci.v===0;
+      const tq=itemTotalQty(it,b);
+      const pr=progOf(period,it.id);
+      h+=`<tr class="${zero?'zero':''}"><td>${esc(it.no)}</td><td>${esc(it.name)}</td><td>${esc(it.unit)}</td>
+        <td class="num">${qfmt(tq)}</td><td class="num">${money(ci.v)}</td>
+        <td class="num muted">${pfmt(ci.pp)}</td>
+        <td class="num">${editable&&!zero?`<input class="pin" data-q="${b.id}::${it.id}" inputmode="decimal" value="${pr.p?qfmt(pr.q||tq*pr.p):''}" placeholder="0">`:qfmt(pr.q||tq*pr.p)}</td>
+        <td class="num">${editable&&!zero?`<input class="pin pct" data-p="${b.id}::${it.id}" inputmode="decimal" value="${pr.p?+(pr.p*100).toFixed(1):''}" placeholder="0">`:pfmt(ci.p)}</td>
+        <td class="num" data-c="ti-${it.id}">${ci.thisAmt?money(ci.thisAmt):'—'}</td></tr>`;
+    }
+    h+=`</table></div></details>`;
+  }
+  return h;
+}
+
+function viewSet(proj){
+  return `<div class="card"><h3>專案資料</h3>
+    <div class="rowline">工程名稱 <input id="set-name" style="min-width:320px" value="${esc(proj.name)}"></div>
+    <div class="rowline">業主／甲方 <input id="set-owner" style="min-width:220px" value="${esc(proj.owner||'')}" placeholder="請款對象"></div>
+    <div class="rowline">承攬／乙方 <input id="set-vendor" style="min-width:220px" value="${esc(proj.vendor||'')}" placeholder="自己公司名"></div>
+    <button class="btn" id="set-save">儲存</button></div>
+  <div class="card"><h3>備份／還原</h3>
+    <div class="muted" style="font-size:13px;margin-bottom:8px">資料存在這台裝置的瀏覽器裡。換裝置或怕遺失，請定期匯出備份檔。</div>
+    <button class="btn sub" id="backup-export">匯出備份（JSON）</button>
+    <button class="btn sub" id="backup-import-btn">匯入備份</button>
+    <input type="file" id="backup-import" accept=".json" style="display:none"></div>
+  <div class="card"><h3>危險區</h3>
+    <button class="btn bad" id="proj-del">刪除整個專案</button></div>`;
+}
+
+/* ═══════════ 列印 ═══════════ */
+function printDoc(proj){
+  const perIdx=Math.min(proj.curPeriod??proj.periods.length-1,proj.periods.length-1);
+  const c=calc(proj,perIdx);
+  const ov=document.getElementById('print-overlay');
+  const build=(taxMode)=>{
+    const sum=c.thisAmt;
+    const tax=Math.round(sum*0.05);
+    let h=`<div class="pdoc">
+      <h2>工程估驗請款單</h2>
+      <div class="sub">第 ${c.period.no} 期　${esc(c.period.date)}</div>
+      <table><tr><td style="width:14%;background:#eef2f7">工程名稱</td><td>${esc(proj.name)}</td></tr>
+      ${proj.owner?`<tr><td style="background:#eef2f7">業主（甲方）</td><td>${esc(proj.owner)}</td></tr>`:''}
+      ${proj.vendor?`<tr><td style="background:#eef2f7">承攬（乙方）</td><td>${esc(proj.vendor)}</td></tr>`:''}</table>
+      <table><tr><th>區塊</th><th class="num">合約金額</th><th class="num">前期累計</th><th class="num">本期請款</th><th class="num">累計請款</th><th class="num">完成%</th></tr>`;
+    for(const cb of c.blocks){
+      if(!cb.cum&&!cb.pre)continue;
+      h+=`<tr><td>${esc(cb.blk.name)}（${qfmt(cb.blk.count)} ${esc(cb.blk.unit)}）</td><td class="num">${money(cb.V)}</td><td class="num">${money(cb.pre)}</td><td class="num"><b>${money(cb.thisAmt)}</b></td><td class="num">${money(cb.cum)}</td><td class="num">${pfmt(cb.V?cb.cum/cb.V:0)}</td></tr>`;
+    }
+    h+=`<tr class="tot"><td>合計</td><td class="num">${money(c.V)}</td><td class="num">${money(c.pre)}</td><td class="num">${money(sum)}</td><td class="num">${money(c.cum)}</td><td class="num">${pfmt(c.V?c.cum/c.V:0)}</td></tr>`;
+    if(taxMode==='incl'){
+      h+=`<tr><td colspan="3" style="border:none;background:#fff"></td><td class="num" style="background:#eef2f7">營業稅 5%</td><td class="num" colspan="2">${money(tax)}</td></tr>
+      <tr class="tot"><td colspan="3" style="border:none;background:#fff"></td><td class="num">本期含稅請款</td><td class="num" colspan="2">${money(sum+tax)}</td></tr>`;
+    }
+    h+=`</table>
+      <div style="font-size:11px;color:#555;margin:2px 0 8px">本期請款金額＝各細項 合約金額 ×（累計完成％ − 前期完成％）加總${taxMode==='incl'?'；含稅金額另計 5% 營業稅':'（未稅）'}。</div>
+      <div style="font-weight:700;font-size:12.5px;margin:10px 0 4px">進度明細（僅列有進度之項目）</div>`;
+    for(const cb of c.blocks){
+      const rows=cb.items.filter(ci=>ci.p>0);
+      if(!rows.length)continue;
+      h+=`<table><tr class="bhead"><td colspan="9">${esc(cb.blk.name)}（${qfmt(cb.blk.count)} ${esc(cb.blk.unit)}）</td></tr>
+      <tr><th>項次</th><th>名稱及規格</th><th>單位</th><th class="num">合約總量</th><th class="num">合約金額</th><th class="num">累計完成量</th><th class="num">完成%</th><th class="num">前期已請</th><th class="num">本期請款</th></tr>`;
+      let ch='';
+      for(const ci of rows){
+        const it=ci.it;
+        if(it.chapter!==ch){ch=it.chapter;if(ch)h+=`<tr class="bchap"><td colspan="9">${esc(ch)}</td></tr>`;}
+        const tq=itemTotalQty(it,cb.blk);
+        const pr=progOf(c.period,it.id);
+        h+=`<tr><td>${esc(it.no)}</td><td>${esc(it.name)}</td><td>${esc(it.unit)}</td>
+          <td class="num">${qfmt(tq)}</td><td class="num">${money(ci.v)}</td>
+          <td class="num">${qfmt(pr.q||tq*ci.p)}</td><td class="num">${pfmt(ci.p)}</td>
+          <td class="num">${money(ci.preAmt)}</td><td class="num">${money(ci.thisAmt)}</td></tr>`;
+      }
+      h+=`<tr class="tot"><td colspan="7">小計</td><td class="num">${money(cb.pre)}</td><td class="num">${money(cb.thisAmt)}</td></tr></table>`;
+    }
+    h+=`<div class="sign"><div>業主（甲方）簽認</div><div>監造／工地主任</div><div>承攬（乙方）</div></div></div>`;
+    return h;
+  };
+  let taxMode=proj.taxMode||'excl';
+  const redraw=()=>{ov.querySelector('.pcontent').innerHTML=build(taxMode);};
+  ov.innerHTML=`<div class="pbar">
+    <b style="color:var(--ink)">列印預覽</b>
+    <label style="color:var(--ink);font-size:13px"><input type="radio" name="ptax" value="excl"${taxMode==='excl'?' checked':''}> 未稅</label>
+    <label style="color:var(--ink);font-size:13px"><input type="radio" name="ptax" value="incl"${taxMode==='incl'?' checked':''}> 含 5% 稅</label>
+    <span style="flex:1"></span>
+    <button class="btn" id="do-print">🖨 列印 / 存 PDF</button>
+    <button class="btn sub" id="close-print">關閉</button></div>
+    <div class="pcontent" style="padding:14px 0 30px"></div>`;
+  redraw();
+  document.body.classList.add('printing');
+  ov.querySelectorAll('[name=ptax]').forEach(r=>r.onchange=()=>{taxMode=r.value;proj.taxMode=taxMode;save();redraw();});
+  ov.querySelector('#do-print').onclick=()=>window.print();
+  ov.querySelector('#close-print').onclick=()=>{document.body.classList.remove('printing');ov.innerHTML='';};
+}
+
+/* ═══════════ 匯入流程 ═══════════ */
+async function importXlsx(file){
+  let sheets;
+  try{ sheets=await readXlsx(await file.arrayBuffer()); }
+  catch(e){ alert('讀取失敗：'+e.message);return; }
+  if(!sheets.length){alert('這個檔案裡沒有工作表');return;}
+  sheets.sort((a,b)=>b.maxR-a.maxR);
+  const pick=async()=>{
+    if(sheets.length===1)return sheets[0];
+    const modal=document.createElement('div');modal.id='modal';
+    modal.innerHTML=`<div class="box"><h3 style="margin-bottom:10px">選擇明細工作表</h3>
+      <div class="muted" style="font-size:13px;margin-bottom:10px">通常是列數最多的那張（放細項的）。</div>
+      ${sheets.map((s,i)=>`<button class="btn sub" style="display:block;width:100%;text-align:left;margin-bottom:6px" data-pick="${i}">${esc(s.name)}<span class="tag">${s.maxR} 列</span></button>`).join('')}
+      <button class="btn bad sm" data-pick="-1">取消</button></div>`;
+    document.body.appendChild(modal);
+    return new Promise(res=>{modal.onclick=e=>{const b=e.target.closest('[data-pick]');if(!b)return;modal.remove();const i=+b.dataset.pick;res(i<0?null:sheets[i]);};});
+  };
+  const sheet=await pick();
+  if(!sheet)return;
+  const a=analyzeSheet(sheet);
+  if(!a.blocks.length||!a.blocks.some(b=>b.items.length)){alert('沒抓到任何細項，可能格式不同。可以把 Excel 給我看調整解析規則。');return;}
+  const sumV=a.blocks.reduce((s,b)=>s+b.items.reduce((x,i)=>x+i.amount*b.count,0),0);
+  const modal=document.createElement('div');modal.id='modal';
+  modal.innerHTML=`<div class="box"><h3 style="margin-bottom:10px">確認匯入內容</h3>
+    <div style="margin-bottom:8px">工程名稱：<input id="imp-name" style="min-width:320px" value="${esc(a.title||file.name.replace(/\.xlsx$/i,''))}"></div>
+    <table style="margin-bottom:10px"><tr><th>區塊</th><th class="num">數量</th><th class="num">細項數</th><th class="num">金額</th></tr>
+    ${a.blocks.map(b=>`<tr><td>${esc(b.name)}</td><td class="num">${qfmt(b.count)} ${esc(b.unit)}</td><td class="num">${b.items.length}</td><td class="num">${money(b.items.reduce((s,i)=>s+i.amount*b.count,0))}</td></tr>`).join('')}
+    <tr class="chapter"><td><b>合計（未稅）</b></td><td></td><td class="num">${a.blocks.reduce((s,b)=>s+b.items.length,0)}</td><td class="num"><b>${money(sumV)}</b></td></tr></table>
+    ${a.grand?`<div class="${Math.abs(a.grand-sumV)<=2?'ok':'warn-t'}" style="font-size:13px;margin-bottom:8px">Excel 總價列：${money(a.grand)} ${Math.abs(a.grand-sumV)<=2?'✓ 與細項加總一致':'⚠ 與細項加總不一致，匯入後請檢查'}</div>`:''}
+    ${a.warnings.map(w=>`<div class="notice">⚠ ${esc(w)}</div>`).join('')}
+    <div class="rowline"><button class="btn" id="imp-ok">建立專案</button><button class="btn sub" id="imp-cancel">取消</button></div></div>`;
+  document.body.appendChild(modal);
+  modal.querySelector('#imp-cancel').onclick=()=>modal.remove();
+  modal.querySelector('#imp-ok').onclick=()=>{
+    const name=modal.querySelector('#imp-name').value.trim()||file.name;
+    const proj={id:uid(),name,owner:'',vendor:'',taxMode:'excl',blocks:a.blocks,periods:[],curPeriod:0,createdAt:Date.now()};
+    state.projects.push(proj);state.cur=proj.id;state.tab='items';
+    modal.remove();save();render();
+  };
+}
+
+/* ═══════════ 事件 ═══════════ */
+function setProgInput(proj,blkId,itemId,kind,val){
+  const perIdx=proj.periods.length-1;
+  const period=proj.periods[perIdx];
+  const b=proj.blocks.find(x=>x.id===blkId);const it=b.items.find(x=>x.id===itemId);
+  const tq=itemTotalQty(it,b);
+  let p,q;
+  if(kind==='q'){ q=Math.max(0,Math.min(num(val),tq)); p=tq?q/tq:0; }
+  else{ p=Math.max(0,Math.min(num(val),100))/100; q=tq*p; }
+  period.prog||(period.prog={});
+  if(p>0)period.prog[itemId]={p,q:+q.toFixed(2)};else delete period.prog[itemId];
+  save();
+  // 更新畫面數字（不重畫，保留輸入焦點）
+  const c=calc(proj,perIdx);
+  const setc=(k,v)=>{document.querySelectorAll(`[data-c="${k}"]`).forEach(el=>el.textContent=v);};
+  for(const cb of c.blocks){
+    if(cb.blk.id!==blkId)continue;
+    for(const ci of cb.items)if(ci.it.id===itemId)setc('ti-'+itemId,ci.thisAmt?money(ci.thisAmt):'—');
+    setc('bt-'+blkId,money(cb.thisAmt));setc('bc-'+blkId,money(cb.cum));setc('bp-'+blkId,pfmt(cb.V?cb.cum/cb.V:0));
+  }
+  setc('g-pre',money(c.pre));setc('g-this',money(c.thisAmt));setc('g-cum',money(c.cum)+'（');
+  const gp=document.querySelector('[data-c="g-pct"]');if(gp){gp.textContent=pfmt(c.V?c.cum/c.V:0);gp.parentElement.lastChild.textContent='）';}
+  const qEl=document.querySelector(`[data-q="${blkId}::${itemId}"]`),pEl=document.querySelector(`[data-p="${blkId}::${itemId}"]`);
+  if(kind==='q'&&pEl)pEl.value=p?+(p*100).toFixed(1):'';
+  if(kind==='p'&&qEl)qEl.value=p?qfmt(q):'';
+}
+
+document.addEventListener('click',async e=>{
+  const t=e.target.closest('[data-tab],[data-editblk],[data-delblk],[data-edititem],[data-delitem],[data-additem],[data-bapply],#btn-import,#btn-import2,#btn-addblk,#btn-addperiod,#btn-delperiod,#btn-print,#set-save,#backup-export,#backup-import-btn,#proj-del');
+  if(!t)return;
+  const proj=curProj();
+  if(t.dataset.tab){state.tab=t.dataset.tab;save();render();return;}
+  if(t.id==='btn-import'||t.id==='btn-import2'){document.getElementById('xlsx-file').click();return;}
+  if(!proj)return;
+  if(t.dataset.editblk){
+    const b=proj.blocks.find(x=>x.id===t.dataset.editblk);if(!b)return;
+    const name=prompt('區塊名稱',b.name);if(name===null)return;
+    const cnt=prompt(`合約數量（${b.unit}）`,b.count);if(cnt===null)return;
+    b.name=name.trim()||b.name;b.count=Math.max(num(cnt),0.01);save();render();return;
+  }
+  if(t.dataset.delblk){
+    const b=proj.blocks.find(x=>x.id===t.dataset.delblk);if(!b)return;
+    if(!confirm(`刪除「${b.name}」整個區塊（${b.items.length} 條細項）？進度紀錄也會一併移除。`))return;
+    for(const it of b.items)for(const p of proj.periods)if(p.prog)delete p.prog[it.id];
+    proj.blocks=proj.blocks.filter(x=>x!==b);save();render();return;
+  }
+  if(t.dataset.edititem||t.dataset.delitem||t.dataset.additem){
+    const [blkId,itemId]=(t.dataset.edititem||t.dataset.delitem||t.dataset.additem).split('::');
+    const b=proj.blocks.find(x=>x.id===blkId);if(!b)return;
+    if(t.dataset.additem){
+      const name=prompt('細項名稱');if(!name)return;
+      const unit=prompt('單位（㎡ / M / 個 / 式…）','式')||'式';
+      const qty=num(prompt(`單${b.unit}數量`,'1'));
+      const price=num(prompt('單價','0'));
+      b.items.push({id:uid(),no:'增',tag:'',chapter:'',name:name.trim(),unit,qty:qty||1,price,amount:(qty||1)*price,remark:'手動新增'});
+      save();render();return;
+    }
+    const it=b.items.find(x=>x.id===itemId);if(!it)return;
+    if(t.dataset.delitem){
+      if(!confirm(`刪除細項「${it.name}」？`))return;
+      for(const p of proj.periods)if(p.prog)delete p.prog[it.id];
+      b.items=b.items.filter(x=>x!==it);save();render();return;
+    }
+    const name=prompt('名稱',it.name);if(name===null)return;
+    const qty=prompt(`單${b.unit}數量`,it.qty);if(qty===null)return;
+    const price=prompt('單價',it.price);if(price===null)return;
+    it.name=name.trim()||it.name;it.qty=num(qty);it.price=num(price);it.amount=it.qty*it.price;
+    save();render();return;
+  }
+  if(t.id==='btn-addblk'){
+    const name=prompt('區塊名稱（例：TYPE-SK 標準大床）');if(!name)return;
+    const unit=prompt('單位（間 / 層 / 式）','間')||'間';
+    const count=Math.max(num(prompt('合約數量','1')),0.01);
+    proj.blocks.push({id:uid(),name:name.trim(),unit,count,items:[]});save();render();return;
+  }
+  if(t.dataset.bapply){
+    const b=proj.blocks.find(x=>x.id===t.dataset.bapply);if(!b)return;
+    const inp=document.querySelector(`[data-bfill="${b.id}"]`);
+    const n=Math.max(0,Math.min(num(inp&&inp.value),b.count));
+    if(!confirm(`把「${b.name}」全部細項的完成％設成 ${qfmt(n)} ÷ ${qfmt(b.count)} ＝ ${pfmt(n/b.count)}？（會覆蓋原本逐條填的數字）`))return;
+    const period=proj.periods[proj.periods.length-1];period.prog||(period.prog={});
+    const p=n/b.count;
+    for(const it of b.items){
+      if(it.amount===0)continue;
+      if(p>0)period.prog[it.id]={p,q:+(itemTotalQty(it,b)*p).toFixed(2)};else delete period.prog[it.id];
+    }
+    save();render();return;
+  }
+  if(t.id==='btn-addperiod'){
+    const last=proj.periods[proj.periods.length-1];
+    const prog=last?JSON.parse(JSON.stringify(last.prog||{})):{};
+    proj.periods.push({id:uid(),no:proj.periods.length+1,date:today(),prog});
+    proj.curPeriod=proj.periods.length-1;state.tab='prog';save();render();return;
+  }
+  if(t.id==='btn-delperiod'){
+    if(!confirm(`刪除第 ${proj.periods.length} 期？本期填的進度會遺失。`))return;
+    proj.periods.pop();proj.curPeriod=Math.max(0,proj.periods.length-1);save();render();return;
+  }
+  if(t.id==='btn-print'){printDoc(proj);return;}
+  if(t.id==='set-save'){
+    proj.name=document.getElementById('set-name').value.trim()||proj.name;
+    proj.owner=document.getElementById('set-owner').value.trim();
+    proj.vendor=document.getElementById('set-vendor').value.trim();
+    save();render();alert('已儲存');return;
+  }
+  if(t.id==='backup-export'){
+    const blob=new Blob([JSON.stringify(state,null,1)],{type:'application/json'});
+    const a=document.createElement('a');a.href=URL.createObjectURL(blob);
+    a.download=`進度請款備份_${today()}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),3000);return;
+  }
+  if(t.id==='backup-import-btn'){document.getElementById('backup-import').click();return;}
+  if(t.id==='proj-del'){
+    if(!confirm(`刪除整個專案「${proj.name}」？所有細項與各期進度都會消失。`))return;
+    if(!confirm('再確認一次：真的要刪除？'))return;
+    state.projects=state.projects.filter(p=>p!==proj);
+    state.cur=state.projects[0]?state.projects[0].id:null;save();render();return;
+  }
+});
+document.addEventListener('change',e=>{
+  const t=e.target;const proj=curProj();
+  if(t.id==='proj-sel'){state.cur=t.value;save();render();return;}
+  if(!proj)return;
+  if(t.id==='period-sel'){proj.curPeriod=+t.value;save();render();return;}
+  if(t.id==='period-date'){const per=proj.periods[proj.periods.length-1];if(per){per.date=t.value;save();}return;}
+  if(t.dataset.q){const [b,i]=t.dataset.q.split('::');setProgInput(proj,b,i,'q',t.value);return;}
+  if(t.dataset.p){const [b,i]=t.dataset.p.split('::');setProgInput(proj,b,i,'p',t.value);return;}
+});
+document.addEventListener('toggle',e=>{
+  const d=e.target.closest&&e.target.closest('details[data-blk]');
+  if(!d)return;
+  if(d.open)openBlk.add(d.dataset.blk);else openBlk.delete(d.dataset.blk);
+},true);
+document.getElementById('xlsx-file').addEventListener('change',async e=>{
+  const f=e.target.files[0];e.target.value='';
+  if(f)await importXlsx(f);
+});
+document.getElementById('backup-import')?.addEventListener('change',()=>{});
+document.addEventListener('change',e=>{
+  if(e.target.id!=='backup-import')return;
+  const f=e.target.files[0];e.target.value='';if(!f)return;
+  const rd=new FileReader();
+  rd.onload=()=>{
+    try{
+      const d=JSON.parse(rd.result);
+      if(!d||!Array.isArray(d.projects))throw new Error('格式不符');
+      if(!confirm(`備份含 ${d.projects.length} 個專案。匯入會「完全覆蓋」目前資料，確定？`))return;
+      state=d;save();render();alert('已還原');
+    }catch(err){alert('匯入失敗：'+err.message);}
+  };
+  rd.readAsText(f);
+});
+render();
+</script>
+</body>
+</html>

@@ -10,6 +10,7 @@
 | `payroll-new.html` | 點工薪資管理系統（簡化版） | 給其他使用者用的簡化版本，使用 `r.type` 欄位（`'請假'`/`'休假'`）而非 `r.kind`。**非本專案主力檔案，除非明確指定否則不要修改此檔案** |
 | `payroll2.html` | 點工薪資管理系統（同行版） | 從簡化版複製給同行使用的獨立副本：localStorage key 全部 `pm2_` 前綴、雲端用獨立的 GAS 部署（`CLOUD_URL` 與本人資料完全分開）。**除非明確指定否則不要修改；簡化版更新時視需求同步** |
 | `pinyou.html` | 品佑帳本 | 案場支出/請款/報價/採購帳本，雲端為 GAS。localStorage key: `pinyou_data_v1` |
+| `progress.html` | 工程進度請款系統 | 匯入合約 Excel（純瀏覽器解析 xlsx）抓出細項，每期填完成量/％，自動算本期請款金額並列印估驗請款單。純 localStorage（無雲端）。localStorage key: `pm_progress_v1` |
 | `index.html` | 倉庫管理系統 | 完全不同的系統，與薪資無關 |
 
 ## 重要注意事項
