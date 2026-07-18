@@ -102,7 +102,7 @@ body.printing #print-overlay{display:block;position:absolute;inset:0;background:
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.07.18e';
+const APP_VERSION='vG2026.07.18f';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -445,11 +445,11 @@ function viewProg(proj){
   // ── 額外款項（訂金／加項）──
   const myExtras=extrasOf(period).filter(e=>!e.auto);
   h+=`<div style="margin-top:6px;font-size:13px;font-weight:600">本期登錄款項</div>
-    <div class="muted" style="font-size:12px;margin-bottom:6px"><b>訂金／預付款</b>＝業主已先付、要從請款扣掉；<b>加項</b>＝額外追加、要多請。</div>`;
+    <div class="muted" style="font-size:12px;margin-bottom:6px"><b>已收款（訂金／前期請款）</b>＝業主之前付過的，會列進「前期累計已收」給業主看，並自動從本次請款扣掉；<b>加項</b>＝額外追加工程，加到本次請款。</div>`;
   if(myExtras.length){
     h+=`<table style="margin-bottom:8px"><tr><th>名目</th><th class="num">日期</th><th>性質</th><th class="num">金額</th>${editable?'<th></th>':''}</tr>`;
     for(const e of myExtras){
-      const kindTag=e.deduct?'<span class="tag" style="background:#fee2e2;color:#991b1b">訂金/預付</span>':'<span class="tag" style="background:#dbeafe;color:#1e3a8a">加項</span>';
+      const kindTag=e.deduct?'<span class="tag" style="background:#dcfce7;color:#166534">已收扣抵</span>':'<span class="tag" style="background:#dbeafe;color:#1e3a8a">加項</span>';
       h+=`<tr><td>${esc(e.name||'訂金')}</td><td class="num">${esc(e.date||period.date)}</td><td>${kindTag}</td><td class="num">${money(e.amount)}</td>${editable?`<td class="num"><button class="btn sub sm" data-editextra="${e.id}">改</button> <button class="btn bad sm" data-delextra="${e.id}">刪</button></td>`:''}</tr>`;
     }
     h+=`</table>`;
@@ -526,7 +526,7 @@ function viewSet(proj){
 
 /* ═══════════ 額外款項輸入視窗 ═══════════ */
 function openExtraModal(opts){
-  const ex=opts.existing||{name:'訂金',amount:'',date:opts.defaultDate||today(),prior:false,deduct:false};
+  const ex=opts.existing||{name:'訂金',amount:'',date:opts.defaultDate||today(),deduct:true};
   const old=document.getElementById('modal');if(old)old.remove();
   const m=document.createElement('div');m.id='modal';
   m.innerHTML=`<div class="box"><h3 style="margin-bottom:12px">${opts.existing?'編輯':'新增'}款項</h3>
@@ -534,10 +534,10 @@ function openExtraModal(opts){
     <div class="rowline">金額 <input id="ex-amount" inputmode="decimal" value="${ex.amount||''}" placeholder="0"></div>
     <div class="rowline">日期 <input id="ex-date" type="date" value="${esc(ex.date||opts.defaultDate||today())}"></div>
     <div class="rowline" style="flex-wrap:wrap">性質：
-      <label style="margin-left:6px"><input type="radio" name="exk" value="deduct" ${ex.deduct?'checked':''}> 訂金／預付款（業主已付，從請款扣掉）</label>
-      <label style="margin-left:12px"><input type="radio" name="exk" value="add" ${!ex.deduct?'checked':''}> 加項（額外追加，要多請）</label>
+      <label style="margin-left:6px"><input type="radio" name="exk" value="deduct" ${ex.deduct?'checked':''}> 已收款（訂金／前期請款）</label>
+      <label style="margin-left:12px"><input type="radio" name="exk" value="add" ${!ex.deduct?'checked':''}> 加項（額外追加工程款）</label>
     </div>
-    <div class="muted" style="font-size:12px;margin:2px 0 12px">例：6/27 收了訂金 60 萬 → 選「訂金／預付款」，本次請款會自動扣掉這 60 萬。</div>
+    <div class="muted" style="font-size:12px;margin:2px 0 12px"><b>已收款</b>＝業主之前付過的（訂金、第一期款…），會列進「前期累計已收」給業主看，並自動從本次請款扣掉。<b>加項</b>＝額外追加的工程，加到本次請款。</div>
     <div class="rowline"><button class="btn" id="ex-ok">儲存</button><button class="btn sub" id="ex-cancel">取消</button></div></div>`;
   document.body.appendChild(m);
   m.querySelector('#ex-cancel').onclick=()=>m.remove();
