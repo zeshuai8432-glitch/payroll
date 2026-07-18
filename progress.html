@@ -102,7 +102,7 @@ body.printing #print-overlay{display:block;position:absolute;inset:0;background:
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.07.18b';
+const APP_VERSION='vG2026.07.18c';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -110,6 +110,7 @@ const FS_URL='https://firestore.googleapis.com/v1/projects/payroll-d1abe/databas
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,8);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const money=n=>'$'+Math.round(n||0).toLocaleString('en-US');
+const moneyS=n=>{n=Math.round(n||0);return (n<0?'-$':'$')+Math.abs(n).toLocaleString('en-US');}; // 帶正負號（扣抵為負）
 const num=v=>{const n=parseFloat(String(v??'').replace(/,/g,''));return isFinite(n)?n:0;};
 const qfmt=n=>{n=+(+n||0).toFixed(2);return n.toLocaleString('en-US',{maximumFractionDigits:2});};
 const pfmt=p=>{const v=+(p*100).toFixed(1);return (Number.isInteger(v)?v.toFixed(0):v.toFixed(1))+'%';};
@@ -306,7 +307,8 @@ const itemValue=(it,blk)=>it.amount*blk.count;
 function periodOf(p,idx){return p.periods[idx]||null;}
 function progOf(period,itemId){return (period&&period.prog&&period.prog[itemId])||{p:0,q:0};}
 const extrasOf=period=>(period&&period.extras)||[]; // 額外款項（訂金／預付款等）
-const extrasSum=period=>extrasOf(period).reduce((s,e)=>s+(+e.amount||0),0);
+const exVal=e=>(+((e&&e.amount)||0))*(e&&e.deduct?-1:1); // 加項為正、扣抵(預付款)為負
+const extrasSum=period=>extrasOf(period).reduce((s,e)=>s+exVal(e),0);
 function calc(proj,perIdx){
   const period=proj.periods[perIdx];
   const prev=perIdx>0?proj.periods[perIdx-1]:null;
@@ -323,14 +325,14 @@ function calc(proj,perIdx){
   });
   const V=blocks.reduce((s,b)=>s+b.V,0);
   const itemCum=blocks.reduce((s,b)=>s+b.cum,0), itemPre=blocks.reduce((s,b)=>s+b.pre,0);
-  // 額外款項：先前各期一律算前期；當期內標「前期已請」(prior)者也算前期
-  let exPre=0; for(let i=0;i<perIdx;i++) exPre+=extrasSum(proj.periods[i]);
-  let exThis=0;
-  for(const e of extrasOf(period)){ if(e.prior) exPre+=(+e.amount||0); else exThis+=(+e.amount||0); }
+  // 額外款項（訂金/預付款）：加項為正、扣抵為負；先前各期或標「前期」者計前期，其餘計本期
+  let exPre=0, exThis=0; const exList=[];
+  for(let i=0;i<=perIdx;i++) for(const e of extrasOf(proj.periods[i])){
+    const v=exVal(e), where=(i<perIdx||e.prior)?'prior':'this';
+    if(where==='prior') exPre+=v; else exThis+=v;
+    exList.push({...e,val:v,where,periodNo:proj.periods[i].no});
+  }
   const exCum=exPre+exThis;
-  // 各期額外款項清單（含日期），供列印顯示「什麼時候請的」；isThis=本期新請(列本期欄)
-  const exList=[];
-  for(let i=0;i<=perIdx;i++) for(const e of extrasOf(proj.periods[i])) exList.push({...e,isThis:(i===perIdx&&!e.prior),periodNo:proj.periods[i].no});
   const cum=itemCum+exCum, pre=itemPre+exPre;
   return {blocks,V,cum,pre,thisAmt:cum-pre,period,prev,itemCum,itemPre,exThis,exPre,exCum,exList};
 }
@@ -416,24 +418,26 @@ function viewProg(proj){
   ${editable?'':'<div class="notice">這是舊期別，唯讀。要修改請切到最新一期。</div>'}
   <div class="grid" style="margin-bottom:12px">
     <div class="stat"><div class="l">合約總額</div><div class="v">${money(c.V)}</div></div>
-    <div class="stat"><div class="l">前期累計已請</div><div class="v" data-c="g-pre">${money(c.pre)}</div></div>
-    <div class="stat"><div class="l">本期請款</div><div class="v ok" data-c="g-this">${money(c.thisAmt)}</div></div>
-    <div class="stat"><div class="l">累計請款</div><div class="v" data-c="g-cum">${money(c.cum)}（<span data-c="g-pct">${pfmt(c.V?c.cum/c.V:0)}</span>）</div></div>
+    <div class="stat"><div class="l">前期累計已請</div><div class="v" data-c="g-pre">${moneyS(c.pre)}</div></div>
+    <div class="stat"><div class="l">本期請款</div><div class="v ok" data-c="g-this">${moneyS(c.thisAmt)}</div></div>
+    <div class="stat"><div class="l">累計請款</div><div class="v" data-c="g-cum">${moneyS(c.cum)}（<span data-c="g-pct">${pfmt(c.V?c.cum/c.V:0)}</span>）</div></div>
   </div>`;
   // ── 額外款項（訂金／預付款）──
   const myExtras=extrasOf(period);
   h+=`<div class="card" style="margin-bottom:12px"><h3>額外款項（訂金／預付款）</h3>
-    <div class="muted" style="font-size:12.5px;margin-bottom:8px">還沒施作就先請的訂金等，填在這裡會算進本期請款；之後的期別會自動出現在「前期累計」，列印時看得到日期。</div>`;
+    <div class="muted" style="font-size:12.5px;margin-bottom:8px">訂金／預付款填這裡。可選<b>加項</b>（另外加上）或<b>扣抵</b>（預付款，從進度款扣掉，例如已收訂金要在本次請款扣除）；並可標歸屬本期或前期。列印時逐筆列出並顯示日期。</div>`;
   if(myExtras.length){
-    h+=`<table style="margin-bottom:8px"><tr><th>名目</th><th class="num">請款日</th><th>歸屬</th><th class="num">金額</th>${editable?'<th></th>':''}</tr>`;
+    h+=`<table style="margin-bottom:8px"><tr><th>名目</th><th class="num">日期</th><th>性質</th><th>歸屬</th><th class="num">金額</th>${editable?'<th></th>':''}</tr>`;
     for(const e of myExtras){
-      h+=`<tr><td>${esc(e.name||'訂金')}</td><td class="num">${esc(e.date||period.date)}</td><td>${e.prior?'<span class="tag">前期已請</span>':'<span class="tag" style="background:#dbeafe;color:#1e3a8a">本期新請</span>'}</td><td class="num">${money(e.amount)}</td>${editable?`<td class="num"><button class="btn sub sm" data-editextra="${e.id}">改</button> <button class="btn bad sm" data-delextra="${e.id}">刪</button></td>`:''}</tr>`;
+      const kindTag=e.deduct?'<span class="tag" style="background:#fee2e2;color:#991b1b">扣抵</span>':'<span class="tag" style="background:#dbeafe;color:#1e3a8a">加項</span>';
+      const whenTag=e.prior?'<span class="tag">前期</span>':'<span class="tag">本期</span>';
+      h+=`<tr><td>${esc(e.name||'訂金')}</td><td class="num">${esc(e.date||period.date)}</td><td>${kindTag}</td><td>${whenTag}</td><td class="num">${moneyS(exVal(e))}</td>${editable?`<td class="num"><button class="btn sub sm" data-editextra="${e.id}">改</button> <button class="btn bad sm" data-delextra="${e.id}">刪</button></td>`:''}</tr>`;
     }
-    h+=`<tr class="chapter"><td>本期額外款項小計</td><td></td><td class="num"><b>${money(c.exThis)}</b></td>${editable?'<td></td>':''}</tr></table>`;
+    h+=`<tr class="chapter"><td>本期額外款項小計</td><td></td><td></td><td></td><td class="num"><b>${moneyS(c.exThis)}</b></td>${editable?'<td></td>':''}</tr></table>`;
   }else{
     h+=`<div class="muted" style="font-size:13px;margin-bottom:8px">本期尚無額外款項。</div>`;
   }
-  if(c.exPre>0)h+=`<div class="muted" style="font-size:12.5px;margin-bottom:8px">（先前期別的額外款項累計 ${money(c.exPre)} 已含在上方「前期累計」中）</div>`;
+  if(c.exPre!==0)h+=`<div class="muted" style="font-size:12.5px;margin-bottom:8px">（先前期別的額外款項累計 ${moneyS(c.exPre)} 已含在上方「前期累計」中）</div>`;
   if(editable)h+=`<button class="btn sub sm" id="btn-addextra">＋ 新增訂金／款項</button>`;
   h+=`</div>`;
   for(const cb of c.blocks){
@@ -496,6 +500,41 @@ function viewSet(proj){
     <button class="btn bad" id="proj-del">刪除整個專案</button></div>`;
 }
 
+/* ═══════════ 額外款項輸入視窗 ═══════════ */
+function openExtraModal(opts){
+  const ex=opts.existing||{name:'訂金',amount:'',date:opts.defaultDate||today(),prior:false,deduct:false};
+  const old=document.getElementById('modal');if(old)old.remove();
+  const m=document.createElement('div');m.id='modal';
+  m.innerHTML=`<div class="box"><h3 style="margin-bottom:12px">${opts.existing?'編輯':'新增'}款項</h3>
+    <div class="rowline">名目 <input id="ex-name" style="min-width:200px" value="${esc(ex.name||'')}" placeholder="訂金／預付款"></div>
+    <div class="rowline">金額 <input id="ex-amount" inputmode="decimal" value="${ex.amount||''}" placeholder="0"></div>
+    <div class="rowline">日期 <input id="ex-date" type="date" value="${esc(ex.date||opts.defaultDate||today())}"></div>
+    <div class="rowline" style="flex-wrap:wrap">性質：
+      <label style="margin-left:6px"><input type="radio" name="exk" value="add" ${!ex.deduct?'checked':''}> 加項（另外加上這筆）</label>
+      <label style="margin-left:12px"><input type="radio" name="exk" value="deduct" ${ex.deduct?'checked':''}> 扣抵（預付款，從進度款扣掉）</label>
+    </div>
+    <div class="rowline" style="flex-wrap:wrap">歸屬：
+      <label style="margin-left:6px"><input type="radio" name="exw" value="this" ${!ex.prior?'checked':''}> 本期</label>
+      <label style="margin-left:12px"><input type="radio" name="exw" value="prior" ${ex.prior?'checked':''}> 前期（先前已請／已收）</label>
+    </div>
+    <div class="muted" style="font-size:12px;margin:2px 0 12px">例：已收訂金要在本次請款扣掉 → 選「扣抵」＋「本期」；下一期起它會自動算前期。</div>
+    <div class="rowline"><button class="btn" id="ex-ok">儲存</button><button class="btn sub" id="ex-cancel">取消</button></div></div>`;
+  document.body.appendChild(m);
+  m.querySelector('#ex-cancel').onclick=()=>m.remove();
+  m.querySelector('#ex-ok').onclick=()=>{
+    const amount=num(m.querySelector('#ex-amount').value);
+    if(!amount){alert('請輸入金額');return;}
+    opts.onSave({
+      name:m.querySelector('#ex-name').value.trim()||'訂金',
+      amount, date:m.querySelector('#ex-date').value||opts.defaultDate||today(),
+      deduct:m.querySelector('input[name=exk]:checked').value==='deduct',
+      prior:m.querySelector('input[name=exw]:checked').value==='prior',
+    });
+    m.remove();
+  };
+  setTimeout(()=>{const a=m.querySelector('#ex-amount');if(a)a.focus();},50);
+}
+
 /* ═══════════ 列印 ═══════════ */
 function printDoc(proj){
   const perIdx=Math.min(proj.curPeriod??proj.periods.length-1,proj.periods.length-1);
@@ -515,17 +554,18 @@ function printDoc(proj){
       if(!showAll&&!cb.cum&&!cb.pre)continue;
       h+=`<tr><td>${esc(cb.blk.name)}（${qfmt(cb.blk.count)} ${esc(cb.blk.unit)}）</td><td class="num">${money(cb.V)}</td><td class="num">${money(cb.pre)}</td><td class="num"><b>${money(cb.thisAmt)}</b></td><td class="num">${money(cb.cum)}</td><td class="num">${pfmt(cb.V?cb.cum/cb.V:0)}</td></tr>`;
     }
-    // 額外款項（訂金）逐筆列出，看得到請款日；前期請的落在「前期累計」欄、本期請的落在「本期請款」欄
+    // 額外款項（訂金／預付款）逐筆列出，看得到日期；扣抵顯示負數
     for(const e of c.exList){
-      h+=`<tr><td>${esc(e.name||'訂金')}（請款日 ${esc(e.date||'')}）</td><td class="num">—</td><td class="num">${e.isThis?'':money(e.amount)}</td><td class="num"><b>${e.isThis?money(e.amount):''}</b></td><td class="num">${money(e.amount)}</td><td class="num">—</td></tr>`;
+      const lbl=esc(e.name||'訂金')+(e.deduct?`（預付扣抵${e.date?'，收款日 '+esc(e.date):''}）`:`（請款日 ${esc(e.date||'')}）`);
+      h+=`<tr><td>${lbl}</td><td class="num">—</td><td class="num">${e.where==='prior'?moneyS(e.val):''}</td><td class="num"><b>${e.where==='this'?moneyS(e.val):''}</b></td><td class="num">${moneyS(e.val)}</td><td class="num">—</td></tr>`;
     }
-    h+=`<tr class="tot"><td>合計</td><td class="num">${money(c.V)}</td><td class="num">${money(c.pre)}</td><td class="num">${money(sum)}</td><td class="num">${money(c.cum)}</td><td class="num">${pfmt(c.V?c.cum/c.V:0)}</td></tr>`;
+    h+=`<tr class="tot"><td>合計</td><td class="num">${money(c.V)}</td><td class="num">${moneyS(c.pre)}</td><td class="num">${moneyS(sum)}</td><td class="num">${moneyS(c.cum)}</td><td class="num">${pfmt(c.V?c.cum/c.V:0)}</td></tr>`;
     if(taxMode==='incl'){
       h+=`<tr><td colspan="3" style="border:none;background:#fff"></td><td class="num" style="background:#e8f0fb;color:#1e3a8a;font-weight:600">營業稅 5%</td><td class="num" colspan="2">${money(tax)}</td></tr>
       <tr class="tot"><td colspan="3" style="border:none;background:#fff"></td><td class="num">本期含稅請款</td><td class="num" colspan="2">${money(sum+tax)}</td></tr>`;
     }
     h+=`</table>
-      <div style="font-size:11px;color:#555;margin:2px 0 8px">本期請款金額＝各細項 總價 × 合約間（層）數 ×（累計完成％ − 前期完成％）加總${taxMode==='incl'?'；含稅金額另計 5% 營業稅':'（未稅）'}。</div>
+      <div style="font-size:11px;color:#555;margin:2px 0 8px">本期請款金額＝各細項 總價 × 合約間（層）數 ×（累計完成％ − 前期完成％）加總，再加計本期額外款項（訂金加項為正、預付扣抵為負）${taxMode==='incl'?'；含稅金額另計 5% 營業稅':'（未稅）'}。</div>
       <div style="font-weight:700;font-size:12.5px;margin:10px 0 4px">進度明細${showAll?'（全部項目）':'（僅列有進度之項目）'}</div>`;
     for(const cb of c.blocks){
       const base=proj.hideZero?cb.items.filter(ci=>ci.v>0):cb.items;
@@ -680,7 +720,7 @@ function setProgInput(proj,blkId,itemId,kind,val){
     for(const ci of cb.items)if(ci.it.id===itemId)setc('ti-'+itemId,ci.thisAmt?money(ci.thisAmt):'—');
     setc('bt-'+blkId,money(cb.thisAmt));setc('bc-'+blkId,money(cb.cum));setc('bp-'+blkId,pfmt(cb.V?cb.cum/cb.V:0));
   }
-  setc('g-pre',money(c.pre));setc('g-this',money(c.thisAmt));setc('g-cum',money(c.cum)+'（');
+  setc('g-pre',moneyS(c.pre));setc('g-this',moneyS(c.thisAmt));setc('g-cum',moneyS(c.cum)+'（');
   const gp=document.querySelector('[data-c="g-pct"]');if(gp){gp.textContent=pfmt(c.V?c.cum/c.V:0);gp.parentElement.lastChild.textContent='）';}
   const qEl=document.querySelector(`[data-q="${blkId}::${itemId}"]`),pEl=document.querySelector(`[data-p="${blkId}::${itemId}"]`),rEl=document.querySelector(`[data-r="${blkId}::${itemId}"]`);
   if(kind!=='q'&&qEl)qEl.value=p?qfmt(q):'';
@@ -761,23 +801,16 @@ document.addEventListener('click',async e=>{
   }
   if(t.id==='btn-addextra'){
     const period=proj.periods[proj.periods.length-1];if(!period)return;
-    const name=prompt('款項名目','訂金');if(name===null)return;
-    const amount=num(prompt('金額',''));if(!amount)return;
-    const date=prompt('請款日期（YYYY-MM-DD）',period.date||today())||period.date||today();
-    const prior=confirm('這筆是「本期請款之前就已經收款／請過」的嗎？\n\n確定＝前期已請（列在前期累計）\n取消＝本期新請（列在本期請款）');
-    (period.extras||(period.extras=[])).push({id:uid(),name:name.trim()||'訂金',amount,date,prior});
-    save();render();return;
+    openExtraModal({defaultDate:period.date,onSave:d=>{ (period.extras||(period.extras=[])).push({id:uid(),...d}); save();render(); }});
+    return;
   }
   if(t.dataset.editextra||t.dataset.delextra){
     const period=proj.periods[proj.periods.length-1];if(!period)return;
     const exId=t.dataset.editextra||t.dataset.delextra;
     const ex=(period.extras||[]).find(x=>x.id===exId);if(!ex)return;
-    if(t.dataset.delextra){ if(!confirm(`刪除「${ex.name||'訂金'}」$${Math.round(ex.amount).toLocaleString('en-US')}？`))return; period.extras=period.extras.filter(x=>x!==ex);save();render();return; }
-    const name=prompt('款項名目',ex.name||'訂金');if(name===null)return;
-    const amount=prompt('金額',ex.amount);if(amount===null)return;
-    const date=prompt('請款日期（YYYY-MM-DD）',ex.date||period.date)||ex.date;
-    ex.prior=confirm('這筆歸屬？\n\n確定＝前期已請（列在前期累計）\n取消＝本期新請（列在本期請款）');
-    ex.name=name.trim()||'訂金';ex.amount=num(amount);ex.date=date;save();render();return;
+    if(t.dataset.delextra){ if(!confirm(`刪除「${ex.name||'訂金'}」${moneyS(exVal(ex))}？`))return; period.extras=period.extras.filter(x=>x!==ex);save();render();return; }
+    openExtraModal({existing:ex,defaultDate:period.date,onSave:d=>{ Object.assign(ex,d); save();render(); }});
+    return;
   }
   if(t.id==='btn-print'){printDoc(proj);return;}
   if(t.id==='set-save'){
