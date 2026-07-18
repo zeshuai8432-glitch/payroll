@@ -102,7 +102,7 @@ body.printing #print-overlay{display:block;position:absolute;inset:0;background:
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.07.18a';
+const APP_VERSION='vG2026.07.18b';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -323,12 +323,14 @@ function calc(proj,perIdx){
   });
   const V=blocks.reduce((s,b)=>s+b.V,0);
   const itemCum=blocks.reduce((s,b)=>s+b.cum,0), itemPre=blocks.reduce((s,b)=>s+b.pre,0);
-  // 額外款項：本期＝這期新增；前期＝先前各期累計；累計＝含本期
+  // 額外款項：先前各期一律算前期；當期內標「前期已請」(prior)者也算前期
   let exPre=0; for(let i=0;i<perIdx;i++) exPre+=extrasSum(proj.periods[i]);
-  const exThis=extrasSum(period), exCum=exPre+exThis;
-  // 前期各期的額外款項清單（含日期），供列印顯示「什麼時候請的」
+  let exThis=0;
+  for(const e of extrasOf(period)){ if(e.prior) exPre+=(+e.amount||0); else exThis+=(+e.amount||0); }
+  const exCum=exPre+exThis;
+  // 各期額外款項清單（含日期），供列印顯示「什麼時候請的」；isThis=本期新請(列本期欄)
   const exList=[];
-  for(let i=0;i<=perIdx;i++) for(const e of extrasOf(proj.periods[i])) exList.push({...e,isThis:i===perIdx,periodNo:proj.periods[i].no});
+  for(let i=0;i<=perIdx;i++) for(const e of extrasOf(proj.periods[i])) exList.push({...e,isThis:(i===perIdx&&!e.prior),periodNo:proj.periods[i].no});
   const cum=itemCum+exCum, pre=itemPre+exPre;
   return {blocks,V,cum,pre,thisAmt:cum-pre,period,prev,itemCum,itemPre,exThis,exPre,exCum,exList};
 }
@@ -423,9 +425,9 @@ function viewProg(proj){
   h+=`<div class="card" style="margin-bottom:12px"><h3>額外款項（訂金／預付款）</h3>
     <div class="muted" style="font-size:12.5px;margin-bottom:8px">還沒施作就先請的訂金等，填在這裡會算進本期請款；之後的期別會自動出現在「前期累計」，列印時看得到日期。</div>`;
   if(myExtras.length){
-    h+=`<table style="margin-bottom:8px"><tr><th>名目</th><th class="num">請款日</th><th class="num">金額</th>${editable?'<th></th>':''}</tr>`;
+    h+=`<table style="margin-bottom:8px"><tr><th>名目</th><th class="num">請款日</th><th>歸屬</th><th class="num">金額</th>${editable?'<th></th>':''}</tr>`;
     for(const e of myExtras){
-      h+=`<tr><td>${esc(e.name||'訂金')}</td><td class="num">${esc(e.date||period.date)}</td><td class="num">${money(e.amount)}</td>${editable?`<td class="num"><button class="btn sub sm" data-editextra="${e.id}">改</button> <button class="btn bad sm" data-delextra="${e.id}">刪</button></td>`:''}</tr>`;
+      h+=`<tr><td>${esc(e.name||'訂金')}</td><td class="num">${esc(e.date||period.date)}</td><td>${e.prior?'<span class="tag">前期已請</span>':'<span class="tag" style="background:#dbeafe;color:#1e3a8a">本期新請</span>'}</td><td class="num">${money(e.amount)}</td>${editable?`<td class="num"><button class="btn sub sm" data-editextra="${e.id}">改</button> <button class="btn bad sm" data-delextra="${e.id}">刪</button></td>`:''}</tr>`;
     }
     h+=`<tr class="chapter"><td>本期額外款項小計</td><td></td><td class="num"><b>${money(c.exThis)}</b></td>${editable?'<td></td>':''}</tr></table>`;
   }else{
@@ -762,7 +764,8 @@ document.addEventListener('click',async e=>{
     const name=prompt('款項名目','訂金');if(name===null)return;
     const amount=num(prompt('金額',''));if(!amount)return;
     const date=prompt('請款日期（YYYY-MM-DD）',period.date||today())||period.date||today();
-    (period.extras||(period.extras=[])).push({id:uid(),name:name.trim()||'訂金',amount,date});
+    const prior=confirm('這筆是「本期請款之前就已經收款／請過」的嗎？\n\n確定＝前期已請（列在前期累計）\n取消＝本期新請（列在本期請款）');
+    (period.extras||(period.extras=[])).push({id:uid(),name:name.trim()||'訂金',amount,date,prior});
     save();render();return;
   }
   if(t.dataset.editextra||t.dataset.delextra){
@@ -773,6 +776,7 @@ document.addEventListener('click',async e=>{
     const name=prompt('款項名目',ex.name||'訂金');if(name===null)return;
     const amount=prompt('金額',ex.amount);if(amount===null)return;
     const date=prompt('請款日期（YYYY-MM-DD）',ex.date||period.date)||ex.date;
+    ex.prior=confirm('這筆歸屬？\n\n確定＝前期已請（列在前期累計）\n取消＝本期新請（列在本期請款）');
     ex.name=name.trim()||'訂金';ex.amount=num(amount);ex.date=date;save();render();return;
   }
   if(t.id==='btn-print'){printDoc(proj);return;}
