@@ -102,7 +102,7 @@ body.printing #print-overlay{display:block;position:absolute;inset:0;background:
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.07.18i';
+const APP_VERSION='vG2026.07.18j';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -573,7 +573,7 @@ function printDoc(proj){
     const tax=Math.round(actual*0.05);
     let h=`<div class="pdoc">
       <h2>工程估驗請款單</h2>
-      <div class="sub">第 ${c.period.no} 期　${esc(c.period.date)}</div>
+      <div class="sub">${esc(c.period.date)}</div>
       <table><tr><td style="width:14%;background:#e8f0fb;color:#1e3a8a;font-weight:600">工程名稱</td><td>${esc(proj.name)}</td></tr>
       ${proj.owner?`<tr><td style="background:#e8f0fb;color:#1e3a8a;font-weight:600">業主（甲方）</td><td>${esc(proj.owner)}</td></tr>`:''}
       ${proj.vendor?`<tr><td style="background:#e8f0fb;color:#1e3a8a;font-weight:600">承攬（乙方）</td><td>${esc(proj.vendor)}</td></tr>`:''}</table>
