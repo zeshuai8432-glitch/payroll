@@ -102,7 +102,7 @@ body.printing #print-overlay{display:block;position:absolute;inset:0;background:
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.07.17k';
+const APP_VERSION='vG2026.07.18a';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -305,6 +305,8 @@ const itemTotalQty=(it,blk)=>it.qty*blk.count;
 const itemValue=(it,blk)=>it.amount*blk.count;
 function periodOf(p,idx){return p.periods[idx]||null;}
 function progOf(period,itemId){return (period&&period.prog&&period.prog[itemId])||{p:0,q:0};}
+const extrasOf=period=>(period&&period.extras)||[]; // 額外款項（訂金／預付款等）
+const extrasSum=period=>extrasOf(period).reduce((s,e)=>s+(+e.amount||0),0);
 function calc(proj,perIdx){
   const period=proj.periods[perIdx];
   const prev=perIdx>0?proj.periods[perIdx-1]:null;
@@ -319,8 +321,16 @@ function calc(proj,perIdx){
     });
     return {blk,V,cum,pre,thisAmt:cum-pre,items};
   });
-  const V=blocks.reduce((s,b)=>s+b.V,0), cum=blocks.reduce((s,b)=>s+b.cum,0), pre=blocks.reduce((s,b)=>s+b.pre,0);
-  return {blocks,V,cum,pre,thisAmt:cum-pre,period,prev};
+  const V=blocks.reduce((s,b)=>s+b.V,0);
+  const itemCum=blocks.reduce((s,b)=>s+b.cum,0), itemPre=blocks.reduce((s,b)=>s+b.pre,0);
+  // 額外款項：本期＝這期新增；前期＝先前各期累計；累計＝含本期
+  let exPre=0; for(let i=0;i<perIdx;i++) exPre+=extrasSum(proj.periods[i]);
+  const exThis=extrasSum(period), exCum=exPre+exThis;
+  // 前期各期的額外款項清單（含日期），供列印顯示「什麼時候請的」
+  const exList=[];
+  for(let i=0;i<=perIdx;i++) for(const e of extrasOf(proj.periods[i])) exList.push({...e,isThis:i===perIdx,periodNo:proj.periods[i].no});
+  const cum=itemCum+exCum, pre=itemPre+exPre;
+  return {blocks,V,cum,pre,thisAmt:cum-pre,period,prev,itemCum,itemPre,exThis,exPre,exCum,exList};
 }
 
 /* ═══════════ 畫面 ═══════════ */
@@ -408,6 +418,22 @@ function viewProg(proj){
     <div class="stat"><div class="l">本期請款</div><div class="v ok" data-c="g-this">${money(c.thisAmt)}</div></div>
     <div class="stat"><div class="l">累計請款</div><div class="v" data-c="g-cum">${money(c.cum)}（<span data-c="g-pct">${pfmt(c.V?c.cum/c.V:0)}</span>）</div></div>
   </div>`;
+  // ── 額外款項（訂金／預付款）──
+  const myExtras=extrasOf(period);
+  h+=`<div class="card" style="margin-bottom:12px"><h3>額外款項（訂金／預付款）</h3>
+    <div class="muted" style="font-size:12.5px;margin-bottom:8px">還沒施作就先請的訂金等，填在這裡會算進本期請款；之後的期別會自動出現在「前期累計」，列印時看得到日期。</div>`;
+  if(myExtras.length){
+    h+=`<table style="margin-bottom:8px"><tr><th>名目</th><th class="num">請款日</th><th class="num">金額</th>${editable?'<th></th>':''}</tr>`;
+    for(const e of myExtras){
+      h+=`<tr><td>${esc(e.name||'訂金')}</td><td class="num">${esc(e.date||period.date)}</td><td class="num">${money(e.amount)}</td>${editable?`<td class="num"><button class="btn sub sm" data-editextra="${e.id}">改</button> <button class="btn bad sm" data-delextra="${e.id}">刪</button></td>`:''}</tr>`;
+    }
+    h+=`<tr class="chapter"><td>本期額外款項小計</td><td></td><td class="num"><b>${money(c.exThis)}</b></td>${editable?'<td></td>':''}</tr></table>`;
+  }else{
+    h+=`<div class="muted" style="font-size:13px;margin-bottom:8px">本期尚無額外款項。</div>`;
+  }
+  if(c.exPre>0)h+=`<div class="muted" style="font-size:12.5px;margin-bottom:8px">（先前期別的額外款項累計 ${money(c.exPre)} 已含在上方「前期累計」中）</div>`;
+  if(editable)h+=`<button class="btn sub sm" id="btn-addextra">＋ 新增訂金／款項</button>`;
+  h+=`</div>`;
   for(const cb of c.blocks){
     const b=cb.blk;
     h+=`<details class="blk"${openBlk.has(b.id)?' open':''} data-blk="${b.id}"><summary>
@@ -486,6 +512,10 @@ function printDoc(proj){
     for(const cb of c.blocks){
       if(!showAll&&!cb.cum&&!cb.pre)continue;
       h+=`<tr><td>${esc(cb.blk.name)}（${qfmt(cb.blk.count)} ${esc(cb.blk.unit)}）</td><td class="num">${money(cb.V)}</td><td class="num">${money(cb.pre)}</td><td class="num"><b>${money(cb.thisAmt)}</b></td><td class="num">${money(cb.cum)}</td><td class="num">${pfmt(cb.V?cb.cum/cb.V:0)}</td></tr>`;
+    }
+    // 額外款項（訂金）逐筆列出，看得到請款日；前期請的落在「前期累計」欄、本期請的落在「本期請款」欄
+    for(const e of c.exList){
+      h+=`<tr><td>${esc(e.name||'訂金')}（請款日 ${esc(e.date||'')}）</td><td class="num">—</td><td class="num">${e.isThis?'':money(e.amount)}</td><td class="num"><b>${e.isThis?money(e.amount):''}</b></td><td class="num">${money(e.amount)}</td><td class="num">—</td></tr>`;
     }
     h+=`<tr class="tot"><td>合計</td><td class="num">${money(c.V)}</td><td class="num">${money(c.pre)}</td><td class="num">${money(sum)}</td><td class="num">${money(c.cum)}</td><td class="num">${pfmt(c.V?c.cum/c.V:0)}</td></tr>`;
     if(taxMode==='incl'){
@@ -657,7 +687,7 @@ function setProgInput(proj,blkId,itemId,kind,val){
 }
 
 document.addEventListener('click',async e=>{
-  const t=e.target.closest('[data-tab],[data-editblk],[data-delblk],[data-edititem],[data-delitem],[data-additem],[data-bapply],#btn-import,#btn-import2,#btn-addblk,#btn-addperiod,#btn-delperiod,#btn-print,#set-save,#backup-export,#backup-import-btn,#proj-del,#cloud-push,#cloud-pull');
+  const t=e.target.closest('[data-tab],[data-editblk],[data-delblk],[data-edititem],[data-delitem],[data-additem],[data-bapply],[data-editextra],[data-delextra],#btn-import,#btn-import2,#btn-addblk,#btn-addperiod,#btn-delperiod,#btn-addextra,#btn-print,#set-save,#backup-export,#backup-import-btn,#proj-del,#cloud-push,#cloud-pull');
   if(!t)return;
   const proj=curProj();
   if(t.dataset.tab){state.tab=t.dataset.tab;save();render();return;}
@@ -726,6 +756,24 @@ document.addEventListener('click',async e=>{
   if(t.id==='btn-delperiod'){
     if(!confirm(`刪除第 ${proj.periods.length} 期？本期填的進度會遺失。`))return;
     proj.periods.pop();proj.curPeriod=Math.max(0,proj.periods.length-1);save();render();return;
+  }
+  if(t.id==='btn-addextra'){
+    const period=proj.periods[proj.periods.length-1];if(!period)return;
+    const name=prompt('款項名目','訂金');if(name===null)return;
+    const amount=num(prompt('金額',''));if(!amount)return;
+    const date=prompt('請款日期（YYYY-MM-DD）',period.date||today())||period.date||today();
+    (period.extras||(period.extras=[])).push({id:uid(),name:name.trim()||'訂金',amount,date});
+    save();render();return;
+  }
+  if(t.dataset.editextra||t.dataset.delextra){
+    const period=proj.periods[proj.periods.length-1];if(!period)return;
+    const exId=t.dataset.editextra||t.dataset.delextra;
+    const ex=(period.extras||[]).find(x=>x.id===exId);if(!ex)return;
+    if(t.dataset.delextra){ if(!confirm(`刪除「${ex.name||'訂金'}」$${Math.round(ex.amount).toLocaleString('en-US')}？`))return; period.extras=period.extras.filter(x=>x!==ex);save();render();return; }
+    const name=prompt('款項名目',ex.name||'訂金');if(name===null)return;
+    const amount=prompt('金額',ex.amount);if(amount===null)return;
+    const date=prompt('請款日期（YYYY-MM-DD）',ex.date||period.date)||ex.date;
+    ex.name=name.trim()||'訂金';ex.amount=num(amount);ex.date=date;save();render();return;
   }
   if(t.id==='btn-print'){printDoc(proj);return;}
   if(t.id==='set-save'){
