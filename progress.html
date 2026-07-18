@@ -102,7 +102,7 @@ body.printing #print-overlay{display:block;position:absolute;inset:0;background:
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.07.18g';
+const APP_VERSION='vG2026.07.18h';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -464,8 +464,8 @@ function viewProg(proj){
   // 本次請款計算
   h+=`<div style="margin-top:12px;padding-top:10px;border-top:1px dashed var(--line);font-size:14px">
     <div style="display:flex;justify-content:space-between"><span>累計完成計價</span><b>${money(c.cumApplied)}</b></div>
-    <div style="display:flex;justify-content:space-between;color:var(--muted)"><span>減 前期累計已收</span><span>−${money(c.billPre).slice(1)}</span></div>
-    <div style="display:flex;justify-content:space-between"><span>本次應請（計算）</span><b>${money(c.billComputed)}</b></div>
+    ${c.billPre?`<div style="display:flex;justify-content:space-between;color:var(--muted)"><span>減 前期累計已收</span><span>−${money(c.billPre).slice(1)}</span></div>
+    <div style="display:flex;justify-content:space-between"><span>本次應請（計算）</span><b>${money(c.billComputed)}</b></div>`:''}
     ${c.billRound?`<div style="display:flex;justify-content:space-between;color:var(--muted)"><span>尾差調整（湊整）</span><span>${moneyS(c.billRound)}</span></div>`:''}
     <div style="display:flex;justify-content:space-between;font-size:16px;margin-top:4px;color:var(--accent2)"><span><b>本次實請金額</b></span><b data-c="g-actual">${money(c.billActual)}</b></div>
   </div>`;
@@ -600,8 +600,8 @@ function printDoc(proj){
     h+=`<div style="font-weight:700;font-size:12.5px;margin:10px 0 3px">三、本次請款計算</div>
       <table>
       <tr><td>累計完成計價</td><td class="num">${money(c.cumApplied)}</td></tr>
-      <tr><td>減：前期累計已收</td><td class="num">−${money(c.billPre).slice(1)}</td></tr>
-      <tr><td>本次應請（計算）</td><td class="num">${money(c.billComputed)}</td></tr>
+      ${c.billPre?`<tr><td>減：前期累計已收</td><td class="num">−${money(c.billPre).slice(1)}</td></tr>
+      <tr><td>本次應請（計算）</td><td class="num">${money(c.billComputed)}</td></tr>`:''}
       ${c.billRound?`<tr><td>尾差調整（湊整）</td><td class="num">${moneyS(c.billRound)}</td></tr>`:''}
       <tr class="tot"><td><b>本次實請金額</b></td><td class="num"><b>${money(actual)}</b></td></tr>
       ${taxMode==='incl'?`<tr><td>營業稅 5%</td><td class="num">${money(tax)}</td></tr><tr class="tot"><td><b>本次含稅實請</b></td><td class="num"><b>${money(actual+tax)}</b></td></tr>`:''}
