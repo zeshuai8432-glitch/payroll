@@ -102,7 +102,7 @@ body.printing #print-overlay{display:block;position:absolute;inset:0;background:
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.07.18f';
+const APP_VERSION='vG2026.07.18g';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -328,7 +328,7 @@ function calc(proj,perIdx){
   const itemCum=blocks.reduce((s,b)=>s+b.cum,0), itemPre=blocks.reduce((s,b)=>s+b.pre,0);
   // ── 現金制請款：累計完成計價 −（訂金＋前期各期實請）＝ 本次應請 ──
   const itemCumOf=idx=>{ if(idx<0)return 0; const per=proj.periods[idx]; let s=0; for(const blk of proj.blocks) for(const it of blk.items) s+=Math.round(itemValue(it,blk)*progOf(per,it.id).p); return s; };
-  const sumDep=idx=>extrasOf(proj.periods[idx]).filter(e=>e.deduct&&!e.auto).reduce((s,e)=>s+(+e.amount||0),0); // 訂金/預付（已收）
+  const sumDep=idx=>extrasOf(proj.periods[idx]).filter(e=>e.deduct&&!e.recordOnly&&!e.auto).reduce((s,e)=>s+(+e.amount||0),0); // 已收扣抵（減本次）
   const sumChg=idx=>extrasOf(proj.periods[idx]).filter(e=>!e.deduct&&!e.auto).reduce((s,e)=>s+(+e.amount||0),0); // 加項（追加）
   let runningBilled=0, billPre=0, billComputed=0, billActual=0; const priorBills=[];
   for(let k=0;k<=perIdx;k++){
@@ -342,12 +342,13 @@ function calc(proj,perIdx){
     if(k===perIdx){ billPre=received; billComputed=computed; billActual=actual; }
     runningBilled+=actual;
   }
-  const deposits=[]; for(let i=0;i<=perIdx;i++) for(const e of extrasOf(proj.periods[i])) if(e.deduct&&!e.auto) deposits.push({label:e.name||'訂金',date:e.date||'',amount:+e.amount||0});
+  const deposits=[]; for(let i=0;i<=perIdx;i++) for(const e of extrasOf(proj.periods[i])) if(e.deduct&&!e.recordOnly&&!e.auto) deposits.push({label:e.name||'訂金',date:e.date||'',amount:+e.amount||0});
   const receivedList=[...deposits,...priorBills];
+  const noteList=[]; for(let i=0;i<=perIdx;i++) for(const e of extrasOf(proj.periods[i])) if(e.deduct&&e.recordOnly&&!e.auto) noteList.push({label:e.name||'訂金',date:e.date||'',amount:+e.amount||0}); // 已收但本次不扣，僅列紀錄
   const chargeList=[]; for(let i=0;i<=perIdx;i++) for(const e of extrasOf(proj.periods[i])) if(!e.deduct&&!e.auto) chargeList.push({label:e.name||'追加',date:e.date||'',amount:+e.amount||0,periodNo:proj.periods[i].no});
   const cumApplied=itemCum + chargeList.reduce((s,e)=>s+e.amount,0);
   const billRound=billActual-billComputed;
-  return {blocks,V,itemCum,itemPre,cumApplied,receivedList,chargeList,billPre,billComputed,billRound,billActual,cum:billPre+billActual,period,prev,
+  return {blocks,V,itemCum,itemPre,cumApplied,receivedList,noteList,chargeList,billPre,billComputed,billRound,billActual,cum:billPre+billActual,period,prev,
           thisAmt:billActual,pre:billPre};
 }
 
@@ -440,8 +441,13 @@ function viewProg(proj){
   if(c.receivedList.length){
     h+=`<table style="margin-bottom:6px"><tr><th>項目</th><th class="num">日期</th><th class="num">金額</th></tr>`;
     for(const r of c.receivedList) h+=`<tr><td>${esc(r.label)}</td><td class="num">${esc(r.date||'')}</td><td class="num">${money(r.amount)}</td></tr>`;
-    h+=`<tr class="chapter"><td>前期累計已收 小計</td><td></td><td class="num"><b>${money(c.billPre)}</b></td></tr></table>`;
-  }else{ h+=`<div class="muted" style="font-size:13px;margin-bottom:8px">目前尚無已收款（訂金或前期請款）。</div>`; }
+    h+=`<tr class="chapter"><td>前期累計已收 小計（本次會扣）</td><td></td><td class="num"><b>${money(c.billPre)}</b></td></tr></table>`;
+  }else{ h+=`<div class="muted" style="font-size:13px;margin-bottom:8px">目前尚無會扣抵的已收款。</div>`; }
+  if(c.noteList.length){
+    h+=`<div style="font-size:12.5px;font-weight:600;margin-top:6px">已收但本次不扣（僅紀錄）</div><table style="margin-bottom:6px"><tr><th>項目</th><th class="num">日期</th><th class="num">金額</th></tr>`;
+    for(const r of c.noteList) h+=`<tr><td>${esc(r.label)}</td><td class="num">${esc(r.date||'')}</td><td class="num">${money(r.amount)}</td></tr>`;
+    h+=`</table>`;
+  }
   // ── 額外款項（訂金／加項）──
   const myExtras=extrasOf(period).filter(e=>!e.auto);
   h+=`<div style="margin-top:6px;font-size:13px;font-weight:600">本期登錄款項</div>
@@ -449,7 +455,7 @@ function viewProg(proj){
   if(myExtras.length){
     h+=`<table style="margin-bottom:8px"><tr><th>名目</th><th class="num">日期</th><th>性質</th><th class="num">金額</th>${editable?'<th></th>':''}</tr>`;
     for(const e of myExtras){
-      const kindTag=e.deduct?'<span class="tag" style="background:#dcfce7;color:#166534">已收扣抵</span>':'<span class="tag" style="background:#dbeafe;color:#1e3a8a">加項</span>';
+      const kindTag=!e.deduct?'<span class="tag" style="background:#dbeafe;color:#1e3a8a">加項</span>':e.recordOnly?'<span class="tag" style="background:#fef3c7;color:#92400e">已收·僅紀錄</span>':'<span class="tag" style="background:#dcfce7;color:#166534">已收·扣抵</span>';
       h+=`<tr><td>${esc(e.name||'訂金')}</td><td class="num">${esc(e.date||period.date)}</td><td>${kindTag}</td><td class="num">${money(e.amount)}</td>${editable?`<td class="num"><button class="btn sub sm" data-editextra="${e.id}">改</button> <button class="btn bad sm" data-delextra="${e.id}">刪</button></td>`:''}</tr>`;
     }
     h+=`</table>`;
@@ -533,21 +539,24 @@ function openExtraModal(opts){
     <div class="rowline">名目 <input id="ex-name" style="min-width:200px" value="${esc(ex.name||'')}" placeholder="訂金／預付款"></div>
     <div class="rowline">金額 <input id="ex-amount" inputmode="decimal" value="${ex.amount||''}" placeholder="0"></div>
     <div class="rowline">日期 <input id="ex-date" type="date" value="${esc(ex.date||opts.defaultDate||today())}"></div>
-    <div class="rowline" style="flex-wrap:wrap">性質：
-      <label style="margin-left:6px"><input type="radio" name="exk" value="deduct" ${ex.deduct?'checked':''}> 已收款（訂金／前期請款）</label>
-      <label style="margin-left:12px"><input type="radio" name="exk" value="add" ${!ex.deduct?'checked':''}> 加項（額外追加工程款）</label>
+    <div style="margin:4px 0">性質：</div>
+    <div class="rowline" style="flex-direction:column;align-items:flex-start;gap:4px;margin-bottom:6px">
+      <label><input type="radio" name="exk" value="deduct" ${ex.deduct&&!ex.recordOnly?'checked':''}> <b>已收款－本次扣抵</b>（列進前期累計已收，並從本次請款扣掉）</label>
+      <label><input type="radio" name="exk" value="record" ${ex.deduct&&ex.recordOnly?'checked':''}> <b>已收款－僅列紀錄</b>（給業主看，本次<b>不扣</b>、不影響金額）</label>
+      <label><input type="radio" name="exk" value="add" ${!ex.deduct?'checked':''}> <b>加項</b>（額外追加工程，加到本次請款）</label>
     </div>
-    <div class="muted" style="font-size:12px;margin:2px 0 12px"><b>已收款</b>＝業主之前付過的（訂金、第一期款…），會列進「前期累計已收」給業主看，並自動從本次請款扣掉。<b>加項</b>＝額外追加的工程，加到本次請款。</div>
+    <div class="muted" style="font-size:12px;margin:2px 0 12px">例：6/27 收的 60 萬預付款——這次談好要扣就選「本次扣抵」；先不扣、只讓業主看到有這筆就選「僅列紀錄」（之後要扣時改成「本次扣抵」即可）。</div>
     <div class="rowline"><button class="btn" id="ex-ok">儲存</button><button class="btn sub" id="ex-cancel">取消</button></div></div>`;
   document.body.appendChild(m);
   m.querySelector('#ex-cancel').onclick=()=>m.remove();
   m.querySelector('#ex-ok').onclick=()=>{
     const amount=num(m.querySelector('#ex-amount').value);
     if(!amount){alert('請輸入金額');return;}
+    const kind=m.querySelector('input[name=exk]:checked').value;
     opts.onSave({
       name:m.querySelector('#ex-name').value.trim()||'訂金',
       amount, date:m.querySelector('#ex-date').value||opts.defaultDate||today(),
-      deduct:m.querySelector('input[name=exk]:checked').value==='deduct',
+      deduct:kind!=='add', recordOnly:kind==='record',
     });
     m.remove();
   };
@@ -582,6 +591,11 @@ function printDoc(proj){
       for(const r of c.receivedList) h+=`<tr><td>${esc(r.label)}</td><td class="num">${esc(r.date||'')}</td><td class="num">${money(r.amount)}</td></tr>`;
       h+=`<tr class="tot"><td colspan="2">前期累計已收 小計</td><td class="num">${money(c.billPre)}</td></tr></table>`;
     }else{ h+=`<div style="font-size:11px;color:#555;margin-bottom:4px">（本期為首次請款，無前期已收款）</div>`; }
+    if(c.noteList.length){
+      h+=`<div style="font-size:11.5px;color:#555;margin:4px 0 2px">已收款（本期不扣抵，僅列供對照）：</div><table>`;
+      for(const r of c.noteList) h+=`<tr><td>${esc(r.label)}</td><td class="num">${esc(r.date||'')}</td><td class="num">${money(r.amount)}</td></tr>`;
+      h+=`</table>`;
+    }
     // 三、本次請款計算
     h+=`<div style="font-weight:700;font-size:12.5px;margin:10px 0 3px">三、本次請款計算</div>
       <table>
