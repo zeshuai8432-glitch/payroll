@@ -102,7 +102,7 @@ body.printing #print-overlay{display:block;position:absolute;inset:0;background:
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.07.18d';
+const APP_VERSION='vG2026.07.18e';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -436,7 +436,7 @@ function viewProg(proj){
     <div class="stat" style="border-color:#2563eb"><div class="l">本次實請金額</div><div class="v ok" data-c="g-this">${money(c.billActual)}</div>${c.billRound?`<div class="l">尾差 <span data-c="g-round">${moneyS(c.billRound)}</span></div>`:''}</div>
   </div>`;
   // ── 已收款明細（訂金＋前期各期）──
-  h+=`<div class="card" style="margin-bottom:12px"><h3>已收款明細（訂金＋前期請款）</h3>`;
+  h+=`<div class="card" style="margin-bottom:12px"><h3>已收款明細（前期請款）</h3>`;
   if(c.receivedList.length){
     h+=`<table style="margin-bottom:6px"><tr><th>項目</th><th class="num">日期</th><th class="num">金額</th></tr>`;
     for(const r of c.receivedList) h+=`<tr><td>${esc(r.label)}</td><td class="num">${esc(r.date||'')}</td><td class="num">${money(r.amount)}</td></tr>`;
@@ -576,7 +576,7 @@ function printDoc(proj){
     for(const e of c.chargeList) h+=`<tr><td>${esc(e.label)}（加項${e.date?'，'+esc(e.date):''}）</td><td class="num">—</td><td class="num">${money(e.amount)}</td><td class="num">—</td></tr>`;
     h+=`<tr class="tot"><td>累計完成計價 合計</td><td class="num">${money(c.V)}</td><td class="num">${money(c.cumApplied)}</td><td class="num">${pfmt(c.V?c.cumApplied/c.V:0)}</td></tr></table>`;
     // 二、已收款明細
-    h+=`<div style="font-weight:700;font-size:12.5px;margin:10px 0 3px">二、前期累計已收（訂金＋前期請款）</div>`;
+    h+=`<div style="font-weight:700;font-size:12.5px;margin:10px 0 3px">二、前期累計已收（前期請款）</div>`;
     if(c.receivedList.length){
       h+=`<table><tr><th>項目</th><th class="num">日期</th><th class="num">金額</th></tr>`;
       for(const r of c.receivedList) h+=`<tr><td>${esc(r.label)}</td><td class="num">${esc(r.date||'')}</td><td class="num">${money(r.amount)}</td></tr>`;
