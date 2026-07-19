@@ -102,7 +102,7 @@ body.printing #print-overlay{display:block;position:absolute;inset:0;background:
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.07.18k';
+const APP_VERSION='vG2026.07.19a';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -326,14 +326,17 @@ function calc(proj,perIdx){
   });
   const V=blocks.reduce((s,b)=>s+b.V,0);
   const itemCum=blocks.reduce((s,b)=>s+b.cum,0), itemPre=blocks.reduce((s,b)=>s+b.pre,0);
-  // ── 現金制請款：累計完成計價 −（訂金＋前期各期實請）＝ 本次應請 ──
+  // 議價折數：簽約總價 ÷ 明細總額（明細不動、整體照比例折讓）；未填＝1（照明細）
+  const factor=(proj.signedTotal>0&&V>0)?proj.signedTotal/V:1;
+  const discount=factor!==1;
+  // ── 現金制請款：折讓後累計計價 −（訂金＋前期各期實請）＝ 本次應請 ──
   const itemCumOf=idx=>{ if(idx<0)return 0; const per=proj.periods[idx]; let s=0; for(const blk of proj.blocks) for(const it of blk.items) s+=Math.round(itemValue(it,blk)*progOf(per,it.id).p); return s; };
   const sumDep=idx=>extrasOf(proj.periods[idx]).filter(e=>e.deduct&&!e.recordOnly&&!e.auto).reduce((s,e)=>s+(+e.amount||0),0); // 已收扣抵（減本次）
-  const sumChg=idx=>extrasOf(proj.periods[idx]).filter(e=>!e.deduct&&!e.auto).reduce((s,e)=>s+(+e.amount||0),0); // 加項（追加）
+  const sumChg=idx=>extrasOf(proj.periods[idx]).filter(e=>!e.deduct&&!e.auto).reduce((s,e)=>s+(+e.amount||0),0); // 加項（追加，不折讓）
   let runningBilled=0, billPre=0, billComputed=0, billActual=0; const priorBills=[];
   for(let k=0;k<=perIdx;k++){
     let depLE=0,chgLE=0; for(let j=0;j<=k;j++){ depLE+=sumDep(j); chgLE+=sumChg(j); }
-    const applied=itemCumOf(k)+chgLE;      // 累計應收（計價＋加項）
+    const applied=Math.round(itemCumOf(k)*factor)+chgLE;   // 折讓後累計計價 ＋ 加項
     const received=depLE+runningBilled;    // 已收（訂金＋先前各期實請）
     const computed=applied-received;
     const tgt=proj.periods[k].roundTarget;
@@ -346,9 +349,13 @@ function calc(proj,perIdx){
   const receivedList=[...deposits,...priorBills];
   const noteList=[]; for(let i=0;i<=perIdx;i++) for(const e of extrasOf(proj.periods[i])) if(e.deduct&&e.recordOnly&&!e.auto) noteList.push({label:e.name||'訂金',date:e.date||'',amount:+e.amount||0}); // 已收但本次不扣，僅列紀錄
   const chargeList=[]; for(let i=0;i<=perIdx;i++) for(const e of extrasOf(proj.periods[i])) if(!e.deduct&&!e.auto) chargeList.push({label:e.name||'追加',date:e.date||'',amount:+e.amount||0,periodNo:proj.periods[i].no});
-  const cumApplied=itemCum + chargeList.reduce((s,e)=>s+e.amount,0);
+  const chgTotal=chargeList.reduce((s,e)=>s+e.amount,0);
+  const cumRaw=itemCum+chgTotal;                       // 照明細（未折讓）的累計計價＋加項
+  const cumDiscItem=Math.round(itemCum*factor);         // 折讓後的工程計價
+  const cumApplied=cumDiscItem+chgTotal;                // 折讓後累計應請（供本次計算）
   const billRound=billActual-billComputed;
-  return {blocks,V,itemCum,itemPre,cumApplied,receivedList,noteList,chargeList,billPre,billComputed,billRound,billActual,cum:billPre+billActual,period,prev,
+  return {blocks,V,itemCum,itemPre,cumRaw,cumDiscItem,cumApplied,factor,discount,signedTotal:proj.signedTotal||0,chgTotal,
+          receivedList,noteList,chargeList,billPre,billComputed,billRound,billActual,cum:billPre+billActual,period,prev,
           thisAmt:billActual,pre:billPre};
 }
 
@@ -432,7 +439,7 @@ function viewProg(proj){
   </div>
   ${editable?'':'<div class="notice">這是舊期別，唯讀。要修改請切到最新一期。</div>'}
   <div class="grid" style="margin-bottom:12px">
-    <div class="stat"><div class="l">累計完成計價</div><div class="v" data-c="g-applied">${money(c.cumApplied)}</div><div class="l">占合約 <span data-c="g-pct">${pfmt(c.V?c.cumApplied/c.V:0)}</span></div></div>
+    <div class="stat"><div class="l">累計完成計價${c.discount?'（折讓後）':''}</div><div class="v" data-c="g-applied">${money(c.cumApplied)}</div><div class="l">占合約 <span data-c="g-pct">${pfmt(c.V?c.itemCum/c.V:0)}</span></div></div>
     <div class="stat"><div class="l">前期累計已收</div><div class="v" data-c="g-pre">${money(c.billPre)}</div></div>
     <div class="stat" style="border-color:#2563eb"><div class="l">本次實請金額</div><div class="v ok" data-c="g-this">${money(c.billActual)}</div>${c.billRound?`<div class="l">尾差 <span data-c="g-round">${moneyS(c.billRound)}</span></div>`:''}</div>
   </div>`;
@@ -463,7 +470,10 @@ function viewProg(proj){
   if(editable)h+=`<button class="btn sub sm" id="btn-addextra">＋ 新增訂金／加項</button> <button class="btn sub sm" id="btn-roundup">🎯 湊整本次到整數</button>`;
   // 本次請款計算
   h+=`<div style="margin-top:12px;padding-top:10px;border-top:1px dashed var(--line);font-size:14px">
-    <div style="display:flex;justify-content:space-between"><span>累計完成計價</span><b>${money(c.cumApplied)}</b></div>
+    ${c.discount?`<div style="display:flex;justify-content:space-between;color:var(--muted)"><span>累計完成計價（明細）</span><span>${money(c.cumRaw)}</span></div>
+    <div style="display:flex;justify-content:space-between;color:var(--muted)"><span>×議價比率 ${pfmt(c.factor)}（簽約 ${money(c.signedTotal)}）</span><span></span></div>
+    <div style="display:flex;justify-content:space-between"><span>折讓後累計計價</span><b>${money(c.cumApplied)}</b></div>`
+    :`<div style="display:flex;justify-content:space-between"><span>累計完成計價</span><b>${money(c.cumApplied)}</b></div>`}
     ${c.billPre?`<div style="display:flex;justify-content:space-between;color:var(--muted)"><span>減 前期累計已收</span><span>−${money(c.billPre).slice(1)}</span></div>
     <div style="display:flex;justify-content:space-between"><span>本次應請（計算）</span><b>${money(c.billComputed)}</b></div>`:''}
     ${c.billRound?`<div style="display:flex;justify-content:space-between;color:var(--muted)"><span>尾差調整（湊整）</span><span>${moneyS(c.billRound)}</span></div>`:''}
@@ -514,6 +524,8 @@ function viewSet(proj){
     <div class="rowline">工程名稱 <input id="set-name" style="min-width:320px" value="${esc(proj.name)}"></div>
     <div class="rowline">業主／甲方 <input id="set-owner" style="min-width:220px" value="${esc(proj.owner||'')}" placeholder="請款對象"></div>
     <div class="rowline">承攬／乙方 <input id="set-vendor" style="min-width:220px" value="${esc(proj.vendor||'')}" placeholder="自己公司名"></div>
+    <div class="rowline">簽約總價（議價後）<input id="set-signed" inputmode="decimal" style="min-width:180px" value="${proj.signedTotal||''}" placeholder="空白＝照明細 ${money(proj.blocks.reduce((s,b)=>s+b.items.reduce((x,i)=>x+i.amount*b.count,0),0))}"></div>
+    <div class="muted" style="font-size:12px;margin-bottom:6px">議價後總價跟明細不同時填這裡（例：明細 ${money(proj.blocks.reduce((s,b)=>s+b.items.reduce((x,i)=>x+i.amount*b.count,0),0))}、簽約 25,500,000）。明細不用改，程式會自動照比例折讓每期請款。</div>
     <button class="btn" id="set-save">儲存</button></div>
   <div class="card"><h3>☁ 雲端同步（Firestore）</h3>
     <div class="muted" style="font-size:13px;margin-bottom:8px">開頁自動下載最新、修改後自動上傳，多裝置共用。雲端內容以密文儲存（與 payroll 共用同一組解鎖密碼；在這台裝置解鎖過任一系統就不用再輸入）。</div>
@@ -583,7 +595,7 @@ function printDoc(proj){
       h+=`<tr><td>${esc(cb.blk.name)}（${qfmt(cb.blk.count)} ${esc(cb.blk.unit)}）</td><td class="num">${money(cb.V)}</td><td class="num">${money(cb.cum)}</td><td class="num">${pfmt(cb.pct)}</td></tr>`;
     }
     for(const e of c.chargeList) h+=`<tr><td>${esc(e.label)}（加項${e.date?'，'+esc(e.date):''}）</td><td class="num">—</td><td class="num">${money(e.amount)}</td><td class="num">—</td></tr>`;
-    h+=`<tr class="tot"><td>累計完成計價 合計</td><td class="num">${money(c.V)}</td><td class="num">${money(c.cumApplied)}</td><td class="num">${pfmt(c.V?c.cumApplied/c.V:0)}</td></tr></table>`;
+    h+=`<tr class="tot"><td>累計完成計價 合計（依明細）</td><td class="num">${money(c.V)}</td><td class="num">${money(c.cumRaw)}</td><td class="num">${pfmt(c.V?c.itemCum/c.V:0)}</td></tr></table>`;
     // 二、已收款明細（有資料才顯示）
     if(c.receivedList.length||c.noteList.length){
       h+=`<div style="font-weight:700;font-size:12.5px;margin:10px 0 3px">二、前期累計已收（前期請款）</div>`;
@@ -601,7 +613,10 @@ function printDoc(proj){
     // 三、本次請款計算
     h+=`<div style="font-weight:700;font-size:12.5px;margin:10px 0 3px">三、本次請款計算</div>
       <table>
-      <tr><td>累計完成計價</td><td class="num">${money(c.cumApplied)}</td></tr>
+      ${c.discount?`<tr><td>累計完成計價（依明細）</td><td class="num">${money(c.cumRaw)}</td></tr>
+      <tr><td>議價折讓 ×${pfmt(c.factor)}（明細 ${money(c.V)} → 簽約 ${money(c.signedTotal)}）</td><td class="num">−${money(c.cumRaw-c.cumApplied).slice(1)}</td></tr>
+      <tr><td>折讓後累計計價</td><td class="num">${money(c.cumApplied)}</td></tr>`
+      :`<tr><td>累計完成計價</td><td class="num">${money(c.cumApplied)}</td></tr>`}
       ${c.billPre?`<tr><td>減：前期累計已收</td><td class="num">−${money(c.billPre).slice(1)}</td></tr>
       <tr><td>本次應請（計算）</td><td class="num">${money(c.billComputed)}</td></tr>`:''}
       ${c.billRound?`<tr><td>尾差調整（湊整）</td><td class="num">${moneyS(c.billRound)}</td></tr>`:''}
@@ -763,7 +778,7 @@ function setProgInput(proj,blkId,itemId,kind,val){
     setc('bt-'+blkId,money(cb.thisAmt));setc('bc-'+blkId,money(cb.cum));setc('bp-'+blkId,pfmt(cb.V?cb.cum/cb.V:0));
   }
   setc('g-applied',money(c.cumApplied));setc('g-pre',money(c.billPre));setc('g-this',money(c.billActual));
-  setc('g-actual',money(c.billActual));setc('g-round',moneyS(c.billRound));setc('g-pct',pfmt(c.V?c.cumApplied/c.V:0));
+  setc('g-actual',money(c.billActual));setc('g-round',moneyS(c.billRound));setc('g-pct',pfmt(c.V?c.itemCum/c.V:0));
   const qEl=document.querySelector(`[data-q="${blkId}::${itemId}"]`),pEl=document.querySelector(`[data-p="${blkId}::${itemId}"]`),rEl=document.querySelector(`[data-r="${blkId}::${itemId}"]`);
   if(kind!=='q'&&qEl)qEl.value=p?qfmt(q):'';
   if(kind!=='p'&&pEl)pEl.value=p?+(p*100).toFixed(1):'';
@@ -869,6 +884,7 @@ document.addEventListener('click',async e=>{
     proj.name=document.getElementById('set-name').value.trim()||proj.name;
     proj.owner=document.getElementById('set-owner').value.trim();
     proj.vendor=document.getElementById('set-vendor').value.trim();
+    const sv=num(document.getElementById('set-signed').value); proj.signedTotal=sv>0?sv:0;
     save();render();alert('已儲存');return;
   }
   if(t.id==='backup-export'){
