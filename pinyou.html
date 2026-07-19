@@ -112,7 +112,7 @@
 <nav id="nav"></nav>
 <main id="app"></main>
 <script>
-const APP_VERSION = 'vP2026.07.19d-hidden'; // 版本號顯示在頁首，方便確認拿到新版
+const APP_VERSION = 'vP2026.07.19e-editform'; // 版本號顯示在頁首，方便確認拿到新版
 const LS='pinyou_data_v1';
 // ── 雲端端對端加密（與 payroll／簡化版共用同一組密碼與鑰匙；同網域共用 localStorage，解鎖一次三系統都通）──
 const E2E_SALT='PMENC1|dz-gx-py|2026';
@@ -191,6 +191,7 @@ let tab='dash';
 let expFilter='', expItemFilter='', incFilter='', expEditId=null;
 let docDraft=null; // 編輯中的報價單/請款單草稿
 let showHidden=false; try{ showHidden=localStorage.getItem('pinyou_showhidden')==='1'; }catch(e){} // 暗帳預設收合
+let pEditId=null; // 正在就地編輯的案場
 const DEFAULT_CLOUD_URL='https://script.google.com/macros/s/AKfycbxFLYgepJcn4-Sw_BvgTb-jUijDaSmRSfMkdfrnlwrVgDzDxE65KidWbao3Bq6ooL7q/exec';
 let cloudUrl=localStorage.getItem(LS_CLOUD)||DEFAULT_CLOUD_URL;
 let cloudStatus='', saving=false, pendingSave=false, saveTimer=null, localDirty=false, _prevIds=null;
@@ -512,14 +513,33 @@ function viewDash(){
 }
 
 function viewProj(){
-  const rowHtml=(p,depth)=>{ const c=projCalc(p);
+  const ist='height:34px;padding:0 8px';
+  const rowHtml=(p,depth)=>{
+    if(pEditId===p.id){
+      const canChild=!state.projects.some(x=>x.parentId===p.id); // 有子案場者不能再變子案場
+      return `<tr><td colspan="7" style="background:var(--bg);padding:12px 14px">
+        <div class="row" style="align-items:flex-end;flex-wrap:wrap">
+          <div class="field" style="flex:2;min-width:150px"><label>案場名稱</label><input id="pe-name" value="${esc(p.name)}" style="${ist}"></div>
+          <div class="field" style="min-width:140px"><label>母案場</label><select id="pe-parent" style="${ist}" ${canChild?'':'disabled'}>${projParentOptions(p.parentId||'',p.id)}</select></div>
+          <div class="field" style="min-width:120px"><label>簽約金（含稅）</label><input id="pe-contract" type="number" inputmode="numeric" value="${num(p.contract)||''}" style="${ist}"></div>
+          <div class="field"><label>未稅</label><select id="pe-untaxed" style="${ist}"><option value="">否</option><option value="1" ${p.untaxed?'selected':''}>是</option></select></div>
+          <div class="field" style="min-width:120px"><label>期初已請款</label><input id="pe-opening" type="number" inputmode="numeric" value="${projOpening(p)||''}" style="${ist}"></div>
+          <div class="field" style="min-width:90px"><label>保留款%</label><input id="pe-retain" type="number" inputmode="decimal" value="${num(p.retainPct)*100||''}" style="${ist}"></div>
+          <div class="field" style="flex:1;min-width:120px"><label>備註</label><input id="pe-note" value="${esc(p.note||'')}" style="${ist}"></div>
+          <div class="field" style="min-width:120px"><label>🕶 檯面下/回扣</label><input id="pe-hidden" type="number" inputmode="numeric" value="${num(p.hidden)||''}" placeholder="0" style="${ist}"></div>
+          <div class="field" style="flex:1;min-width:140px"><label>暗帳說明</label><input id="pe-hiddennote" value="${esc(p.hiddenNote||'')}" style="${ist}"></div>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:10px"><button class="btn" data-peok="${p.id}">儲存</button><button class="act" data-pecancel="1">取消</button></div>
+      </td></tr>`;
+    }
+    const c=projCalc(p);
     return `<tr>
-      <td style="${depth?'padding-left:22px':''}">${depth?'<span style="color:var(--muted)">↳ </span>':''}${esc(p.name)}${p.untaxed?'<span class="tag" style="background:#fef3c7;color:#92400e;margin-left:4px">未稅</span>':''}${p.note?`<div style="font-size:11px;color:var(--muted)">${esc(p.note)}</div>`:''}</td>
+      <td style="${depth?'padding-left:22px':''}">${depth?'<span style="color:var(--muted)">↳ </span>':''}${esc(p.name)}${p.untaxed?'<span class="tag" style="background:#fef3c7;color:#92400e;margin-left:4px">未稅</span>':''}${p.note?`<div style="font-size:11px;color:var(--muted)">${esc(p.note)}</div>`:''}${showHidden&&c.hidden?`<div style="font-size:11px;color:#b45309">🕶 檯面下 −${money(c.hidden)}${p.hiddenNote?'（'+esc(p.hiddenNote)+'）':''}</div>`:''}</td>
       <td class="num">${money(p.contract)}</td>
       <td class="num">${(num(p.retainPct)*100).toLocaleString()}%</td>
       <td class="num" style="color:var(--info)">${money(c.income)}</td>
       <td class="num" style="color:var(--danger)">${money(c.expense)}</td>
-      <td class="num ${c.profit<0?'neg':'pos'}">${money(c.profit)}</td>
+      <td class="num ${c.profit<0?'neg':'pos'}">${money(c.profit)}${showHidden&&c.hidden?`<div style="font-size:11px;color:#b45309">實拿 ${money(c.netTake)}</div>`:''}</td>
       <td class="num"><button class="act" data-pedit="${p.id}">改</button> <button class="act danger" data-pdel="${p.id}">刪</button></td>
     </tr>`;
   };
@@ -956,23 +976,19 @@ function bind(){
     save();
   });
   document.querySelectorAll('[data-pdel]').forEach(b=>b.onclick=()=>{ const p=state.projects.find(x=>x.id===b.dataset.pdel); if(confirm(`刪除案場「${p?p.name:''}」？（不會刪它的支出/請款）`)){ state.projects=state.projects.filter(x=>x.id!==b.dataset.pdel); save(); } });
-  document.querySelectorAll('[data-pedit]').forEach(b=>b.onclick=()=>{
-    const p=state.projects.find(x=>x.id===b.dataset.pedit); if(!p) return;
-    const name=prompt('案場名稱',p.name); if(name===null) return;
-    const contract=prompt('簽約金（含稅）',p.contract); if(contract===null) return;
-    const opening=prompt('期初已請款（不含下面「請款」頁登記的明細，明細會自動加上去）',projOpening(p)); if(opening===null) return;
-    const retain=prompt('保留款比率 %（例 10）',num(p.retainPct)*100); if(retain===null) return;
-    const note=prompt('備註',p.note||''); if(note===null) return;
-    const hidden=prompt('檯面下／回扣金額（不進支出、不影響請款；只算「實拿淨利」。沒有就留 0）',num(p.hidden)||0); if(hidden===null) return;
-    const hiddenNote=prompt('暗帳說明（例：補OO案／給業主OO）',p.hiddenNote||''); if(hiddenNote===null) return;
-    p.hidden=num(hidden); p.hiddenNote=hiddenNote.trim();
-    const curParent=p.parentId?(state.projects.find(x=>x.id===p.parentId)||{}).name||'':'';
-    const parentName=prompt('母案場名稱（留空＝自己是母案場；輸入現有母案場名稱把它變成子案場／追加）',curParent); if(parentName===null) return;
-    const par=parentName.trim()?state.projects.find(x=>x.name===parentName.trim()&&!x.parentId&&x.id!==p.id):null;
-    if(parentName.trim()&&!par){ alert('找不到母案場「'+parentName.trim()+'」（母案場本身不能是別人的子案場）'); return; }
-    if(state.projects.some(x=>x.parentId===p.id)&&par){ alert('這個案場底下已經有子案場，不能再變成別人的子案場'); return; }
-    p.parentId=par?par.id:undefined;
-    p.name=name.trim(); p.contract=num(contract); p.openingBilled=num(opening); delete p.billed; p.retainPct=num(retain)/100; p.note=note.trim(); save();
+  document.querySelectorAll('[data-pedit]').forEach(b=>b.onclick=()=>{ pEditId=b.dataset.pedit; render(); });
+  document.querySelectorAll('[data-pecancel]').forEach(b=>b.onclick=()=>{ pEditId=null; render(); });
+  document.querySelectorAll('[data-peok]').forEach(b=>b.onclick=()=>{
+    const p=state.projects.find(x=>x.id===b.dataset.peok); if(!p) return;
+    const g=id=>document.getElementById(id);
+    const name=g('pe-name').value.trim(); if(!name){ alert('請填案場名稱'); return; }
+    const parentId=g('pe-parent')&&!g('pe-parent').disabled?g('pe-parent').value:'';
+    if(parentId&&parentId===p.id){ alert('母案場不能選自己'); return; }
+    p.name=name; p.parentId=parentId||undefined;
+    p.contract=num(g('pe-contract').value); p.untaxed=g('pe-untaxed').value==='1';
+    p.openingBilled=num(g('pe-opening').value); delete p.billed; p.retainPct=num(g('pe-retain').value)/100;
+    p.note=g('pe-note').value.trim(); p.hidden=num(g('pe-hidden').value); p.hiddenNote=g('pe-hiddennote').value.trim();
+    pEditId=null; save();
   });
 
   // 支出
