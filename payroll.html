@@ -446,8 +446,9 @@
   #print-overlay .bluedoc th { background: #1E3A8A; color: #fff; border: 1px solid #1E3A8A; font-weight: 600; }
   #print-overlay .bluedoc td { border: 1px solid #DBEAFE; color: #1F2937; }
   #print-overlay .bluedoc tbody tr:nth-child(even) td { background: #EFF6FF; }
-  #print-overlay .bluedoc tr.type-head td { background: #E0F2FE !important; color: #1E40AF; font-weight: 700; }
-  #print-overlay .bluedoc .total-row td { background: #DBEAFE !important; color: #1E3A8A; font-weight: 700; }
+  #print-overlay .bluedoc tr.floor-head td { background: #2563EB !important; color: #fff !important; font-weight: 800; letter-spacing: .5px; }
+  #print-overlay .bluedoc tr.type-head td { background: #EEF4FF !important; color: #47618F !important; font-weight: 700; padding-left: 26px !important; border-left: 3px solid #BFDBFE; }
+  #print-overlay .bluedoc .total-row td { background: #C7D9F5 !important; color: #17307A; font-weight: 800; }
   #print-overlay .bluedoc tr.flag-y td { background: #FEF3C7 !important; }
   #print-overlay .bluedoc tr.flag-r td { background: #FEE2E2 !important; }
   #print-overlay .bluedoc tr.flag-b td { background: #DBEAFE !important; }
@@ -508,7 +509,7 @@ const FS_ROOT = 'https://firestore.googleapis.com/v1/projects/'+FS_PROJECT+'/dat
 const FS_DOC_BASE = FS_ROOT+'payroll/';
 const FS_SIG_BASE = FS_ROOT+'payrollSignatures/';
 const FS_REST_URL = FS_DOC_BASE+'main?key='+FS_KEY;
-const APP_VERSION = 'v2026.07.19a-measfloor';
+const APP_VERSION = 'v2026.07.19b-meascolor';
 let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], tools:[], locations:[], assets:[], advances:[], accounts:[], ledger:[], deals:[], billings:[], measurements:[], contracts:{}, costs:[], textMemory:{clients:[],companies:[]}, parkAccId:'', oweBonus:{}, minFund:'', payrollSnapshots:[], yearIncomeAdj:[], deletedIds:[], resurrected:{ids:[],at:0}, tab:'dash' };
 let cloudStatus='連線中…';
 let localDirty=false, lastCloudTs=0;
@@ -6453,7 +6454,7 @@ function exportMeasurementsPDF(selectedOnly=false){
     const trs=floors.length>1?floors.map(f=>{
       const g=rows.filter(m=>floorOf(m)===f);
       const sub=g.reduce((s,m)=>s+(Number(m.qty)||0)*(Number(m.unitPrice)||0),0);
-      return `<tr class="floor-head"><td colspan="8" style="padding:7px 8px;background:#e7f0ff;font-weight:800;color:#1d4ed8;border-top:2px solid #bfdbfe">${f?'↳ '+esc(f):'（主案場）'}（${g.length}筆）　小計 ${money(sub)}</td></tr>`+typeSecs(g);
+      return `<tr class="floor-head"><td colspan="8" style="padding:8px 10px">${f?esc(f):'（主案場）'}（${g.length}筆）<span style="float:right">小計 ${money(sub)}</span></td></tr>`+typeSecs(g);
     }).join(''):typeSecs(rows);
     return `<h2>${esc(name)}</h2>
       <table><thead><tr><th>日期</th><th>項目</th><th>尺寸</th><th>單位</th><th class="num">數量</th><th class="num">單價</th><th class="num">小計</th><th>備註</th></tr></thead>
