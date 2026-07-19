@@ -112,7 +112,7 @@
 <nav id="nav"></nav>
 <main id="app"></main>
 <script>
-const APP_VERSION = 'vP2026.07.19c-parentsub'; // 版本號顯示在頁首，方便確認拿到新版
+const APP_VERSION = 'vP2026.07.19d-hidden'; // 版本號顯示在頁首，方便確認拿到新版
 const LS='pinyou_data_v1';
 // ── 雲端端對端加密（與 payroll／簡化版共用同一組密碼與鑰匙；同網域共用 localStorage，解鎖一次三系統都通）──
 const E2E_SALT='PMENC1|dz-gx-py|2026';
@@ -190,6 +190,7 @@ let state=blank();
 let tab='dash';
 let expFilter='', expItemFilter='', incFilter='', expEditId=null;
 let docDraft=null; // 編輯中的報價單/請款單草稿
+let showHidden=false; try{ showHidden=localStorage.getItem('pinyou_showhidden')==='1'; }catch(e){} // 暗帳預設收合
 const DEFAULT_CLOUD_URL='https://script.google.com/macros/s/AKfycbxFLYgepJcn4-Sw_BvgTb-jUijDaSmRSfMkdfrnlwrVgDzDxE65KidWbao3Bq6ooL7q/exec';
 let cloudUrl=localStorage.getItem(LS_CLOUD)||DEFAULT_CLOUD_URL;
 let cloudStatus='', saving=false, pendingSave=false, saveTimer=null, localDirty=false, _prevIds=null;
@@ -388,7 +389,9 @@ function projCalc(p){
   const progress=num(p.contract)?income/num(p.contract):0;
   const unbilled=num(p.contract)-income; // 未請領餘額＝簽約金−已請款（保留款只作參考，請到100%自然歸0）
   const profit=num(p.contract)-expense;
-  return {income,expense,retain,progress,unbilled,profit};
+  const hidden=num(p.hidden);          // 檯面下／回扣（不進支出、不影響請款進度）
+  const netTake=profit-hidden;          // 實拿淨利
+  return {income,expense,retain,progress,unbilled,profit,hidden,netTake};
 }
 // 母子案場：母案場（無 parentId）後面接它的子案場（追加），供列表分層顯示
 function orderedProjects(){
@@ -405,9 +408,9 @@ const projParentOptions=(sel,excludeId)=>'<option value="">（自己是母案場
 // 母案場＋其子案場（追加）的合計
 function projKids(parent){ return state.projects.filter(c=>c.parentId===parent.id); }
 function projGroupCalc(parent){
-  let contract=0,income=0,expense=0,profit=0,retain=0;
-  [parent,...projKids(parent)].forEach(p=>{ const c=projCalc(p); contract+=num(p.contract); income+=c.income; expense+=c.expense; profit+=c.profit; retain+=c.retain; });
-  return {contract,income,expense,profit,retain,unbilled:contract-income,progress:contract?income/contract:0};
+  let contract=0,income=0,expense=0,profit=0,retain=0,hidden=0;
+  [parent,...projKids(parent)].forEach(p=>{ const c=projCalc(p); contract+=num(p.contract); income+=c.income; expense+=c.expense; profit+=c.profit; retain+=c.retain; hidden+=c.hidden; });
+  return {contract,income,expense,profit,retain,hidden,netTake:profit-hidden,unbilled:contract-income,progress:contract?income/contract:0};
 }
 // 所有出現過的案場名（案場清單 + 支出/請款有用到的）
 function allSiteNames(){
@@ -436,6 +439,7 @@ function viewDash(){
   const totIncome=projs.reduce((s,p)=>s+projCalc(p).income,0);
   const totExpense=state.expenses.reduce((s,x)=>s+num(x.amount),0);
   const totProfit=projs.reduce((s,p)=>s+projCalc(p).profit,0);
+  const totHidden=projs.reduce((s,p)=>s+projCalc(p).hidden,0);
 
   const metrics=`<div class="metrics">
     <div class="metric"><div class="l">案場數</div><div class="v">${projs.length}</div></div>
@@ -454,15 +458,19 @@ function viewDash(){
 
   // 案場進度表（母案場後接子案場；有追加者加一列「小計（含追加）」）
   const projRowHtml=(p,depth)=>{ const c=projCalc(p);
+    const hid=showHidden&&c.hidden?`<div style="font-size:11px;color:#b45309">🕶 檯面下 −${money(c.hidden)}${p.hiddenNote?'（'+esc(p.hiddenNote)+'）':''}</div>`:'';
+    const profitCell=(showHidden&&c.hidden)
+      ? `<td class="num" style="font-weight:700"><span class="${c.profit<0?'neg':'pos'}">${money(c.profit)}</span><div style="font-size:11px;color:#b45309">實拿 ${money(c.netTake)}</div></td>`
+      : `<td class="num ${c.profit<0?'neg':'pos'}" style="font-weight:700">${money(c.profit)}</td>`;
     return `<tr>
-      <td style="${depth?'padding-left:22px':''}">${depth?'<span style="color:var(--muted)">↳ </span>':''}${esc(p.name)}${p.untaxed?'<span class="tag" style="background:#fef3c7;color:#92400e;margin-left:4px">未稅</span>':''}${p.note?`<div style="font-size:11px;color:var(--muted)">${esc(p.note)}</div>`:''}</td>
+      <td style="${depth?'padding-left:22px':''}">${depth?'<span style="color:var(--muted)">↳ </span>':''}${esc(p.name)}${p.untaxed?'<span class="tag" style="background:#fef3c7;color:#92400e;margin-left:4px">未稅</span>':''}${p.note?`<div style="font-size:11px;color:var(--muted)">${esc(p.note)}</div>`:''}${hid}</td>
       <td class="num">${money(p.contract)}</td>
       <td class="num">${c.retain?money(c.retain):'—'}</td>
       <td class="num" style="color:var(--info)">${money(c.income)}</td>
       <td class="num">${num(p.contract)?pct(c.progress):'—'}<div class="bar"><i style="width:${Math.min(100,Math.max(0,c.progress*100))}%"></i></div></td>
       <td class="num ${c.unbilled<0?'neg':''}">${money(c.unbilled)}</td>
       <td class="num" style="color:var(--danger)">${money(c.expense)}</td>
-      <td class="num ${c.profit<0?'neg':'pos'}" style="font-weight:700">${money(c.profit)}</td>
+      ${profitCell}
     </tr>`;
   };
   const groupSubtotal=(parent)=>{ const g=projGroupCalc(parent);
@@ -473,7 +481,7 @@ function viewDash(){
       <td class="num">${g.contract?pct(g.progress):'—'}</td>
       <td class="num ${g.unbilled<0?'neg':''}" style="font-weight:700">${money(g.unbilled)}</td>
       <td class="num" style="font-weight:700;color:var(--danger)">${money(g.expense)}</td>
-      <td class="num ${g.profit<0?'neg':'pos'}" style="font-weight:700">${money(g.profit)}</td></tr>`;
+      <td class="num ${g.profit<0?'neg':'pos'}" style="font-weight:700">${money(g.profit)}${showHidden&&g.hidden?`<div style="font-size:11px;color:#b45309">實拿 ${money(g.netTake)}</div>`:''}</td></tr>`;
   };
   let projRows='';
   state.projects.filter(p=>!p.parentId).forEach(parent=>{
@@ -483,9 +491,9 @@ function viewDash(){
     if(kids.length) projRows+=groupSubtotal(parent);
   });
   state.projects.filter(p=>p.parentId&&!state.projects.some(x=>x.id===p.parentId)).forEach(p=>projRows+=projRowHtml(p,0)); // 孤兒子案場
-  const projCard=`<div class="card"><h2>案場請款進度</h2>${projs.length===0?'<div class="empty">尚無案場。到「案場」分頁新增，或到「設定」匯入資料。</div>':`<div class="scroll"><table>
+  const projCard=`<div class="card"><h2 style="display:flex;justify-content:space-between;align-items:center">案場請款進度 <button class="act" id="toggle-hidden" style="font-size:12px;padding:0 12px;height:30px;${showHidden?'background:#fde68a;border-color:#f59e0b;color:#92400e':''}">🕶 ${showHidden?'隱藏暗帳':'顯示暗帳'}</button></h2>${projs.length===0?'<div class="empty">尚無案場。到「案場」分頁新增，或到「設定」匯入資料。</div>':`<div class="scroll"><table>
     <thead><tr><th>案場</th><th class="num">簽約金</th><th class="num">保留款</th><th class="num">已請款</th><th class="num">已請進度</th><th class="num">未請領餘額</th><th class="num">累積支出</th><th class="num">預計剩餘利潤</th></tr></thead>
-    <tbody>${projRows}<tr class="total"><td>合計</td><td class="num">${money(totContract)}</td><td class="num"></td><td class="num">${money(totIncome)}</td><td class="num"></td><td class="num"></td><td class="num">${money(totExpense)}</td><td class="num">${money(totProfit)}</td></tr></tbody></table></div>
+    <tbody>${projRows}<tr class="total"><td>合計</td><td class="num">${money(totContract)}</td><td class="num"></td><td class="num">${money(totIncome)}</td><td class="num"></td><td class="num"></td><td class="num">${money(totExpense)}</td><td class="num">${money(totProfit)}${showHidden&&totHidden?`<div style="font-size:11px;color:#b45309">暗帳 −${money(totHidden)}／實拿 ${money(totProfit-totHidden)}</div>`:''}</td></tr></tbody></table></div>
     <p class="sub" style="margin-top:8px"><b>已請款＝案場「期初已請款」＋該案場的請款明細加總</b>（在「請款」頁登一筆，這裡會自動加上去）。保留款＝簽約金×保留比率（僅供參考，通常完工／保固後才發放；發放時就在「請款」頁登一筆即可）；已請進度＝已請款÷簽約金；未請領餘額＝簽約金−已請款（請到 100% 自動歸 0）；預計剩餘利潤＝簽約金−累積支出。</p>`}</div>`;
 
   // 支出分類
@@ -939,6 +947,8 @@ function bind(){
 
   const on=(id,ev,fn)=>{ const el=document.getElementById(id); if(el) el[ev]=fn; };
 
+  // 暗帳顯示切換
+  on('toggle-hidden','onclick',()=>{ showHidden=!showHidden; try{localStorage.setItem('pinyou_showhidden',showHidden?'1':'0');}catch(e){} render(); });
   // 案場
   on('p-add','onclick',()=>{
     const name=document.getElementById('p-name').value.trim(); if(!name){ alert('請填案場名稱'); return; }
@@ -953,6 +963,9 @@ function bind(){
     const opening=prompt('期初已請款（不含下面「請款」頁登記的明細，明細會自動加上去）',projOpening(p)); if(opening===null) return;
     const retain=prompt('保留款比率 %（例 10）',num(p.retainPct)*100); if(retain===null) return;
     const note=prompt('備註',p.note||''); if(note===null) return;
+    const hidden=prompt('檯面下／回扣金額（不進支出、不影響請款；只算「實拿淨利」。沒有就留 0）',num(p.hidden)||0); if(hidden===null) return;
+    const hiddenNote=prompt('暗帳說明（例：補OO案／給業主OO）',p.hiddenNote||''); if(hiddenNote===null) return;
+    p.hidden=num(hidden); p.hiddenNote=hiddenNote.trim();
     const curParent=p.parentId?(state.projects.find(x=>x.id===p.parentId)||{}).name||'':'';
     const parentName=prompt('母案場名稱（留空＝自己是母案場；輸入現有母案場名稱把它變成子案場／追加）',curParent); if(parentName===null) return;
     const par=parentName.trim()?state.projects.find(x=>x.name===parentName.trim()&&!x.parentId&&x.id!==p.id):null;
