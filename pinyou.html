@@ -112,7 +112,7 @@
 <nav id="nav"></nav>
 <main id="app"></main>
 <script>
-const APP_VERSION = 'vP2026.07.17b-applock'; // 版本號顯示在頁首，方便確認拿到新版
+const APP_VERSION = 'vP2026.07.19a-retain'; // 版本號顯示在頁首，方便確認拿到新版
 const LS='pinyou_data_v1';
 // ── 雲端端對端加密（與 payroll／簡化版共用同一組密碼與鑰匙；同網域共用 localStorage，解鎖一次三系統都通）──
 const E2E_SALT='PMENC1|dz-gx-py|2026';
@@ -386,7 +386,7 @@ function projCalc(p){
   const income=projOpening(p)+siteIncome(p.name), expense=siteExpense(p.name);
   const retain=num(p.contract)*num(p.retainPct);
   const progress=num(p.contract)?income/num(p.contract):0;
-  const unbilled=num(p.contract)-retain-income;
+  const unbilled=num(p.contract)-income; // 未請領餘額＝簽約金−已請款（保留款只作參考，請到100%自然歸0）
   const profit=num(p.contract)-expense;
   return {income,expense,retain,progress,unbilled,profit};
 }
@@ -449,7 +449,7 @@ function viewDash(){
   const projCard=`<div class="card"><h2>案場請款進度</h2>${projs.length===0?'<div class="empty">尚無案場。到「案場」分頁新增，或到「設定」匯入資料。</div>':`<div class="scroll"><table>
     <thead><tr><th>案場</th><th class="num">簽約金</th><th class="num">保留款</th><th class="num">已請款</th><th class="num">已請進度</th><th class="num">未請領餘額</th><th class="num">累積支出</th><th class="num">預計剩餘利潤</th></tr></thead>
     <tbody>${projRows}<tr class="total"><td>合計</td><td class="num">${money(totContract)}</td><td class="num"></td><td class="num">${money(totIncome)}</td><td class="num"></td><td class="num"></td><td class="num">${money(totExpense)}</td><td class="num">${money(totProfit)}</td></tr></tbody></table></div>
-    <p class="sub" style="margin-top:8px"><b>已請款＝案場「期初已請款」＋該案場的請款明細加總</b>（在「請款」頁登一筆，這裡會自動加上去）。保留款＝簽約金×保留比率；已請進度＝已請款÷簽約金；未請領餘額＝簽約金−保留款−已請款；預計剩餘利潤＝簽約金−累積支出。</p>`}</div>`;
+    <p class="sub" style="margin-top:8px"><b>已請款＝案場「期初已請款」＋該案場的請款明細加總</b>（在「請款」頁登一筆，這裡會自動加上去）。保留款＝簽約金×保留比率（僅供參考，通常完工／保固後才發放；發放時就在「請款」頁登一筆即可）；已請進度＝已請款÷簽約金；未請領餘額＝簽約金−已請款（請到 100% 自動歸 0）；預計剩餘利潤＝簽約金−累積支出。</p>`}</div>`;
 
   // 支出分類
   const byItem={};
