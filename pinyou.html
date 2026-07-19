@@ -112,7 +112,7 @@
 <nav id="nav"></nav>
 <main id="app"></main>
 <script>
-const APP_VERSION = 'vP2026.07.19a-retain'; // 版本號顯示在頁首，方便確認拿到新版
+const APP_VERSION = 'vP2026.07.19b-parentproj'; // 版本號顯示在頁首，方便確認拿到新版
 const LS='pinyou_data_v1';
 // ── 雲端端對端加密（與 payroll／簡化版共用同一組密碼與鑰匙；同網域共用 localStorage，解鎖一次三系統都通）──
 const E2E_SALT='PMENC1|dz-gx-py|2026';
@@ -390,6 +390,18 @@ function projCalc(p){
   const profit=num(p.contract)-expense;
   return {income,expense,retain,progress,unbilled,profit};
 }
+// 母子案場：母案場（無 parentId）後面接它的子案場（追加），供列表分層顯示
+function orderedProjects(){
+  const out=[];
+  state.projects.filter(p=>!p.parentId).forEach(p=>{
+    out.push({p,depth:0});
+    state.projects.filter(c=>c.parentId===p.id).forEach(c=>out.push({p:c,depth:1}));
+  });
+  // 母案場已被刪除的孤兒子案場，仍當頂層列出
+  state.projects.filter(p=>p.parentId&&!state.projects.some(x=>x.id===p.parentId)).forEach(p=>out.push({p,depth:0}));
+  return out;
+}
+const projParentOptions=(sel,excludeId)=>'<option value="">（自己是母案場）</option>'+state.projects.filter(p=>!p.parentId&&p.id!==excludeId).map(p=>`<option value="${p.id}" ${sel===p.id?'selected':''}>${esc(p.name)}</option>`).join('');
 // 所有出現過的案場名（案場清單 + 支出/請款有用到的）
 function allSiteNames(){
   const s=new Set(state.projects.map(p=>p.name));
@@ -434,9 +446,9 @@ function viewDash(){
   const accCard=Object.keys(byAcc).length?`<div class="card"><h2>各帳戶收款（依請款明細）</h2><p class="sub">此為「請款明細」逐筆記錄依入款帳號的加總，供對帳用（可能與案場「已請款」不同，因請款明細不一定每筆都登記）。</p><div class="scroll"><table><thead><tr><th>入款帳號</th><th class="num">收款</th></tr></thead><tbody>${accRows}<tr class="total"><td>合計</td><td class="num">${money(incLogTot)}</td></tr></tbody></table></div></div>`:'';
 
   // 案場進度表
-  let projRows=projs.map(p=>{ const c=projCalc(p);
+  let projRows=orderedProjects().map(({p,depth})=>{ const c=projCalc(p);
     return `<tr>
-      <td>${esc(p.name)}${p.untaxed?'<span class="tag" style="background:#fef3c7;color:#92400e;margin-left:4px">未稅</span>':''}${p.note?`<div style="font-size:11px;color:var(--muted)">${esc(p.note)}</div>`:''}</td>
+      <td style="${depth?'padding-left:22px':''}">${depth?'<span style="color:var(--muted)">↳ </span>':''}${esc(p.name)}${p.untaxed?'<span class="tag" style="background:#fef3c7;color:#92400e;margin-left:4px">未稅</span>':''}${p.note?`<div style="font-size:11px;color:var(--muted)">${esc(p.note)}</div>`:''}</td>
       <td class="num">${money(p.contract)}</td>
       <td class="num">${c.retain?money(c.retain):'—'}</td>
       <td class="num" style="color:var(--info)">${money(c.income)}</td>
@@ -467,9 +479,9 @@ function viewDash(){
 }
 
 function viewProj(){
-  const rows=state.projects.map(p=>{ const c=projCalc(p);
+  const rows=orderedProjects().map(({p,depth})=>{ const c=projCalc(p);
     return `<tr>
-      <td>${esc(p.name)}${p.untaxed?'<span class="tag" style="background:#fef3c7;color:#92400e;margin-left:4px">未稅</span>':''}${p.note?`<div style="font-size:11px;color:var(--muted)">${esc(p.note)}</div>`:''}</td>
+      <td style="${depth?'padding-left:22px':''}">${depth?'<span style="color:var(--muted)">↳ </span>':''}${esc(p.name)}${p.untaxed?'<span class="tag" style="background:#fef3c7;color:#92400e;margin-left:4px">未稅</span>':''}${p.note?`<div style="font-size:11px;color:var(--muted)">${esc(p.note)}</div>`:''}</td>
       <td class="num">${money(p.contract)}</td>
       <td class="num">${(num(p.retainPct)*100).toLocaleString()}%</td>
       <td class="num" style="color:var(--info)">${money(c.income)}</td>
@@ -482,6 +494,7 @@ function viewProj(){
     <h2>新增案場</h2>
     <div class="row">
       <div class="field" style="flex:2;min-width:160px"><label>案場名稱</label><input id="p-name" placeholder="例：大巨蛋5F"></div>
+      <div class="field" style="min-width:140px"><label>母案場（選填）</label><select id="p-parent">${projParentOptions('','')}</select></div>
       <div class="field" style="flex:1;min-width:120px"><label>簽約金（含稅）</label><input id="p-contract" type="number" inputmode="numeric" placeholder="0"></div>
       <div class="field"><label>未稅</label><select id="p-untaxed"><option value="">否</option><option value="1">是（未稅）</option></select></div>
       <div class="field" style="min-width:120px"><label>期初已請款</label><input id="p-opening" type="number" inputmode="numeric" placeholder="0"></div>
@@ -889,7 +902,7 @@ function bind(){
   // 案場
   on('p-add','onclick',()=>{
     const name=document.getElementById('p-name').value.trim(); if(!name){ alert('請填案場名稱'); return; }
-    state.projects.push({id:uid(),name,contract:num(document.getElementById('p-contract').value),untaxed:document.getElementById('p-untaxed').value==='1',openingBilled:num(document.getElementById('p-opening').value),retainPct:num(document.getElementById('p-retain').value)/100,note:document.getElementById('p-note').value.trim()});
+    state.projects.push({id:uid(),name,contract:num(document.getElementById('p-contract').value),untaxed:document.getElementById('p-untaxed').value==='1',openingBilled:num(document.getElementById('p-opening').value),retainPct:num(document.getElementById('p-retain').value)/100,note:document.getElementById('p-note').value.trim(),parentId:document.getElementById('p-parent').value||undefined});
     save();
   });
   document.querySelectorAll('[data-pdel]').forEach(b=>b.onclick=()=>{ const p=state.projects.find(x=>x.id===b.dataset.pdel); if(confirm(`刪除案場「${p?p.name:''}」？（不會刪它的支出/請款）`)){ state.projects=state.projects.filter(x=>x.id!==b.dataset.pdel); save(); } });
@@ -900,6 +913,12 @@ function bind(){
     const opening=prompt('期初已請款（不含下面「請款」頁登記的明細，明細會自動加上去）',projOpening(p)); if(opening===null) return;
     const retain=prompt('保留款比率 %（例 10）',num(p.retainPct)*100); if(retain===null) return;
     const note=prompt('備註',p.note||''); if(note===null) return;
+    const curParent=p.parentId?(state.projects.find(x=>x.id===p.parentId)||{}).name||'':'';
+    const parentName=prompt('母案場名稱（留空＝自己是母案場；輸入現有母案場名稱把它變成子案場／追加）',curParent); if(parentName===null) return;
+    const par=parentName.trim()?state.projects.find(x=>x.name===parentName.trim()&&!x.parentId&&x.id!==p.id):null;
+    if(parentName.trim()&&!par){ alert('找不到母案場「'+parentName.trim()+'」（母案場本身不能是別人的子案場）'); return; }
+    if(state.projects.some(x=>x.parentId===p.id)&&par){ alert('這個案場底下已經有子案場，不能再變成別人的子案場'); return; }
+    p.parentId=par?par.id:undefined;
     p.name=name.trim(); p.contract=num(contract); p.openingBilled=num(opening); delete p.billed; p.retainPct=num(retain)/100; p.note=note.trim(); save();
   });
 
