@@ -464,7 +464,7 @@ function rememberDeletedPhoto(id,url){
   state.billingPhotoDeleted=state.billingPhotoDeleted||{};
   state.billingPhotoDeleted[id]=[...new Set([...(state.billingPhotoDeleted[id]||[]),url])];
 }
-const APP_VERSION='vN2026.07.17b-applock'; // 版本號顯示在右上角，方便確認拿到新版
+const APP_VERSION='vN2026.07.19a-dupcheck'; // 版本號顯示在右上角，方便確認拿到新版
 // 本地時區的今天（yyyy-mm-dd）。toISOString 是 UTC，台灣早上 8 點前會差一天
 function localISODate(d=new Date()){ return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
 // 單價可打算式（例：1200*1.1）
@@ -1194,6 +1194,22 @@ function buildPayroll(from,to){
   return byEmp;
 }
 
+// ---- 疑似重複出工偵測（同一人同一天同一案場被記多筆＝可能重複，會灌高成本）----
+function findDupAttendance(){
+  const groups={};
+  state.attendance.forEach(r=>{
+    if(r.type==='請假'||r.type==='休假'||!r.siteId) return;
+    const k=r.empId+'|'+r.date+'|'+r.siteId;
+    (groups[k]=groups[k]||[]).push(r);
+  });
+  const comp=computeRecords(state.attendance);
+  return Object.values(groups).filter(rs=>rs.length>1).map(rs=>{
+    rs.sort((a,b)=>String(a.id).localeCompare(String(b.id)));
+    const extra=rs.slice(1).reduce((s,r)=>s+((comp[r.id]||{}).total||0),0); // 每組留 1 筆，其餘視為多算
+    return {empId:rs[0].empId,date:rs[0].date,siteId:rs[0].siteId,records:rs,extraCost:extra};
+  }).sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+}
+
 // ---- 首頁總覽儀表板 ----
 function viewDash(){
   if(!state.payFrom||!state.payTo){ const d=defaultPayRange(); state.payFrom=d.from; state.payTo=d.to; }
@@ -1232,6 +1248,19 @@ function viewDash(){
     ${card('sites','案場總成本', money(totalSiteCost), siteCostList.length+' 個案場')}
     ${card('park','品佑收支餘額', money(parkBal))}
   </div>
+  ${(()=>{ const dups=findDupAttendance(); if(!dups.length) return '';
+    const totExtra=dups.reduce((s,d)=>s+d.extraCost,0);
+    const rows=dups.map(d=>`<tr>
+      <td>${esc(d.date)}</td><td>${esc(empName(d.empId))}</td><td>${esc(siteName(d.siteId))}</td>
+      <td class="num">${d.records.length} 筆（${d.records.map(r=>gongStr(r.hours)).join('、')}）</td>
+      <td class="num" style="color:var(--danger)">${money(d.extraCost)}</td>
+      <td class="num"><button class="act danger" data-dupclean="${d.records[0].empId}|${d.records[0].date}|${d.records[0].siteId}" style="font-size:12px">刪多餘(留1)</button></td></tr>`).join('');
+    return `<div class="card" style="border:1px solid #f59e0b;background:#fffbeb">
+      <div style="font-size:14px;font-weight:700;color:#b45309;margin-bottom:2px">⚠ 偵測到 ${dups.length} 組疑似重複出工</div>
+      <p class="sub" style="margin:0 0 6px">同一人、同一天、同一案場被記了多筆——很可能是重複登記，正讓成本多算了約 <b style="color:var(--danger)">${money(totExtra)}</b>。逐組核對，確定是重複就按「刪多餘」（每組保留 1 筆）。</p>
+      <div class="scroll"><table><thead><tr><th>日期</th><th>員工</th><th>案場</th><th class="num">筆數(工時)</th><th class="num">多算成本</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
+      <div style="margin-top:8px"><button class="act danger" id="dup-clean-all">一鍵清掉全部多餘（每組留 1 筆）</button></div>
+    </div>`; })()}
   ${costRows?`<div class="card">
     <div style="font-size:14px;font-weight:600;margin-bottom:2px">各案場成本</div>
     <p class="sub" style="margin:0 0 6px">案場成本＝期初人事成本＋出勤工資與津貼（累計至今）。</p>
@@ -1796,6 +1825,22 @@ function bind(){
   document.querySelectorAll('[data-delbill]').forEach(b=>b.onclick=()=>{ if(!confirm('確定刪除這筆單據？')) return; const id=b.dataset.delbill; (billingPhotos[id]||[]).forEach(url=>rememberDeletedPhoto(id,url)); state.billings=state.billings.filter(x=>x.id!==id); delete billingPhotos[id]; deleteSig(id); savePhotos(); saveData(); render(); });
   document.querySelectorAll('.nav-item').forEach(b=>b.onclick=()=>{ state.tab=b.dataset.tab; closeSidebar(); render(); });
   document.querySelectorAll('[data-goto]').forEach(b=>b.onclick=()=>{ state.tab=b.dataset.goto; render(); });
+  const cleanGroup=(empId,date,siteId)=>{ // 同組留最早1筆、刪其餘
+    const rs=state.attendance.filter(r=>r.empId===empId&&r.date===date&&r.siteId===siteId&&r.type!=='請假'&&r.type!=='休假').sort((a,b)=>String(a.id).localeCompare(String(b.id)));
+    const del=rs.slice(1).map(r=>r.id);
+    state.attendance=state.attendance.filter(r=>!del.includes(r.id));
+    return del.length;
+  };
+  document.querySelectorAll('[data-dupclean]').forEach(b=>b.onclick=()=>{
+    const [empId,date,siteId]=b.dataset.dupclean.split('|');
+    if(!confirm(`${empName(empId)}・${date}・${siteName(siteId)}：保留 1 筆、刪掉其餘重複？`)) return;
+    const n=cleanGroup(empId,date,siteId); saveData(); render(); if(n) alert(`已刪 ${n} 筆重複。`);
+  });
+  const dca=document.getElementById('dup-clean-all'); if(dca) dca.onclick=()=>{
+    const dups=findDupAttendance(); if(!dups.length) return;
+    if(!confirm(`確定清掉全部 ${dups.length} 組的多餘紀錄？每組只保留最早 1 筆，共會刪掉 ${dups.reduce((s,d)=>s+d.records.length-1,0)} 筆。\n（建議先逐組核對；刪錯可到「品佑收支/救援」或用備份還原）`)) return;
+    let n=0; dups.forEach(d=>{ n+=cleanGroup(d.empId,d.date,d.siteId); }); saveData(); render(); alert(`已刪 ${n} 筆重複。`);
+  };
   const dtp=document.getElementById('dash-thisperiod'); if(dtp) dtp.onclick=()=>{ const d=defaultPayRange(); state.payFrom=d.from; state.payTo=d.to; render(); };
   const dlp=document.getElementById('dash-lastperiod'); if(dlp) dlp.onclick=()=>{ const d=prevPayRange(); state.payFrom=d.from; state.payTo=d.to; render(); };
   const si=document.getElementById('search-input'); if(si) si.oninput=()=>{ searchQuery=si.value; render(); const n=document.getElementById('search-input'); if(n){ n.focus(); const v=n.value; try{ n.setSelectionRange(v.length,v.length); }catch(e){} } };
