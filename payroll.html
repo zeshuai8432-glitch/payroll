@@ -508,7 +508,7 @@ const FS_ROOT = 'https://firestore.googleapis.com/v1/projects/'+FS_PROJECT+'/dat
 const FS_DOC_BASE = FS_ROOT+'payroll/';
 const FS_SIG_BASE = FS_ROOT+'payrollSignatures/';
 const FS_REST_URL = FS_DOC_BASE+'main?key='+FS_KEY;
-const APP_VERSION = 'v2026.07.17a-applock';
+const APP_VERSION = 'v2026.07.19a-measfloor';
 let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], tools:[], locations:[], assets:[], advances:[], accounts:[], ledger:[], deals:[], billings:[], measurements:[], contracts:{}, costs:[], textMemory:{clients:[],companies:[]}, parkAccId:'', oweBonus:{}, minFund:'', payrollSnapshots:[], yearIncomeAdj:[], deletedIds:[], resurrected:{ids:[],at:0}, tab:'dash' };
 let cloudStatus='連線中…';
 let localDirty=false, lastCloudTs=0;
@@ -4053,6 +4053,16 @@ function bind(){
     document.querySelectorAll('[data-measpick-cb]').forEach(r=>{ if(ids.includes(r.dataset.measpickCb)) r.checked=cb.checked; });
     measExportBtnRefresh();
   });
+  // 子案場（樓層）全選
+  document.querySelectorAll('[data-measpick-floor]').forEach(cb=>cb.onchange=()=>{
+    const key=cb.dataset.measpickFloor, fl=cb.dataset.measpickFloorname;
+    const ids=state.measurements.filter(m=>(parentSiteName(m.site)||'（未填案場）')===key&&(childSiteName(m.site)||'')===fl).map(m=>m.id);
+    ids.forEach(id=>{ if(cb.checked) measSel[id]=true; else delete measSel[id]; });
+    document.querySelectorAll('[data-measpick-cb]').forEach(r=>{ if(ids.includes(r.dataset.measpickCb)) r.checked=cb.checked; });
+    const master=document.querySelector(`[data-measpick-all="${CSS.escape(key)}"]`);
+    if(master){ const all=state.measurements.filter(m=>(parentSiteName(m.site)||'（未填案場）')===key); master.checked=all.length>0&&all.every(m=>measSel[m.id]); }
+    measExportBtnRefresh();
+  });
   const ema=document.getElementById('export-meas-all'); if(ema) ema.onclick=()=>exportMeasurementsPDF(false);
   const ems=document.getElementById('export-meas-sel'); if(ems) ems.onclick=()=>exportMeasurementsPDF(true);
   const mtb=document.getElementById('meas-tobill'); if(mtb) mtb.onclick=()=>{
@@ -6330,7 +6340,8 @@ function viewMeasurements(){
     const trs=open?(floors.length>1?floors.map(f=>{
       const g=rows.filter(m=>floorOf(m)===f);
       const sub=g.reduce((s,m)=>s+(Number(m.qty)||0)*(Number(m.unitPrice)||0),0);
-      return `<tr><td colspan="10" style="background:#eef6ff;padding:9px 12px;font-weight:800;font-size:13px;color:#1d4ed8;border-top:2px solid #bfdbfe">${f?'↳ '+esc(f):'（主案場）'}（${g.length}筆）<span style="float:right">小計 ${money(sub)}</span></td></tr>`+typeSections(g);
+      const fSel=g.length>0&&g.every(m=>measSel[m.id]);
+      return `<tr><td colspan="10" style="background:#eef6ff;padding:9px 12px;font-weight:800;font-size:13px;color:#1d4ed8;border-top:2px solid #bfdbfe"><label style="cursor:pointer;display:inline-flex;align-items:center;gap:6px"><input type="checkbox" data-measpick-floor="${esc(name)}" data-measpick-floorname="${esc(f)}" ${fSel?'checked':''} style="width:15px;height:15px">${f?'↳ '+esc(f):'（主案場）'}（${g.length}筆）</label><span style="float:right">小計 ${money(sub)}</span></td></tr>`+typeSections(g);
     }).join(''):typeSections(rows)):'';
     // 計量 vs 請款差額（依「母 / 子」正規化鑰匙逐一比對）
     const keys=[...new Set(rows.map(m=>canonSiteKey(m.site)))].sort();
@@ -6430,13 +6441,20 @@ function exportMeasurementsPDF(selectedOnly=false){
         <td>${escBr(m.note||'')}</td>
       </tr>`;
     };
-    // 案場內依類型分段（隔間→天花板→搬運），各段有段落標題與小計
-    const trs=MEAS_TYPE_ORDER.map(([k,label])=>{
-      const g=rows.filter(m=>measTypeKey(m)===k);
-      if(!g.length) return '';
-      const sub=g.reduce((s,m)=>s+(Number(m.qty)||0)*(Number(m.unitPrice)||0),0);
-      return `<tr class="type-head"><td colspan="8" style="padding:6px 8px">${label}（${g.length}筆）　小計 ${money(sub)}</td></tr>`+g.map(rowHtml).join('');
+    // 案場內先依子案場（樓層）分段，再依類型分段（隔間→天花板→搬運），各段小計
+    const floorOf=m=>childSiteName(m.site)||'';
+    const floors=[...new Set(rows.map(floorOf))].sort((a,b)=>a===''?-1:(b===''?1:siteNameCompare(a,b)));
+    const typeSecs=g=>MEAS_TYPE_ORDER.map(([k,label])=>{
+      const gg=g.filter(m=>measTypeKey(m)===k);
+      if(!gg.length) return '';
+      const sub=gg.reduce((s,m)=>s+(Number(m.qty)||0)*(Number(m.unitPrice)||0),0);
+      return `<tr class="type-head"><td colspan="8" style="padding:6px 8px">${label}（${gg.length}筆）　小計 ${money(sub)}</td></tr>`+gg.map(rowHtml).join('');
     }).join('');
+    const trs=floors.length>1?floors.map(f=>{
+      const g=rows.filter(m=>floorOf(m)===f);
+      const sub=g.reduce((s,m)=>s+(Number(m.qty)||0)*(Number(m.unitPrice)||0),0);
+      return `<tr class="floor-head"><td colspan="8" style="padding:7px 8px;background:#e7f0ff;font-weight:800;color:#1d4ed8;border-top:2px solid #bfdbfe">${f?'↳ '+esc(f):'（主案場）'}（${g.length}筆）　小計 ${money(sub)}</td></tr>`+typeSecs(g);
+    }).join(''):typeSecs(rows);
     return `<h2>${esc(name)}</h2>
       <table><thead><tr><th>日期</th><th>項目</th><th>尺寸</th><th>單位</th><th class="num">數量</th><th class="num">單價</th><th class="num">小計</th><th>備註</th></tr></thead>
       <tbody>${trs}<tr class="total-row"><td colspan="6">案場合計</td><td class="num">${money(subtotal)}</td><td></td></tr></tbody></table>`;
