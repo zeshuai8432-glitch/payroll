@@ -464,7 +464,7 @@ function rememberDeletedPhoto(id,url){
   state.billingPhotoDeleted=state.billingPhotoDeleted||{};
   state.billingPhotoDeleted[id]=[...new Set([...(state.billingPhotoDeleted[id]||[]),url])];
 }
-const APP_VERSION='vN2026.07.19a-dupcheck'; // 版本號顯示在右上角，方便確認拿到新版
+const APP_VERSION='vN2026.07.19b-dupcheck'; // 版本號顯示在右上角，方便確認拿到新版
 // 本地時區的今天（yyyy-mm-dd）。toISOString 是 UTC，台灣早上 8 點前會差一天
 function localISODate(d=new Date()){ return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
 // 單價可打算式（例：1200*1.1）
@@ -1162,7 +1162,7 @@ function prevPayRange(){
 }
 // 預設調整項類型
 const ADD_TYPES=['獎金','全勤獎金','其他加給'];
-const DED_TYPES=['借支扣還','勞保自負額','健保自負額','工具遺失賠償','其他扣款'];
+const DED_TYPES=['遲到扣全勤','曠職扣款','借支扣還','勞保自負額','健保自負額','工具遺失賠償','其他扣款'];
 
 // 建立某計薪區間的完整發薪資料（基本工資 + 系統加項 + 手動加扣項 = 實發）
 function buildPayroll(from,to){
@@ -1555,7 +1555,7 @@ function viewPayroll(){
         <div class="field"><label>性質</label><select id="adj-kind"><option value="add">加項（+）</option><option value="ded">扣項（−）</option></select></div>
         <div class="field"><label>項目</label><select id="adj-label">${addOpts}</select></div>
         <div class="field"><label>金額</label><input type="number" id="adj-amount" min="0" step="100" style="width:120px"></div>
-        <div class="field" style="flex:1;min-width:140px"><label>備註（選填）</label><input id="adj-note" placeholder="例：6月借支"></div>
+        <div class="field" style="flex:1;min-width:140px"><label>備註（選填）</label><input id="adj-note" placeholder="例：7/20 遲到 · 6月借支"></div>
         <button class="btn" id="adj-add">＋ 新增</button>
       </div>
       ${adjRows===''?'<div class="empty">本期尚無加扣項。</div>':`<div class="scroll"><table>
