@@ -509,8 +509,8 @@ const FS_ROOT = 'https://firestore.googleapis.com/v1/projects/'+FS_PROJECT+'/dat
 const FS_DOC_BASE = FS_ROOT+'payroll/';
 const FS_SIG_BASE = FS_ROOT+'payrollSignatures/';
 const FS_REST_URL = FS_DOC_BASE+'main?key='+FS_KEY;
-const APP_VERSION = 'v2026.07.19b-meascolor';
-let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], tools:[], locations:[], assets:[], advances:[], accounts:[], ledger:[], deals:[], billings:[], measurements:[], contracts:{}, costs:[], textMemory:{clients:[],companies:[]}, parkAccId:'', oweBonus:{}, minFund:'', payrollSnapshots:[], yearIncomeAdj:[], deletedIds:[], resurrected:{ids:[],at:0}, tab:'dash' };
+const APP_VERSION = 'v2026.07.19c-shareholder';
+let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], tools:[], locations:[], assets:[], advances:[], accounts:[], ledger:[], deals:[], billings:[], measurements:[], contracts:{}, costs:[], textMemory:{clients:[],companies:[]}, parkAccId:'', oweBonus:{}, minFund:'', shareholderTx:[], payrollSnapshots:[], yearIncomeAdj:[], deletedIds:[], resurrected:{ids:[],at:0}, tab:'dash' };
 let cloudStatus='連線中…';
 let localDirty=false, lastCloudTs=0;
 let dirtyOther=false; // 未上傳的變更中是否含「標記以外」的修改（決定衝突時能否自動合併）
@@ -854,7 +854,7 @@ const taxBreakdownHtml = (d,c) => {
 
 function applyData(d){
   if(!d) return;
-  state.employees=d.employees||[]; state.sites=d.sites||[]; state.attendance=d.attendance||[]; state.adjustments=d.adjustments||[]; state.loans=d.loans||[]; state.tools=d.tools||[]; state.locations=d.locations||[]; state.assets=d.assets||[]; state.advances=d.advances||[]; state.accounts=d.accounts||[]; state.ledger=d.ledger||[]; state.deals=d.deals||[]; state.billings=d.billings||[]; state.measurements=d.measurements||[]; state.contracts=d.contracts||{}; state.costs=d.costs||[]; state.textMemory=d.textMemory||{clients:[],companies:[]}; state.parkAccId=d.parkAccId||''; state.oweBonus=d.oweBonus||{}; state.minFund=(d.minFund!==undefined?d.minFund:''); state.payrollSnapshots=d.payrollSnapshots||[]; state.yearIncomeAdj=d.yearIncomeAdj||[]; state.deletedIds=d.deletedIds||[]; if(d.resurrected&&Array.isArray(d.resurrected.ids)) state.resurrected={ids:d.resurrected.ids,at:Number(d.resurrected.at)||0}; else if(!state.resurrected) state.resurrected={ids:[],at:0};
+  state.employees=d.employees||[]; state.sites=d.sites||[]; state.attendance=d.attendance||[]; state.adjustments=d.adjustments||[]; state.loans=d.loans||[]; state.tools=d.tools||[]; state.locations=d.locations||[]; state.assets=d.assets||[]; state.advances=d.advances||[]; state.accounts=d.accounts||[]; state.ledger=d.ledger||[]; state.deals=d.deals||[]; state.billings=d.billings||[]; state.measurements=d.measurements||[]; state.contracts=d.contracts||{}; state.costs=d.costs||[]; state.textMemory=d.textMemory||{clients:[],companies:[]}; state.parkAccId=d.parkAccId||''; state.oweBonus=d.oweBonus||{}; state.minFund=(d.minFund!==undefined?d.minFund:''); state.shareholderTx=d.shareholderTx||[]; state.payrollSnapshots=d.payrollSnapshots||[]; state.yearIncomeAdj=d.yearIncomeAdj||[]; state.deletedIds=d.deletedIds||[]; if(d.resurrected&&Array.isArray(d.resurrected.ids)) state.resurrected={ids:d.resurrected.ids,at:Number(d.resurrected.at)||0}; else if(!state.resurrected) state.resurrected={ids:[],at:0};
   state.employees.forEach(e=>{ if(e.active===undefined) e.active=true; });
   state.sites.forEach(s=>{
     if(s.parentSiteId){
@@ -890,10 +890,10 @@ function packData(){
     const driveUrls=(urls||[]).filter(u=>typeof u==='string'&&u.startsWith('http'));
     if(driveUrls.length) photosSync[id]=driveUrls;
   });
-  return {employees:state.employees,sites:state.sites,attendance:state.attendance,adjustments:state.adjustments,loans:state.loans,tools:state.tools,locations:state.locations,assets:state.assets,advances:state.advances,accounts:state.accounts,ledger:state.ledger,deals:state.deals,billings:state.billings,measurements:state.measurements,contracts:state.contracts,costs:state.costs,textMemory:state.textMemory,parkAccId:state.parkAccId,oweBonus:state.oweBonus,minFund:state.minFund,payrollSnapshots:state.payrollSnapshots,yearIncomeAdj:state.yearIncomeAdj||[],resurrected:state.resurrected||{ids:[],at:0},billingPhotos:photosSync,billingPhotosDeleted:billingPhotosDeleted,deletedIds:state.deletedIds||[],savedAt:Date.now()};
+  return {employees:state.employees,sites:state.sites,attendance:state.attendance,adjustments:state.adjustments,loans:state.loans,tools:state.tools,locations:state.locations,assets:state.assets,advances:state.advances,accounts:state.accounts,ledger:state.ledger,deals:state.deals,billings:state.billings,measurements:state.measurements,contracts:state.contracts,costs:state.costs,textMemory:state.textMemory,parkAccId:state.parkAccId,oweBonus:state.oweBonus,minFund:state.minFund,shareholderTx:state.shareholderTx,payrollSnapshots:state.payrollSnapshots,yearIncomeAdj:state.yearIncomeAdj||[],resurrected:state.resurrected||{ids:[],at:0},billingPhotos:photosSync,billingPhotosDeleted:billingPhotosDeleted,deletedIds:state.deletedIds||[],savedAt:Date.now()};
 }
 // 所有以 id 儲存的資料都逐筆合併；自動分潤仍會在合併後重算，手動分潤則能保留下來。
-const MERGE_COLLECTIONS=['employees','sites','attendance','adjustments','loans','tools','locations','assets','advances','accounts','ledger','deals','billings','measurements','costs','payrollSnapshots','yearIncomeAdj'];
+const MERGE_COLLECTIONS=['employees','sites','attendance','adjustments','loans','tools','locations','assets','advances','accounts','ledger','deals','billings','measurements','costs','payrollSnapshots','yearIncomeAdj','shareholderTx'];
 const recordUpdatedAt = (r, fallback=0) => Number(r&&r.updatedAt)||Number(fallback)||0;
 const recordComparable = r => {
   if(!r||typeof r!=='object') return '';
@@ -3586,6 +3586,12 @@ function bind(){
       if(!confirm('這筆是代墊款入帳產生的，但對應的股東已被刪除或取消股東身分，代墊款頁已看不到「撤銷入帳」鈕（孤兒紀錄）。\n\n直接刪除這筆？')) return;
       state.ledger=state.ledger.filter(x=>x.id!==t.id); saveData(); render(); return;
     }
+    if(t&&t.shTxId){
+      const src=state.shareholderTx.find(x=>x.id===t.shTxId);
+      if(src){ alert('這筆是「股東往來」自動產生的帳戶收支。請到「品佑帳戶結算」的股東往來刪除那筆借／還款，帳戶收支會一起移除，以免帳對不上。'); return; }
+      if(!confirm('這筆是股東往來自動產生的，但來源已被刪除（孤兒紀錄）。\n\n直接刪除這筆？')) return;
+      state.ledger=state.ledger.filter(x=>x.id!==t.id); saveData(); render(); return;
+    }
     if(!confirm('確定刪除這筆收支？')) return;
     state.ledger=state.ledger.filter(t=>t.id!==b.dataset.delledger); saveData(); render();
   });
@@ -4255,6 +4261,42 @@ function bind(){
     const v=parseFloat(s); if(isNaN(v)||v<0){ alert('請輸入正確金額'); return; }
     state.oweBonus[pid]=Math.max(0, cur-Math.round(v));
     saveData(); render();
+  });
+  // 股東往來：新增借/還款（連動品佑帳戶收支）
+  const shAdd=document.getElementById('sh-add'); if(shAdd) shAdd.onclick=()=>{
+    const shId=document.getElementById('sh-emp').value;
+    const kind=document.getElementById('sh-kind').value;
+    const date=document.getElementById('sh-date').value||localISODate();
+    const amount=Math.round(parseFloat(document.getElementById('sh-amount').value)||0);
+    const note=document.getElementById('sh-note').value.trim();
+    if(!shId||amount<=0){ alert('請選股東並填正確金額'); return; }
+    if(!state.parkAccId||!state.accounts.some(a=>a.id===state.parkAccId)){ alert('請先在上方選定「哪個帳戶是品佑代支出」，才能連動記帳。'); return; }
+    const txId=uid(), ledId=uid(), nm=empName(shId);
+    state.shareholderTx.push({id:txId,shId,kind,date,amount,note,ledgerId:ledId});
+    state.ledger.push({id:ledId,date,accId:state.parkAccId,kind:kind==='borrow'?'out':'in',amount,note:(kind==='borrow'?'借款·':'還款·')+nm+(note?'·'+note:''),shTxId:txId});
+    saveData(); render();
+  };
+  document.querySelectorAll('[data-sh-del]').forEach(b=>b.onclick=()=>{
+    const t=state.shareholderTx.find(x=>x.id===b.dataset.shDel); if(!t) return;
+    if(!confirm(`刪除 ${empName(t.shId)} 的這筆${t.kind==='borrow'?'借款':'還款'} ${money(t.amount)}？\n對應的品佑帳戶收支也會一起移除。`)) return;
+    state.ledger=state.ledger.filter(x=>x.id!==t.ledgerId && x.shTxId!==t.id);
+    state.shareholderTx=state.shareholderTx.filter(x=>x.id!==t.id);
+    saveData(); render();
+  });
+  document.querySelectorAll('[data-sh-offset]').forEach(b=>b.onclick=()=>{
+    const pid=b.dataset.shOffset;
+    const debt=state.shareholderTx.filter(t=>t.shId===pid).reduce((s,t)=>s+(t.kind==='borrow'?1:-1)*(Number(t.amount)||0),0);
+    if(debt<=0){ alert('這位股東目前沒有欠品佑。'); return; }
+    if(!state.parkAccId||!state.accounts.some(a=>a.id===state.parkAccId)){ alert('請先選定品佑帳戶。'); return; }
+    const s=prompt(`用 ${empName(pid)} 的獎金抵扣多少欠款？目前欠品佑 ${money(debt)}\n（抵扣＝視為他用獎金還了品佑，發獎金時要少發這麼多給他）`, Math.round(debt));
+    if(s===null) return;
+    const v=Math.round(parseFloat(s)||0); if(v<=0){ alert('請輸入正確金額'); return; }
+    const amt=Math.min(v,Math.round(debt));
+    const txId=uid(), ledId=uid();
+    state.shareholderTx.push({id:txId,shId:pid,kind:'repay',date:localISODate(),amount:amt,note:'獎金抵扣',ledgerId:ledId});
+    state.ledger.push({id:ledId,date:localISODate(),accId:state.parkAccId,kind:'in',amount:amt,note:'還款·'+empName(pid)+'·獎金抵扣',shTxId:txId});
+    saveData(); render();
+    alert(`已用獎金抵扣 ${money(amt)}，${empName(pid)} 剩餘欠品佑 ${money(debt-amt)}。\n記得發獎金時實際少發這 ${money(amt)} 給他。`);
   });
 }
 
@@ -6877,9 +6919,11 @@ function viewParkAcc(){
   });
   const fundShort=Math.max(0, targetFund-fundPaid); // 連「該留」都填不滿的部分
 
+  const shDebtOf=pid=>state.shareholderTx.filter(t=>t.shId===pid).reduce((s,t)=>s+(t.kind==='borrow'?1:-1)*(Number(t.amount)||0),0);
   const bonusRows=partners.map(p=>{
     const tgt=Math.round(targetBonus[p.id]||0), pay=bonusPaid[p.id]||0, owe=oweThis[p.id]||0;
-    return `<tr><td>${esc(p.name)} 管理獎金</td>
+    const debt=shDebtOf(p.id);
+    return `<tr><td>${esc(p.name)} 管理獎金${debt>0?`<div style="font-size:11px;color:var(--danger)">⚠ 欠品佑 ${money(debt)}　<button class="act" data-sh-offset="${p.id}" style="font-size:11px;padding:0 8px;height:24px">用獎金抵扣…</button></div>`:''}</td>
       <td class="num">${money(tgt)}</td>
       <td class="num" style="font-weight:600;color:var(--accent)">${money(pay)}</td>
       <td class="num" style="color:${owe>0?'var(--danger)':'var(--muted)'}">${owe>0?money(owe):'—'}</td></tr>`;
@@ -6936,7 +6980,32 @@ function viewParkAcc(){
     <p class="sub" style="margin:6px 0 0">勾選①②③④要匯出的段落，按「匯出勾選 PDF」。</p>
   </div>`;
 
-  return picker+`
+  // ── 股東往來（跟品佑借還）──
+  const shOptsHtml=partners.map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join('');
+  const shSum=partners.map(p=>{
+    const txs=state.shareholderTx.filter(t=>t.shId===p.id);
+    const borrow=txs.filter(t=>t.kind==='borrow').reduce((s,t)=>s+(Number(t.amount)||0),0);
+    const repay=txs.filter(t=>t.kind==='repay').reduce((s,t)=>s+(Number(t.amount)||0),0);
+    return {p,borrow,repay,owe:borrow-repay};
+  });
+  const shSumRows=shSum.filter(x=>x.borrow||x.repay).map(x=>`<tr><td>${esc(x.p.name)}</td><td class="num">${money(x.borrow)}</td><td class="num">${money(x.repay)}</td><td class="num" style="font-weight:700;color:${x.owe>0?'var(--danger)':(x.owe<0?'var(--info)':'var(--muted)')}">${money(x.owe)}</td><td>${x.owe>0?`<button class="act" data-sh-offset="${x.p.id}">用獎金抵扣…</button>`:''}</td></tr>`).join('');
+  const shTxRows=[...state.shareholderTx].sort((a,b)=>(b.date||'').localeCompare(a.date||'')).map(t=>`<tr><td>${esc(t.date||'')}</td><td>${esc(empName(t.shId))}</td><td>${t.kind==='borrow'?'<span class="tag" style="background:#fee2e2;color:#991b1b">借款</span>':'<span class="tag" style="background:#dcfce7;color:#166534">還款</span>'}</td><td class="num">${money(t.amount)}</td><td>${esc(t.note||'')}</td><td><button class="act danger" data-sh-del="${t.id}">刪</button></td></tr>`).join('');
+  const shCard=partners.length?`<div class="card">
+    <div style="font-size:14px;font-weight:600;margin-bottom:4px">股東往來（跟品佑借還）</div>
+    <p class="sub" style="margin:0 0 8px">股東跟品佑借錢／還錢記這裡。<b>借款</b>→品佑帳戶自動記一筆支出、該股東「欠品佑」增加；<b>還款</b>→品佑帳戶自動記一筆收入、欠額減少。這些自動產生的帳戶收支不能在「公積金帳戶」直接刪，要回這張卡片刪（借款刪掉時對應支出一起移除）。</p>
+    <div class="row" style="align-items:flex-end;margin-bottom:8px">
+      <div class="field"><label>股東</label><select id="sh-emp">${shOptsHtml}</select></div>
+      <div class="field"><label>動作</label><select id="sh-kind"><option value="borrow">借款（向品佑借）</option><option value="repay">還款（還給品佑）</option></select></div>
+      <div class="field"><label>日期</label><input type="date" id="sh-date" value="${localISODate()}"></div>
+      <div class="field"><label>金額</label><input type="number" id="sh-amount" min="0" step="1000" style="width:130px"></div>
+      <div class="field" style="flex:1;min-width:140px"><label>備註（選填）</label><input id="sh-note" placeholder="例：週轉、購料"></div>
+      <button class="btn" id="sh-add">＋ 新增</button>
+    </div>
+    ${shSumRows?`<table><thead><tr><th>股東</th><th class="num">借款總額</th><th class="num">還款總額</th><th class="num">目前欠品佑</th><th></th></tr></thead><tbody>${shSumRows}</tbody></table>`:'<div class="sub">目前沒有往來紀錄。上面新增第一筆。</div>'}
+    ${shTxRows?`<details ${detailAttrs('sh-tx')} style="margin-top:8px"><summary style="cursor:pointer;font-size:13px;color:var(--info)">往來明細（${state.shareholderTx.length} 筆）</summary><div class="scroll" style="margin-top:6px"><table><thead><tr><th>日期</th><th>股東</th><th>類型</th><th class="num">金額</th><th>備註</th><th></th></tr></thead><tbody>${shTxRows}</tbody></table></div></details>`:''}
+  </div>`:'';
+
+  return picker+shCard+`
   <div class="card">
     <div style="font-size:14px;font-weight:600;margin-bottom:6px">今年公積金水位</div>
     <div class="row" style="align-items:flex-end">
