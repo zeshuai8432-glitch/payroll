@@ -55,11 +55,16 @@ details.blk .inner{padding:0 14px 12px;overflow-x:auto}
 #print-overlay{display:none}
 .pbar{position:sticky;top:0;background:var(--card);border-bottom:1px solid var(--line);padding:10px 16px;display:flex;gap:12px;align-items:center;flex-wrap:wrap;z-index:5}
 @media print{
-  @page{margin:0}
+  @page{margin:12mm}
   body{background:#fff}
   body.printing>*{display:none!important}
-  body.printing #print-overlay{display:block!important}
+  body.printing #print-overlay{display:block!important;position:static!important;background:#fff!important;min-height:0!important}
   .pbar{display:none!important}
+  .pdoc{width:auto!important;min-height:0!important;margin:0!important;padding:0!important}
+  .pdoc table{break-inside:auto}
+  .pdoc tr{break-inside:avoid;page-break-inside:avoid}
+  .pdoc thead{display:table-header-group}
+  .pdoc .tot td,.pdoc .bhead td,.pdoc .bchap td{break-inside:avoid}
 }
 body.printing>*{display:none}
 body.printing #print-overlay{display:block;position:absolute;inset:0;background:#f1f5f9;z-index:100;min-height:100vh}
@@ -102,7 +107,7 @@ body.printing #print-overlay{display:block;position:absolute;inset:0;background:
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.07.19b';
+const APP_VERSION='vG2026.07.19c';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
