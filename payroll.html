@@ -509,7 +509,7 @@ const FS_ROOT = 'https://firestore.googleapis.com/v1/projects/'+FS_PROJECT+'/dat
 const FS_DOC_BASE = FS_ROOT+'payroll/';
 const FS_SIG_BASE = FS_ROOT+'payrollSignatures/';
 const FS_REST_URL = FS_DOC_BASE+'main?key='+FS_KEY;
-const APP_VERSION = 'v2026.07.19e-outvendor';
+const APP_VERSION = 'v2026.07.19f-stagesplit';
 let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], tools:[], locations:[], assets:[], advances:[], accounts:[], ledger:[], deals:[], billings:[], measurements:[], contracts:{}, costs:[], textMemory:{clients:[],companies:[]}, parkAccId:'', oweBonus:{}, minFund:'', shareholderTx:[], payrollSnapshots:[], yearIncomeAdj:[], deletedIds:[], resurrected:{ids:[],at:0}, tab:'dash' };
 let cloudStatus='連線中…';
 let localDirty=false, lastCloudTs=0;
@@ -598,6 +598,37 @@ function evalPriceExpr(s){
   if(s==='') return NaN;
   if(!/^[0-9+\-*/().\s]+$/.test(s)) return NaN;
   try{ const v=Function('"use strict";return('+s+')')(); return (typeof v==='number'&&isFinite(v))?v:NaN; }catch(e){ return NaN; }
+}
+// 單價是「純加法多段」（例 140+140）＝可拆工序；回傳各段數字，否則 null
+function splitPriceTerms(raw){
+  const s=String(raw||'').replace(/[，,\s]/g,'');
+  if(!/^\d+(\.\d+)?(\+\d+(\.\d+)?)+$/.test(s)) return null;
+  return s.split('+').map(Number).filter(n=>n>0);
+}
+// 一鍵拆工序：每段命名、數量相同、各自單價，之後可分開請款
+function openStageSplitModal(itemName, terms, onSplit, onKeep){
+  const old=document.getElementById('stage-split-modal'); if(old) old.remove();
+  const defaults=['立骨架','封版','面材','油漆','其他'];
+  const m=document.createElement('div'); m.id='stage-split-modal';
+  m.style.cssText='position:fixed;inset:0;background:rgba(30,27,75,.45);z-index:9998;display:flex;align-items:center;justify-content:center;padding:16px';
+  m.innerHTML=`<div style="background:var(--card,#fff);color:var(--ink,#222);border-radius:14px;padding:18px;max-width:460px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.3)">
+    <div style="font-size:15px;font-weight:700;margin-bottom:6px">偵測到單價是分段相加</div>
+    <div style="font-size:13px;color:var(--muted,#666);margin-bottom:12px">「${esc(itemName)}」單價 ${terms.join('＋')}。要拆成各工序分開的計量嗎？<b>數量都一樣</b>，之後可分開請款（例：骨架先請、封版之後再請）。</div>
+    ${terms.map((t,i)=>`<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><input class="stage-name" data-i="${i}" value="${esc(defaults[i]||('工序'+(i+1)))}" placeholder="工序名稱" style="flex:1;height:36px;padding:0 10px;border:1px solid var(--line,#ccc);border-radius:8px;background:var(--card,#fff);color:var(--ink,#222)"><span style="white-space:nowrap;color:var(--muted,#666)">單價 ${t}</span></div>`).join('')}
+    <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap">
+      <button class="btn" id="stage-split-ok">拆成 ${terms.length} 筆</button>
+      <button class="act" id="stage-split-keep">不拆，一筆</button>
+      <button class="act" id="stage-split-cancel" style="margin-left:auto">取消</button>
+    </div>
+  </div>`;
+  document.body.appendChild(m);
+  m.querySelector('#stage-split-cancel').onclick=()=>m.remove();
+  m.querySelector('#stage-split-keep').onclick=()=>{ m.remove(); onKeep(); };
+  m.querySelector('#stage-split-ok').onclick=()=>{
+    const names=[...m.querySelectorAll('.stage-name')].map(inp=>inp.value.trim());
+    m.remove();
+    onSplit(terms.map((t,i)=>({name:names[i]||('工序'+(i+1)),val:t})));
+  };
 }
 function bindMeasSubtotal(){
   const type=document.getElementById('meas-type'), width=document.getElementById('meas-width'), height=document.getElementById('meas-height');
@@ -3990,10 +4021,18 @@ function bind(){
     const sizeText=(document.getElementById('meas-size')||{}).value||'';
     let perQty=null;
     if(count>1&&!isAutoArea&&measureType!=='carry'){ perQty=qty; qty=Math.round(qty*count*100)/100; } // 手動輸入：每間數量 × 間數 = 總數量（自動面積已含間數）
-    state.measurements.push({id:uid(),date,site,item,unit,qty,unitPrice:price,priceExpr,note,measureType,count,perQty,sizeText:measureType==='carry'?sizeText.trim():'',width:measureType==='partition'&&!isNaN(width)&&width>0?width:null,height:measureType==='partition'&&!isNaN(height)&&height>0?height:null});
-    measDraft=null;
-    measKeep={measureType,site,date}; // 送出後保留類型/案場/日期
-    saveData(); render();
+    const common={date,site,unit,note,measureType,count,perQty,sizeText:measureType==='carry'?sizeText.trim():'',width:measureType==='partition'&&!isNaN(width)&&width>0?width:null,height:measureType==='partition'&&!isNaN(height)&&height>0?height:null};
+    const pushOne=(itm,pr,pexpr)=>state.measurements.push({id:uid(),item:itm,qty,unitPrice:pr,priceExpr:pexpr,...common});
+    const done=()=>{ measDraft=null; measKeep={measureType,site,date}; saveData(); render(); };
+    const terms=splitPriceTerms(priceRaw);
+    if(terms){
+      openStageSplitModal(item, terms,
+        stages=>{ stages.forEach(st=>pushOne(item+' · '+st.name, st.val, '')); done(); },
+        ()=>{ pushOne(item, price, priceExpr); done(); });
+      return;
+    }
+    pushOne(item, price, priceExpr);
+    done();
   };
   document.querySelectorAll('[data-del-meas]').forEach(b=>b.onclick=()=>{
     const m=state.measurements.find(x=>x.id===b.dataset.delMeas);
