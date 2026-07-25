@@ -509,7 +509,7 @@ const FS_ROOT = 'https://firestore.googleapis.com/v1/projects/'+FS_PROJECT+'/dat
 const FS_DOC_BASE = FS_ROOT+'payroll/';
 const FS_SIG_BASE = FS_ROOT+'payrollSignatures/';
 const FS_REST_URL = FS_DOC_BASE+'main?key='+FS_KEY;
-const APP_VERSION = 'v2026.07.19k-outparty';
+const APP_VERSION = 'v2026.07.19l-meastax';
 let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], tools:[], locations:[], assets:[], advances:[], accounts:[], ledger:[], deals:[], billings:[], measurements:[], contracts:{}, costs:[], textMemory:{clients:[],companies:[]}, parkAccId:'', oweBonus:{}, minFund:'', shareholderTx:[], payrollSnapshots:[], yearIncomeAdj:[], deletedIds:[], resurrected:{ids:[],at:0}, tab:'dash' };
 let cloudStatus='連線中…';
 let localDirty=false, lastCloudTs=0;
@@ -4153,6 +4153,7 @@ function bind(){
   };
   const mse=document.getElementById('meas-show-expr'); if(mse) mse.onchange=()=>{ measShowExpr=mse.checked; };
   const mhb=document.getElementById('meas-hide-billed'); if(mhb) mhb.onchange=()=>{ measHideBilled=mhb.checked; try{localStorage.setItem('pm_meas_hidebilled',measHideBilled?'1':'0');}catch(e){} render(); };
+  const mtm=document.getElementById('meas-tax-mode'); if(mtm) mtm.onchange=()=>{ measTaxMode=mtm.value; try{localStorage.setItem('pm_meas_taxmode',measTaxMode);}catch(e){} };
   bindBillingSubtotal('bnr'); bindBillingSubtotal('bna'); bindBillingSubtotal('bae'); bindMeasSubtotal();
   bindSiteClientAutofill('bnr-site','bnr-client');
   bindSiteClientAutofill('bna-site','bna-client');
@@ -5763,6 +5764,7 @@ let measEditId=null, measDraft=null; // 計量明細：編輯中的紀錄 / 複�
 let measKeep=null; // 計量明細：記住上次新增的類型/案場/日期，送出後不歸零
 let measShowExpr=false; // 匯出 PDF 時是否顯示單價算式（預設關）
 let measHideBilled=false; try{ measHideBilled=localStorage.getItem('pm_meas_hidebilled')==='1'; }catch(e){} // 隱藏已帶入請款的計量（預設關）
+let measTaxMode='none'; try{ measTaxMode=localStorage.getItem('pm_meas_taxmode')||'none'; }catch(e){} // 計量明細 PDF 稅別：none/incl(外加5%)/ded(內扣3%)
 const measIsBilled = m => !!(m&&m.billedTo&&state.billings.some(b=>b.id===m.billedTo));
 let costEditId=null; // 手動成本編輯中
 let siteSettingsOpen={}; // 案場設定展開狀態
@@ -6516,6 +6518,7 @@ function viewMeasurements(){
     <button class="act" id="export-meas-sel" style="height:36px;padding:0 14px" ${list.some(m=>measSel[m.id])?'':'disabled style="opacity:.5"'}>匯出勾選 PDF</button>
     <button class="act" id="meas-tobill" style="height:36px;padding:0 14px;border:1px solid var(--accent);color:var(--accent)" ${list.some(m=>measSel[m.id])?'':'disabled style="opacity:.5"'}>勾選帶入請款單 →</button>
     <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--muted);cursor:pointer;white-space:nowrap"><input type="checkbox" id="meas-hide-billed" ${measHideBilled?'checked':''} style="width:15px;height:15px">隱藏已請款${(()=>{const n=list.filter(measIsBilled).length;return n?`（${n}）`:'';})()}</label>
+    <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--muted);white-space:nowrap">稅別 <select id="meas-tax-mode" style="height:30px;border:1px solid var(--line);border-radius:6px;font-size:12px"><option value="none" ${measTaxMode==='none'?'selected':''}>無</option><option value="incl" ${measTaxMode==='incl'?'selected':''}>含稅（外加5%）</option><option value="ded" ${measTaxMode==='ded'?'selected':''}>內扣（扣3%）</option></select></label>
     <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--muted);cursor:pointer;white-space:nowrap"><input type="checkbox" id="meas-show-expr" ${measShowExpr?'checked':''} style="width:15px;height:15px">PDF 顯示算式</label>
     <span class="sub" style="margin:0">可展開案場後勾選指定明細匯出。</span>
   </div>
@@ -6581,9 +6584,10 @@ function exportMeasurementsPDF(selectedOnly=false){
     }).join(''):typeSecs(rows);
     const vendors=[...new Set(rows.map(m=>{ const f=floorOf(m); return subSiteType(name,f)==='外包'?(subSiteVendor(name,f)||('外包·'+f)):''; }).filter(Boolean))];
     const vendorLine=vendors.length?`<div style="font-size:12px;color:#9a5b1a;margin:-4px 0 8px;font-weight:600">發包廠商／工班：${vendors.map(esc).join('、')}</div>`:'';
+    const secTax=measTaxRows(subtotal,6);
     return `<h2>${esc(name)}</h2>${vendorLine}
       <table><thead><tr><th>日期</th><th>項目</th><th>尺寸</th><th>單位</th><th class="num">數量</th><th class="num">單價</th><th class="num">小計</th><th>備註</th></tr></thead>
-      <tbody>${trs}<tr class="total-row"><td colspan="6">案場合計</td><td class="num">${money(subtotal)}</td><td></td></tr></tbody></table>`;
+      <tbody>${trs}<tr class="total-row"><td colspan="6">案場合計</td><td class="num">${money(subtotal)}</td><td></td></tr>${secTax}</tbody></table>`;
   }).join('<div style="height:16px"></div>');
   const total=list.reduce((s,m)=>s+(Number(m.qty)||0)*(Number(m.unitPrice)||0),0);
   const title='計量明細';
@@ -6592,10 +6596,15 @@ function exportMeasurementsPDF(selectedOnly=false){
     <h1>${title}</h1>
     <div class="meta">匯出日期：${today}　|　筆數：${list.length}　|　總金額：${money(total)}</div>
     ${sections}
-    <table style="margin-top:18px"><tbody><tr class="total-row"><td>總計</td><td class="num">${money(total)}</td></tr></tbody></table>
-    <div class="foot"><span>本報表由系統自動產生</span><span>${today}</span></div>
+    <table style="margin-top:18px"><tbody><tr class="total-row"><td>總計</td><td class="num">${money(total)}</td></tr>${measTaxRows(total,1)}</tbody></table>
   </div>`;
   printHTML(title, inner);
+}
+// 計量明細稅金列（含稅外加5% / 內扣扣3%）；span＝金額前空欄的 colspan
+function measTaxRows(base, span){
+  if(measTaxMode==='incl'){ const t=Math.round(base*0.05); return `<tr><td colspan="${span}">營業稅 5%</td><td class="num">${money(t)}</td>${span>1?'<td></td>':''}</tr><tr class="total-row"><td colspan="${span}">含稅合計</td><td class="num">${money(base+t)}</td>${span>1?'<td></td>':''}</tr>`; }
+  if(measTaxMode==='ded'){ const t=Math.round(base*0.03); return `<tr><td colspan="${span}">代扣稅款 3%</td><td class="num">−${money(t)}</td>${span>1?'<td></td>':''}</tr><tr class="total-row"><td colspan="${span}">實付金額</td><td class="num">${money(base-t)}</td>${span>1?'<td></td>':''}</tr>`; }
+  return '';
 }
 
 function viewBilling(){
