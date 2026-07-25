@@ -108,7 +108,7 @@ body.printing #print-overlay{display:block;position:absolute;inset:0;background:
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.07.19l';
+const APP_VERSION='vG2026.07.19m';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -443,6 +443,13 @@ function viewItems(proj){
         ${fld('合約數量',`<input id="bf-count" type="number" inputmode="decimal" value="${b.count}" style="${ist};width:90px">`)}
         <button class="btn sm" data-blkok="${b.id}">儲存</button><button class="btn sub sm" data-blkcancel="1">取消</button></div>`;
     }
+    if(b.items.length&&!batchAll){
+      if(batchEdit===b.id){
+        h+=`<div class="rowline" style="gap:8px;align-items:center;margin-bottom:6px;padding:6px 8px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px"><b style="font-size:13px">整批改「${esc(b.name)}」：數量／單價可直接填算式（例 5.11*3.07）</b><span style="flex:1"></span><button class="btn sm" data-batchok="${b.id}">💾 儲存</button><button class="btn sub sm" data-batchcancel="1">取消</button></div>`;
+      }else{
+        h+=`<div style="margin-bottom:6px"><button class="btn sub sm" data-batchedit="${b.id}">✏️ 整批改本區數量／單價</button></div>`;
+      }
+    }
     h+=`<table><tr><th>項次</th><th>名稱及規格</th><th>單位</th><th class="num">數量</th><th class="num">單價</th><th class="num">總價</th><th>備註</th><th></th></tr>`;
     let ch='';
     for(const it of b.items){
@@ -473,10 +480,8 @@ function viewItems(proj){
     h+=`</table><div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">`;
     if(batchAll){
       h+=`<span class="muted" style="font-size:12px">數量／單價可直接填算式（例 5.11*3.07）。改完請按上方「💾 全部儲存」。</span>`;
-    }else if(batchEdit===b.id){
-      h+=`<button class="btn sm" data-batchok="${b.id}">💾 全部儲存</button><button class="btn sub sm" data-batchcancel="1">取消</button><span class="muted" style="font-size:12px">數量／單價可直接填算式（例 5.11*3.07），一次更新整個區塊。</span>`;
-    }else{
-      h+=`${itemAdd===b.id?'':`<button class="btn sub sm" data-additem="${b.id}">＋ 手動加細項</button>`}${b.items.length>1?`<button class="btn sub sm" data-batchedit="${b.id}" title="整個區塊的數量、單價一次改">✏️ 整批改數量／單價</button>`:''}${allManual?`<button class="btn sub sm" data-sortitems="${b.id}" title="依名稱/圖面編號自然排序（A、B…D-1、E…）">🔤 智慧排序</button>`:''}${srcBlks.length&&copyInto!==b.id?`<button class="btn sub sm" data-copyinto="${b.id}">📋 複製細項自其他區塊</button>`:''}${copyInto===b.id?`<span class="muted" style="font-size:12px">從哪個區塊複製：</span><select id="copy-src" style="height:30px">${srcBlks.map(x=>`<option value="${x.id}">${esc(x.name)}（${x.items.length} 條）</option>`).join('')}</select><button class="btn sm" data-copyok="${b.id}">複製過來</button><button class="btn sub sm" data-copycancel="1">取消</button>`:''}`;
+    }else if(batchEdit!==b.id){
+      h+=`${itemAdd===b.id?'':`<button class="btn sub sm" data-additem="${b.id}">＋ 手動加細項</button>`}${allManual?`<button class="btn sub sm" data-sortitems="${b.id}" title="依名稱/圖面編號自然排序（A、B…D-1、E…）">🔤 智慧排序</button>`:''}${srcBlks.length&&copyInto!==b.id?`<button class="btn sub sm" data-copyinto="${b.id}">📋 複製細項自其他區塊</button>`:''}${copyInto===b.id?`<span class="muted" style="font-size:12px">從哪個區塊複製：</span><select id="copy-src" style="height:30px">${srcBlks.map(x=>`<option value="${x.id}">${esc(x.name)}（${x.items.length} 條）</option>`).join('')}</select><button class="btn sm" data-copyok="${b.id}">複製過來</button><button class="btn sub sm" data-copycancel="1">取消</button>`:''}`;
     }
     h+=`</div></div></details>`;
   }
