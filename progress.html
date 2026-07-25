@@ -108,7 +108,7 @@ body.printing #print-overlay{display:block;position:absolute;inset:0;background:
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.07.19g';
+const APP_VERSION='vG2026.07.19h';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -451,7 +451,8 @@ function viewItems(proj){
         <td><button class="btn sub sm" data-edititem="${b.id}::${it.id}">改</button> <button class="btn bad sm" data-delitem="${b.id}::${it.id}">刪</button></td></tr>`;
     }
     if(itemAdd===b.id) h+=itemForm(b,null);
-    h+=`</table><div style="margin-top:8px">${itemAdd===b.id?'':`<button class="btn sub sm" data-additem="${b.id}">＋ 手動加細項</button>`}</div></div></details>`;
+    const allManual=b.items.length>1&&b.items.every(it=>it.no==='增');
+    h+=`</table><div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">${itemAdd===b.id?'':`<button class="btn sub sm" data-additem="${b.id}">＋ 手動加細項</button>`}${allManual?`<button class="btn sub sm" data-sortitems="${b.id}" title="依名稱/圖面編號自然排序（A、B…D-1、E…）">🔤 智慧排序</button>`:''}</div></div></details>`;
   }
   h+=blkAdd
     ?`<div class="rowline" style="flex-wrap:wrap;gap:8px;align-items:flex-end;margin-top:6px;padding:10px;background:var(--bg,#f8fafc);border-radius:10px">
@@ -828,7 +829,7 @@ function setProgInput(proj,blkId,itemId,kind,val){
 }
 
 document.addEventListener('click',async e=>{
-  const t=e.target.closest('[data-tab],[data-editblk],[data-delblk],[data-edititem],[data-delitem],[data-additem],[data-itemok],[data-itemcancel],[data-blkok],[data-blkcancel],[data-bapply],[data-editextra],[data-delextra],#btn-import,#btn-import2,#btn-newproj,#btn-newproj2,#btn-addblk,#btn-addblk-ok,#btn-addperiod,#btn-delperiod,#btn-addextra,#btn-roundup,#btn-print,#set-save,#backup-export,#backup-import-btn,#proj-del,#cloud-push,#cloud-pull');
+  const t=e.target.closest('[data-tab],[data-editblk],[data-delblk],[data-edititem],[data-delitem],[data-additem],[data-sortitems],[data-itemok],[data-itemcancel],[data-blkok],[data-blkcancel],[data-bapply],[data-editextra],[data-delextra],#btn-import,#btn-import2,#btn-newproj,#btn-newproj2,#btn-addblk,#btn-addblk-ok,#btn-addperiod,#btn-delperiod,#btn-addextra,#btn-roundup,#btn-print,#set-save,#backup-export,#backup-import-btn,#proj-del,#cloud-push,#cloud-pull');
   if(!t)return;
   const proj=curProj();
   if(t.dataset.tab){state.tab=t.dataset.tab;save();render();return;}
@@ -875,6 +876,13 @@ document.addEventListener('click',async e=>{
     if(!confirm(`刪除細項「${it.name}」？`))return;
     for(const p of proj.periods)if(p.prog)delete p.prog[it.id];
     b.items=b.items.filter(x=>x!==it);save();render();return;
+  }
+  if(t.dataset.sortitems){
+    const b=proj.blocks.find(x=>x.id===t.dataset.sortitems);if(!b)return;
+    if(!b.items.every(it=>it.no==='增')){ alert('這個區塊有匯入的細項，為避免打亂合約順序，智慧排序只用在全部手動新增的區塊。'); return; }
+    const nat=(a,c)=>String(a||'').localeCompare(String(c||''),'zh-Hant',{numeric:true,sensitivity:'base'});
+    b.items.sort((x,y)=>nat(x.chapter,y.chapter)||nat(x.name,y.name));
+    save();render();return;
   }
   if(t.id==='btn-addblk'){ blkAdd=true; itemEdit=itemAdd=blkEdit=null; render(); return; }
   if(t.id==='btn-addblk-ok'){
