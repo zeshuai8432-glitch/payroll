@@ -108,7 +108,7 @@ body.printing #print-overlay{display:block;position:absolute;inset:0;background:
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.07.19f';
+const APP_VERSION='vG2026.07.19g';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -445,8 +445,8 @@ function viewItems(proj){
       if(it.chapter!==ch){ch=it.chapter;if(ch)h+=`<tr class="chapter"><td colspan="8">${esc(ch)}</td></tr>`;}
       const zero=it.amount===0;
       h+=`<tr class="${zero?'zero':''}"><td>${esc(it.no)}</td><td>${esc(it.name)}${it.tag?`<span class="tag">${esc(it.tag)}</span>`:''}</td>
-        <td>${esc(it.unit)}</td><td class="num">${qfmt(it.qty)}</td>
-        <td class="num">${it.price?qfmt(it.price):''}</td><td class="num">${qfmt(it.amount)}</td>
+        <td>${esc(it.unit)}</td><td class="num">${qfmt(it.qty)}${it.qtyExpr?`<div style="font-size:11px;color:var(--muted)">=${esc(it.qtyExpr)}</div>`:''}</td>
+        <td class="num">${it.price?qfmt(it.price):''}${it.priceExpr?`<div style="font-size:11px;color:var(--muted)">=${esc(it.priceExpr)}</div>`:''}</td><td class="num">${qfmt(it.amount)}</td>
         <td class="muted" style="font-size:12px">${esc(it.remark)}</td>
         <td><button class="btn sub sm" data-edititem="${b.id}::${it.id}">改</button> <button class="btn bad sm" data-delitem="${b.id}::${it.id}">刪</button></td></tr>`;
     }
