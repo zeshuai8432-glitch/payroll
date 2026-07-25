@@ -509,7 +509,7 @@ const FS_ROOT = 'https://firestore.googleapis.com/v1/projects/'+FS_PROJECT+'/dat
 const FS_DOC_BASE = FS_ROOT+'payroll/';
 const FS_SIG_BASE = FS_ROOT+'payrollSignatures/';
 const FS_REST_URL = FS_DOC_BASE+'main?key='+FS_KEY;
-const APP_VERSION = 'v2026.07.19m-withhold';
+const APP_VERSION = 'v2026.07.19n-meashead';
 let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], tools:[], locations:[], assets:[], advances:[], accounts:[], ledger:[], deals:[], billings:[], measurements:[], contracts:{}, costs:[], textMemory:{clients:[],companies:[]}, parkAccId:'', oweBonus:{}, minFund:'', shareholderTx:[], payrollSnapshots:[], yearIncomeAdj:[], deletedIds:[], resurrected:{ids:[],at:0}, tab:'dash' };
 let cloudStatus='連線中…';
 let localDirty=false, lastCloudTs=0;
@@ -710,6 +710,10 @@ const siteName = id => siteDisplayName(state.sites.find(x=>x.id===id));
 const siteApplyUnit = name => {
   const s=state.sites.find(x=>x.name===parentSiteName(name));
   return s?(s.applyUnit||s.contractCompany||s.company||''):'';
+};
+const siteApplyTaxId = name => {
+  const s=state.sites.find(x=>x.name===parentSiteName(name));
+  return s?(s.applyUnitTaxId||''):'';
 };
 const siteClientOwner = name => {
   const direct=state.sites.find(x=>x.name===String(name||''));
@@ -2611,6 +2615,7 @@ function viewManage(){
           ${curType==='合作案'?`<div class="field"><label>管理人(你們)佔 %</label><input type="number" data-sitemgr="${s.id}" value="${s.coopMgrPct!==undefined?s.coopMgrPct:50}" min="0" max="100" step="5" style="width:120px"></div>`:''}
           <div class="field"><label>合約總額（選填）</label><input type="number" data-sitecontract="${s.id}" value="${contractVal}" placeholder="未設定" min="0" step="10000" style="width:140px"></div>
           <div class="field" style="flex:1;min-width:180px"><label>申請單位（簽約公司）</label><input data-siteapplyunit="${s.id}" list="company-memory-list" value="${esc(applyUnit)}" placeholder="例：東澤工程有限公司"></div>
+          <div class="field"><label>統一編號</label><input data-siteapplytax="${s.id}" value="${esc(s.applyUnitTaxId||'')}" placeholder="8 碼" inputmode="numeric" style="width:110px"></div>
           <div class="field" style="flex:1;min-width:160px"><label>業主</label><input data-siteclientowner="${s.id}" list="client-memory-list" value="${esc(clientOwner)}" placeholder="例：王先生、四季酒店"></div>
         </div>
         ${curType==='合作案'?`<div style="margin:6px 0 10px;padding:10px;background:var(--bg);border-radius:10px">
@@ -3065,6 +3070,10 @@ function bind(){
   document.querySelectorAll('[data-siteapplyunit]').forEach(inp=>inp.onchange=()=>{
     const s=state.sites.find(x=>x.id===inp.dataset.siteapplyunit); if(!s) return;
     s.applyUnit=inp.value.trim(); rememberText('companies',s.applyUnit); siteSettingsOpen[s.id]=true; saveData();
+  });
+  document.querySelectorAll('[data-siteapplytax]').forEach(inp=>inp.onchange=()=>{
+    const s=state.sites.find(x=>x.id===inp.dataset.siteapplytax); if(!s) return;
+    s.applyUnitTaxId=inp.value.trim(); siteSettingsOpen[s.id]=true; saveData();
   });
   document.querySelectorAll('[data-siteclientowner]').forEach(inp=>inp.onchange=()=>{
     const s=state.sites.find(x=>x.id===inp.dataset.siteclientowner); if(!s) return;
@@ -6606,8 +6615,10 @@ function exportMeasurementsPDF(selectedOnly=false){
     }).join(''):typeSecs(rows);
     const vendors=[...new Set(rows.map(m=>{ const f=floorOf(m); return subSiteType(name,f)==='外包'?(subSiteVendor(name,f)||('外包·'+f)):''; }).filter(Boolean))];
     const vendorLine=vendors.length?`<div style="font-size:12px;color:#9a5b1a;margin:-4px 0 8px;font-weight:600">發包廠商／工班：${vendors.map(esc).join('、')}</div>`:'';
+    const applyU=siteApplyUnit(name), applyTax=siteApplyTaxId(name);
+    const headLine=(applyU||applyTax)?`<div style="font-size:12.5px;margin:-2px 0 8px;color:#1e3a8a">抬頭：${esc(applyU||'—')}${applyTax?`　統一編號：${esc(applyTax)}`:''}</div>`:'';
     const secTax=measTaxRows(subtotal,6);
-    return `<h2>${esc(name)}</h2>${vendorLine}
+    return `<h2>${esc(name)}</h2>${headLine}${vendorLine}
       <table><thead><tr><th>日期</th><th>項目</th><th>尺寸</th><th>單位</th><th class="num">數量</th><th class="num">單價</th><th class="num">小計</th><th>備註</th></tr></thead>
       <tbody>${trs}<tr class="total-row"><td colspan="6">案場合計</td><td class="num">${money(subtotal)}</td><td></td></tr>${secTax}</tbody></table>`;
   }).join('<div style="height:16px"></div>');
@@ -6616,7 +6627,6 @@ function exportMeasurementsPDF(selectedOnly=false){
   const today=localISODate();
   const inner=`<div class="bluedoc">
     <h1>${title}</h1>
-    <div class="meta">匯出日期：${today}　|　筆數：${list.length}　|　總金額：${money(total)}</div>
     ${sections}
     <table style="margin-top:18px"><tbody><tr class="total-row"><td>總計</td><td class="num">${money(total)}</td></tr>${measTaxRows(total,1)}</tbody></table>
   </div>`;
