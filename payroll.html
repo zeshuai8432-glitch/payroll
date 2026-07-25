@@ -509,7 +509,7 @@ const FS_ROOT = 'https://firestore.googleapis.com/v1/projects/'+FS_PROJECT+'/dat
 const FS_DOC_BASE = FS_ROOT+'payroll/';
 const FS_SIG_BASE = FS_ROOT+'payrollSignatures/';
 const FS_REST_URL = FS_DOC_BASE+'main?key='+FS_KEY;
-const APP_VERSION = 'v2026.07.19d-measjump';
+const APP_VERSION = 'v2026.07.19e-outvendor';
 let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], tools:[], locations:[], assets:[], advances:[], accounts:[], ledger:[], deals:[], billings:[], measurements:[], contracts:{}, costs:[], textMemory:{clients:[],companies:[]}, parkAccId:'', oweBonus:{}, minFund:'', shareholderTx:[], payrollSnapshots:[], yearIncomeAdj:[], deletedIds:[], resurrected:{ids:[],at:0}, tab:'dash' };
 let cloudStatus='連線中…';
 let localDirty=false, lastCloudTs=0;
@@ -718,6 +718,12 @@ const subSiteType = (siteOrName, subName) => {
   if(child) return child.type||'代工';
   const meta=ensureSubSiteMeta(s);
   return meta[subName]||'代工';
+};
+// 外包子案場的發包廠商／工班名（列印計量明細時帶出）
+const subSiteVendor = (siteOrName, subName) => {
+  const s=typeof siteOrName==='string'?state.sites.find(x=>x.name===siteOrName):siteOrName;
+  if(!s||!subName) return '';
+  return (s.subSiteVendors&&s.subSiteVendors[subName])||'';
 };
 function renameSubSite(parent, oldName, newName){
   const next=String(newName||'').trim();
@@ -2578,7 +2584,7 @@ function viewManage(){
         </div>
         ${curType==='合作案'?`<div style="margin:6px 0 10px;padding:10px;background:var(--bg);border-radius:10px">
           <div style="font-size:12px;font-weight:700;margin-bottom:6px;color:var(--muted)">樓層 / 子案場</div>
-          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">${subSitesOf(s).map(sub=>`<span class="tag" style="background:#eef6ff;color:#1d4ed8;border-color:#bfdbfe;gap:6px">${esc(sub)} <select data-subtype="${s.id}" data-subsite="${esc(sub)}" style="height:24px;border:1px solid #bfdbfe;border-radius:6px;background:white;color:#1d4ed8;font-size:12px">${SUB_SITE_TYPES.map(t=>`<option value="${t}" ${subSiteType(s,sub)===t?'selected':''}>${t}</option>`).join('')}</select><button class="act" data-rensubsite="${s.id}" data-subsite="${esc(sub)}" style="height:22px;padding:0 6px;margin-left:2px;font-size:11px;color:var(--info)">改名</button><button class="act" data-extractsubsite="${s.id}" data-subsite="${esc(sub)}" style="height:22px;padding:0 6px;margin-left:2px;font-size:11px;color:var(--info)">拉出</button><button class="act danger" data-delsubsite="${s.id}" data-subsite="${esc(sub)}" style="height:22px;padding:0 6px;margin-left:2px;font-size:11px">刪</button></span>`).join('')||'<span class="sub" style="margin:0">尚未設定樓層。</span>'}</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">${subSitesOf(s).map(sub=>`<span class="tag" style="background:#eef6ff;color:#1d4ed8;border-color:#bfdbfe;gap:6px">${esc(sub)} <select data-subtype="${s.id}" data-subsite="${esc(sub)}" style="height:24px;border:1px solid #bfdbfe;border-radius:6px;background:white;color:#1d4ed8;font-size:12px">${SUB_SITE_TYPES.map(t=>`<option value="${t}" ${subSiteType(s,sub)===t?'selected':''}>${t}</option>`).join('')}</select>${subSiteType(s,sub)==='外包'?`<input data-subvendor="${s.id}" data-subsite="${esc(sub)}" value="${esc(subSiteVendor(s,sub))}" placeholder="發包廠商/工班" style="height:24px;width:120px;border:1px solid #bfdbfe;border-radius:6px;padding:0 6px;font-size:12px;color:#9a5b1a">`:''}<button class="act" data-rensubsite="${s.id}" data-subsite="${esc(sub)}" style="height:22px;padding:0 6px;margin-left:2px;font-size:11px;color:var(--info)">改名</button><button class="act" data-extractsubsite="${s.id}" data-subsite="${esc(sub)}" style="height:22px;padding:0 6px;margin-left:2px;font-size:11px;color:var(--info)">拉出</button><button class="act danger" data-delsubsite="${s.id}" data-subsite="${esc(sub)}" style="height:22px;padding:0 6px;margin-left:2px;font-size:11px">刪</button></span>`).join('')||'<span class="sub" style="margin:0">尚未設定樓層。</span>'}</div>
           <div class="row">
             <div class="field" style="flex:1;min-width:160px"><label>新增樓層</label><input data-subsiteinput="${s.id}" placeholder="例：9F、10F、A棟"></div>
             <button class="act" data-addsubsite="${s.id}" style="border:1px solid var(--accent);border-radius:6px;padding:0 12px;color:var(--accent);height:36px">＋ 加樓層</button>
@@ -3062,6 +3068,13 @@ function bind(){
     if(child){ child.type=sel.value||'代工'; child.coop=false; }
     ensureSubSiteMeta(s)[sub]=sel.value||'代工';
     siteSettingsOpen[s.id]=true; saveData(); render();
+  });
+  document.querySelectorAll('[data-subvendor]').forEach(inp=>inp.onchange=()=>{
+    const s=state.sites.find(x=>x.id===inp.dataset.subvendor); if(!s) return;
+    const sub=inp.dataset.subsite; if(!subSitesOf(s).includes(sub)) return;
+    if(!s.subSiteVendors||typeof s.subSiteVendors!=='object') s.subSiteVendors={};
+    s.subSiteVendors[sub]=inp.value.trim();
+    siteSettingsOpen[s.id]=true; saveData();
   });
   document.querySelectorAll('[data-importsubsitebtn]').forEach(b=>b.onclick=()=>{
     const s=state.sites.find(x=>x.id===b.dataset.importsubsitebtn); if(!s) return;
@@ -6511,9 +6524,12 @@ function exportMeasurementsPDF(selectedOnly=false){
     const trs=floors.length>1?floors.map(f=>{
       const g=rows.filter(m=>floorOf(m)===f);
       const sub=g.reduce((s,m)=>s+(Number(m.qty)||0)*(Number(m.unitPrice)||0),0);
-      return `<tr class="floor-head"><td colspan="8" style="padding:8px 10px">${f?esc(f):'（主案場）'}（${g.length}筆）<span style="float:right">小計 ${money(sub)}</span></td></tr>`+typeSecs(g);
+      const out=subSiteType(name,f)==='外包'?` <span style="font-weight:600;color:#9a5b1a">〔外包${subSiteVendor(name,f)?'·'+esc(subSiteVendor(name,f)):''}〕</span>`:'';
+      return `<tr class="floor-head"><td colspan="8" style="padding:8px 10px">${f?esc(f):'（主案場）'}${out}（${g.length}筆）<span style="float:right">小計 ${money(sub)}</span></td></tr>`+typeSecs(g);
     }).join(''):typeSecs(rows);
-    return `<h2>${esc(name)}</h2>
+    const vendors=[...new Set(rows.map(m=>{ const f=floorOf(m); return subSiteType(name,f)==='外包'?(subSiteVendor(name,f)||('外包·'+f)):''; }).filter(Boolean))];
+    const vendorLine=vendors.length?`<div style="font-size:12px;color:#9a5b1a;margin:-4px 0 8px;font-weight:600">發包廠商／工班：${vendors.map(esc).join('、')}</div>`:'';
+    return `<h2>${esc(name)}</h2>${vendorLine}
       <table><thead><tr><th>日期</th><th>項目</th><th>尺寸</th><th>單位</th><th class="num">數量</th><th class="num">單價</th><th class="num">小計</th><th>備註</th></tr></thead>
       <tbody>${trs}<tr class="total-row"><td colspan="6">案場合計</td><td class="num">${money(subtotal)}</td><td></td></tr></tbody></table>`;
   }).join('<div style="height:16px"></div>');
