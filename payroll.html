@@ -509,7 +509,7 @@ const FS_ROOT = 'https://firestore.googleapis.com/v1/projects/'+FS_PROJECT+'/dat
 const FS_DOC_BASE = FS_ROOT+'payroll/';
 const FS_SIG_BASE = FS_ROOT+'payrollSignatures/';
 const FS_REST_URL = FS_DOC_BASE+'main?key='+FS_KEY;
-const APP_VERSION = 'v2026.07.19i-billvendor';
+const APP_VERSION = 'v2026.07.19j-outparty';
 let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], tools:[], locations:[], assets:[], advances:[], accounts:[], ledger:[], deals:[], billings:[], measurements:[], contracts:{}, costs:[], textMemory:{clients:[],companies:[]}, parkAccId:'', oweBonus:{}, minFund:'', shareholderTx:[], payrollSnapshots:[], yearIncomeAdj:[], deletedIds:[], resurrected:{ids:[],at:0}, tab:'dash' };
 let cloudStatus='連線中…';
 let localDirty=false, lastCloudTs=0;
@@ -4849,6 +4849,12 @@ function billingDocInner(id, internal, pick){
   const isDark=isFullyAllocated(b);
   const amt=isDark?rawBillingAmount(b):billingAmount(b);
   const applyUnit=siteApplyUnit(b.site);
+  // 外包單：甲乙方對調——申請單位＝發包廠商（請款方）、業主＝母案場的申請單位（付款方）
+  const _osp=splitSiteValue(b.site);
+  const outsourced=isOutsourcedBill(b);
+  const vendorName=outsourced?(subSiteVendor(_osp.parent,_osp.sub)||_osp.sub||''):'';
+  const applyUnitPrint=outsourced?vendorName:applyUnit;
+  const clientPrint=outsourced?applyUnit:(b.client||'');
   // 照片起始大小依張數（之後 smartFitBillingPhotos 會實測整份高度、逐級收縮到塞進一頁）
   const pMaxW=photos.length===1?'100%':(photos.length===2?'48.5%':'32%');
   const pMaxH=photos.length===1?560:(photos.length===2?440:400);
@@ -4881,8 +4887,7 @@ function billingDocInner(id, internal, pick){
   return `<h1>${esc(type)}${allocIns.length?'<span style="font-size:14px;background:#fde9d4;color:#9a5b1a;border-radius:6px;padding:2px 10px;margin-left:10px;vertical-align:middle">內帳版</span>':''}</h1>
     <div class="meta">日期：${esc(b.date||'')}　|　案場：${esc(siteDisplayLabel(b.site)||'')}</div>
     <table><tbody>
-      ${isOutsourcedBill(b)?(()=>{ const sp=splitSiteValue(b.site); const v=subSiteVendor(sp.parent,sp.sub)||sp.sub||''; return v?`<tr><th style="width:90px">發包廠商/工班</th><td>${esc(v)}</td></tr>`:''; })():''}
-      <tr><th style="width:90px">業主</th><td>${esc(b.client||'')}${type!=='追加單'&&b.method?`　（${esc(b.method)}）`:''}</td></tr>
+      <tr><th style="width:90px">${outsourced?'業主（發包）':'業主'}</th><td>${esc(clientPrint)}${type!=='追加單'&&b.method?`　（${esc(b.method)}）`:''}</td></tr>
     </tbody></table>
     <div class="sec">金額</div>
     <table><thead><tr><th>項目</th><th>單位</th><th class="num">數量</th><th class="num">單價</th><th class="num">小計</th></tr></thead>
@@ -4896,7 +4901,7 @@ function billingDocInner(id, internal, pick){
     ${internalSec}
     ${photoSec}
     <div class="sign">
-      <div class="sigcell"><div class="sigbox"></div><div class="siglabel">申請單位${applyUnit?`<div style="font-size:13px;font-weight:400;margin-top:10px">${esc(applyUnit)}</div>`:''}</div></div>
+      <div class="sigcell"><div class="sigbox"></div><div class="siglabel">${outsourced?'申請單位（發包廠商/工班）':'申請單位'}${applyUnitPrint?`<div style="font-size:13px;font-weight:400;margin-top:10px">${esc(applyUnitPrint)}</div>`:''}</div></div>
       ${type==='追加單'
         ? `<div class="sigcell"><div class="sigbox">${signImgHtml}</div><div class="siglabel">現場工程師確認項目</div></div>
       <div class="sigcell"><div class="sigbox">${soSignImgHtml}</div><div class="siglabel">所長</div></div>`
