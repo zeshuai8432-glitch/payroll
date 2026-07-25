@@ -108,7 +108,7 @@ body.printing #print-overlay{display:block;position:absolute;inset:0;background:
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.07.19i';
+const APP_VERSION='vG2026.07.19j';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -451,6 +451,10 @@ function viewItems(proj){
         <td><button class="btn sub sm" data-edititem="${b.id}::${it.id}">改</button> <button class="btn bad sm" data-delitem="${b.id}::${it.id}">刪</button></td></tr>`;
     }
     if(itemAdd===b.id) h+=itemForm(b,null);
+    if(b.items.length>1){
+      const subSum=b.items.reduce((s,i)=>s+i.amount,0);
+      h+=`<tr class="chapter"><td colspan="5" style="text-align:right">小計${b.count>1?`（每${esc(b.unit)}）`:''}</td><td class="num"><b>${qfmt(subSum)}</b></td><td colspan="2">${b.count>1?`<span class="muted" style="font-size:11px">×${qfmt(b.count)} ${esc(b.unit)} ＝ ${money(subSum*b.count)}</span>`:''}</td></tr>`;
+    }
     const allManual=b.items.length>1&&b.items.every(it=>it.no==='增');
     const srcBlks=proj.blocks.filter(x=>x.id!==b.id&&x.items.length);
     h+=`</table><div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">${itemAdd===b.id?'':`<button class="btn sub sm" data-additem="${b.id}">＋ 手動加細項</button>`}${allManual?`<button class="btn sub sm" data-sortitems="${b.id}" title="依名稱/圖面編號自然排序（A、B…D-1、E…）">🔤 智慧排序</button>`:''}${srcBlks.length&&copyInto!==b.id?`<button class="btn sub sm" data-copyinto="${b.id}">📋 複製細項自其他區塊</button>`:''}${copyInto===b.id?`<span class="muted" style="font-size:12px">從哪個區塊複製：</span><select id="copy-src" style="height:30px">${srcBlks.map(x=>`<option value="${x.id}">${esc(x.name)}（${x.items.length} 條）</option>`).join('')}</select><button class="btn sm" data-copyok="${b.id}">複製過來</button><button class="btn sub sm" data-copycancel="1">取消</button>`:''}</div></div></details>`;
