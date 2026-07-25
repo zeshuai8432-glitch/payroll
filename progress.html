@@ -108,7 +108,7 @@ body.printing #print-overlay{display:block;position:absolute;inset:0;background:
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.07.19i';
+const APP_VERSION='vG2026.07.19l';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -375,7 +375,7 @@ function calc(proj,perIdx){
 
 /* ═══════════ 畫面 ═══════════ */
 const openBlk=new Set();
-let itemEdit=null, itemAdd=null, blkEdit=null, blkAdd=false, copyInto=null; // 就地編輯：細項/區塊；copyInto＝正在選來源區塊複製
+let itemEdit=null, itemAdd=null, blkEdit=null, blkAdd=false, copyInto=null, batchEdit=null, batchAll=false; // 就地編輯：細項/區塊；copyInto＝選來源區塊複製；batchEdit＝單一區塊整批改；batchAll＝全部區塊一起整批改
 function render(){
   const app=document.getElementById('app');
   const sel=document.getElementById('proj-sel');
@@ -407,6 +407,11 @@ function viewItems(proj){
     <div class="stat"><div class="l">細項</div><div class="v">${nItems}</div></div>
   </div>
   <div class="rowline"><label class="muted" style="font-size:13px;cursor:pointer"><input type="checkbox" id="hide-zero"${proj.hideZero?' checked':''}> 隱藏 0 元項目（非我方施作範圍）</label></div>`;
+  if(nItems){
+    h+=batchAll
+      ?`<div class="rowline" style="gap:8px;flex-wrap:wrap;align-items:center;margin:6px 0;padding:8px 10px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;position:sticky;top:0;z-index:5"><b style="font-size:13px">整批改中：每條的數量／單價都可改（支援算式），改完按儲存</b><span style="flex:1"></span><button class="btn sm" data-batchallok="1">💾 全部儲存</button><button class="btn sub sm" data-batchallcancel="1">取消</button></div>`
+      :`<div class="rowline" style="margin:6px 0"><button class="btn sub sm" data-batchalledit="1" title="所有區塊的每一條細項，數量與單價一次改">✏️ 整批改數量／單價（全部區塊一起）</button></div>`;
+  }
   const ist='height:32px;padding:0 8px';
   const fld=(lbl,inner)=>`<div class="field" style="display:flex;flex-direction:column;gap:2px"><label style="font-size:11px;color:var(--muted)">${lbl}</label>${inner}</div>`;
   const itemForm=(b,it)=>`<tr><td colspan="8" style="padding:10px;background:var(--bg,#f8fafc)">
@@ -423,7 +428,8 @@ function viewItems(proj){
     const bv=b.items.reduce((s,i)=>s+itemValue(i,b),0);
     const hid=proj.hideZero?b.items.filter(i=>i.amount===0).length:0;
     const editingBlk=blkEdit===b.id;
-    h+=`<details class="blk"${openBlk.has(b.id)||editingBlk||itemAdd===b.id?' open':''} data-blk="${b.id}"><summary>
+    const inBatch=batchEdit===b.id||batchAll;
+    h+=`<details class="blk"${openBlk.has(b.id)||editingBlk||itemAdd===b.id||inBatch?' open':''} data-blk="${b.id}"><summary>
       <b>${esc(b.name)}</b><span class="tag">${qfmt(b.count)} ${esc(b.unit)}</span>
       <span class="tag">每${esc(b.unit)} ${money(bv/(b.count||1))}</span>${hid?`<span class="tag">已隱藏 ${hid} 條 0 元</span>`:''}
       <span style="flex:1"></span><b>${money(bv)}</b>
@@ -443,6 +449,13 @@ function viewItems(proj){
       if(proj.hideZero&&it.amount===0)continue;
       if(itemEdit===b.id+'::'+it.id){ h+=itemForm(b,it); continue; }
       if(it.chapter!==ch){ch=it.chapter;if(ch)h+=`<tr class="chapter"><td colspan="8">${esc(ch)}</td></tr>`;}
+      if(inBatch){
+        h+=`<tr><td>${esc(it.no)}</td><td>${esc(it.name)}${it.tag?`<span class="tag">${esc(it.tag)}</span>`:''}</td><td>${esc(it.unit)}</td>
+          <td class="num"><input class="pin" id="be-qty-${it.id}" inputmode="decimal" value="${esc(String(it.qtyExpr||it.qty))}" style="width:110px;text-align:right" placeholder="可算式"></td>
+          <td class="num"><input class="pin" id="be-price-${it.id}" inputmode="decimal" value="${esc(String(it.priceExpr||it.price||''))}" style="width:100px;text-align:right" placeholder="可算式"></td>
+          <td class="num" style="color:var(--muted)">${qfmt(it.amount)}</td><td class="muted" style="font-size:12px">${esc(it.remark)}</td><td></td></tr>`;
+        continue;
+      }
       const zero=it.amount===0;
       h+=`<tr class="${zero?'zero':''}"><td>${esc(it.no)}</td><td>${esc(it.name)}${it.tag?`<span class="tag">${esc(it.tag)}</span>`:''}</td>
         <td>${esc(it.unit)}</td><td class="num">${qfmt(it.qty)}${it.qtyExpr?`<div style="font-size:11px;color:var(--muted)">=${esc(it.qtyExpr)}</div>`:''}</td>
@@ -451,9 +464,21 @@ function viewItems(proj){
         <td><button class="btn sub sm" data-edititem="${b.id}::${it.id}">改</button> <button class="btn bad sm" data-delitem="${b.id}::${it.id}">刪</button></td></tr>`;
     }
     if(itemAdd===b.id) h+=itemForm(b,null);
+    if(b.items.length>1){
+      const subSum=b.items.reduce((s,i)=>s+i.amount,0);
+      h+=`<tr class="chapter"><td colspan="5" style="text-align:right">小計${b.count>1?`（每${esc(b.unit)}）`:''}</td><td class="num"><b>${qfmt(subSum)}</b></td><td colspan="2">${b.count>1?`<span class="muted" style="font-size:11px">×${qfmt(b.count)} ${esc(b.unit)} ＝ ${money(subSum*b.count)}</span>`:''}</td></tr>`;
+    }
     const allManual=b.items.length>1&&b.items.every(it=>it.no==='增');
     const srcBlks=proj.blocks.filter(x=>x.id!==b.id&&x.items.length);
-    h+=`</table><div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">${itemAdd===b.id?'':`<button class="btn sub sm" data-additem="${b.id}">＋ 手動加細項</button>`}${allManual?`<button class="btn sub sm" data-sortitems="${b.id}" title="依名稱/圖面編號自然排序（A、B…D-1、E…）">🔤 智慧排序</button>`:''}${srcBlks.length&&copyInto!==b.id?`<button class="btn sub sm" data-copyinto="${b.id}">📋 複製細項自其他區塊</button>`:''}${copyInto===b.id?`<span class="muted" style="font-size:12px">從哪個區塊複製：</span><select id="copy-src" style="height:30px">${srcBlks.map(x=>`<option value="${x.id}">${esc(x.name)}（${x.items.length} 條）</option>`).join('')}</select><button class="btn sm" data-copyok="${b.id}">複製過來</button><button class="btn sub sm" data-copycancel="1">取消</button>`:''}</div></div></details>`;
+    h+=`</table><div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">`;
+    if(batchAll){
+      h+=`<span class="muted" style="font-size:12px">數量／單價可直接填算式（例 5.11*3.07）。改完請按上方「💾 全部儲存」。</span>`;
+    }else if(batchEdit===b.id){
+      h+=`<button class="btn sm" data-batchok="${b.id}">💾 全部儲存</button><button class="btn sub sm" data-batchcancel="1">取消</button><span class="muted" style="font-size:12px">數量／單價可直接填算式（例 5.11*3.07），一次更新整個區塊。</span>`;
+    }else{
+      h+=`${itemAdd===b.id?'':`<button class="btn sub sm" data-additem="${b.id}">＋ 手動加細項</button>`}${b.items.length>1?`<button class="btn sub sm" data-batchedit="${b.id}" title="整個區塊的數量、單價一次改">✏️ 整批改數量／單價</button>`:''}${allManual?`<button class="btn sub sm" data-sortitems="${b.id}" title="依名稱/圖面編號自然排序（A、B…D-1、E…）">🔤 智慧排序</button>`:''}${srcBlks.length&&copyInto!==b.id?`<button class="btn sub sm" data-copyinto="${b.id}">📋 複製細項自其他區塊</button>`:''}${copyInto===b.id?`<span class="muted" style="font-size:12px">從哪個區塊複製：</span><select id="copy-src" style="height:30px">${srcBlks.map(x=>`<option value="${x.id}">${esc(x.name)}（${x.items.length} 條）</option>`).join('')}</select><button class="btn sm" data-copyok="${b.id}">複製過來</button><button class="btn sub sm" data-copycancel="1">取消</button>`:''}`;
+    }
+    h+=`</div></div></details>`;
   }
   h+=blkAdd
     ?`<div class="rowline" style="flex-wrap:wrap;gap:8px;align-items:flex-end;margin-top:6px;padding:10px;background:var(--bg,#f8fafc);border-radius:10px">
@@ -830,7 +855,7 @@ function setProgInput(proj,blkId,itemId,kind,val){
 }
 
 document.addEventListener('click',async e=>{
-  const t=e.target.closest('[data-tab],[data-editblk],[data-delblk],[data-edititem],[data-delitem],[data-additem],[data-sortitems],[data-copyinto],[data-copyok],[data-copycancel],[data-itemok],[data-itemcancel],[data-blkok],[data-blkcancel],[data-bapply],[data-editextra],[data-delextra],#btn-import,#btn-import2,#btn-newproj,#btn-newproj2,#btn-addblk,#btn-addblk-ok,#btn-addperiod,#btn-delperiod,#btn-addextra,#btn-roundup,#btn-print,#set-save,#backup-export,#backup-import-btn,#proj-del,#cloud-push,#cloud-pull');
+  const t=e.target.closest('[data-tab],[data-editblk],[data-delblk],[data-edititem],[data-delitem],[data-additem],[data-sortitems],[data-copyinto],[data-copyok],[data-copycancel],[data-batchedit],[data-batchok],[data-batchcancel],[data-batchalledit],[data-batchallok],[data-batchallcancel],[data-itemok],[data-itemcancel],[data-blkok],[data-blkcancel],[data-bapply],[data-editextra],[data-delextra],#btn-import,#btn-import2,#btn-newproj,#btn-newproj2,#btn-addblk,#btn-addblk-ok,#btn-addperiod,#btn-delperiod,#btn-addextra,#btn-roundup,#btn-print,#set-save,#backup-export,#backup-import-btn,#proj-del,#cloud-push,#cloud-pull');
   if(!t)return;
   const proj=curProj();
   if(t.dataset.tab){state.tab=t.dataset.tab;save();render();return;}
@@ -877,6 +902,31 @@ document.addEventListener('click',async e=>{
     if(!confirm(`刪除細項「${it.name}」？`))return;
     for(const p of proj.periods)if(p.prog)delete p.prog[it.id];
     b.items=b.items.filter(x=>x!==it);save();render();return;
+  }
+  if(t.dataset.batchalledit){ batchAll=true; batchEdit=itemEdit=itemAdd=blkEdit=copyInto=null; blkAdd=false; render(); return; }
+  if(t.dataset.batchallcancel){ batchAll=false; render(); return; }
+  if(t.dataset.batchallok){
+    for(const b of proj.blocks)for(const it of b.items){
+      const qEl=g('be-qty-'+it.id), pEl=g('be-price-'+it.id);
+      if(!qEl&&!pEl)continue;
+      if(qEl){ const raw=qEl.value.trim(); it.qty=evalExpr(raw)||0; it.qtyExpr=hasExpr(raw)?raw:''; }
+      if(pEl){ const raw=pEl.value.trim(); it.price=evalExpr(raw); it.priceExpr=hasExpr(raw)?raw:''; }
+      it.amount=it.qty*it.price;
+    }
+    batchAll=false; save(); render(); return;
+  }
+  if(t.dataset.batchedit){ batchEdit=t.dataset.batchedit; itemEdit=itemAdd=blkEdit=copyInto=null; blkAdd=false; render(); return; }
+  if(t.dataset.batchcancel){ batchEdit=null; render(); return; }
+  if(t.dataset.batchok){
+    const b=proj.blocks.find(x=>x.id===t.dataset.batchok);if(!b){batchEdit=null;render();return;}
+    for(const it of b.items){
+      const qEl=g('be-qty-'+it.id), pEl=g('be-price-'+it.id);
+      if(!qEl&&!pEl)continue; // 被隱藏的 0 元項目維持原樣
+      if(qEl){ const raw=qEl.value.trim(); it.qty=evalExpr(raw)||0; it.qtyExpr=hasExpr(raw)?raw:''; }
+      if(pEl){ const raw=pEl.value.trim(); it.price=evalExpr(raw); it.priceExpr=hasExpr(raw)?raw:''; }
+      it.amount=it.qty*it.price;
+    }
+    batchEdit=null; save(); render(); return;
   }
   if(t.dataset.copyinto){ copyInto=t.dataset.copyinto; itemEdit=itemAdd=blkEdit=null; blkAdd=false; render(); return; }
   if(t.dataset.copycancel){ copyInto=null; render(); return; }
