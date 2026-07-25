@@ -108,7 +108,7 @@ body.printing #print-overlay{display:block;position:absolute;inset:0;background:
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.07.19d';
+const APP_VERSION='vG2026.07.19e';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -367,6 +367,7 @@ function calc(proj,perIdx){
 
 /* ═══════════ 畫面 ═══════════ */
 const openBlk=new Set();
+let itemEdit=null, itemAdd=null, blkEdit=null, blkAdd=false; // 就地編輯：細項/區塊（取代連續彈窗）
 function render(){
   const app=document.getElementById('app');
   const sel=document.getElementById('proj-sel');
@@ -398,19 +399,41 @@ function viewItems(proj){
     <div class="stat"><div class="l">細項</div><div class="v">${nItems}</div></div>
   </div>
   <div class="rowline"><label class="muted" style="font-size:13px;cursor:pointer"><input type="checkbox" id="hide-zero"${proj.hideZero?' checked':''}> 隱藏 0 元項目（非我方施作範圍）</label></div>`;
+  const ist='height:32px;padding:0 8px';
+  const fld=(lbl,inner)=>`<div class="field" style="display:flex;flex-direction:column;gap:2px"><label style="font-size:11px;color:var(--muted)">${lbl}</label>${inner}</div>`;
+  const itemForm=(b,it)=>`<tr><td colspan="8" style="padding:10px;background:var(--bg,#f8fafc)">
+    <div class="rowline" style="flex-wrap:wrap;gap:8px;align-items:flex-end">
+      ${fld('名稱及規格',`<input id="if-name" value="${esc(it?it.name:'')}" style="${ist};min-width:200px" placeholder="例：骨架、封板">`)}
+      ${fld('單位',`<input id="if-unit" value="${esc(it?it.unit:'式')}" style="${ist};width:70px">`)}
+      ${fld(`單${esc(b.unit)}數量`,`<input id="if-qty" type="number" inputmode="decimal" value="${it?it.qty:1}" style="${ist};width:90px">`)}
+      ${fld('單價',`<input id="if-price" type="number" inputmode="decimal" value="${it?it.price:''}" placeholder="0" style="${ist};width:100px">`)}
+      ${fld('備註',`<input id="if-remark" value="${esc(it?it.remark||'':'')}" style="${ist};width:120px" placeholder="選填">`)}
+      <button class="btn sm" data-itemok="${b.id}${it?'::'+it.id:''}">儲存</button>
+      <button class="btn sub sm" data-itemcancel="1">取消</button>
+    </div></td></tr>`;
   for(const b of proj.blocks){
     const bv=b.items.reduce((s,i)=>s+itemValue(i,b),0);
     const hid=proj.hideZero?b.items.filter(i=>i.amount===0).length:0;
-    h+=`<details class="blk"${openBlk.has(b.id)?' open':''} data-blk="${b.id}"><summary>
+    const editingBlk=blkEdit===b.id;
+    h+=`<details class="blk"${openBlk.has(b.id)||editingBlk||itemAdd===b.id?' open':''} data-blk="${b.id}"><summary>
       <b>${esc(b.name)}</b><span class="tag">${qfmt(b.count)} ${esc(b.unit)}</span>
       <span class="tag">每${esc(b.unit)} ${money(bv/(b.count||1))}</span>${hid?`<span class="tag">已隱藏 ${hid} 條 0 元</span>`:''}
       <span style="flex:1"></span><b>${money(bv)}</b>
       <button class="btn sub sm" data-editblk="${b.id}">編輯</button>
       <button class="btn bad sm" data-delblk="${b.id}">刪除</button></summary>
-    <div class="inner"><table><tr><th>項次</th><th>名稱及規格</th><th>單位</th><th class="num">數量</th><th class="num">單價</th><th class="num">總價</th><th>備註</th><th></th></tr>`;
+    <div class="inner">`;
+    if(editingBlk){
+      h+=`<div class="rowline" style="flex-wrap:wrap;gap:8px;align-items:flex-end;margin-bottom:8px;padding:8px;background:var(--bg,#f8fafc);border-radius:8px">
+        ${fld('區塊名稱',`<input id="bf-name" value="${esc(b.name)}" style="${ist};min-width:180px">`)}
+        ${fld('單位',`<input id="bf-unit" value="${esc(b.unit)}" style="${ist};width:70px">`)}
+        ${fld('合約數量',`<input id="bf-count" type="number" inputmode="decimal" value="${b.count}" style="${ist};width:90px">`)}
+        <button class="btn sm" data-blkok="${b.id}">儲存</button><button class="btn sub sm" data-blkcancel="1">取消</button></div>`;
+    }
+    h+=`<table><tr><th>項次</th><th>名稱及規格</th><th>單位</th><th class="num">數量</th><th class="num">單價</th><th class="num">總價</th><th>備註</th><th></th></tr>`;
     let ch='';
     for(const it of b.items){
       if(proj.hideZero&&it.amount===0)continue;
+      if(itemEdit===b.id+'::'+it.id){ h+=itemForm(b,it); continue; }
       if(it.chapter!==ch){ch=it.chapter;if(ch)h+=`<tr class="chapter"><td colspan="8">${esc(ch)}</td></tr>`;}
       const zero=it.amount===0;
       h+=`<tr class="${zero?'zero':''}"><td>${esc(it.no)}</td><td>${esc(it.name)}${it.tag?`<span class="tag">${esc(it.tag)}</span>`:''}</td>
@@ -419,9 +442,16 @@ function viewItems(proj){
         <td class="muted" style="font-size:12px">${esc(it.remark)}</td>
         <td><button class="btn sub sm" data-edititem="${b.id}::${it.id}">改</button> <button class="btn bad sm" data-delitem="${b.id}::${it.id}">刪</button></td></tr>`;
     }
-    h+=`</table><div style="margin-top:8px"><button class="btn sub sm" data-additem="${b.id}">＋ 手動加細項</button></div></div></details>`;
+    if(itemAdd===b.id) h+=itemForm(b,null);
+    h+=`</table><div style="margin-top:8px">${itemAdd===b.id?'':`<button class="btn sub sm" data-additem="${b.id}">＋ 手動加細項</button>`}</div></div></details>`;
   }
-  h+=`<button class="btn sub" id="btn-addblk">＋ 手動加區塊</button>`;
+  h+=blkAdd
+    ?`<div class="rowline" style="flex-wrap:wrap;gap:8px;align-items:flex-end;margin-top:6px;padding:10px;background:var(--bg,#f8fafc);border-radius:10px">
+      ${fld('區塊名稱',`<input id="ba-name" style="${ist};min-width:180px" placeholder="例：客房隔間">`)}
+      ${fld('單位',`<input id="ba-unit" value="間" style="${ist};width:70px">`)}
+      ${fld('合約數量',`<input id="ba-count" type="number" inputmode="decimal" value="1" style="${ist};width:90px">`)}
+      <button class="btn sm" id="btn-addblk-ok">建立區塊</button><button class="btn sub sm" data-blkcancel="1">取消</button></div>`
+    :`<button class="btn sub" id="btn-addblk">＋ 手動加區塊</button>`;
   return h;
 }
 
@@ -790,7 +820,7 @@ function setProgInput(proj,blkId,itemId,kind,val){
 }
 
 document.addEventListener('click',async e=>{
-  const t=e.target.closest('[data-tab],[data-editblk],[data-delblk],[data-edititem],[data-delitem],[data-additem],[data-bapply],[data-editextra],[data-delextra],#btn-import,#btn-import2,#btn-newproj,#btn-newproj2,#btn-addblk,#btn-addperiod,#btn-delperiod,#btn-addextra,#btn-roundup,#btn-print,#set-save,#backup-export,#backup-import-btn,#proj-del,#cloud-push,#cloud-pull');
+  const t=e.target.closest('[data-tab],[data-editblk],[data-delblk],[data-edititem],[data-delitem],[data-additem],[data-itemok],[data-itemcancel],[data-blkok],[data-blkcancel],[data-bapply],[data-editextra],[data-delextra],#btn-import,#btn-import2,#btn-newproj,#btn-newproj2,#btn-addblk,#btn-addblk-ok,#btn-addperiod,#btn-delperiod,#btn-addextra,#btn-roundup,#btn-print,#set-save,#backup-export,#backup-import-btn,#proj-del,#cloud-push,#cloud-pull');
   if(!t)return;
   const proj=curProj();
   if(t.dataset.tab){state.tab=t.dataset.tab;save();render();return;}
@@ -803,46 +833,43 @@ document.addEventListener('click',async e=>{
     return;
   }
   if(!proj)return;
-  if(t.dataset.editblk){
-    const b=proj.blocks.find(x=>x.id===t.dataset.editblk);if(!b)return;
-    const name=prompt('區塊名稱',b.name);if(name===null)return;
-    const cnt=prompt(`合約數量（${b.unit}）`,b.count);if(cnt===null)return;
-    b.name=name.trim()||b.name;b.count=Math.max(num(cnt),0.01);save();render();return;
+  const g=id=>document.getElementById(id);
+  if(t.dataset.editblk){ blkEdit=t.dataset.editblk; itemEdit=itemAdd=null; blkAdd=false; render(); return; }
+  if(t.dataset.blkok){
+    const b=proj.blocks.find(x=>x.id===t.dataset.blkok);if(!b)return;
+    b.name=(g('bf-name').value.trim())||b.name; b.unit=g('bf-unit').value.trim()||b.unit; b.count=Math.max(num(g('bf-count').value),0.01);
+    b.items.forEach(it=>it.amount=it.qty*it.price); blkEdit=null; save(); render(); return;
   }
+  if(t.dataset.blkcancel){ blkEdit=null; blkAdd=false; render(); return; }
   if(t.dataset.delblk){
     const b=proj.blocks.find(x=>x.id===t.dataset.delblk);if(!b)return;
     if(!confirm(`刪除「${b.name}」整個區塊（${b.items.length} 條細項）？進度紀錄也會一併移除。`))return;
     for(const it of b.items)for(const p of proj.periods)if(p.prog)delete p.prog[it.id];
     proj.blocks=proj.blocks.filter(x=>x!==b);save();render();return;
   }
-  if(t.dataset.edititem||t.dataset.delitem||t.dataset.additem){
-    const [blkId,itemId]=(t.dataset.edititem||t.dataset.delitem||t.dataset.additem).split('::');
-    const b=proj.blocks.find(x=>x.id===blkId);if(!b)return;
-    if(t.dataset.additem){
-      const name=prompt('細項名稱');if(!name)return;
-      const unit=prompt('單位（㎡ / M / 個 / 式…）','式')||'式';
-      const qty=num(prompt(`單${b.unit}數量`,'1'));
-      const price=num(prompt('單價','0'));
-      b.items.push({id:uid(),no:'增',tag:'',chapter:'',name:name.trim(),unit,qty:qty||1,price,amount:(qty||1)*price,remark:'手動新增'});
-      save();render();return;
-    }
-    const it=b.items.find(x=>x.id===itemId);if(!it)return;
-    if(t.dataset.delitem){
-      if(!confirm(`刪除細項「${it.name}」？`))return;
-      for(const p of proj.periods)if(p.prog)delete p.prog[it.id];
-      b.items=b.items.filter(x=>x!==it);save();render();return;
-    }
-    const name=prompt('名稱',it.name);if(name===null)return;
-    const qty=prompt(`單${b.unit}數量`,it.qty);if(qty===null)return;
-    const price=prompt('單價',it.price);if(price===null)return;
-    it.name=name.trim()||it.name;it.qty=num(qty);it.price=num(price);it.amount=it.qty*it.price;
-    save();render();return;
+  if(t.dataset.additem){ itemAdd=t.dataset.additem; itemEdit=blkEdit=null; blkAdd=false; render(); return; }
+  if(t.dataset.edititem){ itemEdit=t.dataset.edititem; itemAdd=blkEdit=null; blkAdd=false; render(); return; }
+  if(t.dataset.itemcancel){ itemEdit=itemAdd=null; render(); return; }
+  if(t.dataset.itemok){
+    const parts=t.dataset.itemok.split('::'); const b=proj.blocks.find(x=>x.id===parts[0]);if(!b)return;
+    const name=g('if-name').value.trim(); if(!name){ alert('請填名稱'); return; }
+    const unit=g('if-unit').value.trim()||'式', qty=num(g('if-qty').value)||0, price=num(g('if-price').value), remark=g('if-remark').value.trim();
+    if(parts[1]){ const it=b.items.find(x=>x.id===parts[1]); if(it){ it.name=name; it.unit=unit; it.qty=qty; it.price=price; it.amount=qty*price; it.remark=remark; } itemEdit=null; }
+    else { b.items.push({id:uid(),no:'增',tag:'',chapter:'',name,unit,qty:qty||1,price,amount:(qty||1)*price,remark}); itemAdd=null; }
+    save(); render(); return;
   }
-  if(t.id==='btn-addblk'){
-    const name=prompt('區塊名稱（例：TYPE-SK 標準大床）');if(!name)return;
-    const unit=prompt('單位（間 / 層 / 式）','間')||'間';
-    const count=Math.max(num(prompt('合約數量','1')),0.01);
-    proj.blocks.push({id:uid(),name:name.trim(),unit,count,items:[]});save();render();return;
+  if(t.dataset.delitem){
+    const [blkId,itemId]=t.dataset.delitem.split('::'); const b=proj.blocks.find(x=>x.id===blkId);if(!b)return;
+    const it=b.items.find(x=>x.id===itemId);if(!it)return;
+    if(!confirm(`刪除細項「${it.name}」？`))return;
+    for(const p of proj.periods)if(p.prog)delete p.prog[it.id];
+    b.items=b.items.filter(x=>x!==it);save();render();return;
+  }
+  if(t.id==='btn-addblk'){ blkAdd=true; itemEdit=itemAdd=blkEdit=null; render(); return; }
+  if(t.id==='btn-addblk-ok'){
+    const name=g('ba-name').value.trim(); if(!name){ alert('請填區塊名稱'); return; }
+    proj.blocks.push({id:uid(),name,unit:g('ba-unit').value.trim()||'間',count:Math.max(num(g('ba-count').value),0.01),items:[]});
+    blkAdd=false; save(); render(); return;
   }
   if(t.dataset.bapply){
     const b=proj.blocks.find(x=>x.id===t.dataset.bapply);if(!b)return;
