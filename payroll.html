@@ -509,7 +509,7 @@ const FS_ROOT = 'https://firestore.googleapis.com/v1/projects/'+FS_PROJECT+'/dat
 const FS_DOC_BASE = FS_ROOT+'payroll/';
 const FS_SIG_BASE = FS_ROOT+'payrollSignatures/';
 const FS_REST_URL = FS_DOC_BASE+'main?key='+FS_KEY;
-const APP_VERSION = 'v2026.07.19g-rebatch';
+const APP_VERSION = 'v2026.07.19h-hidebilled';
 let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], tools:[], locations:[], assets:[], advances:[], accounts:[], ledger:[], deals:[], billings:[], measurements:[], contracts:{}, costs:[], textMemory:{clients:[],companies:[]}, parkAccId:'', oweBonus:{}, minFund:'', shareholderTx:[], payrollSnapshots:[], yearIncomeAdj:[], deletedIds:[], resurrected:{ids:[],at:0}, tab:'dash' };
 let cloudStatus='連線中…';
 let localDirty=false, lastCloudTs=0;
@@ -4152,6 +4152,7 @@ function bind(){
     state.tab='billingReq'; render();
   };
   const mse=document.getElementById('meas-show-expr'); if(mse) mse.onchange=()=>{ measShowExpr=mse.checked; };
+  const mhb=document.getElementById('meas-hide-billed'); if(mhb) mhb.onchange=()=>{ measHideBilled=mhb.checked; try{localStorage.setItem('pm_meas_hidebilled',measHideBilled?'1':'0');}catch(e){} render(); };
   bindBillingSubtotal('bnr'); bindBillingSubtotal('bna'); bindBillingSubtotal('bae'); bindMeasSubtotal();
   bindSiteClientAutofill('bnr-site','bnr-client');
   bindSiteClientAutofill('bna-site','bna-client');
@@ -5755,6 +5756,8 @@ let measFloorSel={}; // 計量明細：每個母案場目前只看哪個子案�
 let measEditId=null, measDraft=null; // 計量明細：編輯中的紀錄 / 複製帶入新增表單的草稿
 let measKeep=null; // 計量明細：記住上次新增的類型/案場/日期，送出後不歸零
 let measShowExpr=false; // 匯出 PDF 時是否顯示單價算式（預設關）
+let measHideBilled=false; try{ measHideBilled=localStorage.getItem('pm_meas_hidebilled')==='1'; }catch(e){} // 隱藏已帶入請款的計量（預設關）
+const measIsBilled = m => !!(m&&m.billedTo&&state.billings.some(b=>b.id===m.billedTo));
 let costEditId=null; // 手動成本編輯中
 let siteSettingsOpen={}; // 案場設定展開狀態
 let siteCostDetailsOpen={}; // 案場成本明細展開狀態
@@ -6384,7 +6387,10 @@ function viewMeasurements(){
   const siteNames=Object.keys(bysite).sort((a,b)=>a.localeCompare(b));
 
   const siteCards=siteNames.map(name=>{
-    const rows=bysite[name];
+    const rowsAll=bysite[name];
+    const rows=measHideBilled?rowsAll.filter(m=>!measIsBilled(m)):rowsAll;
+    if(measHideBilled&&rows.length===0) return ''; // 整個案場都已請款＝隱藏起來
+    const hiddenN=rowsAll.length-rows.length;
     const siteTotal=rows.reduce((s,m)=>s+(Number(m.qty)||0)*(Number(m.unitPrice)||0),0);
     const open=!!formOpen['meas-site-'+name];
     const allSel=rows.length>0&&rows.every(m=>measSel[m.id]);
@@ -6465,7 +6471,7 @@ function viewMeasurements(){
     const cardUnbilled=keys.reduce((s,k)=>{ const d=measBilledDiffForKey(k); return s+Math.max(0,d.diff); },0);
     return `<div class="card" style="padding:0;overflow:hidden">
       <div style="display:flex;justify-content:space-between;align-items:center;padding:14px 18px;cursor:pointer" data-toggle-form="meas-site-${name}">
-        <div style="font-size:15px;font-weight:700">${esc(name)}${cardUnbilled>0?`<span class="tag" style="background:#e3efe9;color:var(--accent);margin-left:8px">可請 ${money(cardUnbilled)}</span>`:''}</div>
+        <div style="font-size:15px;font-weight:700">${esc(name)}${cardUnbilled>0?`<span class="tag" style="background:#e3efe9;color:var(--accent);margin-left:8px">可請 ${money(cardUnbilled)}</span>`:''}${hiddenN>0?`<span class="tag" style="background:#eef2f7;color:#64748b;margin-left:6px">已隱藏 ${hiddenN} 筆已請款</span>`:''}</div>
         <div style="display:flex;align-items:center;gap:12px">
           <div style="font-size:15px;font-weight:800;color:var(--accent)">${money(siteTotal)}</div>
           <span style="font-size:12px;color:var(--muted)">${open?'▲':'▼'}</span>
@@ -6503,6 +6509,7 @@ function viewMeasurements(){
     <button class="btn" id="export-meas-all" ${list.length===0?'disabled style="opacity:.5"':''}>全部匯出 PDF</button>
     <button class="act" id="export-meas-sel" style="height:36px;padding:0 14px" ${list.some(m=>measSel[m.id])?'':'disabled style="opacity:.5"'}>匯出勾選 PDF</button>
     <button class="act" id="meas-tobill" style="height:36px;padding:0 14px;border:1px solid var(--accent);color:var(--accent)" ${list.some(m=>measSel[m.id])?'':'disabled style="opacity:.5"'}>勾選帶入請款單 →</button>
+    <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--muted);cursor:pointer;white-space:nowrap"><input type="checkbox" id="meas-hide-billed" ${measHideBilled?'checked':''} style="width:15px;height:15px">隱藏已請款${(()=>{const n=list.filter(measIsBilled).length;return n?`（${n}）`:'';})()}</label>
     <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--muted);cursor:pointer;white-space:nowrap"><input type="checkbox" id="meas-show-expr" ${measShowExpr?'checked':''} style="width:15px;height:15px">PDF 顯示算式</label>
     <span class="sub" style="margin:0">可展開案場後勾選指定明細匯出。</span>
   </div>
@@ -6525,7 +6532,7 @@ function viewMeasurements(){
     </div>
     <div class="row" style="margin-top:10px"><button class="btn" id="meas-add">＋ 新增</button></div>`:''}
   </div>
-  ${list.length===0?'<div class="card"><div class="empty">尚無計量明細。點上方「新增」開始登記。</div></div>':siteCards}`;
+  ${list.length===0?'<div class="card"><div class="empty">尚無計量明細。點上方「新增」開始登記。</div></div>':(siteCards.trim()===''&&measHideBilled?'<div class="card"><div class="empty">目前所有計量都已帶入請款（已隱藏）。取消勾選「隱藏已請款」可查看。</div></div>':siteCards)}`;
 }
 
 function exportMeasurementsPDF(selectedOnly=false){
