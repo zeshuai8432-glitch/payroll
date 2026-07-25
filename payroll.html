@@ -509,7 +509,7 @@ const FS_ROOT = 'https://firestore.googleapis.com/v1/projects/'+FS_PROJECT+'/dat
 const FS_DOC_BASE = FS_ROOT+'payroll/';
 const FS_SIG_BASE = FS_ROOT+'payrollSignatures/';
 const FS_REST_URL = FS_DOC_BASE+'main?key='+FS_KEY;
-const APP_VERSION = 'v2026.07.19l-meastax';
+const APP_VERSION = 'v2026.07.19m-withhold';
 let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], tools:[], locations:[], assets:[], advances:[], accounts:[], ledger:[], deals:[], billings:[], measurements:[], contracts:{}, costs:[], textMemory:{clients:[],companies:[]}, parkAccId:'', oweBonus:{}, minFund:'', shareholderTx:[], payrollSnapshots:[], yearIncomeAdj:[], deletedIds:[], resurrected:{ids:[],at:0}, tab:'dash' };
 let cloudStatus='連線中…';
 let localDirty=false, lastCloudTs=0;
@@ -4207,6 +4207,19 @@ function bind(){
       saveData(); render();
     }
   });
+  // 外包代扣稅款：設 % / 標記已回補（成本維持全額，僅列印顯示與追蹤）
+  document.querySelectorAll('[data-wh-pct]').forEach(inp=>inp.onchange=()=>{
+    const bill=state.billings.find(x=>x.id===inp.dataset.whPct); if(!bill) return;
+    const v=parseFloat(inp.value); bill.withholdPct=(isNaN(v)||v<=0)?undefined:v;
+    if(!bill.withholdPct){ delete bill.withholdRefunded; delete bill.withholdRefundDate; }
+    saveData(); render();
+  });
+  document.querySelectorAll('[data-wh-refund]').forEach(btn=>btn.onclick=()=>{
+    const bill=state.billings.find(x=>x.id===btn.dataset.whRefund); if(!bill) return;
+    if(bill.withholdRefunded){ delete bill.withholdRefunded; delete bill.withholdRefundDate; }
+    else { bill.withholdRefunded=true; bill.withholdRefundDate=localISODate(); }
+    saveData(); render();
+  });
   document.querySelectorAll('[data-photoadd]').forEach(inp=>inp.onchange=async()=>{
     const id=inp.dataset.photoadd;
     const files=Array.from(inp.files); if(!files.length) return;
@@ -4897,6 +4910,10 @@ function billingDocInner(id, internal, pick){
           ? `<tr><td>${esc(b.note||type)}</td><td>式</td><td class="num">1</td><td class="num">${money(amt)}</td><td class="num">${money(amt)}</td></tr>`
           : `<tr><td>${esc(b.note||type)}</td><td>${esc(b.unit||'')}</td><td class="num">${b.qty!==undefined?b.qty:'—'}</td><td class="num">${b.unitPrice!==undefined?money(b.unitPrice):'—'}</td><td class="num">${money(amt)}</td></tr>`}
         <tr class="total-row"><td colspan="4">總金額</td><td class="num">${money(amt)}</td></tr>
+        ${outsourced&&Number(b.withholdPct)>0?(()=>{ const pct=Number(b.withholdPct); const wh=Math.round(amt*pct/100);
+          return `<tr><td colspan="4">代扣所得稅 ${pct}%</td><td class="num">−${money(wh)}</td></tr>
+          <tr class="total-row"><td colspan="4">本期實付</td><td class="num">${money(amt-wh)}</td></tr>
+          <tr><td colspan="5" style="padding-top:6px;font-size:13px;color:${b.withholdRefunded?'#555':'#9a5b1a'}">${b.withholdRefunded?`代扣款 ${money(wh)} 已於 ${esc(b.withholdRefundDate||'')} 回補（發票補開）`:`代扣款 ${money(wh)} 待補開發票後回補`}</td></tr>`; })():''}
         ${b.remark?`<tr><td colspan="5" style="padding-top:8px;color:#555;font-size:13px">備注：${escBr(b.remark)}</td></tr>`:''}
       </tbody></table>
     ${internalSec}
@@ -6004,6 +6021,11 @@ function viewBillingReq(){
             </div>
             ${billingLineMeta(b)?`<div style="font-size:12px;color:var(--muted);margin-top:2px">${billingLineMeta(b)}</div>`:''}
             ${b.note?`<div style="font-size:13px;color:var(--text);margin-top:4px;font-weight:500">${esc(b.note)}</div>`:''}
+            ${isOutsourcedBill(b)?(()=>{ const pct=Number(b.withholdPct)||0; const wh=Math.round(billingAmount(b)*pct/100);
+              return `<div style="margin-top:6px;font-size:12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                <span style="color:var(--muted)">代扣所得稅</span><input type="number" data-wh-pct="${b.id}" value="${b.withholdPct!=null?b.withholdPct:''}" placeholder="0" min="0" step="0.5" style="width:52px;height:26px;text-align:right">%
+                ${pct>0?`<span style="color:${b.withholdRefunded?'var(--muted)':'var(--danger)'}">＝ −${money(wh)}，本期實付 ${money(billingAmount(b)-wh)}</span>${b.withholdRefunded?`<span style="color:var(--muted)">✓ 已回補 ${esc(b.withholdRefundDate||'')}</span><button class="act" data-wh-refund="${b.id}" style="font-size:11px;height:24px">取消回補</button>`:`<span class="tag" style="background:#fee2e2;color:#991b1b">代扣 ${money(wh)} 待回補</span><button class="act" data-wh-refund="${b.id}" style="font-size:11px;height:24px;border:1px solid var(--accent);color:var(--accent)">代扣已回補</button>`}`:''}
+              </div>`; })():''}
           </div>
           <div style="display:flex;gap:4px;flex-wrap:wrap;flex-shrink:0">
             <button class="act ${b.settled?'':'muted'}" data-togglesettle="${b.id}" style="${b.settled?'color:var(--accent)':''}">${b.settled?settleLabels(b).on:settleLabels(b).off}</button>
