@@ -509,7 +509,7 @@ const FS_ROOT = 'https://firestore.googleapis.com/v1/projects/'+FS_PROJECT+'/dat
 const FS_DOC_BASE = FS_ROOT+'payroll/';
 const FS_SIG_BASE = FS_ROOT+'payrollSignatures/';
 const FS_REST_URL = FS_DOC_BASE+'main?key='+FS_KEY;
-const APP_VERSION = 'v2026.07.28a-measvscost';
+const APP_VERSION = 'v2026.07.28b-measlabels';
 let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], tools:[], locations:[], assets:[], advances:[], accounts:[], ledger:[], deals:[], billings:[], measurements:[], contracts:{}, costs:[], textMemory:{clients:[],companies:[]}, parkAccId:'', oweBonus:{}, minFund:'', shareholderTx:[], payrollSnapshots:[], yearIncomeAdj:[], deletedIds:[], resurrected:{ids:[],at:0}, tab:'dash' };
 let cloudStatus='連線中…';
 let localDirty=false, lastCloudTs=0;
@@ -2123,18 +2123,18 @@ function viewDash(){
     const open=expandable&&dashSiteOpen[p.id];
     const toggle=expandable?`<button class="act" data-sitetoggle="${p.id}" style="border:none;background:none;cursor:pointer;padding:0 6px 0 0;color:var(--accent)">${open?'▾':'▸'}</button>`:'';
     let html=`<tr><td>${toggle}${esc(p.name||'（未命名）')}${expandable?`<span style="color:var(--muted);font-size:11px"> ＋${p.parts.length}子案場</span>`:''}${badge}${unpaid}</td>
-      <td class="num">${money(p.billed)}</td>
-      <td class="num" style="color:var(--muted)">${money(p.cost)}</td>
-      <td class="num" style="font-weight:600;color:${p.profit>=0?'var(--accent)':'var(--danger)'}">${money(p.profit)}</td></tr>`;
+      <td class="num" data-label="已收款">${money(p.billed)}</td>
+      <td class="num" data-label="成本" style="color:var(--muted)">${money(p.cost)}</td>
+      <td class="num" data-label="毛利" style="font-weight:600;color:${p.profit>=0?'var(--accent)':'var(--danger)'}">${money(p.profit)}</td></tr>`;
     if(open){
       html+=`<tr style="background:var(--bg)"><td style="padding-left:28px;color:var(--muted)">↳ 母自身成本（工資＋手動＋期初）</td>
-        <td class="num" style="color:var(--muted)">—</td>
-        <td class="num" style="color:var(--muted)">${money(p.ownCost||0)}</td>
-        <td class="num" style="color:var(--muted)">—</td></tr>`;
+        <td class="num" data-label="已收款" style="color:var(--muted)">—</td>
+        <td class="num" data-label="成本" style="color:var(--muted)">${money(p.ownCost||0)}</td>
+        <td class="num" data-label="毛利" style="color:var(--muted)">—</td></tr>`;
       html+=p.parts.map(pt=>`<tr style="background:var(--bg)"><td style="padding-left:28px;color:var(--muted)">↳ ${esc(pt.name)}${pt.billed<=0?' <span style="font-size:11px">未請款</span>':''}<span style="font-size:11px;color:${pt.outsourced?'#9a5b1a':'var(--muted)'}">（${pt.outsourced?'外包':'代工'}）</span></td>
-        <td class="num" style="color:var(--muted)">${money(pt.billed)}</td>
-        <td class="num" style="color:var(--muted)">${money(pt.cost)}</td>
-        <td class="num" style="color:${pt.outsourced?'var(--muted)':(pt.profit>=0?'var(--accent)':'var(--danger)')}">${pt.outsourced?'—':money(pt.profit)}</td></tr>`).join('');
+        <td class="num" data-label="已收款" style="color:var(--muted)">${money(pt.billed)}</td>
+        <td class="num" data-label="成本" style="color:var(--muted)">${money(pt.cost)}</td>
+        <td class="num" data-label="毛利" style="color:${pt.outsourced?'var(--muted)':(pt.profit>=0?'var(--accent)':'var(--danger)')}">${pt.outsourced?'—':money(pt.profit)}</td></tr>`).join('');
     }
     return html;
   }).join('');
@@ -2144,45 +2144,49 @@ function viewDash(){
   const pausedRows=profitRowsHTML(pausedProfits);
 
   // ── 各案場 計量 vs 成本（歸類在計量明細）──────────────────────
-  // 計量累計＝已登錄計量的工作總值（qty×單價，含還沒開請款的）；成本＝共用 costOf；已收款＝已收款請款單，供對照
+  // 計量累計＝已登錄計量的工作總值（qty×單價，含還沒開請款的）；成本＝共用 costOf；已收款＝已收款請款單，供對照；可請＝計量−已開請款（含未收款）取正
   const _measByKey={}; state.measurements.forEach(m=>{ const k=canonSiteKey(m.site); _measByKey[k]=(_measByKey[k]||0)+(Number(m.qty)||0)*(Number(m.unitPrice)||0); });
   const _settledByKey={}; state.billings.filter(b=>b.settled).forEach(b=>{ const k=canonSiteKey(b.site); _settledByKey[k]=(_settledByKey[k]||0)+billingAmount(b); });
+  const _billedAllByKey={}; state.billings.forEach(b=>{ const k=canonSiteKey(b.site); _billedAllByKey[k]=(_billedAllByKey[k]||0)+billingAmount(b); });
+  const _unbilledOf=(key,meas)=>Math.max(0,(meas||0)-(_billedAllByKey[key]||0));
   const buildSiteMeas=s=>{
     const childRecs=childSitesOf(s);
     const subNames=[...new Set([...subSitesOf(s), ...childRecs.map(c=>c.name).filter(n=>n!==s.name)])];
     const parts=subNames.map(sub=>{
       const rec=childSiteFor(s,sub)||childRecs.find(c=>c.name===sub)||null;
-      const key=s.name+' / '+sub;
+      const key=s.name+' / '+sub; const meas=_measByKey[key]||0;
       const outsourced=(rec?rec.type:subSiteType(s,sub))==='外包';
-      return {name:sub, cost:rec?costOf(rec):0, meas:_measByKey[key]||0, billed:_settledByKey[key]||0, outsourced};
+      return {name:sub, cost:rec?costOf(rec):0, meas, billed:_settledByKey[key]||0, unbilled:_unbilledOf(key,meas), outsourced};
     });
-    const ownCost=costOf(s), ownMeas=_measByKey[s.name]||0, ownBilled=_settledByKey[s.name]||0;
-    return {id:s.id, name:s.name, coop:isCoopSite(s), ownCost, ownMeas, ownBilled,
-      cost:ownCost+parts.reduce((x,p)=>x+p.cost,0), meas:ownMeas+parts.reduce((x,p)=>x+p.meas,0), billed:ownBilled+parts.reduce((x,p)=>x+p.billed,0), parts};
+    const ownCost=costOf(s), ownMeas=_measByKey[s.name]||0, ownBilled=_settledByKey[s.name]||0, ownUnbilled=_unbilledOf(s.name,ownMeas);
+    return {id:s.id, name:s.name, coop:isCoopSite(s), ownCost, ownMeas, ownBilled, ownUnbilled,
+      cost:ownCost+parts.reduce((x,p)=>x+p.cost,0), meas:ownMeas+parts.reduce((x,p)=>x+p.meas,0),
+      billed:ownBilled+parts.reduce((x,p)=>x+p.billed,0), unbilled:ownUnbilled+parts.reduce((x,p)=>x+p.unbilled,0), parts};
   };
+  const canBillTag=v=>v>0?`<span class="tag" style="background:#e3efe9;color:var(--accent)">可請 ${money(v)}</span>`:'';
   const measRowsHTML=list=>list.map(p=>{
     const badge=p.coop?'<span class="tag" style="background:#fde9d4;color:#9a5b1a">合作案</span>':'';
     const gp=p.meas-p.cost;
     const expandable=p.parts&&p.parts.some(pt=>pt.meas||pt.cost||pt.billed);
     const open=expandable&&dashMeasOpen[p.id];
     const toggle=expandable?`<button class="act" data-meastoggle="${p.id}" style="border:none;background:none;cursor:pointer;padding:0 6px 0 0;color:var(--accent)">${open?'▾':'▸'}</button>`:'';
-    let html=`<tr><td>${toggle}${esc(p.name||'（未命名）')}${expandable?`<span style="color:var(--muted);font-size:11px"> ＋${p.parts.length}子案場</span>`:''}${badge}</td>
-      <td class="num" style="color:var(--muted)">${money(p.cost)}</td>
-      <td class="num">${money(p.meas)}</td>
-      <td class="num" style="font-weight:600;color:${gp>=0?'var(--accent)':'var(--danger)'}">${money(gp)}</td>
-      <td class="num" style="color:var(--muted)">${money(p.billed)}</td></tr>`;
+    let html=`<tr><td>${toggle}${esc(p.name||'（未命名）')}${expandable?`<span style="color:var(--muted);font-size:11px"> ＋${p.parts.length}子案場</span>`:''}${badge}${canBillTag(p.unbilled)}</td>
+      <td class="num" data-label="成本" style="color:var(--muted)">${money(p.cost)}</td>
+      <td class="num" data-label="計量累計">${money(p.meas)}</td>
+      <td class="num" data-label="計量毛利" style="font-weight:600;color:${gp>=0?'var(--accent)':'var(--danger)'}">${money(gp)}</td>
+      <td class="num" data-label="已收款" style="color:var(--muted)">${money(p.billed)}</td></tr>`;
     if(open){
       const og=p.ownMeas-p.ownCost;
-      html+=`<tr style="background:var(--bg)"><td style="padding-left:28px;color:var(--muted)">↳ 母自身</td>
-        <td class="num" style="color:var(--muted)">${money(p.ownCost)}</td>
-        <td class="num" style="color:var(--muted)">${money(p.ownMeas)}</td>
-        <td class="num" style="color:${og>=0?'var(--accent)':'var(--danger)'}">${money(og)}</td>
-        <td class="num" style="color:var(--muted)">${money(p.ownBilled)}</td></tr>`;
-      html+=p.parts.map(pt=>{ const g=pt.meas-pt.cost; return `<tr style="background:var(--bg)"><td style="padding-left:28px;color:var(--muted)">↳ ${esc(pt.name)}<span style="font-size:11px;color:${pt.outsourced?'#9a5b1a':'var(--muted)'}">（${pt.outsourced?'外包':'代工'}）</span></td>
-        <td class="num" style="color:var(--muted)">${money(pt.cost)}</td>
-        <td class="num" style="color:var(--muted)">${money(pt.meas)}</td>
-        <td class="num" style="color:${g>=0?'var(--accent)':'var(--danger)'}">${money(g)}</td>
-        <td class="num" style="color:var(--muted)">${money(pt.billed)}</td></tr>`; }).join('');
+      html+=`<tr style="background:var(--bg)"><td style="padding-left:28px;color:var(--muted)">↳ 母自身 ${canBillTag(p.ownUnbilled)}</td>
+        <td class="num" data-label="成本" style="color:var(--muted)">${money(p.ownCost)}</td>
+        <td class="num" data-label="計量累計" style="color:var(--muted)">${money(p.ownMeas)}</td>
+        <td class="num" data-label="計量毛利" style="color:${og>=0?'var(--accent)':'var(--danger)'}">${money(og)}</td>
+        <td class="num" data-label="已收款" style="color:var(--muted)">${money(p.ownBilled)}</td></tr>`;
+      html+=p.parts.map(pt=>{ const g=pt.meas-pt.cost; return `<tr style="background:var(--bg)"><td style="padding-left:28px;color:var(--muted)">↳ ${esc(pt.name)}<span style="font-size:11px;color:${pt.outsourced?'#9a5b1a':'var(--muted)'}">（${pt.outsourced?'外包':'代工'}）</span> ${canBillTag(pt.unbilled)}</td>
+        <td class="num" data-label="成本" style="color:var(--muted)">${money(pt.cost)}</td>
+        <td class="num" data-label="計量累計" style="color:var(--muted)">${money(pt.meas)}</td>
+        <td class="num" data-label="計量毛利" style="color:${g>=0?'var(--accent)':'var(--danger)'}">${money(g)}</td>
+        <td class="num" data-label="已收款" style="color:var(--muted)">${money(pt.billed)}</td></tr>`; }).join('');
     }
     return html;
   }).join('');
