@@ -330,6 +330,46 @@
   #print-overlay .paydoc tr.ded-row td, #print-overlay .paydoc .ded-amt { color: #b91c1c; background: #fff1f2; }
   #print-overlay .paydoc .night-check { color: #0f766e; font-weight: 800; font-size: 14px; }
   #print-overlay .site-pill { display:inline-block; padding:2px 8px; border-radius:999px; font-weight:700; font-size:11px; border:1px solid transparent; }
+  /* ── 單據版面（請款單／追加單）：與品佑帳本同一套樣式 ── */
+  #print-overlay .billdoc { color:#111827; font-size:13px; line-height:1.55; }
+  #print-overlay .billdoc * { -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+  #print-overlay .billdoc .dh { display:flex; justify-content:space-between; align-items:flex-start; gap:20px; padding-bottom:14px; border-bottom:2.5px solid #1E3A8A; margin-bottom:20px; }
+  #print-overlay .billdoc .dh-co { font-size:21px; font-weight:800; color:#1E3A8A; letter-spacing:.5px; }
+  #print-overlay .billdoc .dh-meta { font-size:11.5px; color:#6b7280; margin-top:5px; line-height:1.6; }
+  #print-overlay .billdoc .dh-title { font-size:27px; font-weight:800; letter-spacing:5px; color:#1E3A8A; text-align:right; white-space:nowrap; }
+  #print-overlay .billdoc .dh-info { font-size:12px; color:#374151; margin-top:8px; margin-left:auto; border-collapse:collapse; width:auto; }
+  #print-overlay .billdoc .dh-info td { padding:2px 0 2px 14px; text-align:right; border:none; }
+  #print-overlay .billdoc .dh-info td:first-child { color:#9ca3af; }
+  #print-overlay .billdoc .party { display:flex; gap:44px; flex-wrap:wrap; padding:2px 0 14px; border-bottom:1px solid #e5e7eb; margin-bottom:16px; font-size:14px; }
+  #print-overlay .billdoc .party .lbl { color:#9ca3af; margin-right:10px; font-size:12px; }
+  #print-overlay .billdoc table.items { width:100%; border-collapse:collapse; font-size:13px; }
+  #print-overlay .billdoc table.items th { border:none; border-bottom:2px solid #1E3A8A; color:#1E3A8A; font-weight:700; padding:8px; text-align:left; font-size:12px; letter-spacing:.3px; background:none; }
+  #print-overlay .billdoc table.items td { border:none; border-bottom:1px solid #eceff3; padding:9px 8px; vertical-align:top; }
+  #print-overlay .billdoc table.items .num { text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
+  #print-overlay .billdoc table.items .c-no { width:32px; text-align:center; color:#9ca3af; }
+  #print-overlay .billdoc table.items .c-unit { width:54px; color:#6b7280; }
+  #print-overlay .billdoc .sumwrap { display:flex; justify-content:flex-end; margin-top:6px; }
+  #print-overlay .billdoc table.sum { border-collapse:collapse; width:auto; min-width:320px; font-size:13px; }
+  #print-overlay .billdoc table.sum td { border:none; padding:7px 12px; }
+  #print-overlay .billdoc table.sum td:first-child { color:#6b7280; text-align:right; }
+  #print-overlay .billdoc table.sum td:last-child { text-align:right; font-variant-numeric:tabular-nums; min-width:130px; font-weight:600; }
+  #print-overlay .billdoc table.sum tr.grand td { background:#1E3A8A; color:#fff; font-weight:800; font-size:15px; padding:11px 12px; }
+  #print-overlay .billdoc table.sum tr.grand td:first-child { color:#dbeafe; }
+  #print-overlay .billdoc .bankblk { margin-top:20px; background:#f8fafc; border:1px solid #e5e7eb; border-radius:8px; padding:11px 15px; font-size:12.5px; display:inline-block; min-width:290px; line-height:1.7; }
+  #print-overlay .billdoc .bankblk .h { color:#1E3A8A; font-weight:700; margin-bottom:3px; letter-spacing:.5px; }
+  #print-overlay .billdoc .bankblk .lbl { color:#9ca3af; display:inline-block; width:44px; }
+  #print-overlay .billdoc .dnote { margin-top:16px; font-size:12.5px; color:#374151; line-height:1.7; }
+  #print-overlay .billdoc .dnote b { color:#111827; }
+  #print-overlay .billdoc .sec { font-size:13px; font-weight:700; margin:18px 0 6px; color:#1E3A8A; }
+  @media (max-width:640px){
+    #print-overlay .billdoc .dh { flex-direction:column; gap:8px; }
+    #print-overlay .billdoc .dh-title { text-align:left; font-size:23px; }
+    #print-overlay .billdoc .dh-info { margin-left:0; }
+    #print-overlay .billdoc .dh-info td { padding:2px 16px 2px 0; text-align:left; }
+    #print-overlay .billdoc .party { gap:6px 40px; }
+    #print-overlay .billdoc table.sum { width:100%; min-width:0; }
+    #print-overlay .billdoc .bankblk { width:100%; min-width:0; box-sizing:border-box; }
+  }
   @media print {
     html, body { background: #fff !important; } /* 列印背景一律白，最後一頁不露灰底 */
     body > .top, body > .layout { display: none !important; }
@@ -370,7 +410,17 @@ const LS_SIG_META = 'pm_billing_sig_meta_v1';
 const LS_DIRTY = 'pm_cloud_dirty_v1';
 // ↓↓↓ 把這裡換成你自己的 Google Apps Script 網址（/exec 結尾）。留空則只用本機儲存。
 const CLOUD_URL = 'https://script.google.com/macros/s/AKfycbynPpe_rq76SrW5_sTNaXms4U65bRrb4oscpH0GMyIXsM4Gk2DUXpOlEimP0C-pCahOVw/exec';
-let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], parkLedger:[], parkOpening:0, billings:[], measurements:[], billingPhotoDeleted:{}, deletedIds:[], textMemory:{clients:[],companies:[]}, tab:'dash' };
+let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], parkLedger:[], parkOpening:0, billings:[], measurements:[], billingPhotoDeleted:{}, deletedIds:[], textMemory:{clients:[],companies:[]}, myCompanies:[], tab:'dash' };
+// 開單公司（請款單／追加單抬頭與匯款資訊）；沒有資料時給一組預設，之後可到「設定」改
+const DEFAULT_MY_COMPANIES=[{id:'c-py',name:'品佑工程有限公司',taxId:'',addr:'',tel:'',bankName:'',bankBranch:'',bankAcctName:'',bankAcctNo:''}];
+const myCompanyList = () => (state.myCompanies&&state.myCompanies.length)?state.myCompanies:DEFAULT_MY_COMPANIES;
+const issuerOf = b => myCompanyList().find(c=>c.id===(b&&b.issuerId)) || myCompanyList()[0] || {};
+// 單號：請款單 I、追加單 A ＋ 日期 ＋ 當日流水（列印時顯示）
+function nextBillNo(docType){
+  const prefix=docType==='追加單'?'A':'I', ymd=localISODate().replace(/-/g,'');
+  const n=(state.billings||[]).filter(b=>String(b.no||'').indexOf(prefix+ymd)===0).length+1;
+  return prefix+ymd+'-'+String(n).padStart(2,'0');
+}
 let cloudStatus = CLOUD_URL ? '連線中…' : '本機模式';
 let localDirty=false, lastCloudTs=0;
 let entryDate='', entrySite='', entryEmp=''; // 登記出工：記住上次選的日期、案場、員工
@@ -464,7 +514,7 @@ function rememberDeletedPhoto(id,url){
   state.billingPhotoDeleted=state.billingPhotoDeleted||{};
   state.billingPhotoDeleted[id]=[...new Set([...(state.billingPhotoDeleted[id]||[]),url])];
 }
-const APP_VERSION='vN2026.07.19c-attnote'; // 版本號顯示在右上角，方便確認拿到新版
+const APP_VERSION='vN2026.07.28a-issuer'; // 版本號顯示在右上角，方便確認拿到新版
 // 本地時區的今天（yyyy-mm-dd）。toISOString 是 UTC，台灣早上 8 點前會差一天
 function localISODate(d=new Date()){ return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
 // 單價可打算式（例：1200*1.1）
@@ -544,7 +594,7 @@ function e2eDisable(){
   localDirty=true; saveData();
 }
 // ── 逐筆(依id)合併，避免裝置互相整包覆蓋造成資料遺失 ──
-const MERGE_COLLECTIONS=['employees','sites','attendance','adjustments','loans','parkLedger','billings','measurements','payrollSnapshots','yearIncomeAdj'];
+const MERGE_COLLECTIONS=['employees','sites','attendance','adjustments','loans','parkLedger','billings','measurements','payrollSnapshots','yearIncomeAdj','myCompanies'];
 // 相同 id 依每筆 updatedAt 決定新舊；舊資料沒有 updatedAt 時才退回整份文件時間。
 // （原本先到先贏：A 裝置改過的紀錄，遇到 B 裝置的舊版本可能被舊的蓋回去）
 const recordUpdatedAt=(r,fallback=0)=>Number(r&&r.updatedAt)||Number(fallback)||0;
@@ -762,7 +812,7 @@ function photoDisplayUrl(url){
 
 function applyData(d){
   if(!d) return;
-  state.employees=d.employees||[]; state.sites=d.sites||[]; state.attendance=d.attendance||[]; state.adjustments=d.adjustments||[]; state.loans=d.loans||[]; state.parkLedger=d.parkLedger||[]; state.parkOpening=Number(d.parkOpening)||0; state.payrollSnapshots=d.payrollSnapshots||[]; state.yearIncomeAdj=d.yearIncomeAdj||[]; state.billings=d.billings||[]; state.measurements=d.measurements||[]; state.billingPhotoDeleted=d.billingPhotoDeleted||{}; state.deletedIds=d.deletedIds||[]; if(d.resurrected&&Array.isArray(d.resurrected.ids)) state.resurrected={ids:d.resurrected.ids,at:Number(d.resurrected.at)||0}; else if(!state.resurrected) state.resurrected={ids:[],at:0}; state.textMemory=d.textMemory||{clients:[],companies:[]};
+  state.employees=d.employees||[]; state.sites=d.sites||[]; state.attendance=d.attendance||[]; state.adjustments=d.adjustments||[]; state.loans=d.loans||[]; state.parkLedger=d.parkLedger||[]; state.parkOpening=Number(d.parkOpening)||0; state.payrollSnapshots=d.payrollSnapshots||[]; state.yearIncomeAdj=d.yearIncomeAdj||[]; state.billings=d.billings||[]; state.measurements=d.measurements||[]; state.billingPhotoDeleted=d.billingPhotoDeleted||{}; state.deletedIds=d.deletedIds||[]; if(d.resurrected&&Array.isArray(d.resurrected.ids)) state.resurrected={ids:d.resurrected.ids,at:Number(d.resurrected.at)||0}; else if(!state.resurrected) state.resurrected={ids:[],at:0}; state.textMemory=d.textMemory||{clients:[],companies:[]}; state.myCompanies=d.myCompanies||[];
   state.employees.forEach(e=>{ if(e.active===undefined) e.active=true; });
   mergeBillingSigs(d.billingSigs||{}, d.billingSigsLocked||{}, d.billingSigMeta||{});
   if(d.billingPhotos) mergeCloudPhotos(d.billingPhotos);
@@ -774,7 +824,7 @@ function packData(){
     const driveUrls=(urls||[]).filter(u=>typeof u==='string'&&u.startsWith('http'));
     if(driveUrls.length) photosSync[id]=driveUrls;
   });
-  return {employees:state.employees,sites:state.sites,attendance:state.attendance,adjustments:state.adjustments,loans:state.loans,parkLedger:state.parkLedger,parkOpening:state.parkOpening,payrollSnapshots:state.payrollSnapshots||[],yearIncomeAdj:state.yearIncomeAdj||[],billings:state.billings,measurements:state.measurements,billingPhotoDeleted:state.billingPhotoDeleted||{},deletedIds:state.deletedIds||[],resurrected:state.resurrected||{ids:[],at:0},textMemory:state.textMemory,billingPhotos:photosSync,billingSigs,billingSigsLocked,billingSigMeta,savedAt:Date.now()};
+  return {employees:state.employees,sites:state.sites,attendance:state.attendance,adjustments:state.adjustments,loans:state.loans,parkLedger:state.parkLedger,parkOpening:state.parkOpening,payrollSnapshots:state.payrollSnapshots||[],yearIncomeAdj:state.yearIncomeAdj||[],billings:state.billings,measurements:state.measurements,billingPhotoDeleted:state.billingPhotoDeleted||{},deletedIds:state.deletedIds||[],resurrected:state.resurrected||{ids:[],at:0},textMemory:state.textMemory,myCompanies:state.myCompanies||[],billingPhotos:photosSync,billingSigs,billingSigsLocked,billingSigMeta,savedAt:Date.now()};
 }
 
 // 先讀本機快取（讓畫面秒開），再從雲端拉最新
@@ -1670,6 +1720,31 @@ function viewManage(){
       <span class="sub" id="backup-status" style="margin:0"></span>
     </div>
   </div>
+  <details class="card">
+    <summary>開單公司（請款單抬頭／匯款資訊）</summary>
+    <div class="card-body">
+      <p class="sub">請款單／追加單列印時，左上角會印這裡的公司抬頭與統編，下方會印匯款資訊。可以放多間公司，開單時再選要用哪一間。填好按「儲存公司資料」。</p>
+      ${myCompanyList().map((c,i)=>`<div class="card" style="margin:0 0 10px;border:1px solid var(--line2)">
+        <div class="row">
+          <div class="field" style="flex:2;min-width:170px"><label>公司名稱</label><input id="mc-name${i}" value="${esc(c.name||'')}" placeholder="例：品佑工程有限公司"></div>
+          <div class="field" style="min-width:120px"><label>統一編號</label><input id="mc-tax${i}" value="${esc(c.taxId||'')}" placeholder="選填"></div>
+          <div class="field" style="min-width:120px"><label>電話</label><input id="mc-tel${i}" value="${esc(c.tel||'')}" placeholder="選填"></div>
+          <div class="field" style="flex:2;min-width:180px"><label>地址</label><input id="mc-addr${i}" value="${esc(c.addr||'')}" placeholder="選填"></div>
+        </div>
+        <div class="row" style="margin-top:8px">
+          <div class="field" style="min-width:130px"><label>匯款銀行</label><input id="mc-bankname${i}" value="${esc(c.bankName||'')}" placeholder="例：台灣銀行"></div>
+          <div class="field" style="min-width:110px"><label>分行</label><input id="mc-bankbranch${i}" value="${esc(c.bankBranch||'')}" placeholder="例：三民分行"></div>
+          <div class="field" style="min-width:140px"><label>戶名</label><input id="mc-acctname${i}" value="${esc(c.bankAcctName||'')}" placeholder="選填"></div>
+          <div class="field" style="min-width:150px"><label>帳號</label><input id="mc-acctno${i}" value="${esc(c.bankAcctNo||'')}" placeholder="選填"></div>
+          ${myCompanyList().length>1?`<button class="act danger" data-mcdel="${esc(c.id)}" style="height:38px;align-self:flex-end">刪除這間</button>`:''}
+        </div>
+      </div>`).join('')}
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:4px">
+        <button class="btn" id="mc-save">儲存公司資料</button>
+        <button class="act" id="mc-add" style="border:1px solid var(--accent);border-radius:8px;padding:0 14px;height:38px;color:var(--accent)">＋ 再加一間公司</button>
+      </div>
+    </div>
+  </details>
   <div class="card">
     <div style="font-size:14px;font-weight:600;margin-bottom:4px">🚑 本機每日快照（誤刪救援）</div>
     <p class="sub" style="margin:0 0 8px">這台裝置每天第一次開啟時自動留一份資料快照，保留 7 天。誤刪資料時選一天按「合併救回」：只補回「快照有、現在沒有」的紀錄，不覆蓋現有資料，救回後同步到各裝置也不會被再刪。</p>
@@ -1696,6 +1771,37 @@ function bind(){
   const e2on=document.getElementById('e2e-on'); if(e2on) e2on.onclick=()=>e2eEnable().then(()=>render());
   const e2off=document.getElementById('e2e-off'); if(e2off) e2off.onclick=()=>{ e2eDisable(); render(); };
   const alc=document.getElementById('app-lock-chk'); if(alc) alc.onchange=()=>{ appLockToggle(); render(); };
+  // 開單公司（請款單抬頭／匯款資訊）
+  const readMyCompanies=()=>myCompanyList().map((c,i)=>{
+    const g=id=>document.getElementById(id+i);
+    return Object.assign({},c,{
+      name:(g('mc-name')||{}).value!==undefined?g('mc-name').value.trim():c.name,
+      taxId:(g('mc-tax')||{}).value!==undefined?g('mc-tax').value.trim():c.taxId,
+      tel:(g('mc-tel')||{}).value!==undefined?g('mc-tel').value.trim():c.tel,
+      addr:(g('mc-addr')||{}).value!==undefined?g('mc-addr').value.trim():c.addr,
+      bankName:(g('mc-bankname')||{}).value!==undefined?g('mc-bankname').value.trim():c.bankName,
+      bankBranch:(g('mc-bankbranch')||{}).value!==undefined?g('mc-bankbranch').value.trim():c.bankBranch,
+      bankAcctName:(g('mc-acctname')||{}).value!==undefined?g('mc-acctname').value.trim():c.bankAcctName,
+      bankAcctNo:(g('mc-acctno')||{}).value!==undefined?g('mc-acctno').value.trim():c.bankAcctNo,
+      updatedAt:Date.now()
+    });
+  });
+  const mcSave=document.getElementById('mc-save');
+  if(mcSave) mcSave.onclick=()=>{
+    const next=readMyCompanies();
+    if(next.some(c=>!c.name)){ alert('公司名稱不能空白'); return; }
+    state.myCompanies=next; saveData(); render(); alert('已儲存開單公司資料 ✓');
+  };
+  const mcAdd=document.getElementById('mc-add');
+  if(mcAdd) mcAdd.onclick=()=>{
+    state.myCompanies=readMyCompanies().concat([{id:uid(),name:'新公司',taxId:'',addr:'',tel:'',bankName:'',bankBranch:'',bankAcctName:'',bankAcctNo:'',updatedAt:Date.now()}]);
+    saveData(); render();
+  };
+  document.querySelectorAll('[data-mcdel]').forEach(b=>b.onclick=()=>{
+    const id=b.dataset.mcdel, used=(state.billings||[]).some(x=>x.issuerId===id);
+    if(!confirm(used?'有單據是用這間公司開的，刪除後那些單據會改用第一間公司的抬頭。確定刪除？':'刪除這間公司？')) return;
+    state.myCompanies=readMyCompanies().filter(c=>c.id!==id); saveData(); render();
+  });
   document.querySelectorAll('[data-toggle-form]').forEach(b=>b.onclick=()=>{ const k=b.dataset.toggleForm; formOpen[k]=!formOpen[k]; render(); });
   bindBillingSubtotal('bnr'); bindBillingSubtotal('bna'); bindBillingSubtotal('bae');
   ['meas-type','meas-width','meas-height','meas-qty','meas-price'].forEach(id=>{ const el=document.getElementById(id); if(el) el.oninput=updateMeasurePreview; if(el) el.onchange=updateMeasurePreview; });
@@ -1711,12 +1817,13 @@ function bind(){
     const settled=document.getElementById('bnr-settled').value==='1';
     if(!date||!site||isNaN(line.qty)||line.qty<=0||isNaN(line.unitPrice)||line.unitPrice<0){ alert('請填日期、案場、數量與單價'); return; }
     rememberText('clients',client);
-    state.billings.push({id:uid(),docType:'請款單',date,site,unit:line.unit,qty:line.qty,unitPrice:line.unitPrice,amount:line.amount,method,client,note,settled});
+    const issuerId=(document.getElementById('bnr-issuer')||{}).value||'';
+    state.billings.push({id:uid(),no:nextBillNo('請款單'),docType:'請款單',date,site,unit:line.unit,qty:line.qty,unitPrice:line.unitPrice,amount:line.amount,method,client,note,settled,issuerId});
     billingReqDraft=null; saveData(); render();
   };
   document.querySelectorAll('[data-copy-req]').forEach(b=>b.onclick=()=>{
     const bill=state.billings.find(x=>x.id===b.dataset.copyReq); if(!bill) return;
-    billingReqDraft={date:bill.date||localISODate(),method:bill.method||'',client:bill.client||'',note:bill.note||'',settled:!!bill.settled};
+    billingReqDraft={date:bill.date||localISODate(),method:bill.method||'',client:bill.client||'',note:bill.note||'',settled:!!bill.settled,issuerId:bill.issuerId||''};
     formOpen.bnr=true; render();
   });
   const bnaAdd=document.getElementById('bna-add');
@@ -1730,12 +1837,13 @@ function bind(){
     const settled=document.getElementById('bna-settled').value==='1';
     if(!date||!site||isNaN(line.qty)||line.qty<=0||isNaN(line.unitPrice)||line.unitPrice<0){ alert('請填日期、案場、數量與單價'); return; }
     rememberText('clients',client);
-    state.billings.push({id:uid(),docType:'追加單',date,site,unit:line.unit,qty:line.qty,unitPrice:line.unitPrice,amount:line.amount,client,note,remark,settled});
+    const issuerId=(document.getElementById('bna-issuer')||{}).value||'';
+    state.billings.push({id:uid(),no:nextBillNo('追加單'),docType:'追加單',date,site,unit:line.unit,qty:line.qty,unitPrice:line.unitPrice,amount:line.amount,client,note,remark,settled,issuerId});
     billingAddDraft=null; saveData(); render();
   };
   document.querySelectorAll('[data-copy-add]').forEach(b=>b.onclick=()=>{
     const bill=state.billings.find(x=>x.id===b.dataset.copyAdd); if(!bill) return;
-    billingAddDraft={date:bill.date||localISODate(),client:bill.client||'',note:bill.note||'',remark:bill.remark||'',settled:!!bill.settled};
+    billingAddDraft={date:bill.date||localISODate(),client:bill.client||'',note:bill.note||'',remark:bill.remark||'',settled:!!bill.settled,issuerId:bill.issuerId||''};
     formOpen.bna=true; render();
   });
   document.querySelectorAll('[data-billedit-add]').forEach(b=>b.onclick=()=>{ billingAddEditId=b.dataset.billeditAdd; render(); });
@@ -1748,6 +1856,7 @@ function bind(){
     bill.site=document.getElementById('bae-site').value.trim();
     bill.unit=line.unit; bill.qty=line.qty; bill.unitPrice=line.unitPrice; bill.amount=line.amount;
     bill.client=document.getElementById('bae-client').value.trim();
+    const baeIss=document.getElementById('bae-issuer'); if(baeIss) bill.issuerId=baeIss.value;
     bill.note=document.getElementById('bae-note').value.trim();
     bill.remark=document.getElementById('bae-remark').value.trim();
     bill.settled=document.getElementById('bae-settled').value==='1';
@@ -1964,7 +2073,7 @@ function bind(){
       const amount=Math.round(rows2.reduce((s,m)=>s+(Number(m.qty)||0)*(Number(m.unitPrice)||0),0));
       const bid=uid();
       const dates=rows2.map(m=>m.date||'').filter(Boolean).sort();
-      state.billings.push({id:bid,docType:'請款單',date:today,site,unit:'式',qty:1,unitPrice:amount,amount,method:'',client:'',note:`依計量明細 ${rows2.length} 筆${dates.length?`（${dates[0]}～${dates[dates.length-1]}）`:''}`,settled:false,fromMeas:rows2.map(m=>m.id)});
+      state.billings.push({id:bid,no:nextBillNo('請款單'),docType:'請款單',date:today,site,unit:'式',qty:1,unitPrice:amount,amount,method:'',client:'',note:`依計量明細 ${rows2.length} 筆${dates.length?`（${dates[0]}～${dates[dates.length-1]}）`:''}`,settled:false,issuerId:(myCompanyList()[0]||{}).id||'',fromMeas:rows2.map(m=>m.id)});
       rows2.forEach(m=>{ m.billedTo=bid; });
       made.push(`${site}　${money(amount)}（${rows2.length} 筆計量）`);
     });
@@ -2512,7 +2621,8 @@ function viewBillingReq(){
       <div class="field"><label>單價</label><input type="number" id="bnr-unit-price" min="0" step="1" style="width:120px"></div>
       <div class="field"><label>小計</label><div id="bnr-subtotal" class="num" style="height:38px;display:flex;align-items:center;font-weight:700">$0</div></div>
       <div class="field"><label>方式</label><input id="bnr-method" placeholder="匯款" value="${billingReqDraft?esc(billingReqDraft.method):''}" style="width:100px"></div>
-      <div class="field"><label>業主</label><input id="bnr-client" list="client-memory-list" placeholder="業主名稱" value="${billingReqDraft?esc(billingReqDraft.client):''}" style="width:120px"></div>
+      <div class="field" style="min-width:160px"><label>開單公司</label><select id="bnr-issuer">${myCompanyList().map(c=>`<option value="${esc(c.id)}" ${billingReqDraft&&billingReqDraft.issuerId===c.id?'selected':''}>${esc(c.name)}</option>`).join('')}</select></div>
+      <div class="field"><label>業主（開給誰）</label><input id="bnr-client" list="client-memory-list" placeholder="業主名稱" value="${billingReqDraft?esc(billingReqDraft.client):''}" style="width:120px"></div>
       <div class="field" style="flex:1;min-width:180px"><label>說明</label><input id="bnr-note" placeholder="例：第一期工程款" value="${billingReqDraft?esc(billingReqDraft.note):''}"></div>
       <div class="field"><label>收款狀態</label><select id="bnr-settled"><option value="">未收款</option><option value="1" ${billingReqDraft&&billingReqDraft.settled?'selected':''}>已收款</option></select></div>
     </div>
@@ -2537,7 +2647,8 @@ function viewBillingAdd(){
             <div class="field"><label>數量</label><input type="number" id="bae-qty" value="${b.qty||1}" step="0.01" style="width:90px"></div>
             <div class="field"><label>單價</label><input type="number" id="bae-unit-price" value="${b.unitPrice||0}" step="1" style="width:120px"></div>
             <div class="field"><label>小計</label><div id="bae-subtotal" class="num" style="height:38px;display:flex;align-items:center;font-weight:700">$0</div></div>
-            <div class="field"><label>業主</label><input id="bae-client" list="client-memory-list" value="${esc(b.client||'')}" style="width:120px"></div>
+            <div class="field" style="min-width:160px"><label>開單公司</label><select id="bae-issuer">${myCompanyList().map(c=>`<option value="${esc(c.id)}" ${(b.issuerId||myCompanyList()[0].id)===c.id?'selected':''}>${esc(c.name)}</option>`).join('')}</select></div>
+            <div class="field"><label>業主（開給誰）</label><input id="bae-client" list="client-memory-list" value="${esc(b.client||'')}" style="width:120px"></div>
             <div class="field" style="flex:1;min-width:180px"><label>說明</label><input id="bae-note" value="${esc(b.note||'')}"></div>
             <div class="field" style="flex:1;min-width:150px"><label>備注</label><input id="bae-remark" value="${esc(b.remark||'')}"></div>
             <div class="field"><label>收款狀態</label><select id="bae-settled"><option value="">未收款</option><option value="1" ${b.settled?'selected':''}>已收款</option></select></div>
@@ -2570,7 +2681,8 @@ function viewBillingAdd(){
       <div class="field"><label>數量</label><input type="number" id="bna-qty" min="0" step="0.01" value="${billingAddDraft?'':'1'}" style="width:90px"></div>
       <div class="field"><label>單價</label><input type="number" id="bna-unit-price" min="0" step="1" style="width:120px"></div>
       <div class="field"><label>小計</label><div id="bna-subtotal" class="num" style="height:38px;display:flex;align-items:center;font-weight:700">$0</div></div>
-      <div class="field"><label>業主</label><input id="bna-client" list="client-memory-list" placeholder="業主名稱" value="${billingAddDraft?esc(billingAddDraft.client):''}" style="width:120px"></div>
+      <div class="field" style="min-width:160px"><label>開單公司</label><select id="bna-issuer">${myCompanyList().map(c=>`<option value="${esc(c.id)}" ${billingAddDraft&&billingAddDraft.issuerId===c.id?'selected':''}>${esc(c.name)}</option>`).join('')}</select></div>
+      <div class="field"><label>業主（開給誰）</label><input id="bna-client" list="client-memory-list" placeholder="業主名稱" value="${billingAddDraft?esc(billingAddDraft.client):''}" style="width:120px"></div>
       <div class="field" style="flex:1;min-width:180px"><label>說明（追加項目）</label><input id="bna-note" placeholder="例：追加防水工程" value="${billingAddDraft?esc(billingAddDraft.note):''}"></div>
       <div class="field" style="flex:1;min-width:150px"><label>備注</label><input id="bna-remark" placeholder="其他備注" value="${billingAddDraft?esc(billingAddDraft.remark):''}"></div>
       <div class="field"><label>收款狀態</label><select id="bna-settled"><option value="">未收款</option><option value="1" ${billingAddDraft&&billingAddDraft.settled?'selected':''}>已收款</option></select></div>
@@ -2650,19 +2762,45 @@ function buildBillingDocHTML(id){
   const pMaxH=photos.length===1?560:(photos.length===2?440:400);
   const photoSec=photos.length?`<div class="sec">施作照片</div><div data-photosec="1" style="display:flex;flex-wrap:wrap;gap:10px;margin:8px 0 14px;align-items:flex-start">${photos.map(url=>`<img src="${photoDisplayUrl(url)}" style="max-width:${pMaxW};width:auto;max-height:${pMaxH}px;object-fit:contain;border:1px solid #ddd;border-radius:4px;page-break-inside:avoid;-webkit-print-color-adjust:exact">`).join('')}</div>`:'';
   const signImg=sig?`<img src="${sig}">`:''; // 樣式由 .sigbox img 控制：固定高度、貼在簽名線上方
-  return `<h1>${esc(type)}</h1>
-    <div class="meta">列印日：${localISODate()}</div>
-    <table><tbody>
-      <tr><th style="width:90px">日期</th><td>${esc(b.date||'')}</td><th style="width:90px">案場</th><td>${esc(siteDisplayLabel(b.site))}</td></tr>
-      <tr><th>業主</th><td>${esc(b.client||'')}${type!=='追加單'&&b.method?`　（${esc(b.method)}）`:''}</td><th>狀態</th><td>${b.settled?'已收款':'未收款'}</td></tr>
-      <tr><th>項目</th><td colspan="3">${esc(b.note||type)}${b.remark?`<div class="sub">${esc(b.remark)}</div>`:''}</td></tr>
-      <tr><th>單位</th><td>${esc(b.unit||'式')}</td><th>數量</th><td>${Number(b.qty)||0}</td></tr>
-      <tr><th>單價</th><td class="num">${money(b.unitPrice||0)}</td><th>金額</th><td class="num">${money(amount)}</td></tr>
-    </tbody></table>
-    ${photoSec}
+  const co=issuerOf(b);                      // 開單公司（抬頭＋匯款資訊）
+  const qty=Number(b.qty)||0, price=Number(b.unitPrice)||0;
+  return `<div class="billdoc">
+    <div class="dh">
+      <div>
+        <div class="dh-co">${esc(co.name||'')}</div>
+        <div class="dh-meta">${[co.taxId?'統一編號 '+esc(co.taxId):'', esc(co.addr||''), co.tel?'電話 '+esc(co.tel):''].filter(Boolean).join('<br>')}</div>
+      </div>
+      <div>
+        <div class="dh-title">${esc(type)}</div>
+        <table class="dh-info">${b.no?`<tr><td>單號</td><td>${esc(b.no)}</td></tr>`:''}<tr><td>日期</td><td>${esc(b.date||'')}</td></tr><tr><td>狀態</td><td>${b.settled?'已收款':'未收款'}</td></tr></table>
+      </div>
+    </div>
+    <div class="party">
+      <div><span class="lbl">業主</span><b>${esc(b.client||'')}</b></div>
+      ${b.site?`<div><span class="lbl">案場</span>${esc(siteDisplayLabel(b.site))}</div>`:''}
+      ${type!=='追加單'&&b.method?`<div><span class="lbl">方式</span>${esc(b.method)}</div>`:''}
+    </div>
+    <table class="items">
+      <thead><tr><th class="c-no">#</th><th>品項</th><th class="c-unit">單位</th><th class="num">數量</th><th class="num">單價</th><th class="num">小計</th></tr></thead>
+      <tbody><tr><td class="c-no">1</td><td>${esc(b.note||type)}${b.remark?`<div style="font-size:11.5px;color:#6b7280;margin-top:3px">${esc(b.remark)}</div>`:''}</td>
+        <td class="c-unit">${esc(b.unit||'式')}</td><td class="num">${qty.toLocaleString('en-US')}</td><td class="num">${money(price)}</td><td class="num">${money(amount)}</td></tr></tbody>
+    </table>
+    <div class="sumwrap"><table class="sum"><tr class="grand"><td>總計</td><td>${money(amount)}</td></tr></table></div>
+    ${billBankInfoHtml(co)}
+    ${photoSec?`<div class="sec">施作照片</div>${photoSec.replace(/^<div class="sec">施作照片<\/div>/,'')}`:''}
     ${type==='追加單'
       ? `<div class="sign"><div class="sigcell"><div class="sigbox"></div><div class="siglabel">申請單位</div></div><div class="sigcell"><div class="sigbox"></div><div class="siglabel">現場工程師確認項目</div></div><div class="sigcell"><div class="sigbox">${signImg}</div><div class="siglabel">業主簽收</div></div></div>`
-      : `<div class="sign"><div class="sigcell"><div class="sigbox"></div><div class="siglabel">申請單位</div></div><div class="sigcell"><div class="sigbox">${signImg}</div><div class="siglabel">業主簽收</div></div></div>`}`;
+      : `<div class="sign"><div class="sigcell"><div class="sigbox"></div><div class="siglabel">申請單位</div></div><div class="sigcell"><div class="sigbox">${signImg}</div><div class="siglabel">業主簽收</div></div></div>`}
+  </div>`;
+}
+// 匯款資訊區塊（開單公司有填才顯示）
+function billBankInfoHtml(c){
+  const bank=[c.bankName,c.bankBranch].filter(Boolean).join(' ');
+  if(!(bank||c.bankAcctName||c.bankAcctNo)) return '';
+  return `<div class="bankblk"><div class="h">匯款資訊</div>
+    ${bank?`<div><span class="lbl">銀行</span>${esc(bank)}</div>`:''}
+    ${c.bankAcctName?`<div><span class="lbl">戶名</span>${esc(c.bankAcctName)}</div>`:''}
+    ${c.bankAcctNo?`<div><span class="lbl">帳號</span>${esc(c.bankAcctNo)}</div>`:''}</div>`;
 }
 // 智慧收縮：等照片載完後實際量整份文件高度，照片從大到小逐級試（欄數×高度上限），
 // 找到能塞進一頁 A4 的最大尺寸；真的塞不下才用舒適大小自然流到下一頁（照片不切半）
