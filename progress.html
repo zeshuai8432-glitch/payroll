@@ -108,7 +108,7 @@ body.printing #print-overlay{display:block;position:absolute;inset:0;background:
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.07.31e-sortback';
+const APP_VERSION='vG2026.07.31f-groupsplit';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -415,6 +415,7 @@ function calc(proj,perIdx){
 
 /* ═══════════ 畫面 ═══════════ */
 const openBlk=new Set();
+const openGroup=new Set(); // 拆開的工序群組：展開狀態
 let itemEdit=null, itemAdd=null, blkEdit=null, blkAdd=false, copyInto=null, batchEdit=null, batchAll=false; // 就地編輯：細項/區塊；copyInto＝選來源區塊複製；batchEdit＝單一區塊整批改；batchAll＝全部區塊一起整批改
 function render(){
   const app=document.getElementById('app');
@@ -510,11 +511,45 @@ function viewItems(proj){
       }
     }
     h+=`<table><tr><th>項次</th><th>名稱及規格</th><th>單位</th><th class="num">數量</th><th class="num">單價</th><th class="num">總價</th><th>備註</th><th></th></tr>`;
-    let ch='';
+    let ch='', gDone=new Set();
     for(const it of b.items){
       if(proj.hideZero&&it.amount===0)continue;
       if(itemEdit===b.id+'::'+it.id){ h+=itemForm(b,it); continue; }
       if(it.chapter!==ch){ch=it.chapter;if(ch)h+=`<tr class="chapter"><td colspan="8">${esc(ch)}</td></tr>`;}
+      // ── 拆開的工序：顯示為原本那一條（可展開），數量／單價／金額由子項匯總 ──
+      if(it.groupId&&!inBatch){
+        if(gDone.has(it.groupId)) continue;   // 同一組只在第一條的位置畫一次
+        gDone.add(it.groupId);
+        const subs=b.items.filter(x=>x.groupId===it.groupId);
+        const gAmt=subs.reduce((s,x)=>s+(Number(x.amount)||0),0);
+        const sameQty=subs.every(x=>Number(x.qty)===Number(subs[0].qty));
+        const gQty=sameQty?Number(subs[0].qty):0;
+        const gPrice=sameQty&&gQty?+(gAmt/gQty).toFixed(4):0;   // 同量時＝各段單價相加
+        const open=openGroup.has(it.groupId);
+        h+=`<tr style="background:#f8fafc">
+          <td>${esc(it.no==='增'?'':it.no)}</td>
+          <td><button class="btn sub sm" data-grouptoggle="${it.groupId}" style="border:none;background:none;padding:0 6px 0 0;color:var(--accent)">${open?'▾':'▸'}</button><b>${esc(it.groupName||it.name)}</b><span class="tag" style="background:#e0e7ff;color:#3730a3">${subs.length} 道工序</span></td>
+          <td>${esc(it.unit)}</td>
+          <td class="num">${sameQty?qfmt(gQty):'<span class="muted" style="font-size:11px">各段不同</span>'}</td>
+          <td class="num">${sameQty?qfmt(gPrice):'<span class="muted" style="font-size:11px">—</span>'}</td>
+          <td class="num"><b>${qfmt(gAmt)}</b></td>
+          <td class="muted" style="font-size:12px">${esc(it.remark||'')}</td>
+          <td><button class="btn sub sm" data-groupmerge="${b.id}::${it.groupId}" title="取消拆分，合回一條">↩ 合回</button></td></tr>`;
+        if(open){
+          for(const s of subs){
+            if(itemEdit===b.id+'::'+s.id){ h+=itemForm(b,s); continue; }
+            h+=`<tr><td></td>
+              <td style="padding-left:26px;color:var(--muted)">↳ ${esc(s.name.startsWith((it.groupName||'')+'-')?s.name.slice((it.groupName||'').length+1):s.name)}</td>
+              <td>${esc(s.unit)}</td>
+              <td class="num">${qfmt(s.qty)}${s.qtyExpr?`<div style="font-size:11px;color:var(--muted)">=${esc(s.qtyExpr)}</div>`:''}</td>
+              <td class="num">${s.price?qfmt(s.price):''}${s.priceExpr?`<div style="font-size:11px;color:var(--muted)">=${esc(s.priceExpr)}</div>`:''}</td>
+              <td class="num">${qfmt(s.amount)}</td>
+              <td class="muted" style="font-size:12px">${esc(s.remark||'')}</td>
+              <td><button class="btn sub sm" data-edititem="${b.id}::${s.id}">改</button> <button class="btn bad sm" data-delitem="${b.id}::${s.id}">刪</button></td></tr>`;
+          }
+        }
+        continue;
+      }
       if(inBatch){
         h+=`<tr><td>${esc(it.no)}</td><td>${esc(it.name)}${it.tag?`<span class="tag">${esc(it.tag)}</span>`:''}</td><td>${esc(it.unit)}</td>
           <td class="num"><input class="pin" id="be-qty-${it.id}" inputmode="decimal" value="${esc(String(it.qtyExpr||it.qty))}" style="width:110px;text-align:right" placeholder="可算式"></td>
@@ -1007,7 +1042,7 @@ function setProgInput(proj,blkId,itemId,kind,val){
 }
 
 document.addEventListener('click',async e=>{
-  const t=e.target.closest('[data-tab],[data-editblk],[data-delblk],[data-edititem],[data-delitem],[data-additem],[data-splititem],[data-sortitems],[data-copyinto],[data-copyok],[data-copycancel],[data-batchedit],[data-batchok],[data-batchcancel],[data-batchalledit],[data-batchallok],[data-batchallcancel],[data-itemok],[data-itemcancel],[data-blkok],[data-blkcancel],[data-bapply],[data-editextra],[data-delextra],#btn-import,#btn-import2,#btn-newproj,#btn-newproj2,#btn-addblk,#btn-addblk-ok,#btn-addperiod,#btn-delperiod,#btn-addextra,#btn-roundup,[data-gotoproj],#btn-print,#set-save,#proj-dup,#proj-detach,#backup-export,#backup-import-btn,#proj-del,#cloud-push,#cloud-pull');
+  const t=e.target.closest('[data-tab],[data-editblk],[data-delblk],[data-edititem],[data-delitem],[data-additem],[data-splititem],[data-sortitems],[data-grouptoggle],[data-groupmerge],[data-copyinto],[data-copyok],[data-copycancel],[data-batchedit],[data-batchok],[data-batchcancel],[data-batchalledit],[data-batchallok],[data-batchallcancel],[data-itemok],[data-itemcancel],[data-blkok],[data-blkcancel],[data-bapply],[data-editextra],[data-delextra],#btn-import,#btn-import2,#btn-newproj,#btn-newproj2,#btn-addblk,#btn-addblk-ok,#btn-addperiod,#btn-delperiod,#btn-addextra,#btn-roundup,[data-gotoproj],#btn-print,#set-save,#proj-dup,#proj-detach,#backup-export,#backup-import-btn,#proj-del,#cloud-push,#cloud-pull');
   if(!t)return;
   const proj=curProj();
   if(t.dataset.tab){state.tab=t.dataset.tab;save();render();return;}
@@ -1053,7 +1088,13 @@ document.addEventListener('click',async e=>{
     const it=b.items.find(x=>x.id===itemId);if(!it)return;
     if(!confirm(`刪除細項「${it.name}」？`))return;
     for(const p of proj.periods)if(p.prog)delete p.prog[it.id];
-    b.items=b.items.filter(x=>x!==it);save();render();return;
+    b.items=b.items.filter(x=>x!==it);
+    // 一組工序只剩一道時就沒有分組的意義，自動還原成一般細項
+    if(it.groupId){
+      const left=b.items.filter(x=>x.groupId===it.groupId);
+      if(left.length<=1) left.forEach(x=>{ delete x.groupId; delete x.groupName; });
+    }
+    save();render();return;
   }
   if(t.dataset.batchalledit){ batchAll=true; batchEdit=itemEdit=itemAdd=blkEdit=copyInto=null; blkAdd=false; render(); return; }
   if(t.dataset.batchallcancel){ batchAll=false; render(); return; }
@@ -1092,10 +1133,12 @@ document.addEventListener('click',async e=>{
     }
     openSplitModal(b,it,parts=>{
       const i=b.items.indexOf(it); if(i<0) return;
+      const gid=uid();  // 同一組：合約明細會收在原本那條底下，可展開
       const made=parts.map(p=>{
         const price=evalExpr(p.raw), pe=hasExpr(p.raw)?p.raw:'';
-        return {id:uid(),no:'增',tag:'',chapter:it.chapter||'',name:`${it.name}-${p.nm}`,unit:it.unit,
+        return {id:uid(),no:it.no,tag:'',chapter:it.chapter||'',name:`${it.name}-${p.nm}`,unit:it.unit,
                 qty:it.qty,qtyExpr:it.qtyExpr||'',price,priceExpr:pe,amount:it.qty*price,remark:it.remark||'',
+                groupId:gid,groupName:it.name,
                 ...(it.srcId?{srcId:it.srcId}:{})}; // 自己也是子專案時：拆開後仍對應同一條母細項
       });
       b.items.splice(i,1,...made);
@@ -1110,15 +1153,17 @@ document.addEventListener('click',async e=>{
             for(let j=kb.items.length-1;j>=0;j--){
               const ki=kb.items[j]; if(ki.srcId!==it.id) continue;
               const cPrice=Number(ki.price)||0;
+              const kgid=uid();
               let acc=0;
               const kmade=made.map((mp,idx)=>{
                 // 最後一段吃掉四捨五入尾差，讓各段相加等於子專案原本的單價
                 const pr=ratioBase>0
                   ? (idx===made.length-1 ? +(cPrice-acc).toFixed(2) : (()=>{const v=Math.round(cPrice*(Number(mp.price)||0)/ratioBase*100)/100; acc+=v; return v;})())
                   : (idx===0?cPrice:0);
-                return {id:uid(),no:'增',tag:'',chapter:ki.chapter||'',name:`${ki.name}-${mp.name.slice(it.name.length+1)}`,
+                return {id:uid(),no:ki.no,tag:'',chapter:ki.chapter||'',name:`${ki.name}-${mp.name.slice(it.name.length+1)}`,
                         unit:ki.unit,qty:ki.qty,qtyExpr:ki.qtyExpr||'',price:pr,priceExpr:'',
-                        amount:(Number(ki.qty)||0)*pr,remark:ki.remark||'',srcId:mp.id};
+                        amount:(Number(ki.qty)||0)*pr,remark:ki.remark||'',
+                        groupId:kgid,groupName:ki.name,srcId:mp.id};
               });
               kb.items.splice(j,1,...kmade);
               for(const per of k.periods) if(per.prog) delete per.prog[ki.id];
@@ -1134,6 +1179,25 @@ document.addEventListener('click',async e=>{
         +(refs.length&&!cascade?`\n\n⚠ 子專案未連動，發包分配會標示孤兒發包。`:''));
     });
     return;
+  }
+  if(t.dataset.grouptoggle){ const g=t.dataset.grouptoggle; openGroup.has(g)?openGroup.delete(g):openGroup.add(g); render(); return; }
+  if(t.dataset.groupmerge){
+    const [blkId,gid]=t.dataset.groupmerge.split('::');
+    const b=proj.blocks.find(x=>x.id===blkId); if(!b) return;
+    const subs=b.items.filter(x=>x.groupId===gid); if(!subs.length) return;
+    const nm=subs[0].groupName||subs[0].name;
+    const amt=subs.reduce((s,x)=>s+(Number(x.amount)||0),0);
+    const q=Number(subs[0].qty)||0;
+    const price=q?+(amt/q).toFixed(4):0;
+    if(!confirm(`把「${nm}」的 ${subs.length} 道工序合回一條？\n\n・單價會變成各段相加 ${qfmt(price)}，金額 ${qfmt(amt)} 不變\n・各道工序已填的進度會清除`))return;
+    const i=b.items.indexOf(subs[0]);
+    const merged={id:uid(),no:subs[0].no,tag:'',chapter:subs[0].chapter||'',name:nm,unit:subs[0].unit,
+      qty:q,qtyExpr:subs[0].qtyExpr||'',price,priceExpr:'',amount:amt,remark:subs[0].remark||'',
+      ...(subs[0].srcId?{srcId:subs[0].srcId}:{})};
+    b.items=b.items.filter(x=>x.groupId!==gid);
+    b.items.splice(Math.min(i,b.items.length),0,merged);
+    for(const per of proj.periods) if(per.prog) subs.forEach(s=>delete per.prog[s.id]);
+    openGroup.delete(gid); save(); render(); return;
   }
   if(t.dataset.copyinto){ copyInto=t.dataset.copyinto; itemEdit=itemAdd=blkEdit=null; blkAdd=false; render(); return; }
   if(t.dataset.copycancel){ copyInto=null; render(); return; }
