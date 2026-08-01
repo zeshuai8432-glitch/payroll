@@ -108,7 +108,7 @@ body.printing #print-overlay{display:block;position:absolute;inset:0;background:
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.07.31n-zerocount';
+const APP_VERSION='vG2026.07.31o-selfdo';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -340,23 +340,27 @@ function allocationOf(parent){
   });
   // 超額判斷用「金額」：子專案可能把一條拆成骨架／封板，數量會變兩倍但金額仍相加，
   // 用金額比才不會誤報（140×12＋140×12 ＝ 280×12）。數量僅供參考顯示。
-  const rows=[]; let over=0, totMother=0, totAlloc=0;
+  const rows=[]; let over=0, totMother=0, totAlloc=0, totSelf=0;
   const seen=new Set();
   parent.blocks.forEach(b=>b.items.forEach(it=>{
     const mQty=(Number(it.qty)||0)*(Number(b.count)||0), mAmt=itemValue(it,b);
     const e=map[it.id]||{qty:0,amount:0,by:[]};
     seen.add(it.id);
-    totMother+=mAmt; totAlloc+=e.amount;
-    const isOver=e.amount-mAmt>0.5;
+    // 自辦：這條有多少量是自己做的（不發包）。單位與「已分配量」相同（單間量×間數）
+    const unitPrice=mQty?mAmt/mQty:0;
+    const selfQty=Math.max(0, Math.min(Number(it.selfQty)||0, mQty));
+    const selfAmt=selfQty*unitPrice;
+    totMother+=mAmt; totAlloc+=e.amount; totSelf+=selfAmt;
+    const isOver=(e.amount+selfAmt)-mAmt>0.5;
     if(isOver) over++;
-    rows.push({blk:b, it, mQty, mAmt, aQty:e.qty, aAmt:e.amount, by:e.by,
-               leftQty:+(mQty-e.qty).toFixed(4), leftAmt:mAmt-e.amount, over:isOver});
+    rows.push({blk:b, it, mQty, mAmt, aQty:e.qty, aAmt:e.amount, by:e.by, selfQty, selfAmt, unitPrice,
+               leftQty:+(mQty-e.qty-selfQty).toFixed(4), leftAmt:mAmt-e.amount-selfAmt, over:isOver});
   }));
   // 孤兒：子專案的 srcId 在母專案已找不到（多半是母那條被拆開或刪掉了），
   // 這些金額仍是實際發包出去的，要列出來提醒，不能默默消失。
   const orphans=[]; let orphanAmt=0;
   Object.keys(map).forEach(src=>{ if(!seen.has(src)){ orphans.push(map[src]); orphanAmt+=map[src].amount; } });
-  return {rows, kids, over, totMother, totAlloc, totLeft:totMother-totAlloc, orphans, orphanAmt};
+  return {rows, kids, over, totMother, totAlloc, totSelf, totLeft:totMother-totAlloc-totSelf, orphans, orphanAmt};
 }
 function periodOf(p,idx){return p.periods[idx]||null;}
 function progOf(period,itemId){return (period&&period.prog&&period.prog[itemId])||{p:0,q:0};}
@@ -463,7 +467,7 @@ function render(){
     const al=allocationOf(proj);
     h+=`<div class="notice" style="margin-bottom:10px${al.over?';border-color:rgba(248,113,113,.55);background:rgba(248,113,113,.12);color:#fca5a5':''}">
       母專案（發包總表），底下有 <b>${kids.length}</b> 個廠商子專案。
-      ${al.over?`<b>⚠ 有 ${al.over} 條細項發包超過母專案的量</b>，請到「發包分配」查看。`:`已分配 ${money(al.totAlloc)} / ${money(al.totMother)}，還可發包 ${money(al.totLeft)}。`}</div>`;
+      ${al.over?`<b>⚠ 有 ${al.over} 條細項發包超過母專案的量</b>，請到「發包分配」查看。`:`已發包 ${money(al.totAlloc)}${al.totSelf?`｜自辦 ${money(al.totSelf)}`:''}｜還沒決定 ${money(al.totLeft)}（母專案總額 ${money(al.totMother)}）。`}</div>`;
   }
   // 舊資料：整份專案還有沒收合的拆分時，各分頁都提示一次（不用鑽進區塊找）
   const pRuns=projectSplitRuns(proj);
@@ -764,8 +768,9 @@ function viewAlloc(proj){
   const al=allocationOf(proj);
   let h=`<div class="grid" style="margin-bottom:12px">
     <div class="stat"><div class="l">母專案總額（發包預算）</div><div class="v">${money(al.totMother)}</div></div>
-    <div class="stat"><div class="l">已發包合計</div><div class="v" style="color:${al.totAlloc>al.totMother?'#fca5a5':'inherit'}">${money(al.totAlloc)}</div></div>
-    <div class="stat"><div class="l">還可發包</div><div class="v" style="color:${al.totLeft<0?'#fca5a5':'var(--ok)'}">${money(al.totLeft)}</div></div>
+    <div class="stat"><div class="l">已發包</div><div class="v" style="color:${al.totAlloc>al.totMother?'#fca5a5':'inherit'}">${money(al.totAlloc)}</div></div>
+    <div class="stat"><div class="l">自辦（自己做）</div><div class="v" style="color:var(--accent2)">${money(al.totSelf)}</div></div>
+    <div class="stat"><div class="l">還沒決定</div><div class="v" style="color:${al.totLeft<0?'#fca5a5':'var(--ok)'}">${money(al.totLeft)}</div></div>
   </div>`;
   if(al.over){
     h+=`<div class="notice" style="border-color:rgba(248,113,113,.55);background:rgba(248,113,113,.12);color:#fca5a5;margin-bottom:10px">
@@ -777,22 +782,24 @@ function viewAlloc(proj){
       <div style="margin-top:4px;font-size:12px">${al.orphans.map(o=>o.by.map(x=>`<span class="tag" style="cursor:pointer" data-gotoproj="${x.id}">${esc(x.name)} ${money(x.amount)}</span>`).join(' ')).join(' ')}</div>
       <div style="margin-top:4px;font-size:12px">修法：到子專案把那幾條刪掉，再從母專案重新建一次子專案；或直接在母專案把對應的細項補回來。</div></div>`;
   }
-  h+=`<div class="muted" style="font-size:12.5px;margin-bottom:8px">母專案設定<b>發包總量與單價</b>；每個廠商子專案照 ✂ 認領的部分會列在這裡。<b>已分配不可超過母專案的量</b>。子專案單價可以跟母不同（議價結果），金額欄會照子專案實際單價算。</div>`;
+  h+=`<div class="muted" style="font-size:12.5px;margin-bottom:8px">母專案設定<b>發包總量與單價</b>；每個廠商子專案認領的部分列在「已分配」。<b>自辦</b>欄填自己要做的量（例：塞棉 40 間裡你自己做 5 間就填 5 間的量），<b>還沒決定</b>＝母總量−已發包−自辦。<b>已發包＋自辦不可超過母專案</b>，超了會標紅。</div>
+    <div style="margin-bottom:8px"><button class="btn sub sm" data-selfrest="1" title="把每條「還沒決定」的量全部歸為自辦">🙋 把剩下的全部設為自辦</button> <button class="btn sub sm" data-selfclear="1">清除所有自辦</button></div>`;
   let curBlk=null;
-  h+=`<table><tr><th>細項</th><th class="num">母·總量</th><th class="num">已分配量</th><th class="num">剩餘可發包</th><th>分給誰</th><th class="num">母·金額</th><th class="num">已發包金額</th></tr>`;
+  h+=`<table><tr><th>細項</th><th class="num">母·總量</th><th class="num">已分配量</th><th class="num">自辦量</th><th class="num">還沒決定</th><th>分給誰</th><th class="num">母·金額</th><th class="num">已發包金額</th></tr>`;
   for(const r of al.rows){
-    if(curBlk!==r.blk.id){ curBlk=r.blk.id; h+=`<tr class="chapter"><td colspan="7">${esc(r.blk.name)}（${qfmt(r.blk.count)} ${esc(r.blk.unit)}）</td></tr>`; }
+    if(curBlk!==r.blk.id){ curBlk=r.blk.id; h+=`<tr class="chapter"><td colspan="8">${esc(r.blk.name)}（${qfmt(r.blk.count)} ${esc(r.blk.unit)}）</td></tr>`; }
     const zero=r.aQty===0;
     h+=`<tr${r.over?' style="background:rgba(248,113,113,.10)"':''}>
       <td>${esc(r.it.name)}${r.over?'<span class="tag" style="background:rgba(248,113,113,.22);border-color:rgba(248,113,113,.5);color:#fca5a5">超額</span>':''}</td>
       <td class="num">${qfmt(r.mQty)} ${esc(r.it.unit)}</td>
       <td class="num">${r.aQty?qfmt(r.aQty):'—'}</td>
-      <td class="num" style="color:${r.leftAmt<0?'#fca5a5':(r.leftAmt>0?'var(--muted)':'inherit')}">${money(r.leftAmt)}</td>
-      <td style="font-size:12px">${r.by.length?r.by.map(x=>`<span class="tag" style="cursor:pointer" data-gotoproj="${x.id}">${esc(x.name)} ${money(x.amount)}</span>`).join(' '):'<span class="muted">尚未發包</span>'}</td>
+      <td class="num"><input class="pin" data-selfqty="${r.blk.id}::${r.it.id}" inputmode="decimal" value="${r.selfQty?qfmt(r.selfQty):''}" placeholder="0" style="width:76px;text-align:right">${r.selfQty?`<div style="font-size:10.5px;color:var(--accent2)">${money(r.selfAmt)}</div>`:''}</td>
+      <td class="num" style="color:${r.leftAmt<0?'#fca5a5':(r.leftAmt>0?'var(--muted)':'inherit')}">${money(r.leftAmt)}${r.leftQty>0?`<div style="font-size:10.5px;color:var(--muted)"><button class="btn sub sm" data-selfone="${r.blk.id}::${r.it.id}" style="font-size:10px;padding:0 6px;height:20px">設為自辦</button></div>`:''}</td>
+      <td style="font-size:12px">${r.by.length?r.by.map(x=>`<span class="tag" style="cursor:pointer" data-gotoproj="${x.id}">${esc(x.name)} ${money(x.amount)}</span>`).join(' '):(r.selfQty>=r.mQty-0.0001?'<span class="tag" style="background:rgba(96,165,250,.2);border-color:rgba(96,165,250,.5);color:#bfdbfe">自辦</span>':'<span class="muted">尚未發包</span>')}</td>
       <td class="num">${money(r.mAmt)}</td>
       <td class="num"${r.over?' style="color:#fca5a5;font-weight:700"':(zero?' class="muted"':'')}>${zero?'—':money(r.aAmt)}</td></tr>`;
   }
-  h+=`<tr class="chapter"><td>合計</td><td></td><td></td><td></td><td></td><td class="num"><b>${money(al.totMother)}</b></td><td class="num"><b style="color:${al.totAlloc>al.totMother?'#fca5a5':'inherit'}">${money(al.totAlloc)}</b></td></tr></table>`;
+  h+=`<tr class="chapter"><td>合計</td><td></td><td></td><td class="num"><b style="color:var(--accent2)">${money(al.totSelf)}</b></td><td class="num"><b>${money(al.totLeft)}</b></td><td></td><td class="num"><b>${money(al.totMother)}</b></td><td class="num"><b style="color:${al.totAlloc>al.totMother?'#fca5a5':'inherit'}">${money(al.totAlloc)}</b></td></tr></table>`;
   h+=`<div class="card" style="margin-top:12px"><h3>各廠商子專案</h3><table><tr><th>廠商子專案</th><th>廠商</th><th class="num">發包金額</th><th></th></tr>
     ${al.kids.map(k=>{ const v=k.blocks.reduce((s,b)=>s+b.items.reduce((x,i)=>x+itemValue(i,b),0),0);
       return `<tr><td>${esc(k.name)}</td><td>${esc(k.vendor||'—')}</td><td class="num">${money(v)}</td><td><button class="btn sub sm" data-gotoproj="${k.id}">開啟</button></td></tr>`; }).join('')}
@@ -1126,7 +1133,7 @@ function setProgInput(proj,blkId,itemId,kind,val){
 }
 
 document.addEventListener('click',async e=>{
-  const t=e.target.closest('[data-tab],[data-editblk],[data-delblk],[data-edititem],[data-delitem],[data-additem],[data-splititem],[data-sortitems],[data-grouptoggle],[data-groupmerge],[data-groupdetect],[data-delmode],[data-delcancel],[data-delall],[data-delnone],[data-delinv],[data-delzero],[data-deldo],[data-copyinto],[data-copyok],[data-copycancel],[data-batchedit],[data-batchok],[data-batchcancel],[data-batchalledit],[data-batchallok],[data-batchallcancel],[data-itemok],[data-itemcancel],[data-blkok],[data-blkcancel],[data-bapply],[data-editextra],[data-delextra],#btn-import,#btn-import2,#btn-newproj,#btn-newproj2,#btn-addblk,#btn-addblk-ok,#btn-addperiod,#btn-delperiod,#btn-addextra,#btn-roundup,[data-gotoproj],#btn-print,#proj-groupall,#set-save,#proj-dup,#proj-detach,#backup-export,#backup-import-btn,#proj-del,#cloud-push,#cloud-pull');
+  const t=e.target.closest('[data-tab],[data-editblk],[data-delblk],[data-edititem],[data-delitem],[data-additem],[data-splititem],[data-sortitems],[data-grouptoggle],[data-groupmerge],[data-groupdetect],[data-selfone],[data-selfrest],[data-selfclear],[data-delmode],[data-delcancel],[data-delall],[data-delnone],[data-delinv],[data-delzero],[data-deldo],[data-copyinto],[data-copyok],[data-copycancel],[data-batchedit],[data-batchok],[data-batchcancel],[data-batchalledit],[data-batchallok],[data-batchallcancel],[data-itemok],[data-itemcancel],[data-blkok],[data-blkcancel],[data-bapply],[data-editextra],[data-delextra],#btn-import,#btn-import2,#btn-newproj,#btn-newproj2,#btn-addblk,#btn-addblk-ok,#btn-addperiod,#btn-delperiod,#btn-addextra,#btn-roundup,[data-gotoproj],#btn-print,#proj-groupall,#set-save,#proj-dup,#proj-detach,#backup-export,#backup-import-btn,#proj-del,#cloud-push,#cloud-pull');
   if(!t)return;
   const proj=curProj();
   if(t.dataset.tab){state.tab=t.dataset.tab;save();render();return;}
@@ -1271,6 +1278,26 @@ document.addEventListener('click',async e=>{
     save(); render();
     alert(`已收合 ${n} 組工序。\n合約明細與進度請款都會只顯示原本那條，點 ▸ 可展開看各道。\n金額、數量、進度都沒有變動。`);
     return;
+  }
+  if(t.dataset.selfone){
+    const [blkId,itemId]=t.dataset.selfone.split('::');
+    const al=allocationOf(proj); const r=al.rows.find(x=>x.blk.id===blkId&&x.it.id===itemId);
+    if(!r||r.leftQty<=0) return;
+    r.it.selfQty=+((Number(r.it.selfQty)||0)+r.leftQty).toFixed(4);
+    save(); render(); return;
+  }
+  if(t.dataset.selfrest){
+    const al=allocationOf(proj);
+    const n=al.rows.filter(r=>r.leftQty>0).length;
+    if(!n){ alert('沒有「還沒決定」的量。'); return; }
+    if(!confirm(`把 ${n} 條細項「還沒決定」的量全部歸為自辦（自己做）？\n\n合計 ${money(al.totLeft)}。之後要發包再把自辦量改小即可。`))return;
+    al.rows.forEach(r=>{ if(r.leftQty>0) r.it.selfQty=+((Number(r.it.selfQty)||0)+r.leftQty).toFixed(4); });
+    save(); render(); return;
+  }
+  if(t.dataset.selfclear){
+    if(!confirm('清除所有「自辦」標記？（只清標記，不影響任何金額與發包資料）'))return;
+    proj.blocks.forEach(b=>b.items.forEach(it=>{ delete it.selfQty; }));
+    save(); render(); return;
   }
   if(t.dataset.groupdetect){
     const b=proj.blocks.find(x=>x.id===t.dataset.groupdetect); if(!b) return;
@@ -1482,6 +1509,15 @@ document.addEventListener('change',e=>{
   if(t.id==='period-date'){const per=proj.periods[proj.periods.length-1];if(per){per.date=t.value;save();}return;}
   if(t.id==='hide-zero'){proj.hideZero=t.checked;save();render();return;}
   // 批次刪除的勾選：只更新計數，不整頁重繪（1500+ 條才不會卡）
+  if(t.dataset.selfqty){
+    const [blkId,itemId]=t.dataset.selfqty.split('::');
+    const b=proj.blocks.find(x=>x.id===blkId); if(!b) return;
+    const it=b.items.find(x=>x.id===itemId); if(!it) return;
+    const mQty=(Number(it.qty)||0)*(Number(b.count)||0);
+    const v=Math.max(0, Math.min(num(t.value), mQty));
+    if(v>0) it.selfQty=v; else delete it.selfQty;
+    save(); render(); return;
+  }
   if(t.dataset.delpick){ t.checked?delSel.add(t.dataset.delpick):delSel.delete(t.dataset.delpick); updateDelCount(proj); return; }
   if(t.dataset.delpickGroup){
     const gid=t.dataset.delpickGroup;
