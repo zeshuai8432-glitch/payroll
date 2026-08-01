@@ -108,7 +108,7 @@ body.printing #print-overlay{display:block;position:absolute;inset:0;background:
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.07.31k-groupall';
+const APP_VERSION='vG2026.07.31l-bulkdel';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -430,7 +430,8 @@ function detectSplitRuns(b){
   if(cur&&cur.items.length>1) runs.push(cur);
   return runs;
 }
-let itemEdit=null, itemAdd=null, blkEdit=null, blkAdd=false, copyInto=null, batchEdit=null, batchAll=false; // 就地編輯：細項/區塊；copyInto＝選來源區塊複製；batchEdit＝單一區塊整批改；batchAll＝全部區塊一起整批改
+let itemEdit=null, itemAdd=null, blkEdit=null, blkAdd=false, copyInto=null, batchEdit=null, batchAll=false;
+let delMode=null; const delSel=new Set(); // 批次刪除：delMode＝正在選取的區塊 id // 就地編輯：細項/區塊；copyInto＝選來源區塊複製；batchEdit＝單一區塊整批改；batchAll＝全部區塊一起整批改
 function render(){
   const app=document.getElementById('app');
   const sel=document.getElementById('proj-sel');
@@ -525,16 +526,30 @@ function viewItems(proj){
     if(b.items.length&&!batchAll){
       if(batchEdit===b.id){
         h+=`<div class="rowline" style="gap:8px;align-items:center;margin-bottom:6px;padding:6px 8px;background:rgba(59,130,246,.14);border:1px solid rgba(96,165,250,.45);border-radius:8px"><b style="font-size:13px">整批改「${esc(b.name)}」：數量／單價可直接填算式（例 5.11*3.07）</b><span style="flex:1"></span><button class="btn sm" data-batchok="${b.id}">💾 儲存</button><button class="btn sub sm" data-batchcancel="1">取消</button></div>`;
+      }else if(delMode===b.id){
+        const nSel=b.items.filter(x=>delSel.has(x.id)).length;
+        const nZero=b.items.filter(x=>Number(x.amount)===0).length;
+        h+=`<div class="rowline" style="gap:8px;align-items:center;margin-bottom:6px;padding:6px 8px;background:rgba(248,113,113,.12);border:1px solid rgba(248,113,113,.45);border-radius:8px;position:sticky;top:0;z-index:5">
+          <b style="font-size:13px">批次刪除「${esc(b.name)}」</b>
+          <span class="muted" style="font-size:12px">已選 <b id="delcount-${b.id}" style="color:#fca5a5">${nSel}</b> 條</span>
+          <button class="btn sub sm" data-delall="${b.id}">全選</button>
+          <button class="btn sub sm" data-delnone="${b.id}">全不選</button>
+          <button class="btn sub sm" data-delinv="${b.id}">反選</button>
+          ${nZero?`<button class="btn sub sm" data-delzero="${b.id}" title="合約裡標 0 元的多半不是我方施作範圍">選 0 元（${nZero}）</button>`:''}
+          <span style="flex:1"></span>
+          <button class="btn bad sm" data-deldo="${b.id}">🗑 刪除勾選</button>
+          <button class="btn sub sm" data-delcancel="1">取消</button></div>`;
       }else{
-        h+=`<div style="margin-bottom:6px"><button class="btn sub sm" data-batchedit="${b.id}">✏️ 整批改本區數量／單價</button></div>`;
+        h+=`<div style="margin-bottom:6px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn sub sm" data-batchedit="${b.id}">✏️ 整批改本區數量／單價</button><button class="btn sub sm" data-delmode="${b.id}" style="border-color:rgba(248,113,113,.5);color:#fca5a5">☑ 批次刪除細項</button></div>`;
       }
     }
-    h+=`<table><tr><th>項次</th><th>名稱及規格</th><th>單位</th><th class="num">數量</th><th class="num">單價</th><th class="num">總價</th><th>備註</th><th></th></tr>`;
+    const picking=delMode===b.id;
+    h+=`<table><tr>${picking?'<th style="width:34px"></th>':''}<th>項次</th><th>名稱及規格</th><th>單位</th><th class="num">數量</th><th class="num">單價</th><th class="num">總價</th><th>備註</th><th></th></tr>`;
     let ch='', gDone=new Set();
     for(const it of b.items){
       if(proj.hideZero&&it.amount===0)continue;
       if(itemEdit===b.id+'::'+it.id){ h+=itemForm(b,it); continue; }
-      if(it.chapter!==ch){ch=it.chapter;if(ch)h+=`<tr class="chapter"><td colspan="8">${esc(ch)}</td></tr>`;}
+      if(it.chapter!==ch){ch=it.chapter;if(ch)h+=`<tr class="chapter"><td colspan="${picking?9:8}">${esc(ch)}</td></tr>`;}
       // ── 拆開的工序：顯示為原本那一條（可展開），數量／單價／金額由子項匯總 ──
       if(it.groupId&&!inBatch){
         if(gDone.has(it.groupId)) continue;   // 同一組只在第一條的位置畫一次
@@ -546,6 +561,7 @@ function viewItems(proj){
         const gPrice=sameQty&&gQty?+(gAmt/gQty).toFixed(4):0;   // 同量時＝各段單價相加
         const open=openGroup.has(it.groupId);
         h+=`<tr style="background:var(--card2)">
+          ${picking?`<td><input type="checkbox" data-delpick-group="${it.groupId}" ${subs.every(x=>delSel.has(x.id))?'checked':''} style="width:16px;height:16px"></td>`:''}
           <td>${esc(it.no==='增'?'':it.no)}</td>
           <td><button class="btn sub sm" data-grouptoggle="${it.groupId}" style="border:none;background:none;padding:0 6px 0 0;color:var(--accent)">${open?'▾':'▸'}</button><b>${esc(it.groupName||it.name)}</b><span class="tag" style="background:rgba(99,102,241,.22);border-color:rgba(129,140,248,.5);color:#c7d2fe">${subs.length} 道工序</span></td>
           <td>${esc(it.unit)}</td>
@@ -557,7 +573,7 @@ function viewItems(proj){
         if(open){
           for(const s of subs){
             if(itemEdit===b.id+'::'+s.id){ h+=itemForm(b,s); continue; }
-            h+=`<tr><td></td>
+            h+=`<tr>${picking?`<td><input type="checkbox" data-delpick="${s.id}" ${delSel.has(s.id)?'checked':''} style="width:16px;height:16px"></td>`:''}<td></td>
               <td style="padding-left:26px;color:var(--muted)">↳ ${esc(s.name.startsWith((it.groupName||'')+'-')?s.name.slice((it.groupName||'').length+1):s.name)}</td>
               <td>${esc(s.unit)}</td>
               <td class="num">${qfmt(s.qty)}${s.qtyExpr?`<div style="font-size:11px;color:var(--muted)">=${esc(s.qtyExpr)}</div>`:''}</td>
@@ -570,14 +586,14 @@ function viewItems(proj){
         continue;
       }
       if(inBatch){
-        h+=`<tr><td>${esc(it.no)}</td><td>${esc(it.name)}${it.tag?`<span class="tag">${esc(it.tag)}</span>`:''}</td><td>${esc(it.unit)}</td>
+        h+=`<tr>${picking?'<td></td>':''}<td>${esc(it.no)}</td><td>${esc(it.name)}${it.tag?`<span class="tag">${esc(it.tag)}</span>`:''}</td><td>${esc(it.unit)}</td>
           <td class="num"><input class="pin" id="be-qty-${it.id}" inputmode="decimal" value="${esc(String(it.qtyExpr||it.qty))}" style="width:110px;text-align:right" placeholder="可算式"></td>
           <td class="num"><input class="pin" id="be-price-${it.id}" inputmode="decimal" value="${esc(String(it.priceExpr||it.price||''))}" style="width:100px;text-align:right" placeholder="可算式"></td>
           <td class="num" style="color:var(--muted)">${qfmt(it.amount)}</td><td class="muted" style="font-size:12px">${esc(it.remark)}</td><td></td></tr>`;
         continue;
       }
       const zero=it.amount===0;
-      h+=`<tr class="${zero?'zero':''}"><td>${esc(it.no)}</td><td>${esc(it.name)}${it.tag?`<span class="tag">${esc(it.tag)}</span>`:''}</td>
+      h+=`<tr class="${zero?'zero':''}">${picking?`<td><input type="checkbox" data-delpick="${it.id}" ${delSel.has(it.id)?'checked':''} style="width:16px;height:16px"></td>`:''}<td>${esc(it.no)}</td><td>${esc(it.name)}${it.tag?`<span class="tag">${esc(it.tag)}</span>`:''}</td>
         <td>${esc(it.unit)}</td><td class="num">${qfmt(it.qty)}${it.qtyExpr?`<div style="font-size:11px;color:var(--muted)">=${esc(it.qtyExpr)}</div>`:''}</td>
         <td class="num">${it.price?qfmt(it.price):''}${it.priceExpr?`<div style="font-size:11px;color:var(--muted)">=${esc(it.priceExpr)}</div>`:''}</td><td class="num">${qfmt(it.amount)}</td>
         <td class="muted" style="font-size:12px">${esc(it.remark)}</td>
@@ -586,7 +602,7 @@ function viewItems(proj){
     if(itemAdd===b.id) h+=itemForm(b,null);
     if(b.items.length>1){
       const subSum=b.items.reduce((s,i)=>s+i.amount,0);
-      h+=`<tr class="chapter"><td colspan="5" style="text-align:right">小計${b.count>1?`（每${esc(b.unit)}）`:''}</td><td class="num"><b>${qfmt(subSum)}</b></td><td colspan="2">${b.count>1?`<span class="muted" style="font-size:11px">×${qfmt(b.count)} ${esc(b.unit)} ＝ ${money(subSum*b.count)}</span>`:''}</td></tr>`;
+      h+=`<tr class="chapter">${picking?'<td></td>':''}<td colspan="5" style="text-align:right">小計${b.count>1?`（每${esc(b.unit)}）`:''}</td><td class="num"><b>${qfmt(subSum)}</b></td><td colspan="2">${b.count>1?`<span class="muted" style="font-size:11px">×${qfmt(b.count)} ${esc(b.unit)} ＝ ${money(subSum*b.count)}</span>`:''}</td></tr>`;
     }
     const canSort=b.items.length>1;                                  // 一律顯示；按下去若含匯入細項會先確認
     const allManual=b.items.every(it=>it.no==='增');
@@ -1068,6 +1084,12 @@ async function importXlsx(file){
 }
 
 /* ═══════════ 事件 ═══════════ */
+function updateDelCount(proj){
+  if(!delMode) return;
+  const b=proj.blocks.find(x=>x.id===delMode); if(!b) return;
+  const el=document.getElementById('delcount-'+delMode);
+  if(el) el.textContent=b.items.filter(x=>delSel.has(x.id)).length;
+}
 function setProgInput(proj,blkId,itemId,kind,val){
   const perIdx=proj.periods.length-1;
   const period=proj.periods[perIdx];
@@ -1101,7 +1123,7 @@ function setProgInput(proj,blkId,itemId,kind,val){
 }
 
 document.addEventListener('click',async e=>{
-  const t=e.target.closest('[data-tab],[data-editblk],[data-delblk],[data-edititem],[data-delitem],[data-additem],[data-splititem],[data-sortitems],[data-grouptoggle],[data-groupmerge],[data-groupdetect],[data-copyinto],[data-copyok],[data-copycancel],[data-batchedit],[data-batchok],[data-batchcancel],[data-batchalledit],[data-batchallok],[data-batchallcancel],[data-itemok],[data-itemcancel],[data-blkok],[data-blkcancel],[data-bapply],[data-editextra],[data-delextra],#btn-import,#btn-import2,#btn-newproj,#btn-newproj2,#btn-addblk,#btn-addblk-ok,#btn-addperiod,#btn-delperiod,#btn-addextra,#btn-roundup,[data-gotoproj],#btn-print,#proj-groupall,#set-save,#proj-dup,#proj-detach,#backup-export,#backup-import-btn,#proj-del,#cloud-push,#cloud-pull');
+  const t=e.target.closest('[data-tab],[data-editblk],[data-delblk],[data-edititem],[data-delitem],[data-additem],[data-splititem],[data-sortitems],[data-grouptoggle],[data-groupmerge],[data-groupdetect],[data-delmode],[data-delcancel],[data-delall],[data-delnone],[data-delinv],[data-delzero],[data-deldo],[data-copyinto],[data-copyok],[data-copycancel],[data-batchedit],[data-batchok],[data-batchcancel],[data-batchalledit],[data-batchallok],[data-batchallcancel],[data-itemok],[data-itemcancel],[data-blkok],[data-blkcancel],[data-bapply],[data-editextra],[data-delextra],#btn-import,#btn-import2,#btn-newproj,#btn-newproj2,#btn-addblk,#btn-addblk-ok,#btn-addperiod,#btn-delperiod,#btn-addextra,#btn-roundup,[data-gotoproj],#btn-print,#proj-groupall,#set-save,#proj-dup,#proj-detach,#backup-export,#backup-import-btn,#proj-del,#cloud-push,#cloud-pull');
   if(!t)return;
   const proj=curProj();
   if(t.dataset.tab){state.tab=t.dataset.tab;save();render();return;}
@@ -1255,6 +1277,35 @@ document.addEventListener('click',async e=>{
     runs.forEach(r=>{ const gid=uid(); r.items.forEach(x=>{ x.groupId=gid; x.groupName=r.prefix; }); });
     save(); render();
     alert(`已群組 ${runs.length} 組。點項目左邊的 ▸ 可展開看各道工序。`);
+    return;
+  }
+  if(t.dataset.delmode){ delMode=t.dataset.delmode; delSel.clear(); itemEdit=itemAdd=blkEdit=copyInto=batchEdit=null; blkAdd=false; batchAll=false; render(); return; }
+  if(t.dataset.delcancel){ delMode=null; delSel.clear(); render(); return; }
+  if(t.dataset.delall||t.dataset.delnone||t.dataset.delinv||t.dataset.delzero){
+    const id=t.dataset.delall||t.dataset.delnone||t.dataset.delinv||t.dataset.delzero;
+    const b=proj.blocks.find(x=>x.id===id); if(!b) return;
+    const vis=b.items.filter(x=>!(proj.hideZero&&Number(x.amount)===0));
+    if(t.dataset.delall) vis.forEach(x=>delSel.add(x.id));
+    else if(t.dataset.delnone) delSel.clear();
+    else if(t.dataset.delinv) vis.forEach(x=>delSel.has(x.id)?delSel.delete(x.id):delSel.add(x.id));
+    else b.items.filter(x=>Number(x.amount)===0).forEach(x=>delSel.add(x.id));
+    render(); return;
+  }
+  if(t.dataset.deldo){
+    const b=proj.blocks.find(x=>x.id===t.dataset.deldo); if(!b) return;
+    const gone=b.items.filter(x=>delSel.has(x.id));
+    if(!gone.length){ alert('還沒勾選任何細項。'); return; }
+    const used=gone.filter(x=>proj.periods.some(pp=>pp.prog&&pp.prog[x.id])).length;
+    const amt=gone.reduce((s,x)=>s+itemValue(x,b),0);
+    if(!confirm(`刪除「${b.name}」裡勾選的 ${gone.length} 條細項？\n\n・合約金額會減少 ${money(amt)}\n${used?`・其中 ${used} 條已填過進度，該進度會一併清除\n`:''}・此動作無法復原（可先到設定頁匯出備份）`))return;
+    const ids=new Set(gone.map(x=>x.id));
+    b.items=b.items.filter(x=>!ids.has(x.id));
+    for(const pp of proj.periods) if(pp.prog) ids.forEach(i=>delete pp.prog[i]);
+    // 整組只剩一道就解除分組
+    const left={}; b.items.forEach(x=>{ if(x.groupId) left[x.groupId]=(left[x.groupId]||0)+1; });
+    b.items.forEach(x=>{ if(x.groupId&&left[x.groupId]<=1){ delete x.groupId; delete x.groupName; } });
+    delSel.clear(); delMode=null; save(); render();
+    alert(`已刪除 ${gone.length} 條細項。`);
     return;
   }
   if(t.dataset.grouptoggle){ const g=t.dataset.grouptoggle; openGroup.has(g)?openGroup.delete(g):openGroup.add(g); render(); return; }
@@ -1426,6 +1477,15 @@ document.addEventListener('change',e=>{
   if(t.id==='period-sel'){proj.curPeriod=+t.value;save();render();return;}
   if(t.id==='period-date'){const per=proj.periods[proj.periods.length-1];if(per){per.date=t.value;save();}return;}
   if(t.id==='hide-zero'){proj.hideZero=t.checked;save();render();return;}
+  // 批次刪除的勾選：只更新計數，不整頁重繪（1500+ 條才不會卡）
+  if(t.dataset.delpick){ t.checked?delSel.add(t.dataset.delpick):delSel.delete(t.dataset.delpick); updateDelCount(proj); return; }
+  if(t.dataset.delpickGroup){
+    const gid=t.dataset.delpickGroup;
+    const blk=proj.blocks.find(x=>x.id===delMode); if(!blk) return;
+    blk.items.filter(x=>x.groupId===gid).forEach(x=>{ t.checked?delSel.add(x.id):delSel.delete(x.id); });
+    document.querySelectorAll('[data-delpick]').forEach(cb=>{ if(delSel.has(cb.dataset.delpick)!==cb.checked) cb.checked=delSel.has(cb.dataset.delpick); });
+    updateDelCount(proj); return;
+  }
   if(t.dataset.q){const [b,i]=t.dataset.q.split('::');setProgInput(proj,b,i,'q',t.value);return;}
   if(t.dataset.p){const [b,i]=t.dataset.p.split('::');setProgInput(proj,b,i,'p',t.value);return;}
   if(t.dataset.r){const [b,i]=t.dataset.r.split('::');setProgInput(proj,b,i,'r',t.value);return;}
