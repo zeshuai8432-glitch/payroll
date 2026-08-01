@@ -509,7 +509,7 @@ const FS_ROOT = 'https://firestore.googleapis.com/v1/projects/'+FS_PROJECT+'/dat
 const FS_DOC_BASE = FS_ROOT+'payroll/';
 const FS_SIG_BASE = FS_ROOT+'payrollSignatures/';
 const FS_REST_URL = FS_DOC_BASE+'main?key='+FS_KEY;
-const APP_VERSION = 'v2026.07.31a-shdebt';
+const APP_VERSION = 'v2026.07.31b-shbonus';
 let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], tools:[], locations:[], assets:[], advances:[], accounts:[], ledger:[], deals:[], billings:[], measurements:[], contracts:{}, costs:[], textMemory:{clients:[],companies:[]}, parkAccId:'', oweBonus:{}, minFund:'', shareholderTx:[], payrollSnapshots:[], yearIncomeAdj:[], deletedIds:[], resurrected:{ids:[],at:0}, tab:'dash' };
 let cloudStatus='連線中…';
 let localDirty=false, lastCloudTs=0;
@@ -4403,7 +4403,8 @@ function bind(){
     state.oweBonus[pid]=Math.max(0, cur-Math.round(v));
     saveData(); render();
   });
-  // 股東往來：新增借/還款（連動品佑帳戶收支）
+  // 股東往來：新增借/還款。股東個人借錢＝預支自己的獎金，不記品佑帳戶收支、不影響公積金，
+  // 發獎金時直接從他的獎金扣回來。
   const shAdd=document.getElementById('sh-add'); if(shAdd) shAdd.onclick=()=>{
     const shId=document.getElementById('sh-emp').value;
     const kind=document.getElementById('sh-kind').value;
@@ -4411,34 +4412,38 @@ function bind(){
     const amount=Math.round(parseFloat(document.getElementById('sh-amount').value)||0);
     const note=document.getElementById('sh-note').value.trim();
     if(!shId||amount<=0){ alert('請選股東並填正確金額'); return; }
-    if(!state.parkAccId||!state.accounts.some(a=>a.id===state.parkAccId)){ alert('請先在上方選定「哪個帳戶是品佑代支出」，才能連動記帳。'); return; }
-    const txId=uid(), ledId=uid(), nm=empName(shId);
-    state.shareholderTx.push({id:txId,shId,kind,date,amount,note,ledgerId:ledId});
-    state.ledger.push({id:ledId,date,accId:state.parkAccId,kind:kind==='borrow'?'out':'in',amount,note:(kind==='borrow'?'借款·':'還款·')+nm+(note?'·'+note:''),shTxId:txId});
+    state.shareholderTx.push({id:uid(),shId,kind,date,amount,note});
     saveData(); render();
   };
   document.querySelectorAll('[data-sh-del]').forEach(b=>b.onclick=()=>{
     const t=state.shareholderTx.find(x=>x.id===b.dataset.shDel); if(!t) return;
-    if(!confirm(`刪除 ${empName(t.shId)} 的這筆${t.kind==='borrow'?'借款':'還款'} ${money(t.amount)}？\n對應的品佑帳戶收支也會一起移除。`)) return;
-    state.ledger=state.ledger.filter(x=>x.id!==t.ledgerId && x.shTxId!==t.id);
+    if(!confirm(`刪除 ${empName(t.shId)} 的這筆${t.kind==='borrow'?'借款':'還款'} ${money(t.amount)}？`)) return;
+    state.ledger=state.ledger.filter(x=>x.id!==t.ledgerId && x.shTxId!==t.id); // 清掉舊版連動的帳戶收支
     state.shareholderTx=state.shareholderTx.filter(x=>x.id!==t.id);
     saveData(); render();
   });
-  document.querySelectorAll('[data-sh-offset]').forEach(b=>b.onclick=()=>{
-    const pid=b.dataset.shOffset;
+  document.querySelectorAll('[data-sh-repay]').forEach(b=>b.onclick=()=>{
+    const pid=b.dataset.shRepay;
     const debt=state.shareholderTx.filter(t=>t.shId===pid).reduce((s,t)=>s+(t.kind==='borrow'?1:-1)*(Number(t.amount)||0),0);
     if(debt<=0){ alert('這位股東目前沒有欠品佑。'); return; }
-    if(!state.parkAccId||!state.accounts.some(a=>a.id===state.parkAccId)){ alert('請先選定品佑帳戶。'); return; }
-    const s=prompt(`用 ${empName(pid)} 的獎金抵扣多少欠款？目前欠品佑 ${money(debt)}\n（抵扣＝視為他用獎金還了品佑，發獎金時要少發這麼多給他）`, Math.round(debt));
+    const s=prompt(`${empName(pid)} 還了多少現金給品佑？目前欠 ${money(debt)}\n（用獎金扣抵不用登記，發獎金時系統會自動扣）`, Math.round(debt));
     if(s===null) return;
     const v=Math.round(parseFloat(s)||0); if(v<=0){ alert('請輸入正確金額'); return; }
     const amt=Math.min(v,Math.round(debt));
-    const txId=uid(), ledId=uid();
-    state.shareholderTx.push({id:txId,shId:pid,kind:'repay',date:localISODate(),amount:amt,note:'獎金抵扣',ledgerId:ledId});
-    state.ledger.push({id:ledId,date:localISODate(),accId:state.parkAccId,kind:'in',amount:amt,note:'還款·'+empName(pid)+'·獎金抵扣',shTxId:txId});
+    state.shareholderTx.push({id:uid(),shId:pid,kind:'repay',date:localISODate(),amount:amt,note:'現金還款'});
     saveData(); render();
-    alert(`已用獎金抵扣 ${money(amt)}，${empName(pid)} 剩餘欠品佑 ${money(debt-amt)}。\n記得發獎金時實際少發這 ${money(amt)} 給他。`);
   });
+  // 一次清掉舊版「股東往來連動」寫進品佑帳戶的收支（改制後這些不該存在）
+  const shClean=document.getElementById('sh-cleanledger'); if(shClean) shClean.onclick=()=>{
+    const olds=state.ledger.filter(t=>t.shTxId);
+    if(!olds.length){ alert('沒有舊的連動紀錄。'); return; }
+    const net=olds.reduce((s,t)=>s+(t.kind==='in'?1:-1)*(Number(t.amount)||0),0);
+    if(!confirm(`要移除 ${olds.length} 筆由「股東往來」自動寫進品佑帳戶的收支嗎？\n\n改制後股東借款是從獎金扣，不記在公積金帳戶。\n移除後品佑帳戶餘額會變動 ${money(-net)}（回到不含這些借還款的狀態）。\n\n股東往來的借／還款紀錄本身會保留，不受影響。`)) return;
+    state.ledger=state.ledger.filter(t=>!t.shTxId);
+    state.shareholderTx.forEach(t=>{ delete t.ledgerId; });
+    saveData(); render();
+    alert(`已移除 ${olds.length} 筆連動收支。品佑帳戶餘額已更新。`);
+  };
 }
 
 // ---- PDF 匯出（以列印視窗產生，可存成 PDF 或直接列印）----
@@ -7084,18 +7089,17 @@ function viewParkAcc(){
 
   const balance=accountBalance(state.parkAccId); // 已扣完品佑垫付（記在帳戶支出）後的餘額
 
-  // 股東個人跟品佑借的錢是「應收」不是公司花掉的成本：分配公積金／獎金時要加回來當資產，
-  // 否則股東一借款，帳戶餘額變少就把公積金吃掉（公積金憑空出現缺口、獎金被壓到 0）。
+  // 股東個人跟品佑借錢＝預支自己的獎金：不記帳戶收支、不影響公積金，發獎金時從他的獎金扣。
   const shDebtOf=pid=>state.shareholderTx.filter(t=>t.shId===pid).reduce((s,t)=>s+(t.kind==='borrow'?1:-1)*(Number(t.amount)||0),0);
-  const shDebtTotal=partners.reduce((s,p)=>s+Math.max(0, shDebtOf(p.id)), 0); // 只加「還欠著」的，多還的不算
-  const allocBase=balance+shDebtTotal; // 可分配基礎＝現金餘額＋股東未還欠款
+  const shDebtTotal=partners.reduce((s,p)=>s+Math.max(0, shDebtOf(p.id)), 0);
+  const legacyShLedger=state.ledger.filter(t=>t.shTxId); // 舊版連動寫進帳戶的收支（可一鍵清除）
 
   // 公積金「該留」＝ max(你設定的至少留, 帳面該進的公積金)
   const minFund=Math.max(0, Number(state.minFund)||0);
   const targetFund=Math.max(minFund, Math.round(bookFund));
   // 分配：公積金先填「該留」，剩下分獎金（不夠照各人應拿比例分）
-  const fundPaid=Math.max(0, Math.min(allocBase, targetFund));
-  let availForBonus=Math.max(0, allocBase-fundPaid);
+  const fundPaid=Math.max(0, Math.min(balance, targetFund));
+  let availForBonus=Math.max(0, balance-fundPaid);
   let bonusPaid={}, oweThis={};
   partners.forEach(p=>{
     const tgt=targetBonus[p.id]||0;
@@ -7109,12 +7113,18 @@ function viewParkAcc(){
   });
   const fundShort=Math.max(0, targetFund-fundPaid); // 連「該留」都填不滿的部分
 
+  // 實發＝可發獎金 − 該股東預支（借款）未還的部分；扣不完的欠款留著，之後有獎金再扣
   const bonusRows=partners.map(p=>{
     const tgt=Math.round(targetBonus[p.id]||0), pay=bonusPaid[p.id]||0, owe=oweThis[p.id]||0;
-    const debt=shDebtOf(p.id);
-    return `<tr><td>${esc(p.name)} 管理獎金${debt>0?`<div style="font-size:11px;color:var(--danger)">⚠ 欠品佑 ${money(debt)}　<button class="act" data-sh-offset="${p.id}" style="font-size:11px;padding:0 8px;height:24px">用獎金抵扣…</button></div>`:''}</td>
+    const debt=Math.max(0, Math.round(shDebtOf(p.id)));
+    const deduct=Math.min(pay, debt);          // 這次能從獎金扣回多少
+    const net=pay-deduct;                       // 實際要發給他的現金
+    const debtLeft=debt-deduct;                 // 扣完還欠著的
+    return `<tr><td>${esc(p.name)} 管理獎金${debt>0?`<div style="font-size:11px;color:var(--info)">已預支借款 ${money(debt)}${debtLeft>0?`（這次扣 ${money(deduct)}，還剩 ${money(debtLeft)}）`:'（這次全數扣清）'}</div>`:''}</td>
       <td class="num">${money(tgt)}</td>
-      <td class="num" style="font-weight:600;color:var(--accent)">${money(pay)}</td>
+      <td class="num"${debt>0?' style="color:var(--muted)"':' style="font-weight:600;color:var(--accent)"'}>${money(pay)}</td>
+      <td class="num" style="color:${deduct>0?'var(--danger)':'var(--muted)'}">${deduct>0?'−'+money(deduct).slice(1):'—'}</td>
+      <td class="num" style="font-weight:700;color:var(--accent)">${money(net)}</td>
       <td class="num" style="color:${owe>0?'var(--danger)':'var(--muted)'}">${owe>0?money(owe):'—'}</td></tr>`;
   }).join('');
 
@@ -7149,19 +7159,17 @@ function viewParkAcc(){
         ${vline('− 支出合計',money(parkOut),{color:'var(--danger)'})}
         ${txDetail(parkOutTx,'var(--danger)','out')}
         ${vline('＝ 餘額',money(balance),{strong:true})}
-        ${shDebtTotal>0?vline('＋ 股東未還欠款（應收，非支出）',money(shDebtTotal),{color:'var(--info)'})+vline('＝ 可分配基礎',money(allocBase),{strong:true}):''}
         ${vhead('② 公積金該留多少','b')}
         ${vline('帳面該進公積金',money(Math.round(bookFund)))}
         ${vline('你設定至少留',money(minFund))}
         ${vline('＝ 取大的（該留）',money(targetFund),{strong:true})}
-        ${vline('實際填入（不超過可分配基礎）',money(fundPaid),{strong:true})}
+        ${vline('實際填入（不超過餘額）',money(fundPaid),{strong:true})}
         ${fundShort>0?vline('連該留都還差',money(fundShort),{color:'var(--danger)'}):''}
         ${vhead('③ 獎金可發','c')}
-        ${vline('可分配基礎',money(allocBase))}
+        ${vline('餘額',money(balance))}
         ${vline('− 公積金',money(fundPaid))}
         ${vline('＝ 可發獎金',money(availForBonus),{strong:true})}
-        ${shDebtTotal>0&&availForBonus>balance-fundPaid?vline('※ 其中 '+money(shDebtTotal)+' 尚在股東手上（現金不足時先收回欠款再發）',
-          '',{sub:true}):''}
+        ${shDebtTotal>0?vline('− 股東已預支（發放時從各人獎金扣）',money(shDebtTotal),{color:'var(--danger)',sub:true}):''}
         ${vhead('④ 帳面該發獎金（各案相加）','d')}
         ${bonusByDeal||'<div class="sub" style="padding:5px 0">無</div>'}
         ${vline('合計應發',money(Math.round(totalTargetBonus)),{strong:true})}
@@ -7180,11 +7188,15 @@ function viewParkAcc(){
     const repay=txs.filter(t=>t.kind==='repay').reduce((s,t)=>s+(Number(t.amount)||0),0);
     return {p,borrow,repay,owe:borrow-repay};
   });
-  const shSumRows=shSum.filter(x=>x.borrow||x.repay).map(x=>`<tr><td>${esc(x.p.name)}</td><td class="num">${money(x.borrow)}</td><td class="num">${money(x.repay)}</td><td class="num" style="font-weight:700;color:${x.owe>0?'var(--danger)':(x.owe<0?'var(--info)':'var(--muted)')}">${money(x.owe)}</td><td>${x.owe>0?`<button class="act" data-sh-offset="${x.p.id}">用獎金抵扣…</button>`:''}</td></tr>`).join('');
+  const shSumRows=shSum.filter(x=>x.borrow||x.repay).map(x=>`<tr><td>${esc(x.p.name)}</td><td class="num">${money(x.borrow)}</td><td class="num">${money(x.repay)}</td><td class="num" style="font-weight:700;color:${x.owe>0?'var(--danger)':(x.owe<0?'var(--info)':'var(--muted)')}">${money(x.owe)}</td><td>${x.owe>0?`<button class="act" data-sh-repay="${x.p.id}">登記現金還款…</button>`:''}</td></tr>`).join('');
   const shTxRows=[...state.shareholderTx].sort((a,b)=>(b.date||'').localeCompare(a.date||'')).map(t=>`<tr><td>${esc(t.date||'')}</td><td>${esc(empName(t.shId))}</td><td>${t.kind==='borrow'?'<span class="tag" style="background:#fee2e2;color:#991b1b">借款</span>':'<span class="tag" style="background:#dcfce7;color:#166534">還款</span>'}</td><td class="num">${money(t.amount)}</td><td>${esc(t.note||'')}</td><td><button class="act danger" data-sh-del="${t.id}">刪</button></td></tr>`).join('');
   const shCard=partners.length?`<div class="card">
     <div style="font-size:14px;font-weight:600;margin-bottom:4px">股東往來（跟品佑借還）</div>
-    <p class="sub" style="margin:0 0 8px">股東跟品佑借錢／還錢記這裡。<b>借款</b>→品佑帳戶自動記一筆支出、該股東「欠品佑」增加；<b>還款</b>→品佑帳戶自動記一筆收入、欠額減少。這些自動產生的帳戶收支不能在「公積金帳戶」直接刪，要回這張卡片刪（借款刪掉時對應支出一起移除）。<br><b style="color:var(--info)">股東借款不會吃掉公積金</b>：借出去的錢算「應收」（他要還的），算公積金與獎金時會加回來，不會因為股東借錢就讓公積金憑空出現缺口。</p>
+    <p class="sub" style="margin:0 0 8px">股東個人跟品佑借錢＝<b>預支自己的獎金</b>。<b>不會記進公積金帳戶、不影響公積金</b>；發獎金時系統自動從該股東的獎金扣回（見上方「扣預支」欄），扣不完的留著下次再扣。<br><b>借款</b>＝他從品佑拿走錢；<b>還款</b>＝他拿現金還回來（用獎金扣抵不用登記，系統會自動扣）。</p>
+    ${legacyShLedger.length?`<div style="background:var(--warn-bg);color:var(--warn-ink);border-radius:8px;padding:9px 12px;margin-bottom:8px;font-size:13px">
+      ⚠ 偵測到 ${legacyShLedger.length} 筆<b>舊版</b>由股東往來自動寫進品佑帳戶的收支。改制後股東借款不記在公積金帳戶，建議清掉以免帳目重複。
+      <button class="act" id="sh-cleanledger" style="margin-left:6px;border:1px solid var(--warn-ink);border-radius:6px;padding:0 10px;height:28px;color:var(--warn-ink)">清除這些帳戶收支</button>
+    </div>`:''}
     <div class="row" style="align-items:flex-end;margin-bottom:8px">
       <div class="field"><label>股東</label><select id="sh-emp">${shOptsHtml}</select></div>
       <div class="field"><label>動作</label><select id="sh-kind"><option value="borrow">借款（向品佑借）</option><option value="repay">還款（還給品佑）</option></select></div>
@@ -7213,11 +7225,13 @@ function viewParkAcc(){
   ${verify}
   <div class="card">
     <div style="font-size:14px;font-weight:600;margin-bottom:6px">本期分配（公積金先填該留，獎金不夠照比例分）</div>
-    <p class="sub" style="margin:0 0 8px">餘額 ${money(balance)} 先填公積金 ${money(fundPaid)}，剩 ${money(availForBonus)} 分獎金。獎金不夠時按各人應拿比例分，少拿的列在「本期少拿」，可累加到下方「累計欠獎金」。</p>
-    <table><thead><tr><th>項目</th><th class="num">應拿</th><th class="num">本期實發</th><th class="num">本期少拿</th></tr></thead><tbody>
+    <p class="sub" style="margin:0 0 8px">餘額 ${money(balance)} 先填公積金 ${money(fundPaid)}，剩 ${money(availForBonus)} 分獎金。獎金不夠時按各人應拿比例分，少拿的列在「本期少拿」，可累加到下方「累計欠獎金」。<b>股東先前跟品佑借的錢，在「扣預支」欄直接從他的獎金扣回</b>，不影響公積金。</p>
+    <table><thead><tr><th>項目</th><th class="num">應拿</th><th class="num">可發</th><th class="num">扣預支</th><th class="num">實發現金</th><th class="num">本期少拿</th></tr></thead><tbody>
       ${bonusRows}
-      <tr><td>公積金</td><td class="num">${money(targetFund)}</td><td class="num" style="font-weight:600">${money(fundPaid)}</td><td class="num">${fundShort>0?money(fundShort):'—'}</td></tr>
-      <tr class="total-row" style="font-weight:600"><td>合計</td><td class="num">${money(Math.round(totalTargetBonus)+targetFund)}</td><td class="num">${money(fundPaid+partners.reduce((s,p)=>s+(bonusPaid[p.id]||0),0))}</td><td class="num"></td></tr>
+      <tr><td>公積金</td><td class="num">${money(targetFund)}</td><td class="num">${money(fundPaid)}</td><td class="num">—</td><td class="num" style="font-weight:600">${money(fundPaid)}</td><td class="num">${fundShort>0?money(fundShort):'—'}</td></tr>
+      ${(()=>{ const payAll=partners.reduce((s,p)=>s+(bonusPaid[p.id]||0),0);
+        const dedAll=partners.reduce((s,p)=>s+Math.min(bonusPaid[p.id]||0, Math.max(0,Math.round(shDebtOf(p.id)))),0);
+        return `<tr class="total-row" style="font-weight:600"><td>合計</td><td class="num">${money(Math.round(totalTargetBonus)+targetFund)}</td><td class="num">${money(payAll+fundPaid)}</td><td class="num" style="color:${dedAll>0?'var(--danger)':'inherit'}">${dedAll>0?'−'+money(dedAll).slice(1):'—'}</td><td class="num">${money(payAll+fundPaid-dedAll)}</td><td class="num"></td></tr>`; })()}
     </tbody></table>
     ${partners.some(p=>oweThis[p.id]>0)?`<button class="btn" id="park-addowe" style="margin-top:10px">把本期少拿累加到「欠獎金」</button>`:''}
     <p class="sub" style="margin-top:8px">公積金 ${money(fundPaid)} 請你自行分配到東澤／廣昕帳戶（讓兩邊平衡）。實際撥款後到「公積金帳戶」記收支。</p>
