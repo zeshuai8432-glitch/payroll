@@ -457,26 +457,50 @@ const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2,7
 const empName = id => { const e=state.employees.find(x=>x.id===id); return e?e.name:'（已移除）'; };
 const siteName = id => { const s=state.sites.find(x=>x.id===id); return s?s.name:'（已移除）'; };
 const recordLabel = r => r.type==='請假'?'請假':r.type==='休假'?'休假':siteName(r.siteId);
+// 單價欄支援複價算式（140+140）：只允許數字與 + - * / ( ) 小數點
+function evalPriceExpr(v){
+  if(v==null) return NaN;
+  let s=String(v).trim().replace(/×/g,'*').replace(/÷/g,'/').replace(/[，,\s]/g,'');
+  if(s==='') return NaN;
+  if(!/^[0-9+\-*/().]+$/.test(s)) return NaN;
+  try{ const r=Function('"use strict";return('+s+')')(); return (typeof r==='number'&&isFinite(r))?r:NaN; }catch(e){ return NaN; }
+}
+const isPriceExpr = v => /[+\-*/()×÷]/.test(String(v||'').replace(/^\s*-?[\d.]+/,''));
+// 間數（複數房間）：沒填或 <=0 一律當 1，舊資料不受影響
+const billingRooms = b => { const r=Number(b&&b.rooms); return (!isNaN(r)&&r>0)?r:1; };
 const billingAmount = b => {
   const qty=Number(b&&b.qty), unitPrice=Number(b&&b.unitPrice);
-  if(b&&b.qty!==undefined&&b.unitPrice!==undefined&&!isNaN(qty)&&qty>0&&!isNaN(unitPrice)&&unitPrice>=0) return qty*unitPrice;
+  if(b&&b.qty!==undefined&&b.unitPrice!==undefined&&!isNaN(qty)&&qty>0&&!isNaN(unitPrice)&&unitPrice>=0) return qty*unitPrice*billingRooms(b);
   return Number(b&&b.amount)||0;
 };
 const billingLineMeta = b => {
   if(!b||b.qty===undefined||b.unitPrice===undefined) return '';
-  return `${esc(b.unit||'式')} × ${Number(b.qty)||0} × ${money(Number(b.unitPrice)||0)}`;
+  const rm=billingRooms(b);
+  return `${esc(b.unit||'式')} × ${Number(b.qty)||0}${rm>1?` × ${rm} 間`:''} × ${money(Number(b.unitPrice)||0)}${b.priceExpr?`（${esc(b.priceExpr)}）`:''}`;
 };
 function readBillingLine(prefix){
   const unit=(document.getElementById(prefix+'-unit')||{}).value||'式';
   const qty=parseFloat((document.getElementById(prefix+'-qty')||{}).value);
-  const unitPrice=parseFloat((document.getElementById(prefix+'-unit-price')||{}).value);
-  return {unit:unit.trim()||'式', qty, unitPrice, amount:qty*unitPrice};
+  const rawP=(document.getElementById(prefix+'-unit-price')||{}).value;
+  const unitPrice=evalPriceExpr(rawP);
+  const priceExpr=isPriceExpr(rawP)?String(rawP).trim():'';
+  const rmEl=document.getElementById(prefix+'-rooms');
+  const rmRaw=rmEl?parseFloat(rmEl.value):NaN;
+  const rooms=(!isNaN(rmRaw)&&rmRaw>0)?rmRaw:1;
+  return {unit:unit.trim()||'式', qty, unitPrice, priceExpr, rooms, amount:qty*unitPrice*rooms};
 }
 function bindBillingSubtotal(prefix){
   const qty=document.getElementById(prefix+'-qty'), unitPrice=document.getElementById(prefix+'-unit-price'), out=document.getElementById(prefix+'-subtotal');
   if(!qty||!unitPrice||!out) return;
-  const calc=()=>{ const q=parseFloat(qty.value), p=parseFloat(unitPrice.value); out.textContent=(!isNaN(q)&&!isNaN(p))?money(q*p):'$0'; };
-  qty.oninput=calc; unitPrice.oninput=calc; calc();
+  const rooms=document.getElementById(prefix+'-rooms');
+  const calc=()=>{
+    const q=parseFloat(qty.value), p=evalPriceExpr(unitPrice.value);
+    const rRaw=rooms?parseFloat(rooms.value):NaN, r=(!isNaN(rRaw)&&rRaw>0)?rRaw:1;
+    out.textContent=(!isNaN(q)&&!isNaN(p))?money(q*p*r):'$0';
+    const hint=document.getElementById(prefix+'-price-hint');
+    if(hint) hint.textContent=(!isNaN(p)&&isPriceExpr(unitPrice.value))?('= '+money(p)):'';
+  };
+  qty.oninput=calc; unitPrice.oninput=calc; if(rooms) rooms.oninput=calc; calc();
 }
 const uniqueTexts = arr => [...new Set((arr||[]).map(x=>String(x||'').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'zh-Hant'));
 function rememberText(kind, value){
@@ -514,7 +538,7 @@ function rememberDeletedPhoto(id,url){
   state.billingPhotoDeleted=state.billingPhotoDeleted||{};
   state.billingPhotoDeleted[id]=[...new Set([...(state.billingPhotoDeleted[id]||[]),url])];
 }
-const APP_VERSION='vN2026.07.28a-issuer'; // 版本號顯示在右上角，方便確認拿到新版
+const APP_VERSION='vN2026.07.31a-rooms'; // 版本號顯示在右上角，方便確認拿到新版
 // 本地時區的今天（yyyy-mm-dd）。toISOString 是 UTC，台灣早上 8 點前會差一天
 function localISODate(d=new Date()){ return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
 // 單價可打算式（例：1200*1.1）
@@ -1818,7 +1842,7 @@ function bind(){
     if(!date||!site||isNaN(line.qty)||line.qty<=0||isNaN(line.unitPrice)||line.unitPrice<0){ alert('請填日期、案場、數量與單價'); return; }
     rememberText('clients',client);
     const issuerId=(document.getElementById('bnr-issuer')||{}).value||'';
-    state.billings.push({id:uid(),no:nextBillNo('請款單'),docType:'請款單',date,site,unit:line.unit,qty:line.qty,unitPrice:line.unitPrice,amount:line.amount,method,client,note,settled,issuerId});
+    state.billings.push({id:uid(),no:nextBillNo('請款單'),docType:'請款單',date,site,unit:line.unit,qty:line.qty,rooms:line.rooms,unitPrice:line.unitPrice,priceExpr:line.priceExpr,amount:line.amount,method,client,note,settled,issuerId});
     billingReqDraft=null; saveData(); render();
   };
   document.querySelectorAll('[data-copy-req]').forEach(b=>b.onclick=()=>{
@@ -1838,7 +1862,7 @@ function bind(){
     if(!date||!site||isNaN(line.qty)||line.qty<=0||isNaN(line.unitPrice)||line.unitPrice<0){ alert('請填日期、案場、數量與單價'); return; }
     rememberText('clients',client);
     const issuerId=(document.getElementById('bna-issuer')||{}).value||'';
-    state.billings.push({id:uid(),no:nextBillNo('追加單'),docType:'追加單',date,site,unit:line.unit,qty:line.qty,unitPrice:line.unitPrice,amount:line.amount,client,note,remark,settled,issuerId});
+    state.billings.push({id:uid(),no:nextBillNo('追加單'),docType:'追加單',date,site,unit:line.unit,qty:line.qty,rooms:line.rooms,unitPrice:line.unitPrice,priceExpr:line.priceExpr,amount:line.amount,client,note,remark,settled,issuerId});
     billingAddDraft=null; saveData(); render();
   };
   document.querySelectorAll('[data-copy-add]').forEach(b=>b.onclick=()=>{
@@ -1854,7 +1878,7 @@ function bind(){
     if(isNaN(line.qty)||line.qty<=0||isNaN(line.unitPrice)||line.unitPrice<0){ alert('請填數量與單價'); return; }
     bill.date=document.getElementById('bae-date').value;
     bill.site=document.getElementById('bae-site').value.trim();
-    bill.unit=line.unit; bill.qty=line.qty; bill.unitPrice=line.unitPrice; bill.amount=line.amount;
+    bill.unit=line.unit; bill.qty=line.qty; bill.rooms=line.rooms; bill.unitPrice=line.unitPrice; bill.priceExpr=line.priceExpr; bill.amount=line.amount;
     bill.client=document.getElementById('bae-client').value.trim();
     const baeIss=document.getElementById('bae-issuer'); if(baeIss) bill.issuerId=baeIss.value;
     bill.note=document.getElementById('bae-note').value.trim();
@@ -2618,7 +2642,8 @@ function viewBillingReq(){
       <div class="field" style="flex:1;min-width:150px"><label>案場</label><select id="bnr-site">${siteSelOpts}</select></div>
       <div class="field"><label>單位</label><input id="bnr-unit" value="式" style="width:80px"></div>
       <div class="field"><label>數量</label><input type="number" id="bnr-qty" min="0" step="0.01" value="${billingReqDraft?'':'1'}" style="width:90px"></div>
-      <div class="field"><label>單價</label><input type="number" id="bnr-unit-price" min="0" step="1" style="width:120px"></div>
+      <div class="field"><label>間數</label><input type="number" id="bnr-rooms" min="1" step="1" value="${billingReqDraft&&billingReqDraft.rooms?billingReqDraft.rooms:'1'}" title="複數房間：數量 × 間數 × 單價" style="width:80px"></div>
+      <div class="field"><label>單價（可複價）</label><input id="bnr-unit-price" inputmode="decimal" placeholder="140+140" style="width:130px"><div id="bnr-price-hint" style="font-size:11px;color:var(--muted);height:14px"></div></div>
       <div class="field"><label>小計</label><div id="bnr-subtotal" class="num" style="height:38px;display:flex;align-items:center;font-weight:700">$0</div></div>
       <div class="field"><label>方式</label><input id="bnr-method" placeholder="匯款" value="${billingReqDraft?esc(billingReqDraft.method):''}" style="width:100px"></div>
       <div class="field" style="min-width:160px"><label>開單公司</label><select id="bnr-issuer">${myCompanyList().map(c=>`<option value="${esc(c.id)}" ${billingReqDraft&&billingReqDraft.issuerId===c.id?'selected':''}>${esc(c.name)}</option>`).join('')}</select></div>
@@ -2645,7 +2670,8 @@ function viewBillingAdd(){
             <div class="field" style="flex:1;min-width:150px"><label>案場</label><select id="bae-site">${siteSelectOptions(b.site||'')}</select></div>
             <div class="field"><label>單位</label><input id="bae-unit" value="${esc(b.unit||'式')}" style="width:80px"></div>
             <div class="field"><label>數量</label><input type="number" id="bae-qty" value="${b.qty||1}" step="0.01" style="width:90px"></div>
-            <div class="field"><label>單價</label><input type="number" id="bae-unit-price" value="${b.unitPrice||0}" step="1" style="width:120px"></div>
+            <div class="field"><label>間數</label><input type="number" id="bae-rooms" value="${billingRooms(b)}" min="1" step="1" title="複數房間：數量 × 間數 × 單價" style="width:75px"></div>
+            <div class="field"><label>單價（可複價）</label><input id="bae-unit-price" inputmode="decimal" value="${esc(String(b.priceExpr||b.unitPrice||0))}" placeholder="140+140" style="width:120px"><div id="bae-price-hint" style="font-size:11px;color:var(--muted);height:14px"></div></div>
             <div class="field"><label>小計</label><div id="bae-subtotal" class="num" style="height:38px;display:flex;align-items:center;font-weight:700">$0</div></div>
             <div class="field" style="min-width:160px"><label>開單公司</label><select id="bae-issuer">${myCompanyList().map(c=>`<option value="${esc(c.id)}" ${(b.issuerId||myCompanyList()[0].id)===c.id?'selected':''}>${esc(c.name)}</option>`).join('')}</select></div>
             <div class="field"><label>業主（開給誰）</label><input id="bae-client" list="client-memory-list" value="${esc(b.client||'')}" style="width:120px"></div>
@@ -2679,7 +2705,8 @@ function viewBillingAdd(){
       <div class="field" style="flex:1;min-width:150px"><label>案場</label><select id="bna-site">${siteSelectOptions('')}</select></div>
       <div class="field"><label>單位</label><input id="bna-unit" value="式" style="width:80px"></div>
       <div class="field"><label>數量</label><input type="number" id="bna-qty" min="0" step="0.01" value="${billingAddDraft?'':'1'}" style="width:90px"></div>
-      <div class="field"><label>單價</label><input type="number" id="bna-unit-price" min="0" step="1" style="width:120px"></div>
+      <div class="field"><label>間數</label><input type="number" id="bna-rooms" min="1" step="1" value="${billingAddDraft&&billingAddDraft.rooms?billingAddDraft.rooms:'1'}" title="複數房間：數量 × 間數 × 單價" style="width:80px"></div>
+      <div class="field"><label>單價（可複價）</label><input id="bna-unit-price" inputmode="decimal" placeholder="140+140" style="width:130px"><div id="bna-price-hint" style="font-size:11px;color:var(--muted);height:14px"></div></div>
       <div class="field"><label>小計</label><div id="bna-subtotal" class="num" style="height:38px;display:flex;align-items:center;font-weight:700">$0</div></div>
       <div class="field" style="min-width:160px"><label>開單公司</label><select id="bna-issuer">${myCompanyList().map(c=>`<option value="${esc(c.id)}" ${billingAddDraft&&billingAddDraft.issuerId===c.id?'selected':''}>${esc(c.name)}</option>`).join('')}</select></div>
       <div class="field"><label>業主（開給誰）</label><input id="bna-client" list="client-memory-list" placeholder="業主名稱" value="${billingAddDraft?esc(billingAddDraft.client):''}" style="width:120px"></div>
@@ -2763,7 +2790,7 @@ function buildBillingDocHTML(id){
   const photoSec=photos.length?`<div class="sec">施作照片</div><div data-photosec="1" style="display:flex;flex-wrap:wrap;gap:10px;margin:8px 0 14px;align-items:flex-start">${photos.map(url=>`<img src="${photoDisplayUrl(url)}" style="max-width:${pMaxW};width:auto;max-height:${pMaxH}px;object-fit:contain;border:1px solid #ddd;border-radius:4px;page-break-inside:avoid;-webkit-print-color-adjust:exact">`).join('')}</div>`:'';
   const signImg=sig?`<img src="${sig}">`:''; // 樣式由 .sigbox img 控制：固定高度、貼在簽名線上方
   const co=issuerOf(b);                      // 開單公司（抬頭＋匯款資訊）
-  const qty=Number(b.qty)||0, price=Number(b.unitPrice)||0;
+  const qty=Number(b.qty)||0, price=Number(b.unitPrice)||0, rooms=billingRooms(b);
   return `<div class="billdoc">
     <div class="dh">
       <div>
@@ -2781,9 +2808,9 @@ function buildBillingDocHTML(id){
       ${type!=='追加單'&&b.method?`<div><span class="lbl">方式</span>${esc(b.method)}</div>`:''}
     </div>
     <table class="items">
-      <thead><tr><th class="c-no">#</th><th>品項</th><th class="c-unit">單位</th><th class="num">數量</th><th class="num">單價</th><th class="num">小計</th></tr></thead>
+      <thead><tr><th class="c-no">#</th><th>品項</th><th class="c-unit">單位</th><th class="num">數量</th>${rooms>1?'<th class="num">間數</th>':''}<th class="num">單價</th><th class="num">小計</th></tr></thead>
       <tbody><tr><td class="c-no">1</td><td>${esc(b.note||type)}${b.remark?`<div style="font-size:11.5px;color:#6b7280;margin-top:3px">${esc(b.remark)}</div>`:''}</td>
-        <td class="c-unit">${esc(b.unit||'式')}</td><td class="num">${qty.toLocaleString('en-US')}</td><td class="num">${money(price)}</td><td class="num">${money(amount)}</td></tr></tbody>
+        <td class="c-unit">${esc(b.unit||'式')}</td><td class="num">${qty.toLocaleString('en-US')}</td>${rooms>1?`<td class="num">${rooms} 間</td>`:''}<td class="num">${money(price)}${b.priceExpr?`<div style="font-size:10.5px;color:#9ca3af">${esc(b.priceExpr)}</div>`:''}</td><td class="num">${money(amount)}</td></tr></tbody>
     </table>
     <div class="sumwrap"><table class="sum"><tr class="grand"><td>總計</td><td>${money(amount)}</td></tr></table></div>
     ${billBankInfoHtml(co)}
