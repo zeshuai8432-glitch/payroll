@@ -108,7 +108,7 @@ body.printing #print-overlay{display:block;position:absolute;inset:0;background:
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.07.31v-selfrooms';
+const APP_VERSION='vG2026.07.31w-retaintext';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -725,7 +725,7 @@ function viewProg(proj){
       const rtPend=rows.filter(x=>!x.pp.rtReleased).reduce((s,x)=>s+x.rt,0);
       const rtBack=rows.filter(x=>x.pp.rtReleased).reduce((s,x)=>s+x.rt,0);
       h+=`<div class="card" style="margin-bottom:12px"><h3>扣款追蹤${wp?`　代扣 ${wp}%`:''}${rp?`　保留款 ${rp}%`:''}</h3>
-        <div class="muted" style="font-size:12.5px;margin-bottom:8px">${[wp?`<b>代扣稅</b>：廠商取得公司登記、補開發票後回補`:'',rp?`<b>保留款</b>：完工驗收／保固期滿後放款`:''].filter(Boolean).join('；')}。下面就是你總共還欠廠商多少。</div>
+        <div class="muted" style="font-size:12.5px;margin-bottom:8px">${[wp?`<b>代扣稅</b>：廠商取得公司登記、補開發票後回補`:'',rp?`<b>保留款</b>：完工驗收後放款（金額可直接改，湊整用）`:''].filter(Boolean).join('；')}。下面就是你總共還欠廠商多少。</div>
         <div class="grid" style="margin-bottom:8px">
           ${wp?`<div class="stat"><div class="l">代扣·未回補</div><div class="v" style="color:#fca5a5">${money(whPend)}</div>${whBack?`<div class="l">已回補 ${money(whBack)}</div>`:''}</div>`:''}
           ${itPend?`<div class="stat"><div class="l">補稅·待付（補開發票後）</div><div class="v" style="color:var(--accent2)">${money(itPend)}</div></div>`:''}
@@ -894,7 +894,7 @@ function viewSet(proj){
     <div class="rowline">補開發票補稅 % <input id="set-invtax" inputmode="decimal" style="width:90px" value="${proj.invoiceTaxPct!==undefined?proj.invoiceTaxPct:5}" placeholder="5">
       <span class="muted" style="font-size:12px">談的是<b>未稅價</b>時：廠商日後補開發票，你要另外補的營業稅％（一般 5）。談含稅價就填 0。只在「未稅」列印模式＋有代扣時才會用到。</span></div>
     <div class="rowline">保留款 % <input id="set-retain" inputmode="decimal" style="width:90px" value="${proj.retainPct||''}" placeholder="0">
-      <span class="muted" style="font-size:12px">每期先保留的％（例：5），通常完工或保固期滿才放款。填 0 或空白＝不保留。放款時到「進度請款」按已放款。</span></div>
+      <span class="muted" style="font-size:12px">每期先保留的％（例：5），通常完工後才放款。填 0 或空白＝不保留。放款時到「進度請款」按已放款。</span></div>
     <div class="rowline">簽約總價（議價後）<input id="set-signed" inputmode="decimal" style="min-width:180px" value="${proj.signedTotal||''}" placeholder="空白＝照明細 ${money(proj.blocks.reduce((s,b)=>s+b.items.reduce((x,i)=>x+i.amount*b.count,0),0))}"></div>
     <div class="muted" style="font-size:12px;margin-bottom:6px">議價後總價跟明細不同時填這裡（例：明細 ${money(proj.blocks.reduce((s,b)=>s+b.items.reduce((x,i)=>x+i.amount*b.count,0),0))}、簽約 25,500,000）。明細不用改，程式會自動照比例折讓每期請款。</div>
     <button class="btn" id="set-save">儲存</button></div>
@@ -1002,7 +1002,7 @@ function printDoc(proj){
     const actual=c.billActual;
     const tax=Math.round(actual*0.05);
     const whPct=Math.max(0,Number(proj.withholdPct)||0);              // 代扣％（未有公司登記的廠商暫扣）
-    const rtPct=Math.max(0,Number(proj.retainPct)||0);                // 保留款％（完工/保固期滿才放）
+    const rtPct=Math.max(0,Number(proj.retainPct)||0);                // 保留款％（完工後才放）
     const payBase=taxMode==='incl'?actual+tax:actual;
     const wh=whPct>0?Math.round(payBase*whPct/100):0;
     const rt=retainOf(proj,c.period,payBase);
@@ -1048,7 +1048,7 @@ function printDoc(proj){
       <tr class="tot"><td><b>本次實請金額</b></td><td class="num"><b>${money(actual)}</b></td></tr>
       ${taxMode==='incl'?`<tr><td>營業稅 5%（外加）</td><td class="num">${money(tax)}</td></tr><tr class="tot"><td><b>本次含稅實請</b></td><td class="num"><b>${money(actual+tax)}</b></td></tr>`:''}
       ${whPct>0?`<tr><td>代扣所得稅 ${whPct}%（尚未取得公司登記，暫扣）</td><td class="num">−${money(wh).slice(1)}</td></tr>`:''}
-      ${rt>0?`<tr><td>保留款${(c.period.rtAmt!==undefined&&c.period.rtAmt!=='')?'':` ${rtPct}%`}（完工／保固期滿後放款）</td><td class="num">−${money(rt).slice(1)}</td></tr>`:''}
+      ${rt>0?`<tr><td>保留款${(c.period.rtAmt!==undefined&&c.period.rtAmt!=='')?'':` ${rtPct}%`}（完工後放款）</td><td class="num">−${money(rt).slice(1)}</td></tr>`:''}
       ${(whPct>0||rt>0)?`<tr class="tot"><td><b>本次實付</b></td><td class="num"><b>${money(payBase-wh-rt)}</b></td></tr>`:''}
       </table>`;
     if(proj.invTitle||proj.invTaxId||proj.invAddr){
@@ -1064,7 +1064,7 @@ function printDoc(proj){
     if(whPct>0||rt>0){
       const notes=[];
       if(whPct>0) notes.push(`代扣款 ${money(wh)}${c.period.whRefunded?`已於 ${esc(c.period.whRefundDate||'')} 補開發票後回補`:`暫由本公司代為保管，待貴公司取得公司登記、補開發票後全數退還`}`);
-      if(rt>0) notes.push(`保留款 ${money(rt)}${c.period.rtReleased?`已於 ${esc(c.period.rtReleaseDate||'')} 放款`:`依約於完工驗收／保固期滿後無息退還`}`);
+      if(rt>0) notes.push(`保留款 ${money(rt)}${c.period.rtReleased?`已於 ${esc(c.period.rtReleaseDate||'')} 放款`:`依約於完工驗收後無息退還`}`);
       h+=`<div style="font-size:10.5px;color:#555;margin:-4px 0 8px">＊${notes.join('；')}。</div>`;
     }
     h+=`<div style="font-weight:700;font-size:12.5px;margin:10px 0 4px">四、完成進度明細${showAll?'（全部項目）':'（僅列有進度之項目）'}</div>`;
