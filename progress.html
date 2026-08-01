@@ -108,7 +108,7 @@ body.printing #print-overlay{display:block;position:absolute;inset:0;background:
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.07.31o-selfdo';
+const APP_VERSION='vG2026.07.31p-withhold';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -688,8 +688,37 @@ function viewProg(proj){
     <div style="display:flex;justify-content:space-between"><span>本次應請（計算）</span><b>${money(c.billComputed)}</b></div>`:''}
     ${c.billRound?`<div style="display:flex;justify-content:space-between;color:var(--muted)"><span>尾差調整（湊整）</span><span>${moneyS(c.billRound)}</span></div>`:''}
     <div style="display:flex;justify-content:space-between;font-size:16px;margin-top:4px;color:var(--accent2)"><span><b>本次實請金額</b></span><b data-c="g-actual">${money(c.billActual)}</b></div>
+    ${(()=>{ const pct=Math.max(0,Number(proj.withholdPct)||0); if(!pct) return '';
+      const wh=Math.round(c.billActual*pct/100);
+      return `<div style="display:flex;justify-content:space-between;color:#fca5a5"><span>代扣所得稅 ${pct}%</span><span>−${money(wh).slice(1)}</span></div>
+      <div style="display:flex;justify-content:space-between;font-size:15px"><span><b>本次實付</b></span><b>${money(c.billActual-wh)}</b></div>`; })()}
   </div>`;
   h+=`</div>`;
+  // ── 代扣稅款追蹤（廠商還沒公司登記時暫扣，補開發票後回補）──
+  {
+    const pct=Math.max(0,Number(proj.withholdPct)||0);
+    if(pct>0){
+      const rows=proj.periods.map((pp,i)=>{
+        const cc=calc(proj,i); const wh=Math.round(cc.billActual*pct/100);
+        return {i,pp,wh,done:!!pp.whRefunded};
+      }).filter(x=>x.wh>0);
+      const pend=rows.filter(x=>!x.done).reduce((s,x)=>s+x.wh,0);
+      const back=rows.filter(x=>x.done).reduce((s,x)=>s+x.wh,0);
+      h+=`<div class="card" style="margin-bottom:12px"><h3>代扣稅款 ${pct}%（待補開發票後回補）</h3>
+        <div class="muted" style="font-size:12.5px;margin-bottom:8px">廠商還沒取得公司登記時先扣 ${pct}%；日後她補開發票，按「已回補」記錄退款，兩邊帳目一目了然。</div>
+        <div class="grid" style="margin-bottom:8px">
+          <div class="stat"><div class="l">尚未回補（你還欠她）</div><div class="v" style="color:#fca5a5">${money(pend)}</div></div>
+          <div class="stat"><div class="l">已回補</div><div class="v" style="color:var(--ok)">${money(back)}</div></div>
+        </div>
+        ${rows.length?`<table><tr><th>期別</th><th>日期</th><th class="num">該期實請</th><th class="num">代扣 ${pct}%</th><th>狀態</th></tr>
+        ${rows.map(x=>`<tr><td>第 ${x.pp.no} 期</td><td>${esc(x.pp.date||'')}</td><td class="num">${money(Math.round(x.wh*100/pct))}</td><td class="num">${money(x.wh)}</td>
+          <td>${x.done
+            ? `<span class="tag" style="background:rgba(52,211,153,.18);border-color:rgba(52,211,153,.5);color:#6ee7b7">已回補 ${esc(x.pp.whRefundDate||'')}</span> <button class="btn sub sm" data-whtoggle="${x.i}">取消</button>`
+            : `<button class="btn sm" data-whtoggle="${x.i}">標記已回補</button>`}</td></tr>`).join('')}
+        </table>`:'<div class="muted" style="font-size:13px">尚無代扣紀錄。</div>'}
+      </div>`;
+    }
+  }
   for(const cb of c.blocks){
     const b=cb.blk;
     h+=`<details class="blk"${openBlk.has(b.id)?' open':''} data-blk="${b.id}"><summary>
@@ -812,6 +841,8 @@ function viewSet(proj){
     <div class="rowline">工程名稱 <input id="set-name" style="min-width:320px" value="${esc(proj.name)}"></div>
     <div class="rowline">業主／甲方 <input id="set-owner" style="min-width:220px" value="${esc(proj.owner||'')}" placeholder="請款對象"></div>
     <div class="rowline">承攬／乙方 <input id="set-vendor" style="min-width:220px" value="${esc(proj.vendor||'')}" placeholder="自己公司名"></div>
+    <div class="rowline">代扣所得稅 % <input id="set-withhold" inputmode="decimal" style="width:90px" value="${proj.withholdPct||''}" placeholder="0">
+      <span class="muted" style="font-size:12px">廠商還沒公司登記時暫扣的％（例：3）。填 0 或空白＝不代扣。之後補開發票再到「進度請款」按回補。</span></div>
     <div class="rowline">簽約總價（議價後）<input id="set-signed" inputmode="decimal" style="min-width:180px" value="${proj.signedTotal||''}" placeholder="空白＝照明細 ${money(proj.blocks.reduce((s,b)=>s+b.items.reduce((x,i)=>x+i.amount*b.count,0),0))}"></div>
     <div class="muted" style="font-size:12px;margin-bottom:6px">議價後總價跟明細不同時填這裡（例：明細 ${money(proj.blocks.reduce((s,b)=>s+b.items.reduce((x,i)=>x+i.amount*b.count,0),0))}、簽約 25,500,000）。明細不用改，程式會自動照比例折讓每期請款。</div>
     <button class="btn" id="set-save">儲存</button></div>
@@ -918,6 +949,8 @@ function printDoc(proj){
   const build=(taxMode,showAll)=>{
     const actual=c.billActual;
     const tax=Math.round(actual*0.05);
+    const whPct=Math.max(0,Number(proj.withholdPct)||0);              // 代扣％（未有公司登記的廠商暫扣）
+    const wh=whPct>0?Math.round((taxMode==='incl'?actual+tax:actual)*whPct/100):0;
     const f=c.factor, R=x=>Math.round((x||0)*f); // 依簽約總價比例分攤
     let h=`<div class="pdoc">
       <h2>工程估驗請款單</h2>
@@ -959,7 +992,10 @@ function printDoc(proj){
       ${c.billRound?`<tr><td>尾差調整（湊整）</td><td class="num">${moneyS(c.billRound)}</td></tr>`:''}
       <tr class="tot"><td><b>本次實請金額</b></td><td class="num"><b>${money(actual)}</b></td></tr>
       ${taxMode==='incl'?`<tr><td>營業稅 5%</td><td class="num">${money(tax)}</td></tr><tr class="tot"><td><b>本次含稅實請</b></td><td class="num"><b>${money(actual+tax)}</b></td></tr>`:''}
+      ${whPct>0?`<tr><td>代扣所得稅 ${whPct}%（尚未取得公司登記，暫扣）</td><td class="num">−${money(wh).slice(1)}</td></tr>
+      <tr class="tot"><td><b>本次實付</b></td><td class="num"><b>${money((taxMode==='incl'?actual+tax:actual)-wh)}</b></td></tr>`:''}
       </table>`;
+    if(whPct>0) h+=`<div style="font-size:10.5px;color:#555;margin:-4px 0 8px">＊代扣款 ${money(wh)}${c.period.whRefunded?`已於 ${esc(c.period.whRefundDate||'')} 補開發票後回補`:`暫由本公司代為保管，待貴公司取得公司登記、補開發票後全數退還`}。</div>`;
     h+=`<div style="font-weight:700;font-size:12.5px;margin:10px 0 4px">四、完成進度明細${showAll?'（全部項目）':'（僅列有進度之項目）'}</div>`;
     for(const cb of c.blocks){
       const base=proj.hideZero?cb.items.filter(ci=>ci.v>0):cb.items;
@@ -1133,7 +1169,7 @@ function setProgInput(proj,blkId,itemId,kind,val){
 }
 
 document.addEventListener('click',async e=>{
-  const t=e.target.closest('[data-tab],[data-editblk],[data-delblk],[data-edititem],[data-delitem],[data-additem],[data-splititem],[data-sortitems],[data-grouptoggle],[data-groupmerge],[data-groupdetect],[data-selfone],[data-selfrest],[data-selfclear],[data-delmode],[data-delcancel],[data-delall],[data-delnone],[data-delinv],[data-delzero],[data-deldo],[data-copyinto],[data-copyok],[data-copycancel],[data-batchedit],[data-batchok],[data-batchcancel],[data-batchalledit],[data-batchallok],[data-batchallcancel],[data-itemok],[data-itemcancel],[data-blkok],[data-blkcancel],[data-bapply],[data-editextra],[data-delextra],#btn-import,#btn-import2,#btn-newproj,#btn-newproj2,#btn-addblk,#btn-addblk-ok,#btn-addperiod,#btn-delperiod,#btn-addextra,#btn-roundup,[data-gotoproj],#btn-print,#proj-groupall,#set-save,#proj-dup,#proj-detach,#backup-export,#backup-import-btn,#proj-del,#cloud-push,#cloud-pull');
+  const t=e.target.closest('[data-tab],[data-editblk],[data-delblk],[data-edititem],[data-delitem],[data-additem],[data-splititem],[data-sortitems],[data-grouptoggle],[data-groupmerge],[data-groupdetect],[data-whtoggle],[data-selfone],[data-selfrest],[data-selfclear],[data-delmode],[data-delcancel],[data-delall],[data-delnone],[data-delinv],[data-delzero],[data-deldo],[data-copyinto],[data-copyok],[data-copycancel],[data-batchedit],[data-batchok],[data-batchcancel],[data-batchalledit],[data-batchallok],[data-batchallcancel],[data-itemok],[data-itemcancel],[data-blkok],[data-blkcancel],[data-bapply],[data-editextra],[data-delextra],#btn-import,#btn-import2,#btn-newproj,#btn-newproj2,#btn-addblk,#btn-addblk-ok,#btn-addperiod,#btn-delperiod,#btn-addextra,#btn-roundup,[data-gotoproj],#btn-print,#proj-groupall,#set-save,#proj-dup,#proj-detach,#backup-export,#backup-import-btn,#proj-del,#cloud-push,#cloud-pull');
   if(!t)return;
   const proj=curProj();
   if(t.dataset.tab){state.tab=t.dataset.tab;save();render();return;}
@@ -1278,6 +1314,12 @@ document.addEventListener('click',async e=>{
     save(); render();
     alert(`已收合 ${n} 組工序。\n合約明細與進度請款都會只顯示原本那條，點 ▸ 可展開看各道。\n金額、數量、進度都沒有變動。`);
     return;
+  }
+  if(t.dataset.whtoggle){
+    const pp=proj.periods[+t.dataset.whtoggle]; if(!pp) return;
+    if(pp.whRefunded){ delete pp.whRefunded; delete pp.whRefundDate; }
+    else { pp.whRefunded=true; pp.whRefundDate=today(); }
+    save(); render(); return;
   }
   if(t.dataset.selfone){
     const [blkId,itemId]=t.dataset.selfone.split('::');
@@ -1472,6 +1514,7 @@ document.addEventListener('click',async e=>{
     proj.vendor=document.getElementById('set-vendor').value.trim();
     const cv=document.getElementById('set-childvendor'); if(cv) proj.vendor=cv.value.trim(); // 子專案：廠商名以發包資訊欄為準
     const sv=num(document.getElementById('set-signed').value); proj.signedTotal=sv>0?sv:0;
+    const wv=num(document.getElementById('set-withhold').value); if(wv>0) proj.withholdPct=wv; else delete proj.withholdPct;
     save();render();alert('已儲存');return;
   }
   if(t.id==='backup-export'){
