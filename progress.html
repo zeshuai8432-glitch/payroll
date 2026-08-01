@@ -108,7 +108,7 @@ body.printing #print-overlay{display:block;position:absolute;inset:0;background:
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.07.31b-parentchild';
+const APP_VERSION='vG2026.07.31c-splitguard';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -341,16 +341,22 @@ function allocationOf(parent){
   // 超額判斷用「金額」：子專案可能把一條拆成骨架／封板，數量會變兩倍但金額仍相加，
   // 用金額比才不會誤報（140×12＋140×12 ＝ 280×12）。數量僅供參考顯示。
   const rows=[]; let over=0, totMother=0, totAlloc=0;
+  const seen=new Set();
   parent.blocks.forEach(b=>b.items.forEach(it=>{
     const mQty=(Number(it.qty)||0)*(Number(b.count)||0), mAmt=itemValue(it,b);
     const e=map[it.id]||{qty:0,amount:0,by:[]};
+    seen.add(it.id);
     totMother+=mAmt; totAlloc+=e.amount;
     const isOver=e.amount-mAmt>0.5;
     if(isOver) over++;
     rows.push({blk:b, it, mQty, mAmt, aQty:e.qty, aAmt:e.amount, by:e.by,
                leftQty:+(mQty-e.qty).toFixed(4), leftAmt:mAmt-e.amount, over:isOver});
   }));
-  return {rows, kids, over, totMother, totAlloc, totLeft:totMother-totAlloc};
+  // 孤兒：子專案的 srcId 在母專案已找不到（多半是母那條被拆開或刪掉了），
+  // 這些金額仍是實際發包出去的，要列出來提醒，不能默默消失。
+  const orphans=[]; let orphanAmt=0;
+  Object.keys(map).forEach(src=>{ if(!seen.has(src)){ orphans.push(map[src]); orphanAmt+=map[src].amount; } });
+  return {rows, kids, over, totMother, totAlloc, totLeft:totMother-totAlloc, orphans, orphanAmt};
 }
 function periodOf(p,idx){return p.periods[idx]||null;}
 function progOf(period,itemId){return (period&&period.prog&&period.prog[itemId])||{p:0,q:0};}
@@ -658,6 +664,12 @@ function viewAlloc(proj){
     h+=`<div class="notice" style="border-color:#dc2626;background:#fef2f2;color:#991b1b;margin-bottom:10px">
       <b>⚠ 有 ${al.over} 條細項的發包量超過母專案</b>——通常是複製子專案後沒刪乾淨、同一條被發包給兩家。下面紅底的就是，請到該子專案把多的刪掉或改數量。</div>`;
   }
+  if(al.orphans.length){
+    h+=`<div class="notice" style="border-color:#d97706;background:#fffbeb;color:#92400e;margin-bottom:10px">
+      <b>⚠ 有 ${al.orphans.length} 筆發包對應不到母專案的細項</b>（合計 ${money(al.orphanAmt)}）——通常是母專案那條後來被<b>拆開或刪掉</b>了。這些錢仍然發包出去了，但沒被算進上面的「已發包」。
+      <div style="margin-top:4px;font-size:12px">${al.orphans.map(o=>o.by.map(x=>`<span class="tag" style="cursor:pointer" data-gotoproj="${x.id}">${esc(x.name)} ${money(x.amount)}</span>`).join(' ')).join(' ')}</div>
+      <div style="margin-top:4px;font-size:12px">修法：到子專案把那幾條刪掉，再從母專案重新建一次子專案；或直接在母專案把對應的細項補回來。</div></div>`;
+  }
   h+=`<div class="muted" style="font-size:12.5px;margin-bottom:8px">母專案設定<b>發包總量與單價</b>；每個廠商子專案照 ✂ 認領的部分會列在這裡。<b>已分配不可超過母專案的量</b>。子專案單價可以跟母不同（議價結果），金額欄會照子專案實際單價算。</div>`;
   let curBlk=null;
   h+=`<table><tr><th>細項</th><th class="num">母·總量</th><th class="num">已分配量</th><th class="num">剩餘可發包</th><th>分給誰</th><th class="num">母·金額</th><th class="num">已發包金額</th></tr>`;
@@ -730,7 +742,7 @@ function openSplitModal(blk,it,onDone){
       <input class="sp-price" value="${useTerms?esc(String(useTerms[i])):''}" placeholder="可算式" style="height:34px;padding:0 8px;width:110px;text-align:right"></div>
   </div>`).join('');
   m.innerHTML=`<div class="box"><h3 style="margin-bottom:6px">拆工序：${esc(it.name)}</h3>
-    <div class="muted" style="font-size:12.5px;margin-bottom:10px">拆完會變成「<b>${esc(it.name)}-工序名</b>」數條，<b>數量都沿用 ${qfmt(it.qty)}</b>，單價各自填。原本這條會被取代。${useTerms?`<br>偵測到單價是 ${esc(it.priceExpr)}，已自動帶入各段。`:''}</div>
+    <div class="muted" style="font-size:12.5px;margin-bottom:10px">拆完會變成「<b>${esc(it.name)}-工序名</b>」數條，<b>數量都沿用 ${qfmt(it.qty)}</b>，單價各自填。<b style="color:#b45309">原本「${esc(it.name)}」這條會被取代（連同它已填的進度一起清除）</b>，金額總數不變（各段相加）。${useTerms?`<br>偵測到單價是 ${esc(it.priceExpr)}，已自動帶入各段。`:''}</div>
     <div id="sp-rows">${rows}</div>
     <button class="btn sub sm" id="sp-more" style="margin-top:4px">＋ 再加一道工序</button>
     <div class="rowline" style="margin-top:14px"><span style="flex:1"></span>
@@ -1071,6 +1083,9 @@ document.addEventListener('click',async e=>{
     const [blkId,itemId]=t.dataset.splititem.split('::');
     const b=proj.blocks.find(x=>x.id===blkId); if(!b) return;
     const it=b.items.find(x=>x.id===itemId); if(!it) return;
+    // 母專案：若已有子專案認領這一條，拆掉會讓子專案對應不到（發包分配算不出來）
+    const refs=childProjects(proj.id).filter(k=>k.blocks.some(kb=>kb.items.some(ki=>ki.srcId===it.id)));
+    if(refs.length&&!confirm(`「${it.name}」已經發包給：${refs.map(k=>k.name).join('、')}。\n\n拆開後這條會被取代，那些子專案就對應不到母專案的細項，發包分配會算不到它們（要回子專案重新對應）。\n\n建議：先在母專案拆好工序，再建子專案。\n\n還是要拆嗎？`))return;
     openSplitModal(b,it,parts=>{
       const i=b.items.indexOf(it); if(i<0) return;
       const made=parts.map(p=>{
