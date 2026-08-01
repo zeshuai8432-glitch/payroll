@@ -108,7 +108,7 @@ body.printing #print-overlay{display:block;position:absolute;inset:0;background:
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.07.31m-printfilter';
+const APP_VERSION='vG2026.07.31n-zerocount';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -511,7 +511,7 @@ function viewItems(proj){
     const inBatch=batchEdit===b.id||batchAll;
     h+=`<details class="blk"${openBlk.has(b.id)||editingBlk||itemAdd===b.id||inBatch?' open':''} data-blk="${b.id}"><summary>
       <b>${esc(b.name)}</b><span class="tag">${qfmt(b.count)} ${esc(b.unit)}</span>
-      <span class="tag">每${esc(b.unit)} ${money(bv/(b.count||1))}</span>${hid?`<span class="tag">已隱藏 ${hid} 條 0 元</span>`:''}
+      ${b.count?`<span class="tag">每${esc(b.unit)} ${money(bv/b.count)}</span>`:'<span class="tag" style="background:rgba(248,113,113,.18);border-color:rgba(248,113,113,.45);color:#fca5a5">不施作（0）</span>'}${hid?`<span class="tag">已隱藏 ${hid} 條 0 元</span>`:''}
       <span style="flex:1"></span><b>${money(bv)}</b>
       <button class="btn sub sm" data-editblk="${b.id}">編輯</button>
       <button class="btn bad sm" data-delblk="${b.id}">刪除</button></summary>
@@ -520,7 +520,7 @@ function viewItems(proj){
       h+=`<div class="rowline" style="flex-wrap:wrap;gap:8px;align-items:flex-end;margin-bottom:8px;padding:8px;background:var(--bg,#f8fafc);border-radius:8px">
         ${fld('區塊名稱',`<input id="bf-name" value="${esc(b.name)}" style="${ist};min-width:180px">`)}
         ${fld('單位',`<input id="bf-unit" value="${esc(b.unit)}" style="${ist};width:70px">`)}
-        ${fld('合約數量',`<input id="bf-count" type="number" inputmode="decimal" value="${b.count}" style="${ist};width:90px">`)}
+        ${fld('合約數量',`<input id="bf-count" type="number" inputmode="decimal" min="0" value="${b.count}" title="可填 0＝這個大項不施作，金額不計入但保留明細" style="${ist};width:90px">`)}
         <button class="btn sm" data-blkok="${b.id}">儲存</button><button class="btn sub sm" data-blkcancel="1">取消</button></div>`;
     }
     if(b.items.length&&!batchAll){
@@ -1143,7 +1143,7 @@ document.addEventListener('click',async e=>{
   if(t.dataset.editblk){ blkEdit=t.dataset.editblk; itemEdit=itemAdd=null; blkAdd=false; render(); return; }
   if(t.dataset.blkok){
     const b=proj.blocks.find(x=>x.id===t.dataset.blkok);if(!b)return;
-    b.name=(g('bf-name').value.trim())||b.name; b.unit=g('bf-unit').value.trim()||b.unit; b.count=Math.max(num(g('bf-count').value),0.01);
+    b.name=(g('bf-name').value.trim())||b.name; b.unit=g('bf-unit').value.trim()||b.unit; b.count=Math.max(num(g('bf-count').value),0);   // 允許 0＝這個大項不做（不計金額、保留結構）
     b.items.forEach(it=>it.amount=it.qty*it.price); blkEdit=null; save(); render(); return;
   }
   if(t.dataset.blkcancel){ blkEdit=null; blkAdd=false; render(); return; }
@@ -1352,13 +1352,14 @@ document.addEventListener('click',async e=>{
   if(t.id==='btn-addblk'){ blkAdd=true; itemEdit=itemAdd=blkEdit=null; render(); return; }
   if(t.id==='btn-addblk-ok'){
     const name=g('ba-name').value.trim(); if(!name){ alert('請填區塊名稱'); return; }
-    proj.blocks.push({id:uid(),name,unit:g('ba-unit').value.trim()||'間',count:Math.max(num(g('ba-count').value),0.01),items:[]});
+    proj.blocks.push({id:uid(),name,unit:g('ba-unit').value.trim()||'間',count:Math.max(num(g('ba-count').value),0),items:[]});
     blkAdd=false; save(); render(); return;
   }
   if(t.dataset.bapply){
     const b=proj.blocks.find(x=>x.id===t.dataset.bapply);if(!b)return;
     const inp=document.querySelector(`[data-bfill="${b.id}"]`);
     const n=Math.max(0,Math.min(num(inp&&inp.value),b.count));
+    if(!b.count){ alert(`「${b.name}」的間數是 0（不施作），沒有可填的完成量。`); return; }
     if(!confirm(`把「${b.name}」全部細項的完成％設成 ${qfmt(n)} ÷ ${qfmt(b.count)} ＝ ${pfmt(n/b.count)}？（會覆蓋原本逐條填的數字）`))return;
     const period=proj.periods[proj.periods.length-1];period.prog||(period.prog={});
     const p=n/b.count;
