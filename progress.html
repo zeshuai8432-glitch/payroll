@@ -108,7 +108,7 @@ body.printing #print-overlay{display:block;position:absolute;inset:0;background:
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.07.31i-proggroup';
+const APP_VERSION='vG2026.07.31j-copygroup';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -1355,10 +1355,12 @@ document.addEventListener('click',async e=>{
     const copy={
       id:uid(), name:nm, owner:proj.owner||'', vendor:alone?(proj.vendor||''):vendor,
       taxMode:proj.taxMode||'excl', signedTotal:0, hideZero:!!proj.hideZero,
-      blocks:proj.blocks.map(b=>({id:uid(),name:b.name,unit:b.unit,count:b.count,
+      blocks:proj.blocks.map(b=>{ const gmap={};   // 分組標記一起帶過去（給新的 groupId，避免跨專案撞號）
+        return {id:uid(),name:b.name,unit:b.unit,count:b.count,
         items:b.items.map(it=>({id:uid(),no:it.no,tag:it.tag||'',chapter:it.chapter||'',name:it.name,unit:it.unit,
           qty:it.qty,qtyExpr:it.qtyExpr||'',price:it.price,priceExpr:it.priceExpr||'',amount:it.amount,remark:it.remark||'',
-          ...(alone?{}:{srcId:it.id})}))})),  // srcId＝對應母專案的哪一條，用來算已分配
+          ...(it.groupId?{groupId:(gmap[it.groupId]||(gmap[it.groupId]=uid())),groupName:it.groupName||''}:{}),
+          ...(alone?{}:{srcId:it.id})}))}; }),  // srcId＝對應母專案的哪一條，用來算已分配
       periods:[], curPeriod:0, createdAt:Date.now(),
       ...(alone?{}:{parentId:proj.id})
     };
