@@ -509,7 +509,7 @@ const FS_ROOT = 'https://firestore.googleapis.com/v1/projects/'+FS_PROJECT+'/dat
 const FS_DOC_BASE = FS_ROOT+'payroll/';
 const FS_SIG_BASE = FS_ROOT+'payrollSignatures/';
 const FS_REST_URL = FS_DOC_BASE+'main?key='+FS_KEY;
-const APP_VERSION = 'v2026.07.28b-measlabels';
+const APP_VERSION = 'v2026.07.31a-shdebt';
 let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], tools:[], locations:[], assets:[], advances:[], accounts:[], ledger:[], deals:[], billings:[], measurements:[], contracts:{}, costs:[], textMemory:{clients:[],companies:[]}, parkAccId:'', oweBonus:{}, minFund:'', shareholderTx:[], payrollSnapshots:[], yearIncomeAdj:[], deletedIds:[], resurrected:{ids:[],at:0}, tab:'dash' };
 let cloudStatus='連線中…';
 let localDirty=false, lastCloudTs=0;
@@ -7084,12 +7084,18 @@ function viewParkAcc(){
 
   const balance=accountBalance(state.parkAccId); // 已扣完品佑垫付（記在帳戶支出）後的餘額
 
+  // 股東個人跟品佑借的錢是「應收」不是公司花掉的成本：分配公積金／獎金時要加回來當資產，
+  // 否則股東一借款，帳戶餘額變少就把公積金吃掉（公積金憑空出現缺口、獎金被壓到 0）。
+  const shDebtOf=pid=>state.shareholderTx.filter(t=>t.shId===pid).reduce((s,t)=>s+(t.kind==='borrow'?1:-1)*(Number(t.amount)||0),0);
+  const shDebtTotal=partners.reduce((s,p)=>s+Math.max(0, shDebtOf(p.id)), 0); // 只加「還欠著」的，多還的不算
+  const allocBase=balance+shDebtTotal; // 可分配基礎＝現金餘額＋股東未還欠款
+
   // 公積金「該留」＝ max(你設定的至少留, 帳面該進的公積金)
   const minFund=Math.max(0, Number(state.minFund)||0);
   const targetFund=Math.max(minFund, Math.round(bookFund));
   // 分配：公積金先填「該留」，剩下分獎金（不夠照各人應拿比例分）
-  const fundPaid=Math.max(0, Math.min(balance, targetFund));
-  let availForBonus=Math.max(0, balance-fundPaid);
+  const fundPaid=Math.max(0, Math.min(allocBase, targetFund));
+  let availForBonus=Math.max(0, allocBase-fundPaid);
   let bonusPaid={}, oweThis={};
   partners.forEach(p=>{
     const tgt=targetBonus[p.id]||0;
@@ -7103,7 +7109,6 @@ function viewParkAcc(){
   });
   const fundShort=Math.max(0, targetFund-fundPaid); // 連「該留」都填不滿的部分
 
-  const shDebtOf=pid=>state.shareholderTx.filter(t=>t.shId===pid).reduce((s,t)=>s+(t.kind==='borrow'?1:-1)*(Number(t.amount)||0),0);
   const bonusRows=partners.map(p=>{
     const tgt=Math.round(targetBonus[p.id]||0), pay=bonusPaid[p.id]||0, owe=oweThis[p.id]||0;
     const debt=shDebtOf(p.id);
@@ -7144,16 +7149,19 @@ function viewParkAcc(){
         ${vline('− 支出合計',money(parkOut),{color:'var(--danger)'})}
         ${txDetail(parkOutTx,'var(--danger)','out')}
         ${vline('＝ 餘額',money(balance),{strong:true})}
+        ${shDebtTotal>0?vline('＋ 股東未還欠款（應收，非支出）',money(shDebtTotal),{color:'var(--info)'})+vline('＝ 可分配基礎',money(allocBase),{strong:true}):''}
         ${vhead('② 公積金該留多少','b')}
         ${vline('帳面該進公積金',money(Math.round(bookFund)))}
         ${vline('你設定至少留',money(minFund))}
         ${vline('＝ 取大的（該留）',money(targetFund),{strong:true})}
-        ${vline('實際填入（不超過餘額）',money(fundPaid),{strong:true})}
+        ${vline('實際填入（不超過可分配基礎）',money(fundPaid),{strong:true})}
         ${fundShort>0?vline('連該留都還差',money(fundShort),{color:'var(--danger)'}):''}
         ${vhead('③ 獎金可發','c')}
-        ${vline('餘額',money(balance))}
+        ${vline('可分配基礎',money(allocBase))}
         ${vline('− 公積金',money(fundPaid))}
         ${vline('＝ 可發獎金',money(availForBonus),{strong:true})}
+        ${shDebtTotal>0&&availForBonus>balance-fundPaid?vline('※ 其中 '+money(shDebtTotal)+' 尚在股東手上（現金不足時先收回欠款再發）',
+          '',{sub:true}):''}
         ${vhead('④ 帳面該發獎金（各案相加）','d')}
         ${bonusByDeal||'<div class="sub" style="padding:5px 0">無</div>'}
         ${vline('合計應發',money(Math.round(totalTargetBonus)),{strong:true})}
@@ -7176,7 +7184,7 @@ function viewParkAcc(){
   const shTxRows=[...state.shareholderTx].sort((a,b)=>(b.date||'').localeCompare(a.date||'')).map(t=>`<tr><td>${esc(t.date||'')}</td><td>${esc(empName(t.shId))}</td><td>${t.kind==='borrow'?'<span class="tag" style="background:#fee2e2;color:#991b1b">借款</span>':'<span class="tag" style="background:#dcfce7;color:#166534">還款</span>'}</td><td class="num">${money(t.amount)}</td><td>${esc(t.note||'')}</td><td><button class="act danger" data-sh-del="${t.id}">刪</button></td></tr>`).join('');
   const shCard=partners.length?`<div class="card">
     <div style="font-size:14px;font-weight:600;margin-bottom:4px">股東往來（跟品佑借還）</div>
-    <p class="sub" style="margin:0 0 8px">股東跟品佑借錢／還錢記這裡。<b>借款</b>→品佑帳戶自動記一筆支出、該股東「欠品佑」增加；<b>還款</b>→品佑帳戶自動記一筆收入、欠額減少。這些自動產生的帳戶收支不能在「公積金帳戶」直接刪，要回這張卡片刪（借款刪掉時對應支出一起移除）。</p>
+    <p class="sub" style="margin:0 0 8px">股東跟品佑借錢／還錢記這裡。<b>借款</b>→品佑帳戶自動記一筆支出、該股東「欠品佑」增加；<b>還款</b>→品佑帳戶自動記一筆收入、欠額減少。這些自動產生的帳戶收支不能在「公積金帳戶」直接刪，要回這張卡片刪（借款刪掉時對應支出一起移除）。<br><b style="color:var(--info)">股東借款不會吃掉公積金</b>：借出去的錢算「應收」（他要還的），算公積金與獎金時會加回來，不會因為股東借錢就讓公積金憑空出現缺口。</p>
     <div class="row" style="align-items:flex-end;margin-bottom:8px">
       <div class="field"><label>股東</label><select id="sh-emp">${shOptsHtml}</select></div>
       <div class="field"><label>動作</label><select id="sh-kind"><option value="borrow">借款（向品佑借）</option><option value="repay">還款（還給品佑）</option></select></div>
