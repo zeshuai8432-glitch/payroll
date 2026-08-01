@@ -108,7 +108,7 @@ body.printing #print-overlay{display:block;position:absolute;inset:0;background:
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.07.31x-stagecolor';
+const APP_VERSION='vG2026.07.31z-printcolor';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -436,7 +436,11 @@ function buildStageMap(proj){
   (proj&&proj.blocks||[]).forEach(b=>b.items.forEach(it=>{ if(it.groupId&&it.groupName) set.add(stageOf(it.name,it.groupName)); }));
   _stageMap={}; [...set].sort((a,b)=>a.localeCompare(b,'zh-Hant')).forEach((n,i)=>{ _stageMap[n]=i; });
 }
-function stageColor(n){ const i=_stageMap[String(n||'')]; return STAGE_COLORS[(i===undefined?0:i)%STAGE_COLORS.length]; }
+// 列印用深色版（白紙上才看得清楚；順序與 STAGE_COLORS 對應）
+const STAGE_COLORS_PRINT=['#1d4ed8','#047857','#b45309','#be185d','#6d28d9','#0e7490','#c2410c','#15803d','#a21caf','#0f766e','#a16207','#1e40af'];
+const _stageIdx=n=>{ const i=_stageMap[String(n||'')]; return i===undefined?0:i; };
+function stageColor(n){ return STAGE_COLORS[_stageIdx(n)%STAGE_COLORS.length]; }
+function stageColorPrint(n){ return STAGE_COLORS_PRINT[_stageIdx(n)%STAGE_COLORS_PRINT.length]; }
 const stageHtml=(name,groupName)=>{ const st=stageOf(name,groupName); return `<b style="color:${stageColor(st)}">${esc(st)}</b>`; };
 const openBlk=new Set();
 const openGroup=new Set(); // 拆開的工序群組：展開狀態
@@ -1065,6 +1069,27 @@ function printDoc(proj){
       ${rt>0?`<tr><td>保留款${(c.period.rtAmt!==undefined&&c.period.rtAmt!=='')?'':` ${rtPct}%`}（完工後放款）</td><td class="num">−${money(rt).slice(1)}</td></tr>`:''}
       ${(whPct>0||rt>0)?`<tr class="tot"><td><b>本次實付</b></td><td class="num"><b>${money(payBase-wh-rt)}</b></td></tr>`:''}
       </table>`;
+    // 累計暫留款項：到本期為止，還沒退還／放款的代扣與保留款（讓廠商看得到還有多少在我們手上）
+    if(whPct>0||rtPct>0){
+      let hWh=0,hRt=0;
+      for(let k=0;k<=perIdx;k++){
+        const kc=calc(proj,k), kp=proj.periods[k];
+        const kBase=(taxMode==='incl')?kc.billActual+Math.round(kc.billActual*0.05):kc.billActual;
+        if(!kp.whRefunded) hWh+=whPct>0?Math.round(kBase*whPct/100):0;
+        if(!kp.rtReleased) hRt+=retainOf(proj,kp,kBase);
+      }
+      if(hWh>0||hRt>0){
+        h+=`<div style="margin:8px 0 10px;padding:8px 10px;border:1.5px solid #1e3a8a;border-radius:6px;background:#eef4fd">
+          <div style="font-weight:700;font-size:11.5px;color:#1e3a8a;margin-bottom:3px">貴公司尚未領取之款項（累計至本期）</div>
+          <table style="margin:0">
+            ${hWh>0?`<tr><td>代扣所得稅（待貴公司補開發票後全數退還）</td><td class="num">${money(hWh)}</td></tr>`:''}
+            ${hRt>0?`<tr><td>保留款（完工驗收後無息退還）</td><td class="num">${money(hRt)}</td></tr>`:''}
+            <tr class="tot"><td><b>合計暫留</b></td><td class="num"><b>${money(hWh+hRt)}</b></td></tr>
+          </table>
+          <div style="font-size:10px;color:#555;margin-top:3px">＊上列款項已於各期請款時扣除，由本公司代為保管，符合條件後即行退還。</div>
+        </div>`;
+      }
+    }
     if(proj.invTitle||proj.invTaxId||proj.invAddr){
       h+=`<div style="margin:8px 0 10px;padding:8px 10px;border:1px solid #c7d4e8;border-radius:6px;background:#f6f9fd">
         <div style="font-weight:700;font-size:11.5px;color:#1e3a8a;margin-bottom:3px">發票開立資訊</div>
@@ -1096,7 +1121,9 @@ function printDoc(proj){
         const tq=itemTotalQty(it,cb.blk);
         const pr=progOf(c.period,it.id);
         const nm=it.groupId&&it.groupName&&String(it.name).startsWith(it.groupName+'-')
-          ? `${esc(it.groupName)}-<b>${esc(String(it.name).slice(it.groupName.length+1))}</b>` : esc(it.name);
+          ? (()=>{ const st=String(it.name).slice(it.groupName.length+1);
+              return `${esc(it.groupName)}-<b style="color:${stageColorPrint(st)}">${esc(st)}</b>`; })()
+          : esc(it.name);
         h+=`<tr><td>${esc(it.no)}</td><td>${nm}</td><td>${esc(it.unit)}</td>
           <td class="num">${qfmt(it.qty)}</td><td class="num">${it.price?qfmt(+(it.price*f).toFixed(2)):''}</td><td class="num">${qfmt(R(it.amount))}</td>
           <td class="num">${hasR?qfmt(+(ci.p*cb.blk.count).toFixed(2)):qfmt(pr.q||tq*ci.p)}</td><td class="num">${pfmt(ci.p)}</td>
