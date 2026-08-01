@@ -108,7 +108,7 @@ body.printing #print-overlay{display:block;position:absolute;inset:0;background:
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.07.31a-dupsplit';
+const APP_VERSION='vG2026.07.31b-parentchild';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -318,6 +318,40 @@ function analyzeSheet(sheet){
 /* ═══════════ 計算 ═══════════ */
 const itemTotalQty=(it,blk)=>it.qty*blk.count;
 const itemValue=(it,blk)=>it.amount*blk.count;
+
+/* ═══════════ 母子專案（母＝發包總表／子＝各廠商，子總和不得超過母） ═══════════ */
+const childProjects = pid => state.projects.filter(p=>p.parentId===pid);
+const parentProject = p => p&&p.parentId?state.projects.find(x=>x.id===p.parentId):null;
+const isParent = p => p&&!p.parentId&&childProjects(p.id).length>0;
+// 母每一條細項的「已分配」情形：各子專案照 srcId 認領的總量／總額
+function allocationOf(parent){
+  const kids=childProjects(parent.id);
+  const map={}; // srcId -> {qty, amount, by:[{name,qty,amount}]}
+  kids.forEach(k=>{
+    k.blocks.forEach(b=>b.items.forEach(it=>{
+      const src=it.srcId; if(!src) return;
+      const e=map[src]||(map[src]={qty:0,amount:0,by:[]});
+      const q=(Number(it.qty)||0)*(Number(b.count)||0);      // 子的總量（單間量×間數）
+      const a=(Number(it.amount)||0)*(Number(b.count)||0);
+      e.qty+=q; e.amount+=a;
+      const hit=e.by.find(x=>x.id===k.id);
+      if(hit){ hit.qty+=q; hit.amount+=a; } else e.by.push({id:k.id,name:k.name,qty:q,amount:a});
+    }));
+  });
+  // 超額判斷用「金額」：子專案可能把一條拆成骨架／封板，數量會變兩倍但金額仍相加，
+  // 用金額比才不會誤報（140×12＋140×12 ＝ 280×12）。數量僅供參考顯示。
+  const rows=[]; let over=0, totMother=0, totAlloc=0;
+  parent.blocks.forEach(b=>b.items.forEach(it=>{
+    const mQty=(Number(it.qty)||0)*(Number(b.count)||0), mAmt=itemValue(it,b);
+    const e=map[it.id]||{qty:0,amount:0,by:[]};
+    totMother+=mAmt; totAlloc+=e.amount;
+    const isOver=e.amount-mAmt>0.5;
+    if(isOver) over++;
+    rows.push({blk:b, it, mQty, mAmt, aQty:e.qty, aAmt:e.amount, by:e.by,
+               leftQty:+(mQty-e.qty).toFixed(4), leftAmt:mAmt-e.amount, over:isOver});
+  }));
+  return {rows, kids, over, totMother, totAlloc, totLeft:totMother-totAlloc};
+}
 function periodOf(p,idx){return p.periods[idx]||null;}
 function progOf(period,itemId){return (period&&period.prog&&period.prog[itemId])||{p:0,q:0};}
 const extrasOf=period=>(period&&period.extras)||[]; // 額外款項（訂金／預付款等）
@@ -379,7 +413,11 @@ let itemEdit=null, itemAdd=null, blkEdit=null, blkAdd=false, copyInto=null, batc
 function render(){
   const app=document.getElementById('app');
   const sel=document.getElementById('proj-sel');
-  sel.innerHTML=state.projects.map(p=>`<option value="${p.id}"${p.id===state.cur?' selected':''}>${esc(p.name)}</option>`).join('')||'<option value="">（尚無專案）</option>';
+  // 母子階層：母排前面，子縮排跟在母底下；沒有母子關係的照原順序
+  const opt=(p,indent)=>`<option value="${p.id}"${p.id===state.cur?' selected':''}>${indent?'　└ ':''}${esc(p.name)}${indent?'':(childProjects(p.id).length?`（母·${childProjects(p.id).length} 個發包）`:'')}</option>`;
+  sel.innerHTML=state.projects.filter(p=>!p.parentId).map(p=>opt(p,false)+childProjects(p.id).map(k=>opt(k,true)).join('')).join('')
+    +state.projects.filter(p=>p.parentId&&!state.projects.some(x=>x.id===p.parentId)).map(p=>opt(p,false)).join('')
+    ||'<option value="">（尚無專案）</option>';
   const proj=curProj();
   if(!proj){
     app.innerHTML=`<div class="card" style="text-align:center;padding:44px 20px">
@@ -390,10 +428,25 @@ function render(){
       <div style="margin-top:10px"><button class="btn sub" id="btn-newproj2">＋ 手動建空白專案（不用 Excel）</button></div></div>`;
     return;
   }
-  const tabs=[['items','合約明細'],['prog','進度請款'],['set','設定/備份']];
-  let h=`<div class="tabs">${tabs.map(([k,l])=>`<div class="tab${state.tab===k?' on':''}" data-tab="${k}">${l}</div>`).join('')}</div>`;
+  const kids=childProjects(proj.id);
+  const par=parentProject(proj);
+  const tabs=[['items','合約明細'],['prog','進度請款']];
+  if(kids.length) tabs.push(['alloc','發包分配']);
+  tabs.push(['set','設定/備份']);
+  if(state.tab==='alloc'&&!kids.length) state.tab='items';
+  let h='';
+  // 母子關係提示列
+  if(par) h+=`<div class="notice" style="margin-bottom:10px">這是「<b>${esc(par.name)}</b>」的發包子專案（廠商：${esc(proj.vendor||'未填')}）。<button class="btn sub sm" data-gotoproj="${par.id}">回母專案</button></div>`;
+  else if(kids.length){
+    const al=allocationOf(proj);
+    h+=`<div class="notice" style="margin-bottom:10px${al.over?';border-color:#dc2626;background:#fef2f2;color:#991b1b':''}">
+      母專案（發包總表），底下有 <b>${kids.length}</b> 個廠商子專案。
+      ${al.over?`<b>⚠ 有 ${al.over} 條細項發包超過母專案的量</b>，請到「發包分配」查看。`:`已分配 ${money(al.totAlloc)} / ${money(al.totMother)}，還可發包 ${money(al.totLeft)}。`}</div>`;
+  }
+  h+=`<div class="tabs">${tabs.map(([k,l])=>`<div class="tab${state.tab===k?' on':''}" data-tab="${k}">${l}</div>`).join('')}</div>`;
   if(state.tab==='items')h+=viewItems(proj);
   else if(state.tab==='prog')h+=viewProg(proj);
+  else if(state.tab==='alloc')h+=viewAlloc(proj);
   else h+=viewSet(proj);
   app.innerHTML=h;
 }
@@ -594,6 +647,40 @@ function viewProg(proj){
   return h;
 }
 
+function viewAlloc(proj){
+  const al=allocationOf(proj);
+  let h=`<div class="grid" style="margin-bottom:12px">
+    <div class="stat"><div class="l">母專案總額（發包預算）</div><div class="v">${money(al.totMother)}</div></div>
+    <div class="stat"><div class="l">已發包合計</div><div class="v" style="color:${al.totAlloc>al.totMother?'#dc2626':'inherit'}">${money(al.totAlloc)}</div></div>
+    <div class="stat"><div class="l">還可發包</div><div class="v" style="color:${al.totLeft<0?'#dc2626':'var(--ok,#16a34a)'}">${money(al.totLeft)}</div></div>
+  </div>`;
+  if(al.over){
+    h+=`<div class="notice" style="border-color:#dc2626;background:#fef2f2;color:#991b1b;margin-bottom:10px">
+      <b>⚠ 有 ${al.over} 條細項的發包量超過母專案</b>——通常是複製子專案後沒刪乾淨、同一條被發包給兩家。下面紅底的就是，請到該子專案把多的刪掉或改數量。</div>`;
+  }
+  h+=`<div class="muted" style="font-size:12.5px;margin-bottom:8px">母專案設定<b>發包總量與單價</b>；每個廠商子專案照 ✂ 認領的部分會列在這裡。<b>已分配不可超過母專案的量</b>。子專案單價可以跟母不同（議價結果），金額欄會照子專案實際單價算。</div>`;
+  let curBlk=null;
+  h+=`<table><tr><th>細項</th><th class="num">母·總量</th><th class="num">已分配量</th><th class="num">剩餘可發包</th><th>分給誰</th><th class="num">母·金額</th><th class="num">已發包金額</th></tr>`;
+  for(const r of al.rows){
+    if(curBlk!==r.blk.id){ curBlk=r.blk.id; h+=`<tr class="chapter"><td colspan="7">${esc(r.blk.name)}（${qfmt(r.blk.count)} ${esc(r.blk.unit)}）</td></tr>`; }
+    const zero=r.aQty===0;
+    h+=`<tr${r.over?' style="background:#fef2f2"':''}>
+      <td>${esc(r.it.name)}${r.over?'<span class="tag" style="background:#fee2e2;color:#991b1b">超額</span>':''}</td>
+      <td class="num">${qfmt(r.mQty)} ${esc(r.it.unit)}</td>
+      <td class="num">${r.aQty?qfmt(r.aQty):'—'}</td>
+      <td class="num" style="color:${r.leftAmt<0?'#dc2626':(r.leftAmt>0?'var(--muted)':'inherit')}">${money(r.leftAmt)}</td>
+      <td style="font-size:12px">${r.by.length?r.by.map(x=>`<span class="tag" style="cursor:pointer" data-gotoproj="${x.id}">${esc(x.name)} ${money(x.amount)}</span>`).join(' '):'<span class="muted">尚未發包</span>'}</td>
+      <td class="num">${money(r.mAmt)}</td>
+      <td class="num"${r.over?' style="color:#dc2626;font-weight:700"':(zero?' class="muted"':'')}>${zero?'—':money(r.aAmt)}</td></tr>`;
+  }
+  h+=`<tr class="chapter"><td>合計</td><td></td><td></td><td></td><td></td><td class="num"><b>${money(al.totMother)}</b></td><td class="num"><b style="color:${al.totAlloc>al.totMother?'#dc2626':'inherit'}">${money(al.totAlloc)}</b></td></tr></table>`;
+  h+=`<div class="card" style="margin-top:12px"><h3>各廠商子專案</h3><table><tr><th>廠商子專案</th><th>廠商</th><th class="num">發包金額</th><th></th></tr>
+    ${al.kids.map(k=>{ const v=k.blocks.reduce((s,b)=>s+b.items.reduce((x,i)=>x+itemValue(i,b),0),0);
+      return `<tr><td>${esc(k.name)}</td><td>${esc(k.vendor||'—')}</td><td class="num">${money(v)}</td><td><button class="btn sub sm" data-gotoproj="${k.id}">開啟</button></td></tr>`; }).join('')}
+    </table></div>`;
+  return h;
+}
+
 function viewSet(proj){
   return `<div class="card"><h3>專案資料</h3>
     <div class="rowline">工程名稱 <input id="set-name" style="min-width:320px" value="${esc(proj.name)}"></div>
@@ -602,10 +689,16 @@ function viewSet(proj){
     <div class="rowline">簽約總價（議價後）<input id="set-signed" inputmode="decimal" style="min-width:180px" value="${proj.signedTotal||''}" placeholder="空白＝照明細 ${money(proj.blocks.reduce((s,b)=>s+b.items.reduce((x,i)=>x+i.amount*b.count,0),0))}"></div>
     <div class="muted" style="font-size:12px;margin-bottom:6px">議價後總價跟明細不同時填這裡（例：明細 ${money(proj.blocks.reduce((s,b)=>s+b.items.reduce((x,i)=>x+i.amount*b.count,0),0))}、簽約 25,500,000）。明細不用改，程式會自動照比例折讓每期請款。</div>
     <button class="btn" id="set-save">儲存</button></div>
-  <div class="card"><h3>複製整個專案</h3>
-    <div class="muted" style="font-size:13px;margin-bottom:8px">把這個專案的<b>合約明細（區塊＋細項＋數量＋單價）原封複製</b>一份出來，例如業主那份複製成發包用的。<b>複製完就是兩份不相干的東西</b>——之後誰改誰的都不影響對方，期別、進度、請款紀錄各自獨立（新的那份請款期別從零開始，不會帶過去）。</div>
-    <div class="rowline">新專案名稱 <input id="dup-name" style="min-width:260px" placeholder="例：${esc(proj.name)}-骨架（A廠商）"></div>
-    <button class="btn sub" id="proj-dup">📄 複製成新專案</button></div>
+  ${proj.parentId?'':`<div class="card"><h3>建立廠商子專案（發包）</h3>
+    <div class="muted" style="font-size:13px;margin-bottom:8px">把這份當<b>母專案（發包總表）</b>，在這裡設好你的<b>發包單價與總量</b>；然後每個廠商建一個<b>子專案</b>。子專案會複製全部細項過去，你再刪掉不是這家做的、改成議定的單價與數量。<br><b>系統會盯著：所有子專案加起來不能超過母專案的量</b>，超了會在「發包分配」紅字警告。子專案的期別、進度、請款各自獨立，不會互相污染。</div>
+    <div class="rowline">子專案名稱 <input id="dup-name" style="min-width:230px" placeholder="例：${esc(proj.name)}-骨架"></div>
+    <div class="rowline">廠商名稱 <input id="dup-vendor" style="min-width:200px" placeholder="例：金泰工程行"></div>
+    <button class="btn sub" id="proj-dup">🏗 建立廠商子專案</button>
+    <div class="muted" style="font-size:12px;margin-top:8px">若只是要一份完全無關的複本（不納入母子管控），把廠商欄留空並勾這個：<label style="cursor:pointer"><input type="checkbox" id="dup-standalone"> 建成獨立專案</label></div></div>`}
+  ${proj.parentId?`<div class="card"><h3>發包資訊</h3>
+    <div class="rowline">廠商名稱 <input id="set-childvendor" style="min-width:220px" value="${esc(proj.vendor||'')}" placeholder="這家廠商的名字"></div>
+    <div class="muted" style="font-size:12.5px;margin-bottom:8px">這份是「${esc((parentProject(proj)||{}).name||'')}」的發包子專案。存檔請按上面「專案資料」的儲存。</div>
+    <button class="btn bad sm" id="proj-detach">脫離母專案（變成獨立專案）</button></div>`:''}
   <div class="card"><h3>☁ 雲端同步（Firestore）</h3>
     <div class="muted" style="font-size:13px;margin-bottom:8px">開頁自動下載最新、修改後自動上傳，多裝置共用。雲端內容以密文儲存（與 payroll 共用同一組解鎖密碼；在這台裝置解鎖過任一系統就不用再輸入）。</div>
     <div class="rowline"><span class="muted" style="font-size:13px">狀態：${esc(cloudStatus)}</span></div>
@@ -901,7 +994,7 @@ function setProgInput(proj,blkId,itemId,kind,val){
 }
 
 document.addEventListener('click',async e=>{
-  const t=e.target.closest('[data-tab],[data-editblk],[data-delblk],[data-edititem],[data-delitem],[data-additem],[data-splititem],[data-sortitems],[data-copyinto],[data-copyok],[data-copycancel],[data-batchedit],[data-batchok],[data-batchcancel],[data-batchalledit],[data-batchallok],[data-batchallcancel],[data-itemok],[data-itemcancel],[data-blkok],[data-blkcancel],[data-bapply],[data-editextra],[data-delextra],#btn-import,#btn-import2,#btn-newproj,#btn-newproj2,#btn-addblk,#btn-addblk-ok,#btn-addperiod,#btn-delperiod,#btn-addextra,#btn-roundup,#btn-print,#set-save,#proj-dup,#backup-export,#backup-import-btn,#proj-del,#cloud-push,#cloud-pull');
+  const t=e.target.closest('[data-tab],[data-editblk],[data-delblk],[data-edititem],[data-delitem],[data-additem],[data-splititem],[data-sortitems],[data-copyinto],[data-copyok],[data-copycancel],[data-batchedit],[data-batchok],[data-batchcancel],[data-batchalledit],[data-batchallok],[data-batchallcancel],[data-itemok],[data-itemcancel],[data-blkok],[data-blkcancel],[data-bapply],[data-editextra],[data-delextra],#btn-import,#btn-import2,#btn-newproj,#btn-newproj2,#btn-addblk,#btn-addblk-ok,#btn-addperiod,#btn-delperiod,#btn-addextra,#btn-roundup,[data-gotoproj],#btn-print,#set-save,#proj-dup,#proj-detach,#backup-export,#backup-import-btn,#proj-del,#cloud-push,#cloud-pull');
   if(!t)return;
   const proj=curProj();
   if(t.dataset.tab){state.tab=t.dataset.tab;save();render();return;}
@@ -983,7 +1076,8 @@ document.addEventListener('click',async e=>{
       const made=parts.map(p=>{
         const price=evalExpr(p.raw), pe=hasExpr(p.raw)?p.raw:'';
         return {id:uid(),no:'增',tag:'',chapter:it.chapter||'',name:`${it.name}-${p.nm}`,unit:it.unit,
-                qty:it.qty,qtyExpr:it.qtyExpr||'',price,priceExpr:pe,amount:it.qty*price,remark:it.remark||''};
+                qty:it.qty,qtyExpr:it.qtyExpr||'',price,priceExpr:pe,amount:it.qty*price,remark:it.remark||'',
+                ...(it.srcId?{srcId:it.srcId}:{})}; // 拆開後仍對應同一條母細項（發包分配用金額比對，不會重複計）
       });
       b.items.splice(i,1,...made);
       for(const per of proj.periods) if(per.prog) delete per.prog[it.id]; // 原細項的進度不再適用
@@ -1063,28 +1157,45 @@ document.addEventListener('click',async e=>{
     return;
   }
   if(t.id==='btn-print'){printDoc(proj);return;}
+  if(t.dataset.gotoproj){ state.cur=t.dataset.gotoproj; state.tab='items'; save(); render(); return; }
+  if(t.id==='proj-detach'){
+    if(!confirm(`把「${proj.name}」脫離母專案？\n\n之後它就是一份獨立專案，不再納入母專案的發包量管控。`))return;
+    delete proj.parentId;
+    proj.blocks.forEach(b=>b.items.forEach(it=>{ delete it.srcId; }));
+    save(); render(); return;
+  }
   if(t.id==='proj-dup'){
-    const nmEl=document.getElementById('dup-name');
-    const nm=(nmEl?nmEl.value.trim():'')||(proj.name+'（複製）');
+    const nmEl=document.getElementById('dup-name'), vdEl=document.getElementById('dup-vendor');
+    const alone=(document.getElementById('dup-standalone')||{}).checked;
+    const vendor=vdEl?vdEl.value.trim():'';
+    const nm=(nmEl?nmEl.value.trim():'')||(proj.name+(alone?'（複製）':'-'+(vendor||'發包')));
     if(state.projects.some(p=>p.name===nm)&&!confirm(`已經有一個專案叫「${nm}」，還是要建立嗎？`))return;
     const nItems=proj.blocks.reduce((s,b)=>s+b.items.length,0);
-    if(!confirm(`複製「${proj.name}」成新專案「${nm}」？\n\n・會帶過去：區塊 ${proj.blocks.length} 個、細項 ${nItems} 條（數量、單價原封不動）\n・不會帶過去：請款期別、進度、已收款、簽名（新的從零開始）\n\n複製後兩份完全獨立，改一份不影響另一份。`))return;
+    const msg=alone
+      ? `複製「${proj.name}」成獨立專案「${nm}」？\n\n・帶過去：區塊 ${proj.blocks.length} 個、細項 ${nItems} 條\n・不帶過去：期別、進度、已收款、簽名\n\n兩份完全無關，不納入發包量管控。`
+      : `建立「${proj.name}」的廠商子專案「${nm}」${vendor?`（廠商：${vendor}）`:''}？\n\n・帶過去：區塊 ${proj.blocks.length} 個、細項 ${nItems} 條\n・不帶過去：期別、進度、已收款、簽名（各自獨立）\n\n建立後請刪掉不是這家做的細項、改成議定數量與單價。\n所有子專案加起來不可超過母專案的量，超了會警告。`;
+    if(!confirm(msg))return;
     const copy={
-      id:uid(), name:nm, owner:proj.owner||'', vendor:proj.vendor||'',
+      id:uid(), name:nm, owner:proj.owner||'', vendor:alone?(proj.vendor||''):vendor,
       taxMode:proj.taxMode||'excl', signedTotal:0, hideZero:!!proj.hideZero,
       blocks:proj.blocks.map(b=>({id:uid(),name:b.name,unit:b.unit,count:b.count,
         items:b.items.map(it=>({id:uid(),no:it.no,tag:it.tag||'',chapter:it.chapter||'',name:it.name,unit:it.unit,
-          qty:it.qty,qtyExpr:it.qtyExpr||'',price:it.price,priceExpr:it.priceExpr||'',amount:it.amount,remark:it.remark||''}))})),
-      periods:[], curPeriod:0, createdAt:Date.now()
+          qty:it.qty,qtyExpr:it.qtyExpr||'',price:it.price,priceExpr:it.priceExpr||'',amount:it.amount,remark:it.remark||'',
+          ...(alone?{}:{srcId:it.id})}))})),  // srcId＝對應母專案的哪一條，用來算已分配
+      periods:[], curPeriod:0, createdAt:Date.now(),
+      ...(alone?{}:{parentId:proj.id})
     };
     state.projects.push(copy); state.cur=copy.id; state.tab='items'; save(); render();
-    alert(`已複製成「${nm}」，已切換過去。\n\n接下來可以：刪掉不屬於這家廠商的細項、用「✂ 拆」把一條拆成骨架／封板、單價改成發包價。\n改這份不會影響原本的「${proj.name}」。`);
+    alert(alone
+      ? `已複製成獨立專案「${nm}」。`
+      : `已建立子專案「${nm}」，已切換過去。\n\n接下來：刪掉不是這家做的細項、用「✂ 拆」把一條拆成骨架／封板、數量與單價改成議定的。\n回母專案的「發包分配」分頁可以看還剩多少可發包。`);
     return;
   }
   if(t.id==='set-save'){
     proj.name=document.getElementById('set-name').value.trim()||proj.name;
     proj.owner=document.getElementById('set-owner').value.trim();
     proj.vendor=document.getElementById('set-vendor').value.trim();
+    const cv=document.getElementById('set-childvendor'); if(cv) proj.vendor=cv.value.trim(); // 子專案：廠商名以發包資訊欄為準
     const sv=num(document.getElementById('set-signed').value); proj.signedTotal=sv>0?sv:0;
     save();render();alert('已儲存');return;
   }
@@ -1105,8 +1216,11 @@ document.addEventListener('click',async e=>{
     return;
   }
   if(t.id==='proj-del'){
+    const kids=childProjects(proj.id);
+    if(kids.length&&!confirm(`「${proj.name}」底下還有 ${kids.length} 個廠商子專案（${kids.map(k=>k.name).join('、')}）。\n\n刪除母專案後，這些子專案會變成獨立專案（資料保留，但不再有發包量管控）。\n\n要繼續嗎？`))return;
     if(!confirm(`刪除整個專案「${proj.name}」？所有細項與各期進度都會消失。`))return;
     if(!confirm('再確認一次：真的要刪除？'))return;
+    kids.forEach(k=>{ delete k.parentId; k.blocks.forEach(b=>b.items.forEach(it=>{ delete it.srcId; })); });
     state.projects=state.projects.filter(p=>p!==proj);
     state.cur=state.projects[0]?state.projects[0].id:null;save();render();return;
   }
