@@ -108,7 +108,7 @@ body.printing #print-overlay{display:block;position:absolute;inset:0;background:
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.07.31w-retaintext';
+const APP_VERSION='vG2026.07.31x-stagecolor';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -425,6 +425,19 @@ function calc(proj,perIdx){
 }
 
 /* ═══════════ 畫面 ═══════════ */
+// 工序名配色：同名永遠同色，方便在上千條裡快速掃到「骨架」「封板」
+const STAGE_COLORS=['#60a5fa','#34d399','#fbbf24','#f472b6','#a78bfa','#22d3ee','#fb923c','#4ade80','#e879f9','#2dd4bf','#facc15','#93c5fd'];
+const stageOf=(name,groupName)=>{ const g=String(groupName||''); const n=String(name||''); return (g&&n.startsWith(g+'-'))?n.slice(g.length+1):n; };
+// 依「本專案實際出現過的工序名」依序配色：同專案內不同工序保證不同色（12 色內），
+// 且順序由資料排序決定，重開也不會變。
+let _stageMap={};
+function buildStageMap(proj){
+  const set=new Set();
+  (proj&&proj.blocks||[]).forEach(b=>b.items.forEach(it=>{ if(it.groupId&&it.groupName) set.add(stageOf(it.name,it.groupName)); }));
+  _stageMap={}; [...set].sort((a,b)=>a.localeCompare(b,'zh-Hant')).forEach((n,i)=>{ _stageMap[n]=i; });
+}
+function stageColor(n){ const i=_stageMap[String(n||'')]; return STAGE_COLORS[(i===undefined?0:i)%STAGE_COLORS.length]; }
+const stageHtml=(name,groupName)=>{ const st=stageOf(name,groupName); return `<b style="color:${stageColor(st)}">${esc(st)}</b>`; };
 const openBlk=new Set();
 const openGroup=new Set(); // 拆開的工序群組：展開狀態
 // 舊資料回溯：找出「以前拆過但沒有群組標記」的細項（名稱同前綴＋相鄰＋單位數量一致）
@@ -461,6 +474,7 @@ function render(){
       <div style="margin-top:10px"><button class="btn sub" id="btn-newproj2">＋ 手動建空白專案（不用 Excel）</button></div></div>`;
     return;
   }
+  buildStageMap(proj);   // 工序配色表（依本專案出現的工序名）
   const kids=childProjects(proj.id);
   const par=parentProject(proj);
   const tabs=[['items','合約明細'],['prog','進度請款']];
@@ -574,7 +588,7 @@ function viewItems(proj){
         h+=`<tr style="background:var(--card2)">
           ${picking?`<td><input type="checkbox" data-delpick-group="${it.groupId}" ${subs.every(x=>delSel.has(x.id))?'checked':''} style="width:16px;height:16px"></td>`:''}
           <td>${esc(it.no==='增'?'':it.no)}</td>
-          <td><button class="btn sub sm" data-grouptoggle="${it.groupId}" style="border:none;background:none;padding:0 6px 0 0;color:var(--accent)">${open?'▾':'▸'}</button><b>${esc(it.groupName||it.name)}</b><span class="tag" style="background:rgba(99,102,241,.22);border-color:rgba(129,140,248,.5);color:#c7d2fe">${subs.length} 道工序</span></td>
+          <td><button class="btn sub sm" data-grouptoggle="${it.groupId}" style="border:none;background:none;padding:0 6px 0 0;color:var(--accent)">${open?'▾':'▸'}</button><b>${esc(it.groupName||it.name)}</b>${subs.slice(0,4).map(x=>{const st=stageOf(x.name,it.groupName);const c=stageColor(st);return `<span class="tag" style="background:${c}22;border-color:${c}88;color:${c};margin-left:4px">${esc(st)}</span>`;}).join('')}${subs.length>4?`<span class="tag" title="共 ${subs.length} 道工序">+${subs.length-4}</span>`:''}<span class="tag" style="background:rgba(99,102,241,.22);border-color:rgba(129,140,248,.5);color:#c7d2fe">${subs.length} 道工序</span></td>
           <td>${esc(it.unit)}</td>
           <td class="num">${sameQty?qfmt(gQty):'<span class="muted" style="font-size:11px">各段不同</span>'}</td>
           <td class="num">${sameQty?qfmt(gPrice):'<span class="muted" style="font-size:11px">—</span>'}</td>
@@ -585,7 +599,7 @@ function viewItems(proj){
           for(const s of subs){
             if(itemEdit===b.id+'::'+s.id){ h+=itemForm(b,s); continue; }
             h+=`<tr>${picking?`<td><input type="checkbox" data-delpick="${s.id}" ${delSel.has(s.id)?'checked':''} style="width:16px;height:16px"></td>`:''}<td></td>
-              <td style="padding-left:26px;color:var(--muted)">↳ ${esc(s.name.startsWith((it.groupName||'')+'-')?s.name.slice((it.groupName||'').length+1):s.name)}</td>
+              <td style="padding-left:26px;color:var(--muted)">↳ ${stageHtml(s.name,it.groupName)}</td>
               <td>${esc(s.unit)}</td>
               <td class="num">${qfmt(s.qty)}${s.qtyExpr?`<div style="font-size:11px;color:var(--muted)">=${esc(s.qtyExpr)}</div>`:''}</td>
               <td class="num">${s.price?qfmt(s.price):''}${s.priceExpr?`<div style="font-size:11px;color:var(--muted)">=${esc(s.priceExpr)}</div>`:''}</td>
@@ -778,7 +792,7 @@ function viewProg(proj){
         const open=openGroup.has(it.groupId);
         h+=`<tr style="background:var(--card2)">
           <td>${esc(it.no==='增'?'':it.no)}</td>
-          <td><button class="btn sub sm" data-grouptoggle="${it.groupId}" style="border:none;background:none;padding:0 6px 0 0;color:var(--accent)">${open?'▾':'▸'}</button><b>${esc(it.groupName||it.name)}</b><span class="tag" style="background:rgba(99,102,241,.22);border-color:rgba(129,140,248,.5);color:#c7d2fe">${g.length} 道工序</span></td>
+          <td><button class="btn sub sm" data-grouptoggle="${it.groupId}" style="border:none;background:none;padding:0 6px 0 0;color:var(--accent)">${open?'▾':'▸'}</button><b>${esc(it.groupName||it.name)}</b>${g.slice(0,4).map(x=>{const st=stageOf(x.it.name,it.groupName);const c=stageColor(st);const done=x.p>=0.999;return `<span class="tag" title="${done?'已完成':'完成 '+pfmt(x.p)}" style="background:${c}22;border-color:${c}88;color:${c};margin-left:4px">${esc(st)}${done?' ✓':''}</span>`;}).join('')}${g.length>4?`<span class="tag" title="共 ${g.length} 道工序">+${g.length-4}</span>`:''}<span class="tag" style="background:rgba(99,102,241,.22);border-color:rgba(129,140,248,.5);color:#c7d2fe">${g.length} 道工序</span></td>
           <td>${esc(it.unit)}</td>
           <td class="num">${qfmt(it.qty)}</td>
           <td class="num">${qfmt(g.reduce((s,x)=>s+(Number(x.it.price)||0),0))}</td>
@@ -791,7 +805,7 @@ function viewProg(proj){
             const si=s.it, sz=s.v===0, stq=itemTotalQty(si,b), spr=progOf(period,si.id);
             const srVal=spr.p?+(spr.p*b.count).toFixed(2):'';
             h+=`<tr class="${sz?'zero':''}"><td></td>
-              <td style="padding-left:26px;color:var(--muted)">↳ ${esc(si.name.startsWith((it.groupName||'')+'-')?si.name.slice((it.groupName||'').length+1):si.name)}</td>
+              <td style="padding-left:26px;color:var(--muted)">↳ ${stageHtml(si.name,it.groupName)}</td>
               <td>${esc(si.unit)}</td><td class="num">${qfmt(si.qty)}</td><td class="num">${si.price?qfmt(si.price):''}</td>
               <td class="num muted">${pfmt(s.pp)}</td>
               <td class="num">${hasR
@@ -1081,7 +1095,9 @@ function printDoc(proj){
         if(it.chapter!==ch){ch=it.chapter;if(ch)h+=`<tr class="bchap"><td colspan="9">${esc(ch)}</td></tr>`;}
         const tq=itemTotalQty(it,cb.blk);
         const pr=progOf(c.period,it.id);
-        h+=`<tr><td>${esc(it.no)}</td><td>${esc(it.name)}</td><td>${esc(it.unit)}</td>
+        const nm=it.groupId&&it.groupName&&String(it.name).startsWith(it.groupName+'-')
+          ? `${esc(it.groupName)}-<b>${esc(String(it.name).slice(it.groupName.length+1))}</b>` : esc(it.name);
+        h+=`<tr><td>${esc(it.no)}</td><td>${nm}</td><td>${esc(it.unit)}</td>
           <td class="num">${qfmt(it.qty)}</td><td class="num">${it.price?qfmt(+(it.price*f).toFixed(2)):''}</td><td class="num">${qfmt(R(it.amount))}</td>
           <td class="num">${hasR?qfmt(+(ci.p*cb.blk.count).toFixed(2)):qfmt(pr.q||tq*ci.p)}</td><td class="num">${pfmt(ci.p)}</td>
           <td class="num">${money(R(ci.cumAmt))}</td></tr>`;
