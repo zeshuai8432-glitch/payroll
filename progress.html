@@ -108,7 +108,7 @@ body.printing #print-overlay{display:block;position:absolute;inset:0;background:
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.07.31s-invinfo';
+const APP_VERSION='vG2026.07.31t-orphanfix';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -330,10 +330,11 @@ function allocationOf(parent){
   kids.forEach(k=>{
     k.blocks.forEach(b=>b.items.forEach(it=>{
       const src=it.srcId; if(!src) return;
-      const e=map[src]||(map[src]={qty:0,amount:0,by:[]});
+      const e=map[src]||(map[src]={qty:0,amount:0,by:[],refs:[]});
       const q=(Number(it.qty)||0)*(Number(b.count)||0);      // 子的總量（單間量×間數）
       const a=(Number(it.amount)||0)*(Number(b.count)||0);
       e.qty+=q; e.amount+=a;
+      e.refs.push({projId:k.id,projName:k.name,blkName:b.name,item:it,name:it.name,amount:a});
       const hit=e.by.find(x=>x.id===k.id);
       if(hit){ hit.qty+=q; hit.amount+=a; } else e.by.push({id:k.id,name:k.name,qty:q,amount:a});
     }));
@@ -822,10 +823,20 @@ function viewAlloc(proj){
       <b>⚠ 有 ${al.over} 條細項的發包量超過母專案</b>——通常是複製子專案後沒刪乾淨、同一條被發包給兩家。下面紅底的就是，請到該子專案把多的刪掉或改數量。</div>`;
   }
   if(al.orphans.length){
+    const refs=al.orphans.flatMap(o=>o.refs||[]);
+    const matchable=refs.filter(r=>proj.blocks.some(b=>b.items.some(it=>it.name===r.name))).length;
     h+=`<div class="notice" style="border-color:rgba(251,191,36,.5);background:rgba(251,191,36,.12);color:#fcd34d;margin-bottom:10px">
-      <b>⚠ 有 ${al.orphans.length} 筆發包對應不到母專案的細項</b>（合計 ${money(al.orphanAmt)}）——通常是母專案那條後來被<b>拆開或刪掉</b>了。這些錢仍然發包出去了，但沒被算進上面的「已發包」。
-      <div style="margin-top:4px;font-size:12px">${al.orphans.map(o=>o.by.map(x=>`<span class="tag" style="cursor:pointer" data-gotoproj="${x.id}">${esc(x.name)} ${money(x.amount)}</span>`).join(' ')).join(' ')}</div>
-      <div style="margin-top:4px;font-size:12px">修法：到子專案把那幾條刪掉，再從母專案重新建一次子專案；或直接在母專案把對應的細項補回來。</div></div>`;
+      <b>⚠ 有 ${refs.length} 條發包細項對應不到母專案</b>（合計 ${money(al.orphanAmt)}）——多半是母專案那條後來被<b>拆開或改名、刪掉</b>了，所以這些錢沒被算進上面的「已發包」。
+      <div class="scroll" style="margin-top:6px"><table style="font-size:12px"><tr><th>子專案</th><th>區塊</th><th>細項名稱</th><th class="num">金額</th><th>母專案有同名嗎</th></tr>
+      ${refs.map(r=>{ const hit=proj.blocks.some(b=>b.items.some(it=>it.name===r.name));
+        return `<tr><td><span class="tag" style="cursor:pointer" data-gotoproj="${r.projId}">${esc(r.projName)}</span></td><td>${esc(r.blkName)}</td><td>${esc(r.name)}</td><td class="num">${money(r.amount)}</td>
+        <td>${hit?'<span style="color:#6ee7b7">✓ 有，可自動接回</span>':'<span style="color:#fca5a5">✗ 沒有同名</span>'}</td></tr>`; }).join('')}
+      </table></div>
+      <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        ${matchable?`<button class="btn sm" id="orphan-fix">🔧 自動接回（${matchable} 條）</button>`:''}
+        <button class="btn sub sm" id="orphan-detach">標為「額外項目」（不對應母專案）</button>
+        <span class="muted" style="font-size:11.5px">找不到同名時：可到母專案把那條加回來，或標為額外項目就不再提醒。</span>
+      </div></div>`;
   }
   h+=`<div class="muted" style="font-size:12.5px;margin-bottom:8px">母專案設定<b>發包總量與單價</b>；每個廠商子專案認領的部分列在「已分配」。<b>自辦</b>欄填自己要做的量（例：塞棉 40 間裡你自己做 5 間就填 5 間的量），<b>還沒決定</b>＝母總量−已發包−自辦。<b>已發包＋自辦不可超過母專案</b>，超了會標紅。</div>
     <div style="margin-bottom:8px"><button class="btn sub sm" data-selfrest="1" title="把每條「還沒決定」的量全部歸為自辦">🙋 把剩下的全部設為自辦</button> <button class="btn sub sm" data-selfclear="1">清除所有自辦</button></div>`;
@@ -1215,7 +1226,7 @@ function setProgInput(proj,blkId,itemId,kind,val){
 }
 
 document.addEventListener('click',async e=>{
-  const t=e.target.closest('[data-tab],[data-editblk],[data-delblk],[data-edititem],[data-delitem],[data-additem],[data-splititem],[data-sortitems],[data-grouptoggle],[data-groupmerge],[data-groupdetect],[data-whtoggle],[data-rttoggle],[data-whtax],[data-selfone],[data-selfrest],[data-selfclear],[data-delmode],[data-delcancel],[data-delall],[data-delnone],[data-delinv],[data-delzero],[data-deldo],[data-copyinto],[data-copyok],[data-copycancel],[data-batchedit],[data-batchok],[data-batchcancel],[data-batchalledit],[data-batchallok],[data-batchallcancel],[data-itemok],[data-itemcancel],[data-blkok],[data-blkcancel],[data-bapply],[data-editextra],[data-delextra],#btn-import,#btn-import2,#btn-newproj,#btn-newproj2,#btn-addblk,#btn-addblk-ok,#btn-addperiod,#btn-delperiod,#btn-addextra,#btn-roundup,[data-gotoproj],#btn-print,#proj-groupall,#set-save,#proj-dup,#proj-detach,#backup-export,#backup-import-btn,#proj-del,#cloud-push,#cloud-pull');
+  const t=e.target.closest('[data-tab],[data-editblk],[data-delblk],[data-edititem],[data-delitem],[data-additem],[data-splititem],[data-sortitems],[data-grouptoggle],[data-groupmerge],[data-groupdetect],[data-whtoggle],[data-rttoggle],[data-whtax],[data-selfone],[data-selfrest],[data-selfclear],[data-delmode],[data-delcancel],[data-delall],[data-delnone],[data-delinv],[data-delzero],[data-deldo],[data-copyinto],[data-copyok],[data-copycancel],[data-batchedit],[data-batchok],[data-batchcancel],[data-batchalledit],[data-batchallok],[data-batchallcancel],[data-itemok],[data-itemcancel],[data-blkok],[data-blkcancel],[data-bapply],[data-editextra],[data-delextra],#btn-import,#btn-import2,#btn-newproj,#btn-newproj2,#btn-addblk,#btn-addblk-ok,#btn-addperiod,#btn-delperiod,#btn-addextra,#btn-roundup,[data-gotoproj],#btn-print,#orphan-fix,#orphan-detach,#proj-groupall,#set-save,#proj-dup,#proj-detach,#backup-export,#backup-import-btn,#proj-del,#cloud-push,#cloud-pull');
   if(!t)return;
   const proj=curProj();
   if(t.dataset.tab){state.tab=t.dataset.tab;save();render();return;}
@@ -1359,6 +1370,28 @@ document.addEventListener('click',async e=>{
     if(!n){ alert('沒有偵測到需要收合的拆分。'); return; }
     save(); render();
     alert(`已收合 ${n} 組工序。\n合約明細與進度請款都會只顯示原本那條，點 ▸ 可展開看各道。\n金額、數量、進度都沒有變動。`);
+    return;
+  }
+  if(t.id==='orphan-fix'){
+    const al=allocationOf(proj); const refs=al.orphans.flatMap(o=>o.refs||[]);
+    let n=0, miss=0;
+    refs.forEach(r=>{
+      let found=null;
+      proj.blocks.forEach(b=>b.items.forEach(it=>{ if(!found&&it.name===r.name) found=it; }));
+      if(found){ r.item.srcId=found.id; n++; } else miss++;
+    });
+    if(!n){ alert('沒有可自動接回的（母專案找不到同名細項）。'); return; }
+    save(); render();
+    alert(`已接回 ${n} 條${miss?`，另有 ${miss} 條在母專案找不到同名細項，需要手動處理`:''}。`);
+    return;
+  }
+  if(t.id==='orphan-detach'){
+    const al=allocationOf(proj); const refs=al.orphans.flatMap(o=>o.refs||[]);
+    if(!refs.length) return;
+    if(!confirm(`把這 ${refs.length} 條標為「額外項目」？\n\n它們不再對應母專案的任何細項，也不會再出現這個提醒。\n金額仍留在子專案（廠商那份照常請款），只是不列入母專案的發包量管控。`))return;
+    refs.forEach(r=>{ delete r.item.srcId; });
+    save(); render();
+    alert(`已標記 ${refs.length} 條為額外項目。`);
     return;
   }
   if(t.dataset.whtoggle){
