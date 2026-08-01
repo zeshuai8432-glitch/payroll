@@ -108,7 +108,7 @@ body.printing #print-overlay{display:block;position:absolute;inset:0;background:
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.07.31l-bulkdel';
+const APP_VERSION='vG2026.07.31m-printfilter';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -919,13 +919,16 @@ function printDoc(proj){
       ${proj.owner?`<tr><td style="background:#e8f0fb;color:#1e3a8a;font-weight:600">業主（甲方）</td><td>${esc(proj.owner)}</td></tr>`:''}
       ${proj.vendor?`<tr><td style="background:#e8f0fb;color:#1e3a8a;font-weight:600">承攬（乙方）</td><td>${esc(proj.vendor)}</td></tr>`:''}
       ${c.discount?`<tr><td style="background:#e8f0fb;color:#1e3a8a;font-weight:600">簽約總價</td><td><b>${money(c.signedTotal)}</b>　<span style="font-size:10px;color:#555">（議價後總價；本單各項金額已按此比例分攤）</span></td></tr>`:''}</table>
-      <div style="font-weight:700;font-size:12.5px;margin:8px 0 3px">一、各大項完成計價</div>
+      <div style="font-weight:700;font-size:12.5px;margin:8px 0 3px">一、各大項完成計價${showAll?'':'（僅列有進度之大項）'}</div>
       <table><tr><th>大項</th><th class="num">合約金額</th><th class="num">累計完成計價</th><th class="num">完成%</th></tr>`;
+    let hidBlk=0;
     for(const cb of c.blocks){
+      if(!showAll&&cb.cum===0){ hidBlk++; continue; }   // 整個大項都還沒進度 → 不印
       h+=`<tr><td>${esc(cb.blk.name)}（${qfmt(cb.blk.count)} ${esc(cb.blk.unit)}）</td><td class="num">${money(R(cb.V))}</td><td class="num">${money(R(cb.cum))}</td><td class="num">${pfmt(cb.pct)}</td></tr>`;
     }
     for(const e of c.chargeList) h+=`<tr><td>${esc(e.label)}（加項${e.date?'，'+esc(e.date):''}）</td><td class="num">—</td><td class="num">${money(e.amount)}</td><td class="num">—</td></tr>`;
     h+=`<tr class="tot"><td>累計完成計價 合計</td><td class="num">${money(c.signedTotal||c.V)}</td><td class="num">${money(c.cumApplied)}</td><td class="num">${pfmt(c.V?c.itemCum/c.V:0)}</td></tr></table>`;
+    if(hidBlk) h+=`<div style="font-size:10px;color:#666;margin:-6px 0 8px">＊另有 ${hidBlk} 個大項尚未施作（完成 0%），本單未列；合計欄仍為全案合約金額。</div>`;
     // 二、已收款明細（有資料才顯示）
     if(c.receivedList.length||c.noteList.length){
       h+=`<div style="font-weight:700;font-size:12.5px;margin:10px 0 3px">二、前期累計已收（前期請款）</div>`;
@@ -986,7 +989,7 @@ function printDoc(proj){
     <b style="color:var(--ink)">列印預覽</b>
     <label style="color:var(--ink);font-size:13px"><input type="radio" name="ptax" value="excl"${taxMode==='excl'?' checked':''}> 未稅</label>
     <label style="color:var(--ink);font-size:13px"><input type="radio" name="ptax" value="incl"${taxMode==='incl'?' checked':''}> 含 5% 稅</label>
-    <label style="color:var(--ink);font-size:13px"><input type="checkbox" id="pshowall"${showAll?' checked':''}> 連 0 進度項目一起印</label>
+    <label style="color:var(--ink);font-size:13px"><input type="checkbox" id="pshowall"${showAll?' checked':''}> 連「沒進度」的項目一起印（不勾＝只印做過的）</label>
     <span style="flex:1"></span>
     <button class="btn" id="do-print">🖨 列印 / 存 PDF</button>
     <button class="btn sub" id="close-print">關閉</button></div>
