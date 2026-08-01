@@ -108,7 +108,7 @@ body.printing #print-overlay{display:block;position:absolute;inset:0;background:
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.07.31c-splitguard';
+const APP_VERSION='vG2026.07.31d-cascade';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -1083,21 +1083,54 @@ document.addEventListener('click',async e=>{
     const [blkId,itemId]=t.dataset.splititem.split('::');
     const b=proj.blocks.find(x=>x.id===blkId); if(!b) return;
     const it=b.items.find(x=>x.id===itemId); if(!it) return;
-    // 母專案：若已有子專案認領這一條，拆掉會讓子專案對應不到（發包分配算不出來）
+    // 母專案：已有子專案認領這一條時，預設連動把子專案的對應細項一起拆
     const refs=childProjects(proj.id).filter(k=>k.blocks.some(kb=>kb.items.some(ki=>ki.srcId===it.id)));
-    if(refs.length&&!confirm(`「${it.name}」已經發包給：${refs.map(k=>k.name).join('、')}。\n\n拆開後這條會被取代，那些子專案就對應不到母專案的細項，發包分配會算不到它們（要回子專案重新對應）。\n\n建議：先在母專案拆好工序，再建子專案。\n\n還是要拆嗎？`))return;
+    let cascade=false;
+    if(refs.length){
+      cascade=confirm(`「${it.name}」已經發包給：${refs.map(k=>k.name).join('、')}。\n\n要同步把這些子專案的對應細項也一起拆開嗎？\n\n【確定】＝連動拆（建議）：子專案照同樣工序拆開，各自的單價按母專案的比例分攤，數量不變。之後再進去把該廠商不做的那道刪掉即可。\n\n【取消】＝只拆母專案：子專案會對應不到母細項，發包分配會用橘色標出「孤兒發包」要你手動處理。`);
+    }
     openSplitModal(b,it,parts=>{
       const i=b.items.indexOf(it); if(i<0) return;
       const made=parts.map(p=>{
         const price=evalExpr(p.raw), pe=hasExpr(p.raw)?p.raw:'';
         return {id:uid(),no:'增',tag:'',chapter:it.chapter||'',name:`${it.name}-${p.nm}`,unit:it.unit,
                 qty:it.qty,qtyExpr:it.qtyExpr||'',price,priceExpr:pe,amount:it.qty*price,remark:it.remark||'',
-                ...(it.srcId?{srcId:it.srcId}:{})}; // 拆開後仍對應同一條母細項（發包分配用金額比對，不會重複計）
+                ...(it.srcId?{srcId:it.srcId}:{})}; // 自己也是子專案時：拆開後仍對應同一條母細項
       });
       b.items.splice(i,1,...made);
       for(const per of proj.periods) if(per.prog) delete per.prog[it.id]; // 原細項的進度不再適用
+      // ── 連動：子專案照同樣工序拆，單價按母專案各段比例分攤（總額不變）──
+      let kidCount=0, kidItems=0;
+      if(cascade){
+        const ratioBase=made.reduce((s,x)=>s+(Number(x.price)||0),0);
+        refs.forEach(k=>{
+          let touched=false;
+          k.blocks.forEach(kb=>{
+            for(let j=kb.items.length-1;j>=0;j--){
+              const ki=kb.items[j]; if(ki.srcId!==it.id) continue;
+              const cPrice=Number(ki.price)||0;
+              let acc=0;
+              const kmade=made.map((mp,idx)=>{
+                // 最後一段吃掉四捨五入尾差，讓各段相加等於子專案原本的單價
+                const pr=ratioBase>0
+                  ? (idx===made.length-1 ? +(cPrice-acc).toFixed(2) : (()=>{const v=Math.round(cPrice*(Number(mp.price)||0)/ratioBase*100)/100; acc+=v; return v;})())
+                  : (idx===0?cPrice:0);
+                return {id:uid(),no:'增',tag:'',chapter:ki.chapter||'',name:`${ki.name}-${mp.name.slice(it.name.length+1)}`,
+                        unit:ki.unit,qty:ki.qty,qtyExpr:ki.qtyExpr||'',price:pr,priceExpr:'',
+                        amount:(Number(ki.qty)||0)*pr,remark:ki.remark||'',srcId:mp.id};
+              });
+              kb.items.splice(j,1,...kmade);
+              for(const per of k.periods) if(per.prog) delete per.prog[ki.id];
+              kidItems+=kmade.length; touched=true;
+            }
+          });
+          if(touched) kidCount++;
+        });
+      }
       save(); render();
-      alert(`已拆成 ${made.length} 道工序：\n${made.map(x=>`・${x.name}　${qfmt(x.qty)} ${x.unit} × ${qfmt(x.price)}`).join('\n')}`);
+      alert(`已拆成 ${made.length} 道工序：\n${made.map(x=>`・${x.name}　${qfmt(x.qty)} ${x.unit} × ${qfmt(x.price)}`).join('\n')}`
+        +(cascade&&kidCount?`\n\n並同步拆了 ${kidCount} 個子專案共 ${kidItems} 條（單價已按比例分攤）。\n記得進去把各廠商不做的那道刪掉。`:'')
+        +(refs.length&&!cascade?`\n\n⚠ 子專案未連動，發包分配會標示孤兒發包。`:''));
     });
     return;
   }
