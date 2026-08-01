@@ -108,7 +108,7 @@ body.printing #print-overlay{display:block;position:absolute;inset:0;background:
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.07.31d-cascade';
+const APP_VERSION='vG2026.07.31e-sortback';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -534,13 +534,14 @@ function viewItems(proj){
       const subSum=b.items.reduce((s,i)=>s+i.amount,0);
       h+=`<tr class="chapter"><td colspan="5" style="text-align:right">小計${b.count>1?`（每${esc(b.unit)}）`:''}</td><td class="num"><b>${qfmt(subSum)}</b></td><td colspan="2">${b.count>1?`<span class="muted" style="font-size:11px">×${qfmt(b.count)} ${esc(b.unit)} ＝ ${money(subSum*b.count)}</span>`:''}</td></tr>`;
     }
-    const allManual=b.items.length>1&&b.items.every(it=>it.no==='增');
+    const canSort=b.items.length>1;                                  // 一律顯示；按下去若含匯入細項會先確認
+    const allManual=b.items.every(it=>it.no==='增');
     const srcBlks=proj.blocks.filter(x=>x.id!==b.id&&x.items.length);
     h+=`</table><div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">`;
     if(batchAll){
       h+=`<span class="muted" style="font-size:12px">數量／單價可直接填算式（例 5.11*3.07）。改完請按上方「💾 全部儲存」。</span>`;
     }else if(batchEdit!==b.id){
-      h+=`${itemAdd===b.id?'':`<button class="btn sub sm" data-additem="${b.id}">＋ 手動加細項</button>`}${allManual?`<button class="btn sub sm" data-sortitems="${b.id}" title="依名稱/圖面編號自然排序（A、B…D-1、E…）">🔤 智慧排序</button>`:''}${srcBlks.length&&copyInto!==b.id?`<button class="btn sub sm" data-copyinto="${b.id}">📋 複製細項自其他區塊</button>`:''}${copyInto===b.id?`<span class="muted" style="font-size:12px">從哪個區塊複製：</span><select id="copy-src" style="height:30px">${srcBlks.map(x=>`<option value="${x.id}">${esc(x.name)}（${x.items.length} 條）</option>`).join('')}</select><button class="btn sm" data-copyok="${b.id}">複製過來</button><button class="btn sub sm" data-copycancel="1">取消</button>`:''}`;
+      h+=`${itemAdd===b.id?'':`<button class="btn sub sm" data-additem="${b.id}">＋ 手動加細項</button>`}${canSort?`<button class="btn sub sm" data-sortitems="${b.id}" title="依名稱/圖面編號自然排序（A、B…D-1、E…）${allManual?'':'／此區塊含匯入細項，按下會先確認'}">🔤 智慧排序${allManual?'':'<span style="opacity:.6">·含匯入</span>'}</button>`:''}${srcBlks.length&&copyInto!==b.id?`<button class="btn sub sm" data-copyinto="${b.id}">📋 複製細項自其他區塊</button>`:''}${copyInto===b.id?`<span class="muted" style="font-size:12px">從哪個區塊複製：</span><select id="copy-src" style="height:30px">${srcBlks.map(x=>`<option value="${x.id}">${esc(x.name)}（${x.items.length} 條）</option>`).join('')}</select><button class="btn sm" data-copyok="${b.id}">複製過來</button><button class="btn sub sm" data-copycancel="1">取消</button>`:''}`;
     }
     h+=`</div></div></details>`;
   }
@@ -1147,7 +1148,8 @@ document.addEventListener('click',async e=>{
   }
   if(t.dataset.sortitems){
     const b=proj.blocks.find(x=>x.id===t.dataset.sortitems);if(!b)return;
-    if(!b.items.every(it=>it.no==='增')){ alert('這個區塊有匯入的細項，為避免打亂合約順序，智慧排序只用在全部手動新增的區塊。'); return; }
+    const imported=b.items.filter(it=>it.no!=='增').length;
+    if(imported&&!confirm(`「${b.name}」裡有 ${imported} 條是從合約 Excel 匯入的細項。\n\n智慧排序會依名稱／圖面編號重排（A、B…D-1、E…），<b>會打亂合約原本的項次順序</b>。給業主的正式合約明細通常要維持原順序；發包用的子專案則沒差。\n\n確定要排序嗎？`.replace(/<\/?b>/g,'')))return;
     const nat=(a,c)=>String(a||'').localeCompare(String(c||''),'zh-Hant',{numeric:true,sensitivity:'base'});
     b.items.sort((x,y)=>nat(x.chapter,y.chapter)||nat(x.name,y.name));
     save();render();return;
