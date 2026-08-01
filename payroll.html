@@ -509,7 +509,7 @@ const FS_ROOT = 'https://firestore.googleapis.com/v1/projects/'+FS_PROJECT+'/dat
 const FS_DOC_BASE = FS_ROOT+'payroll/';
 const FS_SIG_BASE = FS_ROOT+'payrollSignatures/';
 const FS_REST_URL = FS_DOC_BASE+'main?key='+FS_KEY;
-const APP_VERSION = 'v2026.07.31b-shbonus';
+const APP_VERSION = 'v2026.07.31c-rooms';
 let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], tools:[], locations:[], assets:[], advances:[], accounts:[], ledger:[], deals:[], billings:[], measurements:[], contracts:{}, costs:[], textMemory:{clients:[],companies:[]}, parkAccId:'', oweBonus:{}, minFund:'', shareholderTx:[], payrollSnapshots:[], yearIncomeAdj:[], deletedIds:[], resurrected:{ids:[],at:0}, tab:'dash' };
 let cloudStatus='連線中…';
 let localDirty=false, lastCloudTs=0;
@@ -532,9 +532,11 @@ const localISODate = (value=new Date()) => {
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 };
 // 計算式金額（數量×單價 或 金額欄）＝這張單自己的帳面值
+// 間數（複數房間）：沒填或 <=0 一律當 1，舊資料不受影響
+const billingRooms = b => { const r=Number(b&&b.rooms); return (!isNaN(r)&&r>0)?r:1; };
 const rawBillingAmount = b => {
   const qty=Number(b&&b.qty), up=Number(b&&b.unitPrice);
-  if(b&&b.qty!==undefined&&b.unitPrice!==undefined&&!isNaN(qty)&&qty>0&&!isNaN(up)&&up>=0) return qty*up;
+  if(b&&b.qty!==undefined&&b.unitPrice!==undefined&&!isNaN(qty)&&qty>0&&!isNaN(up)&&up>=0) return qty*up*billingRooms(b);
   return Number(b&&b.amount)||0;
 };
 // 本單「分攤出去」的金額合計（allocOut=[{to:目標單id, amount:金額}]，可拆給多張）
@@ -569,20 +571,32 @@ function migrateBillingMerges(){
 }
 const billingLineMeta = b => {
   if(!b||b.qty===undefined||b.unitPrice===undefined) return '';
-  return `${Number(b.qty)||0} ${esc(b.unit||'式')} × ${money(Number(b.unitPrice)||0)}`; // 「69 間 × $1,100」順著唸
+  const rm=billingRooms(b);
+  return `${Number(b.qty)||0} ${esc(b.unit||'式')}${rm>1?` × ${rm} 間`:''} × ${money(Number(b.unitPrice)||0)}${b.priceExpr?`（${esc(b.priceExpr)}）`:''}`; // 「69 間 × $1,100」順著唸
 };
 function readBillingLine(prefix){
   const unit=(document.getElementById(prefix+'-unit')||{}).value||'式';
   const qty=parseFloat((document.getElementById(prefix+'-qty')||{}).value);
-  const unitPrice=parseFloat((document.getElementById(prefix+'-unit-price')||{}).value);
-  const amount=qty*unitPrice;
-  return {unit:unit.trim()||'式', qty, unitPrice, amount};
+  const rawP=(document.getElementById(prefix+'-unit-price')||{}).value;
+  const unitPrice=evalPriceExpr(rawP);
+  const priceExpr=/[+\-*/()×÷]/.test(String(rawP||'').replace(/^\s*-?[\d.]+/,''))?String(rawP).trim():'';
+  const rmEl=document.getElementById(prefix+'-rooms');
+  const rmRaw=rmEl?parseFloat(rmEl.value):NaN;
+  const rooms=(!isNaN(rmRaw)&&rmRaw>0)?rmRaw:1;
+  return {unit:unit.trim()||'式', qty, unitPrice, priceExpr, rooms, amount:qty*unitPrice*rooms};
 }
 function bindBillingSubtotal(prefix){
   const qty=document.getElementById(prefix+'-qty'), price=document.getElementById(prefix+'-unit-price'), out=document.getElementById(prefix+'-subtotal');
   if(!qty||!price||!out) return;
-  const calc=()=>{ const q=parseFloat(qty.value),p=parseFloat(price.value); out.textContent=(!isNaN(q)&&!isNaN(p))?money(q*p):money(0); };
-  qty.oninput=calc; price.oninput=calc; calc();
+  const rooms=document.getElementById(prefix+'-rooms');
+  const calc=()=>{
+    const q=parseFloat(qty.value), p=evalPriceExpr(price.value);
+    const rRaw=rooms?parseFloat(rooms.value):NaN, r=(!isNaN(rRaw)&&rRaw>0)?rRaw:1;
+    out.textContent=(!isNaN(q)&&!isNaN(p))?money(q*p*r):money(0);
+    const hint=document.getElementById(prefix+'-price-hint');
+    if(hint) hint.textContent=(!isNaN(p)&&/[+\-*/()×÷]/.test(String(price.value||'').replace(/^\s*-?[\d.]+/,'')))?('= '+money(p)):'';
+  };
+  qty.oninput=calc; price.oninput=calc; if(rooms) rooms.oninput=calc; calc();
 }
 function bindSiteClientAutofill(siteId, clientId){
   const site=document.getElementById(siteId), client=document.getElementById(clientId);
@@ -3942,7 +3956,7 @@ function bind(){
     const settled=document.getElementById('bnr-settled').value==='1';
     if(!date||!site||isNaN(line.amount)||line.amount<=0){ alert('請填日期、案場、數量與單價'); return; }
     rememberText('clients',client);
-    state.billings.push({id:uid(),docType:'請款單',date,site,unit:line.unit,qty:line.qty,unitPrice:line.unitPrice,amount:line.amount,method,client,note,settled});
+    state.billings.push({id:uid(),docType:'請款單',date,site,unit:line.unit,qty:line.qty,rooms:line.rooms,unitPrice:line.unitPrice,priceExpr:line.priceExpr,amount:line.amount,method,client,note,settled});
     billingReqDraft=null;
     const so=state.sites.find(x=>x.name===site); if(so) resyncSiteDeal(so);
     saveData(); render();
@@ -3965,7 +3979,7 @@ function bind(){
     const settled=document.getElementById('bna-settled').value==='1';
     if(!date||!site||isNaN(line.amount)||line.amount<=0){ alert('請填日期、案場、數量與單價'); return; }
     rememberText('clients',client);
-    state.billings.push({id:uid(),docType:'追加單',date,site,unit:line.unit,qty:line.qty,unitPrice:line.unitPrice,amount:line.amount,client,note,remark,settled});
+    state.billings.push({id:uid(),docType:'追加單',date,site,unit:line.unit,qty:line.qty,rooms:line.rooms,unitPrice:line.unitPrice,priceExpr:line.priceExpr,amount:line.amount,client,note,remark,settled});
     billingAddDraft=null;
     const so=state.sites.find(x=>x.name===site); if(so) resyncSiteDeal(so);
     saveData(); render();
@@ -4062,7 +4076,7 @@ function bind(){
     const settled=document.getElementById('bae-settled').value==='1';
     if(!date||!site||isNaN(line.amount)||line.amount<=0){ alert('請填日期、案場、數量與單價'); return; }
     rememberText('clients',client);
-    bill.date=date; bill.site=site; bill.unit=line.unit; bill.qty=line.qty; bill.unitPrice=line.unitPrice; bill.amount=line.amount; bill.client=client; bill.note=note; bill.remark=remark; bill.settled=settled;
+    bill.date=date; bill.site=site; bill.unit=line.unit; bill.qty=line.qty; bill.rooms=line.rooms; bill.unitPrice=line.unitPrice; bill.priceExpr=line.priceExpr; bill.amount=line.amount; bill.client=client; bill.note=note; bill.remark=remark; bill.settled=settled;
     const so=state.sites.find(x=>x.name===site); if(so) resyncSiteDeal(so);
     billingAddEditId=null; saveData(); render();
   });
@@ -4978,17 +4992,19 @@ function billingDocInner(id, internal, pick){
       <tr><th style="width:90px">業主</th><td>${esc(clientPrint)}${type!=='追加單'&&b.method?`　（${esc(b.method)}）`:''}</td></tr>
     </tbody></table>
     <div class="sec">金額</div>
-    <table><thead><tr><th>項目</th><th>單位</th><th class="num">數量</th><th class="num">單價</th><th class="num">小計</th></tr></thead>
+    ${(()=>{ const rm=billingRooms(b); const showRooms=rm>1;
+      return `<table><thead><tr><th>項目</th><th>單位</th><th class="num">數量</th>${showRooms?'<th class="num">間數</th>':''}<th class="num">單價</th><th class="num">小計</th></tr></thead>
       <tbody>
         ${!isDark&&((b.printAmount!=null&&b.printAmount!=='')||(!b.wrapAlloc&&mergedIntoSum(b)>0)||allocOutSum(b)>0)
-          ? `<tr><td>${esc(b.note||type)}</td><td>式</td><td class="num">1</td><td class="num">${money(amt)}</td><td class="num">${money(amt)}</td></tr>`
-          : `<tr><td>${esc(b.note||type)}</td><td>${esc(b.unit||'')}</td><td class="num">${b.qty!==undefined?b.qty:'—'}</td><td class="num">${b.unitPrice!==undefined?money(b.unitPrice):'—'}</td><td class="num">${money(amt)}</td></tr>`}
-        <tr class="total-row"><td colspan="4">總金額</td><td class="num">${money(amt)}</td></tr>
-        ${outsourced&&Number(b.withholdPct)>0?(()=>{ const pct=Number(b.withholdPct); const wh=Math.round(amt*pct/100);
-          return `<tr><td colspan="4">代扣所得稅 ${pct}%</td><td class="num">−${money(wh)}</td></tr>
-          <tr class="total-row"><td colspan="4">本期實付</td><td class="num">${money(amt-wh)}</td></tr>
-          <tr><td colspan="5" style="padding-top:6px;font-size:13px;color:${b.withholdRefunded?'#555':'#9a5b1a'}">${b.withholdRefunded?`代扣款 ${money(wh)} 已於 ${esc(b.withholdRefundDate||'')} 回補（發票補開）`:`代扣款 ${money(wh)} 待補開發票後回補`}</td></tr>`; })():''}
-        ${b.remark?`<tr><td colspan="5" style="padding-top:8px;color:#555;font-size:13px">備注：${escBr(b.remark)}</td></tr>`:''}
+          ? `<tr><td>${esc(b.note||type)}</td><td>式</td><td class="num">1</td>${showRooms?'<td class="num">—</td>':''}<td class="num">${money(amt)}</td><td class="num">${money(amt)}</td></tr>`
+          : `<tr><td>${esc(b.note||type)}</td><td>${esc(b.unit||'')}</td><td class="num">${b.qty!==undefined?b.qty:'—'}</td>${showRooms?`<td class="num">${rm} 間</td>`:''}<td class="num">${b.unitPrice!==undefined?money(b.unitPrice)+(b.priceExpr?`<div style="font-size:10px;color:#777">${esc(b.priceExpr)}</div>`:''):'—'}</td><td class="num">${money(amt)}</td></tr>`}
+        <tr class="total-row"><td colspan="${showRooms?5:4}">總金額</td><td class="num">${money(amt)}</td></tr>`; })()}
+        ${(()=>{ const rm=billingRooms(b), cs=rm>1?5:4, cs2=rm>1?6:5;
+          return (outsourced&&Number(b.withholdPct)>0?(()=>{ const pct=Number(b.withholdPct); const wh=Math.round(amt*pct/100);
+          return `<tr><td colspan="${cs}">代扣所得稅 ${pct}%</td><td class="num">−${money(wh)}</td></tr>
+          <tr class="total-row"><td colspan="${cs}">本期實付</td><td class="num">${money(amt-wh)}</td></tr>
+          <tr><td colspan="${cs2}" style="padding-top:6px;font-size:13px;color:${b.withholdRefunded?'#555':'#9a5b1a'}">${b.withholdRefunded?`代扣款 ${money(wh)} 已於 ${esc(b.withholdRefundDate||'')} 回補（發票補開）`:`代扣款 ${money(wh)} 待補開發票後回補`}</td></tr>`; })():'')
+          +(b.remark?`<tr><td colspan="${cs2}" style="padding-top:8px;color:#555;font-size:13px">備注：${escBr(b.remark)}</td></tr>`:''); })()}
       </tbody></table>
     ${internalSec}
     ${photoSec}
@@ -6148,7 +6164,8 @@ function viewBillingReq(){
       <div class="field" style="flex:1;min-width:150px"><label>案場</label><select id="bnr-site">${siteSelOpts}</select></div>
       <div class="field"><label>單位</label><input id="bnr-unit" value="式" placeholder="式、天、坪" style="width:90px"></div>
       <div class="field"><label>數量</label><input type="number" id="bnr-qty" min="0" step="0.01" value="${billingReqDraft?'':'1'}" style="width:90px"></div>
-      <div class="field"><label>單價</label><input type="number" id="bnr-unit-price" min="0" step="1" style="width:120px"></div>
+      <div class="field"><label>間數</label><input type="number" id="bnr-rooms" min="1" step="1" value="${billingReqDraft&&billingReqDraft.rooms?billingReqDraft.rooms:'1'}" title="複數房間：數量 × 間數 × 單價" style="width:80px"></div>
+      <div class="field"><label>單價（可複價）</label><input id="bnr-unit-price" inputmode="decimal" placeholder="140+140" style="width:130px"><div id="bnr-price-hint" style="font-size:11px;color:var(--muted);height:14px"></div></div>
       <div class="field"><label>小計</label><div id="bnr-subtotal" class="num" style="height:36px;display:flex;align-items:center;font-weight:700">$0</div></div>
       <div class="field"><label>方式</label><input id="bnr-method" placeholder="匯款" value="${billingReqDraft?esc(billingReqDraft.method):''}" style="width:100px"></div>
       <div class="field"><label>業主</label><input id="bnr-client" list="client-memory-list" placeholder="業主名稱" value="${billingReqDraft?esc(billingReqDraft.client):''}" style="width:110px"></div>
@@ -6203,7 +6220,8 @@ function viewBillingAdd(){
             <div class="field" style="flex:1;min-width:140px"><label>案場</label><select id="bae-site">${siteOpts}</select></div>
             <div class="field"><label>單位</label><input id="bae-unit" value="${esc(b.unit||'式')}" style="width:80px"></div>
             <div class="field"><label>數量</label><input type="number" id="bae-qty" value="${b.qty!==undefined?b.qty:1}" min="0" step="0.01" style="width:80px"></div>
-            <div class="field"><label>單價</label><input type="number" id="bae-unit-price" value="${b.unitPrice!==undefined?b.unitPrice:billingAmount(b)}" min="0" step="1" style="width:110px"></div>
+            <div class="field"><label>間數</label><input type="number" id="bae-rooms" value="${billingRooms(b)}" min="1" step="1" title="複數房間：數量 × 間數 × 單價" style="width:75px"></div>
+            <div class="field"><label>單價（可複價）</label><input id="bae-unit-price" inputmode="decimal" value="${esc(String(b.priceExpr||(b.unitPrice!==undefined?b.unitPrice:billingAmount(b))))}" placeholder="140+140" style="width:120px"><div id="bae-price-hint" style="font-size:11px;color:var(--muted);height:14px"></div></div>
             <div class="field"><label>小計</label><div id="bae-subtotal" class="num" style="height:36px;display:flex;align-items:center;font-weight:700">${money(billingAmount(b))}</div></div>
             <div class="field"><label>業主</label><input id="bae-client" list="client-memory-list" value="${esc(b.client||'')}" style="width:100px"></div>
             <div class="field" style="flex:1;min-width:180px"><label>說明（追加項目）</label><input id="bae-note" value="${esc(b.note||'')}" placeholder="例：追加防水工程"></div>
@@ -6418,8 +6436,9 @@ function viewBillingAdd(){
       <div class="field" style="flex:1;min-width:150px"><label>案場</label><select id="bna-site">${siteSelectOptions(billingAddDraft?billingAddDraft.site:'')}</select></div>
       <div class="field"><label>單位</label><input id="bna-unit" value="${billingAddDraft?esc(billingAddDraft.unit||'式'):'式'}" placeholder="式、天、坪" style="width:90px"></div>
       <div class="field"><label>數量</label><input type="number" id="bna-qty" min="0" step="0.01" value="${billingAddDraft?(billingAddDraft.qty!==undefined?billingAddDraft.qty:''):'1'}" style="width:90px"></div>
-      <div class="field"><label>單價</label><input type="number" id="bna-unit-price" min="0" step="1" value="${billingAddDraft&&billingAddDraft.unitPrice!==undefined?billingAddDraft.unitPrice:''}" style="width:120px"></div>
-      <div class="field"><label>小計</label><div id="bna-subtotal" class="num" style="height:36px;display:flex;align-items:center;font-weight:700">${billingAddDraft?money((Number(billingAddDraft.qty)||0)*(Number(billingAddDraft.unitPrice)||0)):'$0'}</div></div>
+      <div class="field"><label>間數</label><input type="number" id="bna-rooms" min="1" step="1" value="${billingAddDraft&&billingAddDraft.rooms?billingAddDraft.rooms:'1'}" title="複數房間：數量 × 間數 × 單價" style="width:80px"></div>
+      <div class="field"><label>單價（可複價）</label><input id="bna-unit-price" inputmode="decimal" placeholder="140+140" value="${billingAddDraft?esc(String(billingAddDraft.priceExpr||(billingAddDraft.unitPrice!==undefined?billingAddDraft.unitPrice:''))):''}" style="width:130px"><div id="bna-price-hint" style="font-size:11px;color:var(--muted);height:14px"></div></div>
+      <div class="field"><label>小計</label><div id="bna-subtotal" class="num" style="height:36px;display:flex;align-items:center;font-weight:700">${billingAddDraft?money((Number(billingAddDraft.qty)||0)*(Number(billingAddDraft.unitPrice)||0)*(Number(billingAddDraft.rooms)||1)):'$0'}</div></div>
       <div class="field"><label>業主</label><input id="bna-client" list="client-memory-list" placeholder="業主名稱" value="${billingAddDraft?esc(billingAddDraft.client):''}" style="width:110px"></div>
       <div class="field" style="flex:1;min-width:180px"><label>說明（追加項目）</label><input id="bna-note" placeholder="例：追加防水工程" value="${billingAddDraft?esc(billingAddDraft.note):''}"></div>
       <div class="field" style="flex:1;min-width:150px"><label>備注（可換行）</label><textarea id="bna-remark" rows="2" placeholder="其他備注">${billingAddDraft?esc(billingAddDraft.remark):''}</textarea></div>
