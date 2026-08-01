@@ -108,7 +108,7 @@ body.printing #print-overlay{display:block;position:absolute;inset:0;background:
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.07.31f-groupsplit';
+const APP_VERSION='vG2026.07.31g-regroup';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -416,6 +416,19 @@ function calc(proj,perIdx){
 /* ═══════════ 畫面 ═══════════ */
 const openBlk=new Set();
 const openGroup=new Set(); // 拆開的工序群組：展開狀態
+// 舊資料回溯：找出「以前拆過但沒有群組標記」的細項（名稱同前綴＋相鄰＋單位數量一致）
+function detectSplitRuns(b){
+  const runs=[]; let cur=null;
+  const pre=n=>{ const i=String(n||'').lastIndexOf('-'); return i>0?String(n).slice(0,i):null; };
+  for(const it of b.items){
+    const p=it.groupId?null:pre(it.name);
+    if(p&&cur&&cur.prefix===p&&cur.unit===it.unit&&Number(cur.qty)===Number(it.qty)){ cur.items.push(it); continue; }
+    if(cur&&cur.items.length>1) runs.push(cur);
+    cur=p?{prefix:p,unit:it.unit,qty:it.qty,items:[it]}:null;
+  }
+  if(cur&&cur.items.length>1) runs.push(cur);
+  return runs;
+}
 let itemEdit=null, itemAdd=null, blkEdit=null, blkAdd=false, copyInto=null, batchEdit=null, batchAll=false; // 就地編輯：細項/區塊；copyInto＝選來源區塊複製；batchEdit＝單一區塊整批改；batchAll＝全部區塊一起整批改
 function render(){
   const app=document.getElementById('app');
@@ -572,11 +585,12 @@ function viewItems(proj){
     const canSort=b.items.length>1;                                  // 一律顯示；按下去若含匯入細項會先確認
     const allManual=b.items.every(it=>it.no==='增');
     const srcBlks=proj.blocks.filter(x=>x.id!==b.id&&x.items.length);
+    const runs=detectSplitRuns(b);   // 以前拆過但還沒群組的
     h+=`</table><div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">`;
     if(batchAll){
       h+=`<span class="muted" style="font-size:12px">數量／單價可直接填算式（例 5.11*3.07）。改完請按上方「💾 全部儲存」。</span>`;
     }else if(batchEdit!==b.id){
-      h+=`${itemAdd===b.id?'':`<button class="btn sub sm" data-additem="${b.id}">＋ 手動加細項</button>`}${canSort?`<button class="btn sub sm" data-sortitems="${b.id}" title="依名稱/圖面編號自然排序（A、B…D-1、E…）${allManual?'':'／此區塊含匯入細項，按下會先確認'}">🔤 智慧排序${allManual?'':'<span style="opacity:.6">·含匯入</span>'}</button>`:''}${srcBlks.length&&copyInto!==b.id?`<button class="btn sub sm" data-copyinto="${b.id}">📋 複製細項自其他區塊</button>`:''}${copyInto===b.id?`<span class="muted" style="font-size:12px">從哪個區塊複製：</span><select id="copy-src" style="height:30px">${srcBlks.map(x=>`<option value="${x.id}">${esc(x.name)}（${x.items.length} 條）</option>`).join('')}</select><button class="btn sm" data-copyok="${b.id}">複製過來</button><button class="btn sub sm" data-copycancel="1">取消</button>`:''}`;
+      h+=`${runs.length?`<button class="btn sub sm" data-groupdetect="${b.id}" style="border-color:#6366f1;color:#4338ca" title="把以前拆開、還沒收在一起的工序群組起來，之後就能展開／合回">🔗 收合舊的拆分（${runs.length} 組）</button>`:''}${itemAdd===b.id?'':`<button class="btn sub sm" data-additem="${b.id}">＋ 手動加細項</button>`}${canSort?`<button class="btn sub sm" data-sortitems="${b.id}" title="依名稱/圖面編號自然排序（A、B…D-1、E…）${allManual?'':'／此區塊含匯入細項，按下會先確認'}">🔤 智慧排序${allManual?'':'<span style="opacity:.6">·含匯入</span>'}</button>`:''}${srcBlks.length&&copyInto!==b.id?`<button class="btn sub sm" data-copyinto="${b.id}">📋 複製細項自其他區塊</button>`:''}${copyInto===b.id?`<span class="muted" style="font-size:12px">從哪個區塊複製：</span><select id="copy-src" style="height:30px">${srcBlks.map(x=>`<option value="${x.id}">${esc(x.name)}（${x.items.length} 條）</option>`).join('')}</select><button class="btn sm" data-copyok="${b.id}">複製過來</button><button class="btn sub sm" data-copycancel="1">取消</button>`:''}`;
     }
     h+=`</div></div></details>`;
   }
@@ -1042,7 +1056,7 @@ function setProgInput(proj,blkId,itemId,kind,val){
 }
 
 document.addEventListener('click',async e=>{
-  const t=e.target.closest('[data-tab],[data-editblk],[data-delblk],[data-edititem],[data-delitem],[data-additem],[data-splititem],[data-sortitems],[data-grouptoggle],[data-groupmerge],[data-copyinto],[data-copyok],[data-copycancel],[data-batchedit],[data-batchok],[data-batchcancel],[data-batchalledit],[data-batchallok],[data-batchallcancel],[data-itemok],[data-itemcancel],[data-blkok],[data-blkcancel],[data-bapply],[data-editextra],[data-delextra],#btn-import,#btn-import2,#btn-newproj,#btn-newproj2,#btn-addblk,#btn-addblk-ok,#btn-addperiod,#btn-delperiod,#btn-addextra,#btn-roundup,[data-gotoproj],#btn-print,#set-save,#proj-dup,#proj-detach,#backup-export,#backup-import-btn,#proj-del,#cloud-push,#cloud-pull');
+  const t=e.target.closest('[data-tab],[data-editblk],[data-delblk],[data-edititem],[data-delitem],[data-additem],[data-splititem],[data-sortitems],[data-grouptoggle],[data-groupmerge],[data-groupdetect],[data-copyinto],[data-copyok],[data-copycancel],[data-batchedit],[data-batchok],[data-batchcancel],[data-batchalledit],[data-batchallok],[data-batchallcancel],[data-itemok],[data-itemcancel],[data-blkok],[data-blkcancel],[data-bapply],[data-editextra],[data-delextra],#btn-import,#btn-import2,#btn-newproj,#btn-newproj2,#btn-addblk,#btn-addblk-ok,#btn-addperiod,#btn-delperiod,#btn-addextra,#btn-roundup,[data-gotoproj],#btn-print,#set-save,#proj-dup,#proj-detach,#backup-export,#backup-import-btn,#proj-del,#cloud-push,#cloud-pull');
   if(!t)return;
   const proj=curProj();
   if(t.dataset.tab){state.tab=t.dataset.tab;save();render();return;}
@@ -1178,6 +1192,16 @@ document.addEventListener('click',async e=>{
         +(cascade&&kidCount?`\n\n並同步拆了 ${kidCount} 個子專案共 ${kidItems} 條（單價已按比例分攤）。\n記得進去把各廠商不做的那道刪掉。`:'')
         +(refs.length&&!cascade?`\n\n⚠ 子專案未連動，發包分配會標示孤兒發包。`:''));
     });
+    return;
+  }
+  if(t.dataset.groupdetect){
+    const b=proj.blocks.find(x=>x.id===t.dataset.groupdetect); if(!b) return;
+    const runs=detectSplitRuns(b); if(!runs.length){ alert('這個區塊沒有偵測到以前拆開的工序。'); return; }
+    const preview=runs.map(r=>`・${r.prefix}：${r.items.map(x=>x.name.slice(r.prefix.length+1)).join('、')}（${r.items.length} 道）`).join('\n');
+    if(!confirm(`偵測到 ${runs.length} 組以前拆開、還沒收在一起的工序：\n\n${preview}\n\n要把它們群組起來嗎？\n\n・合約明細會改成只顯示原本那條（可展開看工序）\n・之後就能用「↩ 合回」合併回一條\n・金額、數量、進度都不會變動，純粹是顯示方式`))return;
+    runs.forEach(r=>{ const gid=uid(); r.items.forEach(x=>{ x.groupId=gid; x.groupName=r.prefix; }); });
+    save(); render();
+    alert(`已群組 ${runs.length} 組。點項目左邊的 ▸ 可展開看各道工序。`);
     return;
   }
   if(t.dataset.grouptoggle){ const g=t.dataset.grouptoggle; openGroup.has(g)?openGroup.delete(g):openGroup.add(g); render(); return; }
