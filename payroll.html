@@ -509,7 +509,7 @@ const FS_ROOT = 'https://firestore.googleapis.com/v1/projects/'+FS_PROJECT+'/dat
 const FS_DOC_BASE = FS_ROOT+'payroll/';
 const FS_SIG_BASE = FS_ROOT+'payrollSignatures/';
 const FS_REST_URL = FS_DOC_BASE+'main?key='+FS_KEY;
-const APP_VERSION = 'v2026.08.01b-tabmerge';
+const APP_VERSION = 'v2026.08.01c-loanmerge';
 let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], tools:[], locations:[], assets:[], advances:[], accounts:[], ledger:[], deals:[], billings:[], measurements:[], contracts:{}, costs:[], textMemory:{clients:[],companies:[]}, parkAccId:'', oweBonus:{}, minFund:'', shareholderTx:[], payrollSnapshots:[], yearIncomeAdj:[], deletedIds:[], resurrected:{ids:[],at:0}, tab:'dash' };
 let cloudStatus='連線中…';
 let localDirty=false, lastCloudTs=0;
@@ -2439,16 +2439,23 @@ function viewPayroll(){
     </tr>`;
   }).join('');
 
-  // 本期借支扣款提示：尚未還清、且本期還沒扣過的借支
-  const loanReminders=state.loans.filter(l=>loanBalance(l)>0 && !loanDeductedInRange(l.id,state.payFrom,state.payTo)).map(l=>{
-    const bal=loanBalance(l);
-    const available=Math.max(0,Number(byEmp[l.empId]&&byEmp[l.empId].net)||0);
+  // 本期借支扣款提示：同一人的多筆借支合併成一列（扣款自動由最早那筆開始沖銷）
+  const _pendingLoans={};
+  state.loans.filter(l=>loanBalance(l)>0 && !loanDeductedInRange(l.id,state.payFrom,state.payTo))
+    .forEach(l=>{ (_pendingLoans[l.empId]=_pendingLoans[l.empId]||[]).push(l); });
+  const loanReminders=Object.keys(_pendingLoans).map(empId=>{
+    const list=_pendingLoans[empId].slice().sort((a,b)=>String(a.date||'').localeCompare(String(b.date||''))||String(a.id).localeCompare(String(b.id)));
+    const bal=list.reduce((s,l)=>s+loanBalance(l),0);
+    const available=Math.max(0,Number(byEmp[empId]&&byEmp[empId].net)||0);
     const maxDed=Math.min(bal,available);
+    const detail=list.length>1
+      ? `<div class="sub" style="margin:2px 0 0">${list.length} 筆：${list.map(l=>`${l.date?esc(l.date)+' ':''}${money(loanBalance(l))}`).join('、')}（由最早的開始扣）</div>`
+      : '';
     return `<tr>
-      <td>${esc(empName(l.empId))}</td>
+      <td>${esc(empName(empId))}${list.length>1?`<span class="tag">${list.length} 筆</span>`:''}${detail}</td>
       <td class="num">${money(bal)}</td>
-      <td class="num"><input type="number" data-loanpay="${l.id}" min="0" max="${maxDed}" step="500" placeholder="${maxDed>0?'本期扣多少':'本期無可扣薪資'}" style="width:120px;text-align:right" ${maxDed<=0?'disabled':''}></td>
-      <td><button class="act" data-repay="${l.id}" style="border:1px solid var(--accent);border-radius:6px;padding:3px 10px;color:var(--accent)" ${maxDed<=0?'disabled':''}>加入扣款</button></td>
+      <td class="num"><input type="number" data-loanpay="${esc(empId)}" min="0" max="${maxDed}" step="500" placeholder="${maxDed>0?'本期扣多少（最多 '+money(maxDed).slice(1)+'）':'本期無可扣薪資'}" style="width:150px;text-align:right" ${maxDed<=0?'disabled':''}></td>
+      <td><button class="act" data-repay="${esc(empId)}" style="border:1px solid var(--accent);border-radius:6px;padding:3px 10px;color:var(--accent)" ${maxDed<=0?'disabled':''}>加入扣款</button></td>
     </tr>`;
   }).join('');
 
@@ -3544,16 +3551,30 @@ function bind(){
     loan.repayments.splice(i,1); saveData(); render();
   });
   document.querySelectorAll('[data-repay]').forEach(b=>b.onclick=()=>{
-    const loan=state.loans.find(l=>l.id===b.dataset.repay); if(!loan) return;
-    const bal=loanBalance(loan);
-    const inp=document.querySelector(`[data-loanpay="${loan.id}"]`);
-    const amt=Math.min(parseFloat(inp&&inp.value), bal);
+    const empId=b.dataset.repay;
+    // 該員工本期還沒扣過的借支，由最早的開始沖銷
+    const list=state.loans.filter(l=>l.empId===empId && loanBalance(l)>0 && !loanDeductedInRange(l.id,state.payFrom,state.payTo))
+      .sort((a,c)=>String(a.date||'').localeCompare(String(c.date||''))||String(a.id).localeCompare(String(c.id)));
+    if(!list.length) return;
+    const bal=list.reduce((s,l)=>s+loanBalance(l),0);
+    const inp=document.querySelector(`[data-loanpay="${empId}"]`);
+    let amt=Math.min(parseFloat(inp&&inp.value), bal);
     if(isNaN(amt)||amt<=0){ alert('請輸入本期要扣的金額'); return; }
     const payroll=buildPayroll(state.payFrom,state.payTo);
-    const available=Math.max(0,Number(payroll[loan.empId]&&payroll[loan.empId].net)||0);
+    const available=Math.max(0,Number(payroll[empId]&&payroll[empId].net)||0);
     if(amt>available){ alert(`本期最多只能扣 ${money(available)}，超過的借支會保留到下期。`); return; }
-    state.adjustments.push({id:uid(),date:state.payTo||localISODate(),empId:loan.empId,kind:'ded',label:'借支扣還',amount:amt,note:(loan.note?loan.note+' ':'')+'借支扣還',loanId:loan.id});
+    const date=state.payTo||localISODate();
+    const parts=[];
+    for(const l of list){
+      if(amt<=0) break;
+      const take=Math.min(amt, loanBalance(l));
+      if(take<=0) continue;
+      state.adjustments.push({id:uid(),date,empId,kind:'ded',label:'借支扣還',amount:take,note:(l.note?l.note+' ':'')+'借支扣還',loanId:l.id});
+      parts.push(`${l.date?l.date+' ':''}${money(take)}`);
+      amt-=take;
+    }
     saveData(); render();
+    if(parts.length>1) alert(`已加入本期扣項，依序沖銷 ${parts.length} 筆借支：\n${parts.join('\n')}`);
   });
 
   // 工具遺失：設定分攤
