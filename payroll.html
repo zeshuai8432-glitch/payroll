@@ -509,7 +509,7 @@ const FS_ROOT = 'https://firestore.googleapis.com/v1/projects/'+FS_PROJECT+'/dat
 const FS_DOC_BASE = FS_ROOT+'payroll/';
 const FS_SIG_BASE = FS_ROOT+'payrollSignatures/';
 const FS_REST_URL = FS_DOC_BASE+'main?key='+FS_KEY;
-const APP_VERSION = 'v2026.08.02c-issuer';
+const APP_VERSION = 'v2026.08.02d-bonusdebt';
 let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], tools:[], locations:[], assets:[], advances:[], accounts:[], ledger:[], deals:[], billings:[], measurements:[], contracts:{}, costs:[], textMemory:{clients:[],companies:[]}, parkAccId:'', oweBonus:{}, minFund:'', shareholderTx:[], myCompanies:[], payrollSnapshots:[], yearIncomeAdj:[], deletedIds:[], resurrected:{ids:[],at:0}, tab:'dash' };
 let cloudStatus='連線中…';
 let localDirty=false, lastCloudTs=0;
@@ -7229,17 +7229,20 @@ function reconSection(key, from, to){
       const tgt=Math.round(targetBonus[p2.id]||0);
       const pay=totalTargetBonus<=0?0:(avail>=totalTargetBonus?tgt:Math.round(tgt*(avail/totalTargetBonus)));
       const debt=Math.max(0,Math.round(shDebtOf(p2.id))), ded=Math.min(pay,debt);
-      return {p:p2,tgt,pay,ded,net:pay-ded,short:Math.max(0,tgt-pay),owed:Math.round(state.oweBonus[p2.id]||0)};
-    }).filter(r=>r.tgt||r.pay||r.ded||r.owed);
+      return {p:p2,tgt,pay,debt,ded,debtLeft:debt-ded,net:pay-ded,short:Math.max(0,tgt-pay),owed:Math.round(state.oweBonus[p2.id]||0)};
+    }).filter(r=>r.tgt||r.pay||r.debt||r.owed);
     if(!rs.length) return `<h2 class="sec">獎金發放明細（${rangeTxt}）</h2><p class="sub">這個期間沒有可發放的獎金。</p>`;
     const T=k=>rs.reduce((a,r)=>a+r[k],0);
     return `<h2 class="sec">獎金發放明細（${rangeTxt}）</h2>
       <table><tbody><tr><th style="width:55%">品佑帳戶餘額</th><td class="num">${money(balance)}</td></tr>
       <tr><th>− 公積金（該留 ${money(targetFund)}）</th><td class="num">${money(fundPaid)}</td></tr>
       <tr class="total-row"><th>＝ 可發獎金</th><td class="num">${money(avail)}</td></tr></tbody></table>
-      <table style="margin-top:8px"><thead><tr><th>股東</th><th class="num">應拿</th><th class="num">本期可發</th><th class="num">扣預支</th><th class="num">實發現金</th><th class="num">本期少拿</th><th class="num">累計欠他</th></tr></thead>
-      <tbody>${rs.map(r=>`<tr><td>${esc(r.p.name)}</td><td class="num">${money(r.tgt)}</td><td class="num">${money(r.pay)}</td><td class="num">${r.ded?'−'+money(r.ded):'—'}</td><td class="num" style="font-weight:700">${money(r.net)}</td><td class="num">${r.short?money(r.short):'—'}</td><td class="num">${r.owed?money(r.owed):'—'}</td></tr>`).join('')}
-      <tr class="total-row"><td>合計</td><td class="num">${money(T('tgt'))}</td><td class="num">${money(T('pay'))}</td><td class="num">${T('ded')?'−'+money(T('ded')):'—'}</td><td class="num">${money(T('net'))}</td><td class="num">${T('short')?money(T('short')):'—'}</td><td class="num">${T('owed')?money(T('owed')):'—'}</td></tr></tbody></table>
+      <table style="margin-top:8px"><thead><tr><th>股東</th><th class="num">應拿</th><th class="num">本期可發</th><th class="num">已預支未還</th><th class="num">扣預支</th><th class="num">實發現金</th><th class="num">本期少拿</th><th class="num">累計欠他</th></tr></thead>
+      <tbody>${rs.map(r=>`<tr><td>${esc(r.p.name)}</td><td class="num">${money(r.tgt)}</td><td class="num">${money(r.pay)}</td>
+        <td class="num">${r.debt?`${money(r.debt)}${r.ded?`<div style="font-size:10.5px;color:#777">扣後剩 ${money(r.debtLeft)}</div>`:''}`:'—'}</td>
+        <td class="num">${r.ded?'−'+money(r.ded):'—'}</td><td class="num" style="font-weight:700">${money(r.net)}</td><td class="num">${r.short?money(r.short):'—'}</td><td class="num">${r.owed?money(r.owed):'—'}</td></tr>`).join('')}
+      <tr class="total-row"><td>合計</td><td class="num">${money(T('tgt'))}</td><td class="num">${money(T('pay'))}</td><td class="num">${T('debt')?money(T('debt')):'—'}</td><td class="num">${T('ded')?'−'+money(T('ded')):'—'}</td><td class="num">${money(T('net'))}</td><td class="num">${T('short')?money(T('short')):'—'}</td><td class="num">${T('owed')?money(T('owed')):'—'}</td></tr></tbody></table>
+      <p class="sub"><b>已預支未還</b>＝該股東個人跟品佑借走、還沒還的錢（記在「品佑帳戶結算 → 股東往來」，跟「借支管理」的員工借支是兩回事）。<b>扣預支</b>只能從「本期可發」裡面扣——本期可發是 $0 就扣不到，預支會一直掛在「已預支未還」等下次有獎金再扣。<b>本期少拿</b>是帳戶錢不夠、這次沒發足的部分，可在品佑帳戶結算頁累加成「累計欠他」。</p>
       <div class="sign">${rs.map(r=>`<div class="sigcell"><div class="sigbox"></div><div class="siglabel">${esc(r.p.name)} 領款簽收</div></div>`).join('')}</div>`;
   }
   if(key==='sites'){
