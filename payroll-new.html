@@ -538,7 +538,7 @@ function rememberDeletedPhoto(id,url){
   state.billingPhotoDeleted=state.billingPhotoDeleted||{};
   state.billingPhotoDeleted[id]=[...new Set([...(state.billingPhotoDeleted[id]||[]),url])];
 }
-const APP_VERSION='vN2026.07.31a-rooms'; // 版本號顯示在右上角，方便確認拿到新版
+const APP_VERSION='vN2026.08.02a-remark'; // 版本號顯示在右上角，方便確認拿到新版
 // 本地時區的今天（yyyy-mm-dd）。toISOString 是 UTC，台灣早上 8 點前會差一天
 function localISODate(d=new Date()){ return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
 // 單價可打算式（例：1200*1.1）
@@ -1838,16 +1838,17 @@ function bind(){
     const method=document.getElementById('bnr-method').value.trim();
     const client=document.getElementById('bnr-client').value.trim();
     const note=document.getElementById('bnr-note').value.trim();
+    const remark=(document.getElementById('bnr-remark')||{value:''}).value.trim();
     const settled=document.getElementById('bnr-settled').value==='1';
     if(!date||!site||isNaN(line.qty)||line.qty<=0||isNaN(line.unitPrice)||line.unitPrice<0){ alert('請填日期、案場、數量與單價'); return; }
     rememberText('clients',client);
     const issuerId=(document.getElementById('bnr-issuer')||{}).value||'';
-    state.billings.push({id:uid(),no:nextBillNo('請款單'),docType:'請款單',date,site,unit:line.unit,qty:line.qty,rooms:line.rooms,unitPrice:line.unitPrice,priceExpr:line.priceExpr,amount:line.amount,method,client,note,settled,issuerId});
+    state.billings.push({id:uid(),no:nextBillNo('請款單'),docType:'請款單',date,site,unit:line.unit,qty:line.qty,rooms:line.rooms,unitPrice:line.unitPrice,priceExpr:line.priceExpr,amount:line.amount,method,client,note,remark,settled,issuerId});
     billingReqDraft=null; saveData(); render();
   };
   document.querySelectorAll('[data-copy-req]').forEach(b=>b.onclick=()=>{
     const bill=state.billings.find(x=>x.id===b.dataset.copyReq); if(!bill) return;
-    billingReqDraft={date:bill.date||localISODate(),method:bill.method||'',client:bill.client||'',note:bill.note||'',settled:!!bill.settled,issuerId:bill.issuerId||''};
+    billingReqDraft={date:bill.date||localISODate(),method:bill.method||'',client:bill.client||'',note:bill.note||'',remark:bill.remark||'',settled:!!bill.settled,issuerId:bill.issuerId||''};
     formOpen.bnr=true; render();
   });
   const bnaAdd=document.getElementById('bna-add');
@@ -2649,6 +2650,7 @@ function viewBillingReq(){
       <div class="field" style="min-width:160px"><label>開單公司</label><select id="bnr-issuer">${myCompanyList().map(c=>`<option value="${esc(c.id)}" ${billingReqDraft&&billingReqDraft.issuerId===c.id?'selected':''}>${esc(c.name)}</option>`).join('')}</select></div>
       <div class="field"><label>業主（開給誰）</label><input id="bnr-client" list="client-memory-list" placeholder="業主名稱" value="${billingReqDraft?esc(billingReqDraft.client):''}" style="width:120px"></div>
       <div class="field" style="flex:1;min-width:180px"><label>說明</label><input id="bnr-note" placeholder="例：第一期工程款" value="${billingReqDraft?esc(billingReqDraft.note):''}"></div>
+      <div class="field" style="flex:1;min-width:150px"><label>備注</label><input id="bnr-remark" placeholder="這列的備注（會印在項目最後一欄）" value="${billingReqDraft?esc(billingReqDraft.remark||''):''}"></div>
       <div class="field"><label>收款狀態</label><select id="bnr-settled"><option value="">未收款</option><option value="1" ${billingReqDraft&&billingReqDraft.settled?'selected':''}>已收款</option></select></div>
     </div>
     <div class="row" style="margin-top:10px"><button class="btn" id="bnr-add">＋ 新增請款單</button></div>`:''}
@@ -2807,11 +2809,12 @@ function buildBillingDocHTML(id){
       ${b.site?`<div><span class="lbl">案場</span>${esc(siteDisplayLabel(b.site))}</div>`:''}
       ${type!=='追加單'&&b.method?`<div><span class="lbl">方式</span>${esc(b.method)}</div>`:''}
     </div>
-    <table class="items">
-      <thead><tr><th class="c-no">#</th><th>品項</th><th class="c-unit">單位</th><th class="num">數量</th>${rooms>1?'<th class="num">間數</th>':''}<th class="num">單價</th><th class="num">小計</th></tr></thead>
-      <tbody><tr><td class="c-no">1</td><td>${esc(b.note||type)}${b.remark?`<div style="font-size:11.5px;color:#6b7280;margin-top:3px">${esc(b.remark)}</div>`:''}</td>
-        <td class="c-unit">${esc(b.unit||'式')}</td><td class="num">${qty.toLocaleString('en-US')}</td>${rooms>1?`<td class="num">${rooms} 間</td>`:''}<td class="num">${money(price)}${b.priceExpr?`<div style="font-size:10.5px;color:#9ca3af">${esc(b.priceExpr)}</div>`:''}</td><td class="num">${money(amount)}</td></tr></tbody>
-    </table>
+    ${(()=>{ const rk=String(b.remark||'').trim();
+      return `<table class="items">
+      <thead><tr><th class="c-no">#</th><th>品項</th><th class="c-unit">單位</th><th class="num">數量</th>${rooms>1?'<th class="num">間數</th>':''}<th class="num">單價</th><th class="num">小計</th>${rk?'<th>備註</th>':''}</tr></thead>
+      <tbody><tr><td class="c-no">1</td><td>${esc(b.note||type)}</td>
+        <td class="c-unit">${esc(b.unit||'式')}</td><td class="num">${qty.toLocaleString('en-US')}</td>${rooms>1?`<td class="num">${rooms} 間</td>`:''}<td class="num">${money(price)}${b.priceExpr?`<div style="font-size:10.5px;color:#9ca3af">${esc(b.priceExpr)}</div>`:''}</td><td class="num">${money(amount)}</td>${rk?`<td style="font-size:11.5px;color:#4b5563">${esc(rk)}</td>`:''}</tr></tbody>
+    </table>`; })()}
     <div class="sumwrap"><table class="sum"><tr class="grand"><td>總計</td><td>${money(amount)}</td></tr></table></div>
     ${billBankInfoHtml(co)}
     ${photoSec?`<div class="sec">施作照片</div>${photoSec.replace(/^<div class="sec">施作照片<\/div>/,'')}`:''}
