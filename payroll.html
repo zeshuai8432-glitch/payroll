@@ -509,7 +509,7 @@ const FS_ROOT = 'https://firestore.googleapis.com/v1/projects/'+FS_PROJECT+'/dat
 const FS_DOC_BASE = FS_ROOT+'payroll/';
 const FS_SIG_BASE = FS_ROOT+'payrollSignatures/';
 const FS_REST_URL = FS_DOC_BASE+'main?key='+FS_KEY;
-const APP_VERSION = 'v2026.07.31c-rooms';
+const APP_VERSION = 'v2026.08.01b-tabmerge';
 let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], tools:[], locations:[], assets:[], advances:[], accounts:[], ledger:[], deals:[], billings:[], measurements:[], contracts:{}, costs:[], textMemory:{clients:[],companies:[]}, parkAccId:'', oweBonus:{}, minFund:'', shareholderTx:[], payrollSnapshots:[], yearIncomeAdj:[], deletedIds:[], resurrected:{ids:[],at:0}, tab:'dash' };
 let cloudStatus='連線中…';
 let localDirty=false, lastCloudTs=0;
@@ -1773,13 +1773,42 @@ function foldBtn(key, label){
   </div>`;
 }
 
+// 請款三分頁（請款單／追加單／請款追蹤）已合併為一頁，用子頁切換
+let billingSub='req';   // 'req' | 'add' | 'track'
+function normalizeBillingTab(){
+  if(state.tab==='billingReq'){ state.tab='billing'; billingSub='req'; }
+  else if(state.tab==='billingAdd'){ state.tab='billing'; billingSub='add'; }
+}
+// 結算四分頁（分潤／公積金帳戶／品佑帳戶結算／年度總結／對帳匯出）合併為一頁
+let settleSub='deals';  // 'deals' | 'accounts' | 'parkacc' | 'yearend' | 'recon'
+function normalizeSettleTab(){
+  const m={accounts:'accounts',parkacc:'parkacc',yearend:'yearend',recon:'recon'};
+  if(m[state.tab]){ settleSub=m[state.tab]; state.tab='deals'; }
+}
+function viewSettleHub(){
+  const subs=[['deals','分潤結算'],['accounts','公積金帳戶'],['parkacc','品佑帳戶結算'],['yearend','年度總結'],['recon','對帳匯出']];
+  const bar=`<div class="card" style="padding:10px 12px;margin-bottom:12px">
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      ${subs.map(([k,l])=>`<button class="act" data-settlesub="${k}" style="height:34px;padding:0 14px;border:1px solid ${settleSub===k?'var(--accent)':'var(--line2)'};border-radius:8px;font-weight:${settleSub===k?'700':'400'};${settleSub===k?'background:var(--accent);color:#fff':''}">${l}</button>`).join('')}
+    </div></div>`;
+  const v={deals:viewDeals,accounts:viewAccounts,parkacc:viewParkAcc,yearend:viewYearEnd,recon:viewRecon}[settleSub]||viewDeals;
+  return bar+v();
+}
+function viewBillingHub(){
+  const subs=[['req','請款單'],['add','追加單'],['track','請款追蹤']];
+  const bar=`<div class="card" style="padding:10px 12px;margin-bottom:12px">
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      ${subs.map(([k,l])=>`<button class="act" data-billsub="${k}" style="height:34px;padding:0 16px;border:1px solid ${billingSub===k?'var(--accent)':'var(--line2)'};border-radius:8px;font-weight:${billingSub===k?'700':'400'};${billingSub===k?'background:var(--accent);color:#fff':''}">${l}</button>`).join('')}
+    </div></div>`;
+  return bar+(billingSub==='add'?viewBillingAdd():billingSub==='track'?viewBilling():viewBillingReq());
+}
 function tabsBar(){
   const groups=[
     ['總覽',[['dash','首頁總覽'],['search','全域搜尋']]],
     ['日常',[['entry','登記出工'],['meas','計量明細'],['tools','工具管理']]],
     ['薪資',[['payroll','員工薪資'],['loans','借支管理'],['advances','代墊款'],['yearincome','年度收入']]],
-    ['請款',[['billingReq','請款單'],['billingAdd','追加單'],['billing','請款追蹤']]],
-    ['結算',[['deals','分潤結算'],['accounts','公積金帳戶'],['parkacc','品佑帳戶結算'],['yearend','年度總結'],['recon','對帳匯出']]],
+    ['請款',[['billing','請款']]],
+    ['結算',[['deals','結算']]],
     ['案場管理',[['sites','案場成本'+(pyFound&&pyFound.length?` 🔺${pyFound.length}`:'')],['manage','員工/案場']]],
   ];
   return groups.map(([label,items])=>`
@@ -1793,7 +1822,8 @@ function render(){
   try{ localStorage.setItem(LS_TAB, state.tab||'entry'); }catch(e){} // 記住目前分頁，重整後留在同一頁
   document.getElementById('sidebar').innerHTML=tabsBar();
   const body=document.getElementById('body');
-  body.innerHTML = state.tab==='dash'?viewDash():state.tab==='search'?viewSearch():state.tab==='entry'?viewEntry():state.tab==='payroll'?viewPayroll():state.tab==='sites'?viewSites():state.tab==='loans'?viewLoans():state.tab==='tools'?viewTools():state.tab==='advances'?viewAdvances():state.tab==='accounts'?viewAccounts():state.tab==='deals'?viewDeals():state.tab==='billing'?viewBilling():state.tab==='billingReq'?viewBillingReq():state.tab==='billingAdd'?viewBillingAdd():state.tab==='meas'?viewMeasurements():state.tab==='yearend'?viewYearEnd():state.tab==='yearincome'?viewYearIncome():state.tab==='parkacc'?viewParkAcc():state.tab==='recon'?viewRecon():viewManage();
+  normalizeBillingTab(); normalizeSettleTab();
+  body.innerHTML = state.tab==='dash'?viewDash():state.tab==='search'?viewSearch():state.tab==='entry'?viewEntry():state.tab==='payroll'?viewPayroll():state.tab==='sites'?viewSites():state.tab==='loans'?viewLoans():state.tab==='tools'?viewTools():state.tab==='advances'?viewAdvances():state.tab==='deals'?viewSettleHub():state.tab==='billing'?viewBillingHub():state.tab==='meas'?viewMeasurements():state.tab==='yearincome'?viewYearIncome():viewManage();
   bind();
   window.scrollTo(_sx,_sy); // 還原捲動位置
 }
@@ -4003,6 +4033,8 @@ function bind(){
     setTimeout(()=>{ const el=document.getElementById('bna-date'); if(el) el.scrollIntoView({behavior:'smooth',block:'center'}); },50);
   });
   // 追加單頁：改（inline 展開）
+  document.querySelectorAll('[data-settlesub]').forEach(b=>b.onclick=()=>{ settleSub=b.dataset.settlesub; window.scrollTo(0,0); render(); });
+  document.querySelectorAll('[data-billsub]').forEach(b=>b.onclick=()=>{ billingSub=b.dataset.billsub; window.scrollTo(0,0); render(); });
   document.querySelectorAll('[data-billedit-add]').forEach(b=>b.onclick=()=>{ billingAddEditId=b.dataset.billeditAdd; render(); });
   document.querySelectorAll('[data-billmore]').forEach(b=>b.onclick=()=>{ billMoreOpen[b.dataset.billmore]=!billMoreOpen[b.dataset.billmore]; render(); });
   document.querySelectorAll('[data-bae-cancel]').forEach(b=>b.onclick=()=>{ billingAddEditId=null; render(); });
@@ -4232,7 +4264,7 @@ function bind(){
     measSel={};
     saveData();
     alert(`已生成請款單草稿：\n\n${made.join('\n')}\n\n接下來到「請款單」頁補業主／方式，列印給業主；收到款再按「✓ 已收款」。`);
-    state.tab='billingReq'; render();
+    state.tab='billing'; billingSub='req'; render();
   };
   const mse=document.getElementById('meas-show-expr'); if(mse) mse.onchange=()=>{ measShowExpr=mse.checked; };
   const mhb=document.getElementById('meas-hide-billed'); if(mhb) mhb.onchange=()=>{ measHideBilled=mhb.checked; try{localStorage.setItem('pm_meas_hidebilled',measHideBilled?'1':'0');}catch(e){} render(); };
