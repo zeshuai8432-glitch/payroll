@@ -509,7 +509,7 @@ const FS_ROOT = 'https://firestore.googleapis.com/v1/projects/'+FS_PROJECT+'/dat
 const FS_DOC_BASE = FS_ROOT+'payroll/';
 const FS_SIG_BASE = FS_ROOT+'payrollSignatures/';
 const FS_REST_URL = FS_DOC_BASE+'main?key='+FS_KEY;
-const APP_VERSION = 'v2026.08.01d-pinyoufirst';
+const APP_VERSION = 'v2026.08.01e-bonuspdf';
 let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], tools:[], locations:[], assets:[], advances:[], accounts:[], ledger:[], deals:[], billings:[], measurements:[], contracts:{}, costs:[], textMemory:{clients:[],companies:[]}, parkAccId:'', oweBonus:{}, minFund:'', shareholderTx:[], payrollSnapshots:[], yearIncomeAdj:[], deletedIds:[], resurrected:{ids:[],at:0}, tab:'dash' };
 let cloudStatus='連線中…';
 let localDirty=false, lastCloudTs=0;
@@ -4441,6 +4441,7 @@ function bind(){
   const yvpdf=document.getElementById('ye-verify-pdf'); if(yvpdf) yvpdf.onclick=()=>exportYearVerify();
 
   // 品佑帳戶結算
+  const bpdf=document.getElementById('park-bonus-pdf'); if(bpdf) bpdf.onclick=exportBonusPDF;
   const pacc=document.getElementById('park-acc'); if(pacc) pacc.onchange=()=>{ state.parkAccId=pacc.value; saveData(); render(); };
   const pkf=document.getElementById('park-from'); if(pkf) pkf.onchange=()=>{ parkFrom=pkf.value; render(); };
   const pkt=document.getElementById('park-to'); if(pkt) pkt.onchange=()=>{ parkTo=pkt.value; render(); };
@@ -4544,6 +4545,57 @@ function printHTML(title, inner, opts){
   ov.scrollTop=0;
 }
 
+// 獎金發放明細：年底發錢時給各股東對帳用
+function exportBonusPDF(){
+  const inRange=d=> (!parkFrom||(d>=parkFrom)) && (!parkTo||(d<=parkTo));
+  const partners=state.employees.filter(e=>e.partner);
+  if(!state.parkAccId){ alert('請先選定品佑帳戶。'); return; }
+  const parkDeals=state.deals.filter(d=>d.moneyAcc===state.parkAccId && d.type!=='合作案' && inRange(d.date));
+  let targetBonus={}, bookFund=0, totalTargetBonus=0;
+  parkDeals.forEach(d=>{ const c=dealCalc(d); if(d.ownerId) targetBonus[d.ownerId]=(targetBonus[d.ownerId]||0)+c.bonus; bookFund+=c.fund; totalTargetBonus+=c.bonus; });
+  const balance=accountBalance(state.parkAccId);
+  const minFund=Math.max(0, Number(state.minFund)||0);
+  const targetFund=Math.max(minFund, Math.round(bookFund));
+  const fundPaid=Math.max(0, Math.min(balance, targetFund));
+  const availForBonus=Math.max(0, balance-fundPaid);
+  const shDebtOf=pid=>state.shareholderTx.filter(t=>t.shId===pid).reduce((s,t)=>s+(t.kind==='borrow'?1:-1)*(Number(t.amount)||0),0);
+  const rows=partners.map(p=>{
+    const tgt=Math.round(targetBonus[p.id]||0);
+    let pay = totalTargetBonus<=0?0 : (availForBonus>=totalTargetBonus?tgt:Math.round(tgt*(availForBonus/totalTargetBonus)));
+    const debt=Math.max(0,Math.round(shDebtOf(p.id)));
+    const deduct=Math.min(pay,debt);
+    const owed=Math.round(state.oweBonus[p.id]||0);
+    return {p,tgt,pay,debt,deduct,net:pay-deduct,short:Math.max(0,tgt-pay),left:debt-deduct,owed};
+  }).filter(r=>r.tgt||r.pay||r.debt||r.owed);
+  if(!rows.length){ alert('這個期間沒有可發放的獎金資料。'); return; }
+  const period=(parkFrom||parkTo)?`${esc(parkFrom||'—')} ～ ${esc(parkTo||'—')}`:'全部期間';
+  const T=(a)=>rows.reduce((s,r)=>s+r[a],0);
+  const dealRows=parkDeals.filter(d=>d.ownerId).map(d=>{const c=dealCalc(d);
+    return `<tr><td>${esc(d.name)}</td><td>${esc(d.date||'')}</td><td>${esc(empName(d.ownerId))}</td><td class="num">${money(d.amount)}</td><td class="num">${money(c.bonus)}</td></tr>`;}).join('');
+  const inner=`<h1>獎金發放明細</h1>
+    <div class="meta">期間：${period}　｜　帳戶：${esc(accountName(state.parkAccId))}　｜　列印日：${localISODate()}</div>
+    <div class="sec">一、可分配金額</div>
+    <table><tbody>
+      <tr><th style="width:55%">品佑帳戶餘額</th><td class="num">${money(balance)}</td></tr>
+      <tr><th>− 公積金（該留 ${money(targetFund)}）</th><td class="num">${money(fundPaid)}</td></tr>
+      <tr class="total-row"><th>＝ 可發獎金</th><td class="num">${money(availForBonus)}</td></tr>
+    </tbody></table>
+    <div class="sec">二、各人發放明細</div>
+    <table><thead><tr><th>股東</th><th class="num">應拿獎金</th><th class="num">本期可發</th><th class="num">扣預支借款</th><th class="num">實發現金</th><th class="num">本期少拿</th></tr></thead>
+      <tbody>${rows.map(r=>`<tr><td>${esc(r.p.name)}</td><td class="num">${money(r.tgt)}</td><td class="num">${money(r.pay)}</td>
+        <td class="num">${r.deduct?'−'+money(r.deduct):'—'}</td><td class="num" style="font-weight:700">${money(r.net)}</td>
+        <td class="num">${r.short?money(r.short):'—'}</td></tr>`).join('')}
+      <tr class="total-row"><td>合計</td><td class="num">${money(T('tgt'))}</td><td class="num">${money(T('pay'))}</td><td class="num">${T('deduct')?'−'+money(T('deduct')):'—'}</td><td class="num">${money(T('net'))}</td><td class="num">${T('short')?money(T('short')):'—'}</td></tr>
+      </tbody></table>
+    ${rows.some(r=>r.left>0||r.owed>0)?`<div class="sec">三、尚未結清</div>
+    <table><thead><tr><th>股東</th><th class="num">仍欠品佑（預支未扣完）</th><th class="num">公司欠他的獎金（累計）</th></tr></thead>
+      <tbody>${rows.map(r=>`<tr><td>${esc(r.p.name)}</td><td class="num">${r.left?money(r.left):'—'}</td><td class="num">${r.owed?money(r.owed):'—'}</td></tr>`).join('')}</tbody></table>`:''}
+    ${dealRows?`<h2 class="sec">附表：本期各案場獎金來源</h2>
+    <table><thead><tr><th>案場</th><th>日期</th><th>負責人</th><th class="num">請款金額</th><th class="num">該案獎金</th></tr></thead><tbody>${dealRows}</tbody></table>`:''}
+    <p class="sub">應拿獎金＝各案場分潤依制度計算；本期可發＝帳戶扣完公積金後可分配的金額（不足時按應拿比例分配，差額列「本期少拿」可累計為公司欠款）；扣預支借款＝該股東先前跟品佑借用、由本期獎金沖抵的金額。金額四捨五入至整數。</p>
+    <div class="sign">${rows.map(r=>`<div class="sigcell"><div class="sigbox"></div><div class="siglabel">${esc(r.p.name)} 領款簽收</div></div>`).join('')}</div>`;
+  printHTML('獎金發放明細', inner);
+}
 function exportSummaryPDF(){
   const byEmp=buildPayroll(state.payFrom,state.payTo);
   const isPartner=id=>{ const e=state.employees.find(x=>x.id===id); return e&&e.partner; };
@@ -7312,7 +7364,10 @@ function viewParkAcc(){
         const dedAll=partners.reduce((s,p)=>s+Math.min(bonusPaid[p.id]||0, Math.max(0,Math.round(shDebtOf(p.id)))),0);
         return `<tr class="total-row" style="font-weight:600"><td>合計</td><td class="num">${money(Math.round(totalTargetBonus)+targetFund)}</td><td class="num">${money(payAll+fundPaid)}</td><td class="num" style="color:${dedAll>0?'var(--danger)':'inherit'}">${dedAll>0?'−'+money(dedAll).slice(1):'—'}</td><td class="num">${money(payAll+fundPaid-dedAll)}</td><td class="num"></td></tr>`; })()}
     </tbody></table>
-    ${partners.some(p=>oweThis[p.id]>0)?`<button class="btn" id="park-addowe" style="margin-top:10px">把本期少拿累加到「欠獎金」</button>`:''}
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
+      ${partners.some(p=>oweThis[p.id]>0)?`<button class="btn" id="park-addowe">把本期少拿累加到「欠獎金」</button>`:''}
+      <button class="act" id="park-bonus-pdf" style="border:1px solid var(--accent);border-radius:8px;padding:0 14px;height:38px;color:var(--accent)">🖨 匯出獎金發放明細 PDF</button>
+    </div>
     <p class="sub" style="margin-top:8px">公積金 ${money(fundPaid)} 請你自行分配到東澤／廣昕帳戶（讓兩邊平衡）。實際撥款後到「公積金帳戶」記收支。</p>
   </div>
   <div class="card">
