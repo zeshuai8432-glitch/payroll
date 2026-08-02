@@ -509,8 +509,8 @@ const FS_ROOT = 'https://firestore.googleapis.com/v1/projects/'+FS_PROJECT+'/dat
 const FS_DOC_BASE = FS_ROOT+'payroll/';
 const FS_SIG_BASE = FS_ROOT+'payrollSignatures/';
 const FS_REST_URL = FS_DOC_BASE+'main?key='+FS_KEY;
-const APP_VERSION = 'v2026.08.02b-parkledger';
-let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], tools:[], locations:[], assets:[], advances:[], accounts:[], ledger:[], deals:[], billings:[], measurements:[], contracts:{}, costs:[], textMemory:{clients:[],companies:[]}, parkAccId:'', oweBonus:{}, minFund:'', shareholderTx:[], payrollSnapshots:[], yearIncomeAdj:[], deletedIds:[], resurrected:{ids:[],at:0}, tab:'dash' };
+const APP_VERSION = 'v2026.08.02c-issuer';
+let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], tools:[], locations:[], assets:[], advances:[], accounts:[], ledger:[], deals:[], billings:[], measurements:[], contracts:{}, costs:[], textMemory:{clients:[],companies:[]}, parkAccId:'', oweBonus:{}, minFund:'', shareholderTx:[], myCompanies:[], payrollSnapshots:[], yearIncomeAdj:[], deletedIds:[], resurrected:{ids:[],at:0}, tab:'dash' };
 let cloudStatus='連線中…';
 let localDirty=false, lastCloudTs=0;
 let dirtyOther=false; // 未上傳的變更中是否含「標記以外」的修改（決定衝突時能否自動合併）
@@ -532,6 +532,18 @@ const localISODate = (value=new Date()) => {
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 };
 // 計算式金額（數量×單價 或 金額欄）＝這張單自己的帳面值
+// 開單公司（請款單／追加單抬頭與匯款資訊）
+const DEFAULT_MY_COMPANIES=[{id:'c-py',name:'品佑工程有限公司',taxId:'',addr:'',tel:'',bankName:'',bankBranch:'',bankAcctName:'',bankAcctNo:''}];
+const myCompanyList = () => (state.myCompanies&&state.myCompanies.length)?state.myCompanies:DEFAULT_MY_COMPANIES;
+const issuerOf = b => myCompanyList().find(c=>c.id===(b&&b.issuerId)) || myCompanyList()[0] || {};
+function billBankInfoHtml(c){
+  const bank=[c.bankName,c.bankBranch].filter(Boolean).join(' ');
+  if(!(bank||c.bankAcctName||c.bankAcctNo)) return '';
+  return `<div class="sec">匯款資訊</div><table><tbody>
+    ${bank?`<tr><th style="width:90px">銀行</th><td>${esc(bank)}</td></tr>`:''}
+    ${c.bankAcctName?`<tr><th>戶名</th><td>${esc(c.bankAcctName)}</td></tr>`:''}
+    ${c.bankAcctNo?`<tr><th>帳號</th><td>${esc(c.bankAcctNo)}</td></tr>`:''}</tbody></table>`;
+}
 // 間數（複數房間）：沒填或 <=0 一律當 1，舊資料不受影響
 const billingRooms = b => { const r=Number(b&&b.rooms); return (!isNaN(r)&&r>0)?r:1; };
 const rawBillingAmount = b => {
@@ -909,7 +921,7 @@ const taxBreakdownHtml = (d,c) => {
 
 function applyData(d){
   if(!d) return;
-  state.employees=d.employees||[]; state.sites=d.sites||[]; state.attendance=d.attendance||[]; state.adjustments=d.adjustments||[]; state.loans=d.loans||[]; state.tools=d.tools||[]; state.locations=d.locations||[]; state.assets=d.assets||[]; state.advances=d.advances||[]; state.accounts=d.accounts||[]; state.ledger=d.ledger||[]; state.deals=d.deals||[]; state.billings=d.billings||[]; state.measurements=d.measurements||[]; state.contracts=d.contracts||{}; state.costs=d.costs||[]; state.textMemory=d.textMemory||{clients:[],companies:[]}; state.parkAccId=d.parkAccId||''; state.oweBonus=d.oweBonus||{}; state.minFund=(d.minFund!==undefined?d.minFund:''); state.shareholderTx=d.shareholderTx||[]; state.payrollSnapshots=d.payrollSnapshots||[]; state.yearIncomeAdj=d.yearIncomeAdj||[]; state.deletedIds=d.deletedIds||[]; if(d.resurrected&&Array.isArray(d.resurrected.ids)) state.resurrected={ids:d.resurrected.ids,at:Number(d.resurrected.at)||0}; else if(!state.resurrected) state.resurrected={ids:[],at:0};
+  state.employees=d.employees||[]; state.sites=d.sites||[]; state.attendance=d.attendance||[]; state.adjustments=d.adjustments||[]; state.loans=d.loans||[]; state.tools=d.tools||[]; state.locations=d.locations||[]; state.assets=d.assets||[]; state.advances=d.advances||[]; state.accounts=d.accounts||[]; state.ledger=d.ledger||[]; state.deals=d.deals||[]; state.billings=d.billings||[]; state.measurements=d.measurements||[]; state.contracts=d.contracts||{}; state.costs=d.costs||[]; state.textMemory=d.textMemory||{clients:[],companies:[]}; state.parkAccId=d.parkAccId||''; state.oweBonus=d.oweBonus||{}; state.minFund=(d.minFund!==undefined?d.minFund:''); state.shareholderTx=d.shareholderTx||[]; state.myCompanies=d.myCompanies||[]; state.payrollSnapshots=d.payrollSnapshots||[]; state.yearIncomeAdj=d.yearIncomeAdj||[]; state.deletedIds=d.deletedIds||[]; if(d.resurrected&&Array.isArray(d.resurrected.ids)) state.resurrected={ids:d.resurrected.ids,at:Number(d.resurrected.at)||0}; else if(!state.resurrected) state.resurrected={ids:[],at:0};
   state.employees.forEach(e=>{ if(e.active===undefined) e.active=true; });
   state.sites.forEach(s=>{
     if(s.parentSiteId){
@@ -945,10 +957,10 @@ function packData(){
     const driveUrls=(urls||[]).filter(u=>typeof u==='string'&&u.startsWith('http'));
     if(driveUrls.length) photosSync[id]=driveUrls;
   });
-  return {employees:state.employees,sites:state.sites,attendance:state.attendance,adjustments:state.adjustments,loans:state.loans,tools:state.tools,locations:state.locations,assets:state.assets,advances:state.advances,accounts:state.accounts,ledger:state.ledger,deals:state.deals,billings:state.billings,measurements:state.measurements,contracts:state.contracts,costs:state.costs,textMemory:state.textMemory,parkAccId:state.parkAccId,oweBonus:state.oweBonus,minFund:state.minFund,shareholderTx:state.shareholderTx,payrollSnapshots:state.payrollSnapshots,yearIncomeAdj:state.yearIncomeAdj||[],resurrected:state.resurrected||{ids:[],at:0},billingPhotos:photosSync,billingPhotosDeleted:billingPhotosDeleted,deletedIds:state.deletedIds||[],savedAt:Date.now()};
+  return {employees:state.employees,sites:state.sites,attendance:state.attendance,adjustments:state.adjustments,loans:state.loans,tools:state.tools,locations:state.locations,assets:state.assets,advances:state.advances,accounts:state.accounts,ledger:state.ledger,deals:state.deals,billings:state.billings,measurements:state.measurements,contracts:state.contracts,costs:state.costs,textMemory:state.textMemory,parkAccId:state.parkAccId,oweBonus:state.oweBonus,minFund:state.minFund,shareholderTx:state.shareholderTx,myCompanies:state.myCompanies||[],payrollSnapshots:state.payrollSnapshots,yearIncomeAdj:state.yearIncomeAdj||[],resurrected:state.resurrected||{ids:[],at:0},billingPhotos:photosSync,billingPhotosDeleted:billingPhotosDeleted,deletedIds:state.deletedIds||[],savedAt:Date.now()};
 }
 // 所有以 id 儲存的資料都逐筆合併；自動分潤仍會在合併後重算，手動分潤則能保留下來。
-const MERGE_COLLECTIONS=['employees','sites','attendance','adjustments','loans','tools','locations','assets','advances','accounts','ledger','deals','billings','measurements','costs','payrollSnapshots','yearIncomeAdj','shareholderTx'];
+const MERGE_COLLECTIONS=['employees','sites','attendance','adjustments','loans','tools','locations','assets','advances','accounts','ledger','deals','billings','measurements','costs','payrollSnapshots','yearIncomeAdj','shareholderTx','myCompanies'];
 const recordUpdatedAt = (r, fallback=0) => Number(r&&r.updatedAt)||Number(fallback)||0;
 const recordComparable = r => {
   if(!r||typeof r!=='object') return '';
@@ -2789,6 +2801,31 @@ function viewManage(){
     ${dataListHtml('client-memory-list', knownClients())}
     ${dataListHtml('company-memory-list', knownCompanies())}
   </div>
+  <details class="card">
+    <summary style="cursor:pointer;font-size:14px;font-weight:600">開單公司（請款單抬頭／匯款資訊）</summary>
+    <div style="margin-top:10px">
+      <p class="sub" style="margin:0 0 10px">請款單／追加單列印時，最上面會印這裡的公司抬頭與統編，金額下方會印匯款資訊。可以放多間公司，開單時再選要用哪一間。填好按「儲存公司資料」。</p>
+      ${myCompanyList().map((c,i)=>`<div class="card" style="margin:0 0 10px;border:1px solid var(--line2)">
+        <div class="row">
+          <div class="field" style="flex:2;min-width:170px"><label>公司名稱</label><input id="mc-name${i}" value="${esc(c.name||'')}" placeholder="例：品佑工程有限公司"></div>
+          <div class="field" style="min-width:120px"><label>統一編號</label><input id="mc-tax${i}" value="${esc(c.taxId||'')}" placeholder="選填"></div>
+          <div class="field" style="min-width:120px"><label>電話</label><input id="mc-tel${i}" value="${esc(c.tel||'')}" placeholder="選填"></div>
+          <div class="field" style="flex:2;min-width:180px"><label>地址</label><input id="mc-addr${i}" value="${esc(c.addr||'')}" placeholder="選填"></div>
+        </div>
+        <div class="row" style="margin-top:8px">
+          <div class="field" style="min-width:130px"><label>匯款銀行</label><input id="mc-bankname${i}" value="${esc(c.bankName||'')}" placeholder="例：台灣銀行"></div>
+          <div class="field" style="min-width:110px"><label>分行</label><input id="mc-bankbranch${i}" value="${esc(c.bankBranch||'')}" placeholder="例：三民分行"></div>
+          <div class="field" style="min-width:140px"><label>戶名</label><input id="mc-acctname${i}" value="${esc(c.bankAcctName||'')}" placeholder="選填"></div>
+          <div class="field" style="min-width:150px"><label>帳號</label><input id="mc-acctno${i}" value="${esc(c.bankAcctNo||'')}" placeholder="選填"></div>
+          ${myCompanyList().length>1?`<button class="act danger" data-mcdel="${esc(c.id)}" style="height:38px;align-self:flex-end">刪除這間</button>`:''}
+        </div>
+      </div>`).join('')}
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:4px">
+        <button class="btn" id="mc-save">儲存公司資料</button>
+        <button class="act" id="mc-add" style="border:1px solid var(--accent);border-radius:8px;padding:0 14px;height:38px;color:var(--accent)">＋ 再加一間公司</button>
+      </div>
+    </div>
+  </details>
   <div class="card">
     <div style="font-size:14px;font-weight:600;margin-bottom:4px">資料備份與還原</div>
     <p class="sub" style="margin:0 0 10px">「匯出備份」把目前全部資料存成一個檔案下載保存；「匯入還原」讀回備份檔、覆蓋現在的資料。建議每週匯出一份存到雲端／檔案App，做大動作（例如重算、大量改資料）前也先匯出一份。</p>
@@ -2823,6 +2860,33 @@ function bind(){
   const bkE=document.getElementById('backup-export'); if(bkE) bkE.onclick=()=>exportBackup();
   const bkBtn=document.getElementById('backup-import-btn'); const bkFile=document.getElementById('backup-import-file');
   if(bkBtn&&bkFile){ bkBtn.onclick=()=>bkFile.click(); bkFile.onchange=()=>{ if(bkFile.files&&bkFile.files[0]) importBackup(bkFile.files[0]); bkFile.value=''; }; }
+  // 開單公司（請款單抬頭／匯款資訊）
+  const readMyCompanies=()=>myCompanyList().map((c,i)=>{
+    const g=id=>document.getElementById(id+i);
+    const v=(id,fb)=>{ const el=g(id); return el?el.value.trim():fb; };
+    return Object.assign({},c,{
+      name:v('mc-name',c.name), taxId:v('mc-tax',c.taxId), tel:v('mc-tel',c.tel), addr:v('mc-addr',c.addr),
+      bankName:v('mc-bankname',c.bankName), bankBranch:v('mc-bankbranch',c.bankBranch),
+      bankAcctName:v('mc-acctname',c.bankAcctName), bankAcctNo:v('mc-acctno',c.bankAcctNo),
+      updatedAt:Date.now()
+    });
+  });
+  const mcSave=document.getElementById('mc-save');
+  if(mcSave) mcSave.onclick=()=>{
+    const next=readMyCompanies();
+    if(next.some(c=>!c.name)){ alert('公司名稱不能空白'); return; }
+    state.myCompanies=next; saveData(); render(); alert('已儲存開單公司資料 ✓');
+  };
+  const mcAdd=document.getElementById('mc-add');
+  if(mcAdd) mcAdd.onclick=()=>{
+    state.myCompanies=readMyCompanies().concat([{id:uid(),name:'新公司',taxId:'',addr:'',tel:'',bankName:'',bankBranch:'',bankAcctName:'',bankAcctNo:'',updatedAt:Date.now()}]);
+    saveData(); render();
+  };
+  document.querySelectorAll('[data-mcdel]').forEach(btn=>btn.onclick=()=>{
+    const id=btn.dataset.mcdel, used=(state.billings||[]).some(x=>x&&x.issuerId===id);
+    if(!confirm(used?'有單據是用這間公司開的，刪除後那些單據會改用第一間公司的抬頭。確定刪除？':'刪除這間公司？')) return;
+    state.myCompanies=readMyCompanies().filter(c=>c.id!==id); saveData(); render();
+  });
   const rsc=document.getElementById('rescue-cloud'); if(rsc) rsc.onclick=()=>rescueFromCloudSnapshots();
   const rsl=document.getElementById('rescue-local'); if(rsl) rsl.onclick=()=>rescueFromLocalSnapshot();
   const e2on=document.getElementById('e2e-on'); if(e2on) e2on.onclick=()=>e2eEnable().then(()=>render());
@@ -4014,7 +4078,7 @@ function bind(){
     const settled=document.getElementById('bnr-settled').value==='1';
     if(!date||!site||isNaN(line.amount)||line.amount<=0){ alert('請填日期、案場、數量與單價'); return; }
     rememberText('clients',client);
-    state.billings.push({id:uid(),docType:'請款單',date,site,unit:line.unit,qty:line.qty,rooms:line.rooms,unitPrice:line.unitPrice,priceExpr:line.priceExpr,amount:line.amount,method,client,note,settled});
+    state.billings.push({id:uid(),docType:'請款單',date,site,unit:line.unit,qty:line.qty,rooms:line.rooms,unitPrice:line.unitPrice,priceExpr:line.priceExpr,amount:line.amount,method,client,note,remark:(document.getElementById('bnr-remark')||{}).value?.trim()||'',settled,issuerId:(document.getElementById('bnr-issuer')||{}).value||''});
     billingReqDraft=null;
     const so=state.sites.find(x=>x.name===site); if(so) resyncSiteDeal(so);
     saveData(); render();
@@ -4037,7 +4101,7 @@ function bind(){
     const settled=document.getElementById('bna-settled').value==='1';
     if(!date||!site||isNaN(line.amount)||line.amount<=0){ alert('請填日期、案場、數量與單價'); return; }
     rememberText('clients',client);
-    state.billings.push({id:uid(),docType:'追加單',date,site,unit:line.unit,qty:line.qty,rooms:line.rooms,unitPrice:line.unitPrice,priceExpr:line.priceExpr,amount:line.amount,client,note,remark,settled});
+    state.billings.push({id:uid(),docType:'追加單',date,site,unit:line.unit,qty:line.qty,rooms:line.rooms,unitPrice:line.unitPrice,priceExpr:line.priceExpr,amount:line.amount,client,note,remark,settled,issuerId:(document.getElementById('bna-issuer')||{}).value||''});
     billingAddDraft=null;
     const so=state.sites.find(x=>x.name===site); if(so) resyncSiteDeal(so);
     saveData(); render();
@@ -4137,6 +4201,7 @@ function bind(){
     if(!date||!site||isNaN(line.amount)||line.amount<=0){ alert('請填日期、案場、數量與單價'); return; }
     rememberText('clients',client);
     bill.date=date; bill.site=site; bill.unit=line.unit; bill.qty=line.qty; bill.rooms=line.rooms; bill.unitPrice=line.unitPrice; bill.priceExpr=line.priceExpr; bill.amount=line.amount; bill.client=client; bill.note=note; bill.remark=remark; bill.settled=settled;
+    const _iss=document.getElementById('bae-issuer'); if(_iss) bill.issuerId=_iss.value;
     const so=state.sites.find(x=>x.name===site); if(so) resyncSiteDeal(so);
     billingAddEditId=null; saveData(); render();
   });
@@ -5106,26 +5171,34 @@ function billingDocInner(id, internal, pick){
           ?`<tr class="total-row"><td colspan="2">小計（僅列出項目）</td><td class="num">${money(shownSum)}</td></tr>`
           :`<tr class="total-row"><td colspan="2">對外開單金額（本單＋內含合計）</td><td class="num">${money(amt)}</td></tr>`)}
     </tbody></table>`:'';
-  return `<h1>${esc(type)}${allocIns.length?'<span style="font-size:14px;background:#fde9d4;color:#9a5b1a;border-radius:6px;padding:2px 10px;margin-left:10px;vertical-align:middle">內帳版</span>':''}</h1>
+  const co=issuerOf(b); // 開單公司（抬頭＋匯款資訊）
+  const coMeta=[co.taxId?'統一編號 '+esc(co.taxId):'', esc(co.addr||''), co.tel?'電話 '+esc(co.tel):''].filter(Boolean).join('<br>');
+  return `${co.name?`<div style="margin-bottom:8px">
+      <div style="font-size:16px;font-weight:800;letter-spacing:1px;color:#1E3A8A">${esc(co.name)}</div>
+      ${coMeta?`<div style="font-size:11px;color:#666;line-height:1.6;margin-top:2px">${coMeta}</div>`:''}
+    </div>`:''}
+    <h1>${esc(type)}${allocIns.length?'<span style="font-size:14px;background:#fde9d4;color:#9a5b1a;border-radius:6px;padding:2px 10px;margin-left:10px;vertical-align:middle">內帳版</span>':''}</h1>
     <div class="meta">日期：${esc(b.date||'')}　|　案場：${esc(siteDisplayLabel(b.site)||'')}</div>
     <table><tbody>
       <tr><th style="width:90px">業主</th><td>${esc(clientPrint)}${type!=='追加單'&&b.method?`　（${esc(b.method)}）`:''}</td></tr>
     </tbody></table>
     <div class="sec">金額</div>
-    ${(()=>{ const rm=billingRooms(b); const showRooms=rm>1;
-      return `<table><thead><tr><th>項目</th><th>單位</th><th class="num">數量</th>${showRooms?'<th class="num">間數</th>':''}<th class="num">單價</th><th class="num">小計</th></tr></thead>
+    ${(()=>{ const rm=billingRooms(b); const showRooms=rm>1; const rk=String(b.remark||'').trim(); const showRk=!!rk;
+      const rkCell=showRk?`<td>${escBr(rk)}</td>`:'';
+      return `<table><thead><tr><th>項目</th><th>單位</th><th class="num">數量</th>${showRooms?'<th class="num">間數</th>':''}<th class="num">單價</th><th class="num">小計</th>${showRk?'<th>備註</th>':''}</tr></thead>
       <tbody>
         ${!isDark&&((b.printAmount!=null&&b.printAmount!=='')||(!b.wrapAlloc&&mergedIntoSum(b)>0)||allocOutSum(b)>0)
-          ? `<tr><td>${esc(b.note||type)}</td><td>式</td><td class="num">1</td>${showRooms?'<td class="num">—</td>':''}<td class="num">${money(amt)}</td><td class="num">${money(amt)}</td></tr>`
-          : `<tr><td>${esc(b.note||type)}</td><td>${esc(b.unit||'')}</td><td class="num">${b.qty!==undefined?b.qty:'—'}</td>${showRooms?`<td class="num">${rm} 間</td>`:''}<td class="num">${b.unitPrice!==undefined?money(b.unitPrice)+(b.priceExpr?`<div style="font-size:10px;color:#777">${esc(b.priceExpr)}</div>`:''):'—'}</td><td class="num">${money(amt)}</td></tr>`}
-        <tr class="total-row"><td colspan="${showRooms?5:4}">總金額</td><td class="num">${money(amt)}</td></tr>`; })()}
-        ${(()=>{ const rm=billingRooms(b), cs=rm>1?5:4, cs2=rm>1?6:5;
+          ? `<tr><td>${esc(b.note||type)}</td><td>式</td><td class="num">1</td>${showRooms?'<td class="num">—</td>':''}<td class="num">${money(amt)}</td><td class="num">${money(amt)}</td>${rkCell}</tr>`
+          : `<tr><td>${esc(b.note||type)}</td><td>${esc(b.unit||'')}</td><td class="num">${b.qty!==undefined?b.qty:'—'}</td>${showRooms?`<td class="num">${rm} 間</td>`:''}<td class="num">${b.unitPrice!==undefined?money(b.unitPrice)+(b.priceExpr?`<div style="font-size:10px;color:#777">${esc(b.priceExpr)}</div>`:''):'—'}</td><td class="num">${money(amt)}</td>${rkCell}</tr>`}
+        <tr class="total-row"><td colspan="${(showRooms?5:4)}">總金額</td><td class="num">${money(amt)}</td>${showRk?'<td></td>':''}</tr>`; })()}
+        ${(()=>{ const rm=billingRooms(b), rk=String(b.remark||'').trim()?1:0, cs=(rm>1?5:4), cs2=(rm>1?6:5)+rk;
           return (outsourced&&Number(b.withholdPct)>0?(()=>{ const pct=Number(b.withholdPct); const wh=Math.round(amt*pct/100);
           return `<tr><td colspan="${cs}">代扣所得稅 ${pct}%</td><td class="num">−${money(wh)}</td></tr>
           <tr class="total-row"><td colspan="${cs}">本期實付</td><td class="num">${money(amt-wh)}</td></tr>
           <tr><td colspan="${cs2}" style="padding-top:6px;font-size:13px;color:${b.withholdRefunded?'#555':'#9a5b1a'}">${b.withholdRefunded?`代扣款 ${money(wh)} 已於 ${esc(b.withholdRefundDate||'')} 回補（發票補開）`:`代扣款 ${money(wh)} 待補開發票後回補`}</td></tr>`; })():'')
-          +(b.remark?`<tr><td colspan="${cs2}" style="padding-top:8px;color:#555;font-size:13px">備注：${escBr(b.remark)}</td></tr>`:''); })()}
+          ; })()}
       </tbody></table>
+    ${billBankInfoHtml(co)}
     ${internalSec}
     ${photoSec}
     <div class="sign">
@@ -6289,7 +6362,9 @@ function viewBillingReq(){
       <div class="field"><label>小計</label><div id="bnr-subtotal" class="num" style="height:36px;display:flex;align-items:center;font-weight:700">$0</div></div>
       <div class="field"><label>方式</label><input id="bnr-method" placeholder="匯款" value="${billingReqDraft?esc(billingReqDraft.method):''}" style="width:100px"></div>
       <div class="field"><label>業主</label><input id="bnr-client" list="client-memory-list" placeholder="業主名稱" value="${billingReqDraft?esc(billingReqDraft.client):''}" style="width:110px"></div>
+      <div class="field" style="min-width:150px"><label>開單公司</label><select id="bnr-issuer">${myCompanyList().map(c=>`<option value="${esc(c.id)}" ${billingReqDraft&&billingReqDraft.issuerId===c.id?'selected':''}>${esc(c.name)}</option>`).join('')}</select></div>
       <div class="field" style="flex:1;min-width:180px"><label>說明</label><input id="bnr-note" placeholder="例：第一期工程款" value="${billingReqDraft?esc(billingReqDraft.note):''}"></div>
+      <div class="field" style="flex:1;min-width:150px"><label>備註（印在項目後面）</label><input id="bnr-remark" placeholder="選填" value="${billingReqDraft?esc(billingReqDraft.remark||''):''}"></div>
       <div class="field"><label>收款狀態</label><select id="bnr-settled"><option value="">未收款</option><option value="1" ${billingReqDraft&&billingReqDraft.settled?'selected':''}>已收款</option></select></div>
     </div>
     <div class="row" style="margin-top:10px"><button class="btn" id="bnr-add">＋ 新增請款單</button></div>`:''}
@@ -6344,6 +6419,7 @@ function viewBillingAdd(){
             <div class="field"><label>單價（可複價）</label><input id="bae-unit-price" inputmode="decimal" value="${esc(String(b.priceExpr||(b.unitPrice!==undefined?b.unitPrice:billingAmount(b))))}" placeholder="140+140" style="width:120px"><div id="bae-price-hint" style="font-size:11px;color:var(--muted);height:14px"></div></div>
             <div class="field"><label>小計</label><div id="bae-subtotal" class="num" style="height:36px;display:flex;align-items:center;font-weight:700">${money(billingAmount(b))}</div></div>
             <div class="field"><label>業主</label><input id="bae-client" list="client-memory-list" value="${esc(b.client||'')}" style="width:100px"></div>
+            <div class="field" style="min-width:150px"><label>開單公司</label><select id="bae-issuer">${myCompanyList().map(c=>`<option value="${esc(c.id)}" ${(b.issuerId||myCompanyList()[0].id)===c.id?'selected':''}>${esc(c.name)}</option>`).join('')}</select></div>
             <div class="field" style="flex:1;min-width:180px"><label>說明（追加項目）</label><input id="bae-note" value="${esc(b.note||'')}" placeholder="例：追加防水工程"></div>
             <div class="field" style="flex:1;min-width:150px"><label>備注（可換行）</label><textarea id="bae-remark" rows="2" placeholder="其他備注">${esc(b.remark||'')}</textarea></div>
             <div class="field"><label>收款狀態</label><select id="bae-settled"><option value="">未收款</option><option value="1" ${b.settled?'selected':''}>已收款</option></select></div>
@@ -6559,6 +6635,7 @@ function viewBillingAdd(){
       <div class="field"><label>間數</label><input type="number" id="bna-rooms" min="1" step="1" value="${billingAddDraft&&billingAddDraft.rooms?billingAddDraft.rooms:'1'}" title="複數房間：數量 × 間數 × 單價" style="width:80px"></div>
       <div class="field"><label>單價（可複價）</label><input id="bna-unit-price" inputmode="decimal" placeholder="140+140" value="${billingAddDraft?esc(String(billingAddDraft.priceExpr||(billingAddDraft.unitPrice!==undefined?billingAddDraft.unitPrice:''))):''}" style="width:130px"><div id="bna-price-hint" style="font-size:11px;color:var(--muted);height:14px"></div></div>
       <div class="field"><label>小計</label><div id="bna-subtotal" class="num" style="height:36px;display:flex;align-items:center;font-weight:700">${billingAddDraft?money((Number(billingAddDraft.qty)||0)*(Number(billingAddDraft.unitPrice)||0)*(Number(billingAddDraft.rooms)||1)):'$0'}</div></div>
+      <div class="field" style="min-width:150px"><label>開單公司</label><select id="bna-issuer">${myCompanyList().map(c=>`<option value="${esc(c.id)}" ${billingAddDraft&&billingAddDraft.issuerId===c.id?'selected':''}>${esc(c.name)}</option>`).join('')}</select></div>
       <div class="field"><label>業主</label><input id="bna-client" list="client-memory-list" placeholder="業主名稱" value="${billingAddDraft?esc(billingAddDraft.client):''}" style="width:110px"></div>
       <div class="field" style="flex:1;min-width:180px"><label>說明（追加項目）</label><input id="bna-note" placeholder="例：追加防水工程" value="${billingAddDraft?esc(billingAddDraft.note):''}"></div>
       <div class="field" style="flex:1;min-width:150px"><label>備注（可換行）</label><textarea id="bna-remark" rows="2" placeholder="其他備注">${billingAddDraft?esc(billingAddDraft.remark):''}</textarea></div>
