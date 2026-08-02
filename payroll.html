@@ -509,7 +509,7 @@ const FS_ROOT = 'https://firestore.googleapis.com/v1/projects/'+FS_PROJECT+'/dat
 const FS_DOC_BASE = FS_ROOT+'payroll/';
 const FS_SIG_BASE = FS_ROOT+'payrollSignatures/';
 const FS_REST_URL = FS_DOC_BASE+'main?key='+FS_KEY;
-const APP_VERSION = 'v2026.08.01c-loanmerge';
+const APP_VERSION = 'v2026.08.01d-pinyoufirst';
 let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], tools:[], locations:[], assets:[], advances:[], accounts:[], ledger:[], deals:[], billings:[], measurements:[], contracts:{}, costs:[], textMemory:{clients:[],companies:[]}, parkAccId:'', oweBonus:{}, minFund:'', shareholderTx:[], payrollSnapshots:[], yearIncomeAdj:[], deletedIds:[], resurrected:{ids:[],at:0}, tab:'dash' };
 let cloudStatus='連線中…';
 let localDirty=false, lastCloudTs=0;
@@ -1739,6 +1739,12 @@ function unlockSig(id){
   saveSigMeta();
 }
 
+// 跟品佑借的優先還：品佑排前面，其次照借款日、再照 id
+const isPinyouLoan = l => /品佑/.test(String(l&&l.lender||''));
+const loanRepayOrder = (a,b) =>
+  (isPinyouLoan(b)?1:0)-(isPinyouLoan(a)?1:0)
+  || String(a.date||'').localeCompare(String(b.date||''))
+  || String(a.id).localeCompare(String(b.id));
 function computeRecords(records){
   const byKey={};
   records.forEach(r=>{
@@ -2439,18 +2445,19 @@ function viewPayroll(){
     </tr>`;
   }).join('');
 
-  // 本期借支扣款提示：同一人的多筆借支合併成一列（扣款自動由最早那筆開始沖銷）
+  // 還款順序：跟品佑借的優先沖銷，其次同來源照借款日（早的先）
+  // 本期借支扣款提示：同一人的多筆借支合併成一列
   const _pendingLoans={};
   state.loans.filter(l=>loanBalance(l)>0 && !loanDeductedInRange(l.id,state.payFrom,state.payTo))
     .forEach(l=>{ (_pendingLoans[l.empId]=_pendingLoans[l.empId]||[]).push(l); });
   const loanReminders=Object.keys(_pendingLoans).map(empId=>{
-    const list=_pendingLoans[empId].slice().sort((a,b)=>String(a.date||'').localeCompare(String(b.date||''))||String(a.id).localeCompare(String(b.id)));
+    const list=_pendingLoans[empId].slice().sort(loanRepayOrder);
     const bal=list.reduce((s,l)=>s+loanBalance(l),0);
     const available=Math.max(0,Number(byEmp[empId]&&byEmp[empId].net)||0);
     const maxDed=Math.min(bal,available);
     const detail=list.length>1
-      ? `<div class="sub" style="margin:2px 0 0">${list.length} 筆：${list.map(l=>`${l.date?esc(l.date)+' ':''}${money(loanBalance(l))}`).join('、')}（由最早的開始扣）</div>`
-      : '';
+      ? `<div class="sub" style="margin:2px 0 0">${list.length} 筆依序扣：${list.map(l=>`${isPinyouLoan(l)?'<b style="color:var(--accent)">品佑</b> ':''}${l.date?esc(l.date)+' ':''}${money(loanBalance(l))}`).join('、')}<br>（<b>跟品佑借的優先還</b>，其次早的先還）</div>`
+      : (isPinyouLoan(list[0])?`<div class="sub" style="margin:2px 0 0">跟品佑借的</div>`:'');
     return `<tr>
       <td>${esc(empName(empId))}${list.length>1?`<span class="tag">${list.length} 筆</span>`:''}${detail}</td>
       <td class="num">${money(bal)}</td>
@@ -3554,7 +3561,7 @@ function bind(){
     const empId=b.dataset.repay;
     // 該員工本期還沒扣過的借支，由最早的開始沖銷
     const list=state.loans.filter(l=>l.empId===empId && loanBalance(l)>0 && !loanDeductedInRange(l.id,state.payFrom,state.payTo))
-      .sort((a,c)=>String(a.date||'').localeCompare(String(c.date||''))||String(a.id).localeCompare(String(c.id)));
+      .sort(loanRepayOrder);
     if(!list.length) return;
     const bal=list.reduce((s,l)=>s+loanBalance(l),0);
     const inp=document.querySelector(`[data-loanpay="${empId}"]`);
@@ -3570,7 +3577,7 @@ function bind(){
       const take=Math.min(amt, loanBalance(l));
       if(take<=0) continue;
       state.adjustments.push({id:uid(),date,empId,kind:'ded',label:'借支扣還',amount:take,note:(l.note?l.note+' ':'')+'借支扣還',loanId:l.id});
-      parts.push(`${l.date?l.date+' ':''}${money(take)}`);
+      parts.push(`${isPinyouLoan(l)?'[品佑] ':''}${l.date?l.date+' ':''}${money(take)}`);
       amt-=take;
     }
     saveData(); render();
