@@ -509,7 +509,7 @@ const FS_ROOT = 'https://firestore.googleapis.com/v1/projects/'+FS_PROJECT+'/dat
 const FS_DOC_BASE = FS_ROOT+'payroll/';
 const FS_SIG_BASE = FS_ROOT+'payrollSignatures/';
 const FS_REST_URL = FS_DOC_BASE+'main?key='+FS_KEY;
-const APP_VERSION = 'v2026.08.01e-bonuspdf';
+const APP_VERSION = 'v2026.08.01f-recon-co';
 let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], tools:[], locations:[], assets:[], advances:[], accounts:[], ledger:[], deals:[], billings:[], measurements:[], contracts:{}, costs:[], textMemory:{clients:[],companies:[]}, parkAccId:'', oweBonus:{}, minFund:'', shareholderTx:[], payrollSnapshots:[], yearIncomeAdj:[], deletedIds:[], resurrected:{ids:[],at:0}, tab:'dash' };
 let cloudStatus='連線中…';
 let localDirty=false, lastCloudTs=0;
@@ -6938,6 +6938,7 @@ function viewBilling(){
 // ---- 對帳匯出 ----
 let reconFrom='', reconTo='', reconPick={payroll:true,advances:true,ledger:true,deals:true,billing:true,sites:true,yearend:true};
 const RECON_ITEMS=[
+  ['payrollco','各期公司負擔（依薪資存檔）','存檔紀錄'],
   ['payroll','員工薪資總表','可套期間'],
   ['advances','代墊款明細','可套期間'],
   ['ledger','公積金帳戶收支','可套期間'],
@@ -6973,6 +6974,24 @@ function viewRecon(){
 function reconSection(key, from, to){
   const inRange=d=> (!from||d>=from) && (!to||d<=to);
   const rangeTxt=(from||to)?`${from||'起始'} ～ ${to||'迄今'}`:'全部期間';
+  // 各期公司負擔：直接取「薪資存檔」凍結的數字，一期一列（品佑結算基準）
+  if(key==='payrollco'){
+    let snaps=(state.payrollSnapshots||[]).slice()
+      .filter(sn=>(!from||String(sn.to||'')>=from)&&(!to||String(sn.from||'')<=to))
+      .sort((a,b)=>String(a.from||'').localeCompare(String(b.from||'')));
+    if(!snaps.length) return `<h2 class="sec">各期公司負擔（依薪資存檔）</h2><p class="sub">這個期間沒有薪資存檔紀錄。請先到「員工薪資」頁按「結算存檔」把各期薪資鎖定，這裡才會有資料。</p>`;
+    let gN=0,gC=0,gP=0;
+    const rows=snaps.map(sn=>{
+      const t=sn.totals||{}; const n=(sn.rows||[]).length;
+      const net=Number(t.net)||0, co=Number(t.company)||0;
+      gN+=net; gC+=co; gP+=n;
+      return `<tr><td>${esc(sn.from||'')} ～ ${esc(sn.to||'')}</td><td class="num">${n}</td><td class="num">${money(net)}</td><td class="num" style="font-weight:600">${money(co)}</td></tr>`;
+    }).join('');
+    return `<h2 class="sec">各期公司負擔（依薪資存檔）</h2>
+      <table><thead><tr><th>計薪期間</th><th class="num">人數</th><th class="num">實發合計</th><th class="num">公司負擔</th></tr></thead>
+      <tbody>${rows}<tr class="total-row"><td>合計（${snaps.length} 期）</td><td class="num">${gP}</td><td class="num">${money(gN)}</td><td class="num">${money(gC)}</td></tr></tbody></table>
+      <p class="sub">數字取自各期「結算存檔」當下凍結的紀錄，不受之後修改出勤／調整項影響。公司負擔工資（品佑結算基準）＝實發＋借支扣還。</p>`;
+  }
   if(key==='payroll'){
     const byEmp=buildPayroll(from,to);
     const isP=id=>{ const e=state.employees.find(x=>x.id===id); return e&&e.partner; };
