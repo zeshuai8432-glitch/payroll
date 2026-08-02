@@ -407,6 +407,13 @@ const esc = s => String(s==null?'':s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2,7);
 const empName = id => { const e=state.employees.find(x=>x.id===id); return e?e.name:'（已移除）'; };
 const siteName = id => { const s=state.sites.find(x=>x.id===id); return s?s.name:'（已移除）'; };
+// 案場進場日：手動填 site.startDate；沒填時用該案場最早一筆出工日期當參考值
+const firstAttendDate = sid => state.attendance.filter(r=>r.siteId===sid&&r.date).map(r=>r.date).sort()[0]||'';
+const siteStartDate = s => (s&&s.startDate)||'';
+function daysFromToday(d){ if(!d) return null; const a=Date.parse(d+'T00:00:00'), b=Date.parse(localISODate()+'T00:00:00'); if(isNaN(a)||isNaN(b)) return null; return Math.round((b-a)/86400000); }
+// 「今天進場」／「已進場 12 天」／「還有 3 天進場」
+function startDateNote(d){ const n=daysFromToday(d); if(n===null) return ''; return n===0?'今天進場':(n>0?`已進場 ${n} 天`:`還有 ${-n} 天進場`); }
+function siteStartLabel(s){ const d=siteStartDate(s); return d?`${d}（${startDateNote(d)}）`:''; }
 const recordLabel = r => r.type==='請假'?'請假':r.type==='休假'?'休假':siteName(r.siteId);
 const billingAmount = b => {
   const qty=Number(b&&b.qty), unitPrice=Number(b&&b.unitPrice);
@@ -465,7 +472,7 @@ function rememberDeletedPhoto(id,url){
   state.billingPhotoDeleted=state.billingPhotoDeleted||{};
   state.billingPhotoDeleted[id]=[...new Set([...(state.billingPhotoDeleted[id]||[]),url])];
 }
-const APP_VERSION = 'vB2026.07.19b-attnote'; // 版本號顯示在右上角，方便確認拿到新版
+const APP_VERSION = 'vB2026.08.02a-sitestart'; // 版本號顯示在右上角，方便確認拿到新版
 // 本地時區的今天（yyyy-mm-dd）。toISOString 是 UTC，台灣早上 8 點前會差一天
 function localISODate(d=new Date()){ return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
 // 單價可打算式（例：1200*1.1）
@@ -1552,7 +1559,7 @@ function viewSites(){
     return `<details class="card">
       <summary>${esc(siteName(sid))}<span style="margin-left:auto;font-size:16px;font-weight:700;color:var(--ink)">${money(s.grandTotal)}</span></summary>
       <div class="card-body">
-        <p class="sub">總工數 ${gongStr(s.hours)}・系統工資 ${money(s.wage)}・津貼 ${money(s.allow)}${s.opening>0?`・期初 ${money(s.opening)}`:''}・占總成本 ${pct}%</p>
+        <p class="sub">${(()=>{ const st=state.sites.find(x=>x.id===sid), lb=st?siteStartLabel(st):''; return lb?`進場 ${lb}・`:''; })()}總工數 ${gongStr(s.hours)}・系統工資 ${money(s.wage)}・津貼 ${money(s.allow)}${s.opening>0?`・期初 ${money(s.opening)}`:''}・占總成本 ${pct}%</p>
         <div class="row" style="margin-bottom:6px">
           <div class="field"><label>期初人事成本（從Excel抄入，選填）</label><input type="number" data-opening="${sid}" value="${s.opening||''}" placeholder="未設定" min="0" step="1000" style="width:170px"></div>
         </div>
@@ -1598,7 +1605,11 @@ function viewManage(){
     const paused=s.active===false;
     const toggle=`<button class="act" data-togglesite="${s.id}">${paused?'恢復啟用':'暫停'}</button>`;
     const nameCell=`${esc(s.name)}${paused?'<span class="tag" style="background:var(--warn-bg);color:var(--warn-ink)">已暫停</span>':''}`;
-    return `<tr${paused?' style="color:var(--muted)"':''}><td>${nameCell}</td><td><button class="act" data-rensite="${s.id}">改名</button></td><td>${toggle}</td><td>${delBtn}</td></tr>`;
+    const sd=siteStartDate(s), firstWork=firstAttendDate(s.id);
+    const startCell=`<input type="date" data-sitestart="${s.id}" value="${esc(sd)}" style="width:150px">`
+      + (sd?`<div class="sub" style="margin:2px 0 0">${startDateNote(sd)}</div>`
+           :(firstWork?`<div class="sub" style="margin:2px 0 0">首次出工 ${firstWork} <button class="act" data-usefirst="${s.id}" style="height:22px;padding:0 8px">套用</button></div>`:''));
+    return `<tr${paused?' style="color:var(--muted)"':''}><td>${nameCell}</td><td>${startCell}</td><td><button class="act" data-rensite="${s.id}">改名</button></td><td>${toggle}</td><td>${delBtn}</td></tr>`;
   };
   const activeSitesList=state.sites.filter(s=>s.active!==false);
   const pausedSitesList=state.sites.filter(s=>s.active===false);
@@ -1621,12 +1632,13 @@ function viewManage(){
   <details class="card">
     <summary>案場</summary>
     <div class="card-body">
-      <p class="sub">建立工地/案場，登記出工與計算成本時會用到。改名會套用到所有相關紀錄。暫時不用的案場可「暫停」，它就不會出現在出工登記，但歷史紀錄保留。</p>
+      <p class="sub">建立工地/案場，登記出工與計算成本時會用到。改名會套用到所有相關紀錄。暫時不用的案場可「暫停」，它就不會出現在出工登記，但歷史紀錄保留。<b>進場日</b>填了之後，這裡和「案場成本」都會顯示進場多久了；還沒填的案場會用最早一筆出工日期當參考，按「套用」即可填入。</p>
       <div class="row" style="margin-bottom:10px">
         <div class="field" style="flex:1;min-width:200px"><label>案場名稱</label><input id="s-name" placeholder="例：台北富邦"></div>
+        <div class="field"><label>進場日（選填）</label><input type="date" id="s-start" value="${todayStr}" style="width:160px"></div>
         <button class="btn" id="s-add">＋ 新增案場</button>
       </div>
-      ${state.sites.length===0?'<div class="empty">尚無案場。</div>':`${activeSitesList.length?`<table><thead><tr><th>名稱</th><th></th><th></th><th></th></tr></thead><tbody>${siteRows}</tbody></table>`:'<div class="empty">沒有啟用中的案場。</div>'}${pausedSiteTable}`}
+      ${state.sites.length===0?'<div class="empty">尚無案場。</div>':`${activeSitesList.length?`<table><thead><tr><th>名稱</th><th>進場日</th><th></th><th></th><th></th></tr></thead><tbody>${siteRows}</tbody></table>`:'<div class="empty">沒有啟用中的案場。</div>'}${pausedSiteTable}`}
     </div>
   </details>
   <div class="card">
@@ -2078,7 +2090,8 @@ function bind(){
   if(sa) sa.onclick=()=>{
     const name=document.getElementById('s-name').value.trim(); if(!name)return;
     if(state.sites.some(s=>s.name===name) && !confirm(`已經有一個案場叫「${name}」。\n請款、成本都是依案場名歸戶，同名會混在一起。\n\n確定還是要新增嗎？`)) return;
-    state.sites.push({id:uid(),name,active:true}); saveData(); render();
+    const startDate=(document.getElementById('s-start')||{}).value||'';
+    state.sites.push({id:uid(),name,active:true,startDate}); saveData(); render();
   };
   document.querySelectorAll('[data-delsite]').forEach(b=>b.onclick=()=>{
     const s=state.sites.find(x=>x.id===b.dataset.delsite); if(!s) return;
@@ -2092,6 +2105,17 @@ function bind(){
     const s=state.sites.find(x=>x.id===b.dataset.togglesite); if(!s) return;
     s.active = (s.active===false) ? true : false;
     saveData(); render();
+  });
+  document.querySelectorAll('[data-sitestart]').forEach(inp=>inp.onchange=()=>{
+    const s=state.sites.find(x=>x.id===inp.dataset.sitestart); if(!s) return;
+    const v=(inp.value||'').trim();
+    if(v) s.startDate=v; else delete s.startDate;
+    saveData(); render();
+  });
+  document.querySelectorAll('[data-usefirst]').forEach(b=>b.onclick=()=>{
+    const s=state.sites.find(x=>x.id===b.dataset.usefirst); if(!s) return;
+    const d=firstAttendDate(s.id); if(!d) return;
+    s.startDate=d; saveData(); render();
   });
   document.querySelectorAll('[data-opening]').forEach(inp=>inp.onchange=()=>{
     const s=state.sites.find(x=>x.id===inp.dataset.opening); if(!s) return;
