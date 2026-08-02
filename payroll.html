@@ -509,7 +509,7 @@ const FS_ROOT = 'https://firestore.googleapis.com/v1/projects/'+FS_PROJECT+'/dat
 const FS_DOC_BASE = FS_ROOT+'payroll/';
 const FS_SIG_BASE = FS_ROOT+'payrollSignatures/';
 const FS_REST_URL = FS_DOC_BASE+'main?key='+FS_KEY;
-const APP_VERSION = 'v2026.08.02a-yearend';
+const APP_VERSION = 'v2026.08.02b-parkledger';
 let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], tools:[], locations:[], assets:[], advances:[], accounts:[], ledger:[], deals:[], billings:[], measurements:[], contracts:{}, costs:[], textMemory:{clients:[],companies:[]}, parkAccId:'', oweBonus:{}, minFund:'', shareholderTx:[], payrollSnapshots:[], yearIncomeAdj:[], deletedIds:[], resurrected:{ids:[],at:0}, tab:'dash' };
 let cloudStatus='連線中…';
 let localDirty=false, lastCloudTs=0;
@@ -6954,7 +6954,7 @@ const RECON_ITEMS=[
   ['deals','⑤ 分潤結算明細','可套期間'],
   ['coop','⑥ 合作案損益','可套期間'],
   ['bonus','⑦ 獎金發放明細','可套期間'],
-  ['ledger','⑧ 公積金帳戶收支','可套期間'],
+  ['ledger','⑧ 品佑帳戶收支','可套期間'],
   ['yearend','⑨ 年度總結（驗算）','可套期間'],
   ['payrollco','各期公司負擔（僅存檔數字）','存檔紀錄'],
   ['sites','案場成本明細（一般案場，通常不需要）','累計至今'],
@@ -7057,15 +7057,30 @@ function reconSection(key, from, to){
       <table><thead><tr><th>股東</th><th class="num">工資</th><th class="num">代墊款</th><th class="num">應領</th></tr></thead><tbody>${rows}</tbody></table>`;
   }
   if(key==='ledger'){
-    const txs=state.ledger.filter(t=>inRange(t.date)).sort((a,b)=>a.date.localeCompare(b.date));
-    if(txs.length===0) return '';
+    // 只列「品佑代支出」那個帳戶：年度對帳看的是這一本，其他帳戶不相干
+    if(!state.parkAccId) return `<h2 class="sec">品佑帳戶收支（${rangeTxt}）</h2><p class="sub">尚未指定「品佑代支出」帳戶，請到「品佑帳戶結算」頁選定。</p>`;
+    const acc=state.accounts.find(a=>a.id===state.parkAccId);
+    const all=state.ledger.filter(t=>t.accId===state.parkAccId);
+    const txs=all.filter(t=>inRange(t.date)).sort((a,b)=>String(a.date||'').localeCompare(String(b.date||'')));
+    // 期初＝帳戶期初 ＋ 期間之前的收支；期末＝期初 ＋ 期間內收支
+    const opening=Number(acc&&acc.opening)||0;
+    const before=all.filter(t=>from&&String(t.date||'')<from)
+      .reduce((s2,t)=>s2+(t.kind==='in'?1:-1)*(Number(t.amount)||0),0);
+    const begin=opening+before;
     let tin=0,tout=0;
     const rows=txs.map(t=>{ tin+=t.kind==='in'?(Number(t.amount)||0):0; tout+=t.kind==='out'?(Number(t.amount)||0):0;
-      return `<tr><td>${esc(t.date)}</td><td>${esc(accountName(t.accId))}</td><td>${esc(t.note||'')}</td><td class="num">${t.kind==='in'?money(t.amount):'-'}</td><td class="num">${t.kind==='out'?money(t.amount):'-'}</td></tr>`;
+      return `<tr><td>${esc(t.date)}</td><td>${esc(t.note||'')}</td><td class="num">${t.kind==='in'?money(t.amount):'-'}</td><td class="num">${t.kind==='out'?money(t.amount):'-'}</td></tr>`;
     }).join('');
-    return `<h2 class="sec">公積金帳戶收支（${rangeTxt}）</h2>
-      <table><thead><tr><th>日期</th><th>帳戶</th><th>項目</th><th class="num">收入</th><th class="num">支出</th></tr></thead>
-      <tbody>${rows}<tr class="total-row"><td colspan="3">合計</td><td class="num">${money(tin)}</td><td class="num">${money(tout)}</td></tr></tbody></table>`;
+    const end=begin+tin-tout;
+    return `<h2 class="sec">品佑帳戶收支（${rangeTxt}）</h2>
+      <table><thead><tr><th>日期</th><th>項目</th><th class="num">收入</th><th class="num">支出</th></tr></thead>
+      <tbody>
+        <tr class="total-row"><td colspan="2">期初餘額</td><td class="num" colspan="2">${money(begin)}</td></tr>
+        ${rows||'<tr><td colspan="4" style="color:#777">這個期間沒有收支紀錄。</td></tr>'}
+        <tr class="total-row"><td colspan="2">本期合計</td><td class="num">${money(tin)}</td><td class="num">${money(tout)}</td></tr>
+        <tr class="total-row"><td colspan="2">期末餘額</td><td class="num" colspan="2">${money(end)}</td></tr>
+      </tbody></table>
+      <p class="sub">帳戶：${esc(accountName(state.parkAccId))}。期初＝帳戶期初餘額＋期間前的收支；期末＝期初＋本期收入−本期支出，應與「年度總結」的該帳戶實際餘額一致（若日期到今天）。</p>`;
   }
   if(key==='billing'){
     // 加日期：只算期間內開立的單；同時把已收/未收分開，年度對帳才看得出應收
