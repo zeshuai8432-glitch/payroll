@@ -509,7 +509,7 @@ const FS_ROOT = 'https://firestore.googleapis.com/v1/projects/'+FS_PROJECT+'/dat
 const FS_DOC_BASE = FS_ROOT+'payroll/';
 const FS_SIG_BASE = FS_ROOT+'payrollSignatures/';
 const FS_REST_URL = FS_DOC_BASE+'main?key='+FS_KEY;
-const APP_VERSION = 'v2026.08.01f-recon-co';
+const APP_VERSION = 'v2026.08.02a-yearend';
 let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], tools:[], locations:[], assets:[], advances:[], accounts:[], ledger:[], deals:[], billings:[], measurements:[], contracts:{}, costs:[], textMemory:{clients:[],companies:[]}, parkAccId:'', oweBonus:{}, minFund:'', shareholderTx:[], payrollSnapshots:[], yearIncomeAdj:[], deletedIds:[], resurrected:{ids:[],at:0}, tab:'dash' };
 let cloudStatus='連線中…';
 let localDirty=false, lastCloudTs=0;
@@ -4442,6 +4442,14 @@ function bind(){
 
   // 品佑帳戶結算
   const bpdf=document.getElementById('park-bonus-pdf'); if(bpdf) bpdf.onclick=exportBonusPDF;
+  const ry=document.getElementById('recon-yearend');
+  if(ry) ry.onclick=()=>{
+    const y=new Date().getFullYear();
+    if(!reconFrom&&!reconTo){ reconFrom=y+'-01-01'; reconTo=y+'-12-31'; }
+    reconPick={}; RECON_YEAREND.forEach(k=>reconPick[k]=true);
+    render();
+    alert(`已勾選年度對帳的 ${RECON_YEAREND.length} 個項目，期間 ${reconFrom} ～ ${reconTo}。\n（可自行調整日期或增減項目，再按「合併匯出 PDF」）`);
+  };
   const pacc=document.getElementById('park-acc'); if(pacc) pacc.onchange=()=>{ state.parkAccId=pacc.value; saveData(); render(); };
   const pkf=document.getElementById('park-from'); if(pkf) pkf.onchange=()=>{ parkFrom=pkf.value; render(); };
   const pkt=document.getElementById('park-to'); if(pkt) pkt.onchange=()=>{ parkTo=pkt.value; render(); };
@@ -6937,16 +6945,21 @@ function viewBilling(){
 
 // ---- 對帳匯出 ----
 let reconFrom='', reconTo='', reconPick={payroll:true,advances:true,ledger:true,deals:true,billing:true,sites:true,yearend:true};
+// 年度對帳順序：收入 → 人事成本 → 分配 → 驗算
 const RECON_ITEMS=[
-  ['payrollco','各期公司負擔（依薪資存檔）','存檔紀錄'],
-  ['payroll','員工薪資總表','可套期間'],
-  ['advances','代墊款明細','可套期間'],
-  ['ledger','公積金帳戶收支','可套期間'],
-  ['billing','請款追蹤明細','累計至今'],
-  ['deals','分潤結算明細','累計至今'],
-  ['sites','案場成本明細','累計至今'],
-  ['yearend','年度總結','可套期間'],
+  ['billing','① 請款追蹤明細（收入）','可套期間'],
+  ['wagecheck','② 公司負擔 × 帳戶支出 覆核','可套期間'],
+  ['payroll','③ 員工薪資總表（逐人明細）','可套期間'],
+  ['advances','④ 代墊款明細','可套期間'],
+  ['deals','⑤ 分潤結算明細','可套期間'],
+  ['coop','⑥ 合作案損益','可套期間'],
+  ['bonus','⑦ 獎金發放明細','可套期間'],
+  ['ledger','⑧ 公積金帳戶收支','可套期間'],
+  ['yearend','⑨ 年度總結（驗算）','可套期間'],
+  ['payrollco','各期公司負擔（僅存檔數字）','存檔紀錄'],
+  ['sites','案場成本明細（一般案場，通常不需要）','累計至今'],
 ];
+const RECON_YEAREND=['billing','wagecheck','advances','deals','coop','bonus','ledger','yearend']; // 一鍵年度對帳
 function viewRecon(){
   const checks=RECON_ITEMS.map(([k,label,tag])=>`
     <label style="display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--line);border-radius:8px;margin-bottom:8px;cursor:pointer">
@@ -6964,6 +6977,7 @@ function viewRecon(){
       <div class="field"><label>訖</label><input type="date" id="recon-to" value="${reconTo}"></div>
       <button class="act" id="recon-thisperiod" style="height:36px;padding:0 12px">本期(11號)</button>
       <button class="act" id="recon-clear" style="height:36px;padding:0 12px">清除日期</button>
+      <button class="btn" id="recon-yearend" style="height:36px;padding:0 14px;align-self:flex-end">📅 年度對帳（全選①～⑨）</button>
     </div>
     ${checks}
     <button class="btn" id="recon-export" ${anyPicked?'':'disabled style="opacity:.5"'} style="margin-top:6px">合併匯出 PDF</button>
@@ -6991,6 +7005,30 @@ function reconSection(key, from, to){
       <table><thead><tr><th>計薪期間</th><th class="num">人數</th><th class="num">實發合計</th><th class="num">公司負擔</th></tr></thead>
       <tbody>${rows}<tr class="total-row"><td>合計（${snaps.length} 期）</td><td class="num">${gP}</td><td class="num">${money(gN)}</td><td class="num">${money(gC)}</td></tr></tbody></table>
       <p class="sub">數字取自各期「結算存檔」當下凍結的紀錄，不受之後修改出勤／調整項影響。公司負擔工資（品佑結算基準）＝實發＋借支扣還。</p>`;
+  }
+  // ② 公司負擔（存檔凍結）× 品佑帳戶實際支出 覆核
+  if(key==='wagecheck'){
+    const snaps=(state.payrollSnapshots||[]).slice()
+      .filter(sn=>(!from||String(sn.to||'')>=from)&&(!to||String(sn.from||'')<=to))
+      .sort((a,b)=>String(a.from||'').localeCompare(String(b.from||'')));
+    if(!snaps.length) return `<h2 class="sec">公司負擔 × 帳戶支出 覆核（${rangeTxt}）</h2><p class="sub">這個期間沒有薪資存檔紀錄。請先到「員工薪資」頁按「結算存檔」。</p>`;
+    let gC=0,gL=0,gD=0,miss=0;
+    const rows=snaps.map(sn=>{
+      const tag=(sn.from||'')+'~'+(sn.to||'');
+      const led=state.ledger.filter(t=>t.payrollWage===tag&&t.accId===state.parkAccId);
+      const co=Math.round(Number((sn.totals||{}).company)||0);
+      const paid=led.reduce((s,t)=>s+(Number(t.amount)||0),0);
+      const diff=paid-co; gC+=co; gL+=paid; gD+=diff;
+      let stat;
+      if(!led.length){ miss++; stat='<span style="color:#b45309;font-weight:600">未記帳</span>'; }
+      else if(Math.abs(diff)<1) stat='<span style="color:#15803d">✓ 相符</span>';
+      else stat=`<span style="color:#b91c1c;font-weight:600">差 ${money(diff)}</span>`;
+      return `<tr><td>${esc(sn.from||'')} ～ ${esc(sn.to||'')}</td><td class="num">${money(co)}</td><td class="num">${led.length?money(paid):'—'}</td><td>${led.map(t=>esc(t.note||'')).join('、')||'—'}</td><td>${stat}</td></tr>`;
+    }).join('');
+    return `<h2 class="sec">公司負擔 × 帳戶支出 覆核（${rangeTxt}）</h2>
+      <table><thead><tr><th>計薪期間</th><th class="num">存檔·公司負擔</th><th class="num">帳戶實際支出</th><th>帳上項目</th><th>核對</th></tr></thead>
+      <tbody>${rows}<tr class="total-row"><td>合計（${snaps.length} 期）</td><td class="num">${money(gC)}</td><td class="num">${money(gL)}</td><td></td><td>${Math.abs(gD)<1?'✓ 相符':money(gD)}</td></tr></tbody></table>
+      <p class="sub">左欄為各期「結算存檔」凍結的公司負擔；右欄為品佑帳戶中以該期間標記的實際支出（員工薪資頁按「記入品佑支出」產生）。${miss?`<b style="color:#b45309">有 ${miss} 期尚未記入品佑支出，請確認是否漏記。</b>`:''}案場成本明細裡的出工工資與此為同一筆錢，請勿重複加總。</p>`;
   }
   if(key==='payroll'){
     const byEmp=buildPayroll(from,to);
@@ -7030,27 +7068,87 @@ function reconSection(key, from, to){
       <tbody>${rows}<tr class="total-row"><td colspan="3">合計</td><td class="num">${money(tin)}</td><td class="num">${money(tout)}</td></tr></tbody></table>`;
   }
   if(key==='billing'){
-    const settledBills=state.billings.filter(b=>b.settled);
-    if(settledBills.length===0) return '';
-    const groups={}; settledBills.forEach(b=>{ const k=parentSiteName(b.site)||'（未填）'; (groups[k]=groups[k]||[]).push(b); });
-    let GB=0,GS=0; const rows=Object.keys(groups).sort().map(name=>{
-      const list=groups[name]; const settled=list.reduce((s,b)=>s+billingAmount(b),0);
-      GB+=settled; GS+=settled;
-      return `<tr><td>${esc(name)}</td><td class="num">${money(settled)}</td><td class="num">${money(settled)}</td><td class="num">${money(0)}</td></tr>`;
+    // 加日期：只算期間內開立的單；同時把已收/未收分開，年度對帳才看得出應收
+    const inR=b=>(!from||String(b.date||'')>=from)&&(!to||String(b.date||'')<=to);
+    const bills=state.billings.filter(inR);
+    if(bills.length===0) return `<h2 class="sec">請款追蹤明細（${rangeTxt}）</h2><p class="sub">這個期間沒有請款單。</p>`;
+    const groups={}; bills.forEach(b=>{ const k=parentSiteName(b.site)||'（未填）'; (groups[k]=groups[k]||[]).push(b); });
+    let GB=0,GS=0,GU=0;
+    const rows=Object.keys(groups).sort().map(name=>{
+      const list=groups[name];
+      const total=list.reduce((s,b)=>s+billingAmount(b),0);
+      const settled=list.filter(b=>b.settled).reduce((s,b)=>s+billingAmount(b),0);
+      const unsettled=total-settled;
+      GB+=total; GS+=settled; GU+=unsettled;
+      return `<tr><td>${esc(name)}</td><td class="num">${money(total)}</td><td class="num">${money(settled)}</td><td class="num"${unsettled?' style="color:#b45309;font-weight:600"':''}>${unsettled?money(unsettled):'—'}</td></tr>`;
     }).join('');
-    return `<h2 class="sec">請款追蹤明細（已收款）</h2>
-      <table><thead><tr><th>案場</th><th class="num">已收款請款</th><th class="num">已收款</th><th class="num">未收款/未列入</th></tr></thead>
-      <tbody>${rows}<tr class="total-row"><td>合計</td><td class="num">${money(GB)}</td><td class="num">${money(GS)}</td><td class="num">${money(GB-GS)}</td></tr></tbody></table>`;
+    return `<h2 class="sec">請款追蹤明細（${rangeTxt}）</h2>
+      <table><thead><tr><th>案場</th><th class="num">開單金額</th><th class="num">已收款</th><th class="num">未收款</th></tr></thead>
+      <tbody>${rows}<tr class="total-row"><td>合計</td><td class="num">${money(GB)}</td><td class="num">${money(GS)}</td><td class="num">${GU?money(GU):'—'}</td></tr></tbody></table>
+      <p class="sub">依請款單「開單日期」歸期間；「已收款」為已標記收款者。日期清空即為累計至今。</p>`;
   }
   if(key==='deals'){
-    if(state.deals.length===0) return '';
+    const inD=d=>(!from||String(d.date||'')>=from)&&(!to||String(d.date||'')<=to);
+    const dl=state.deals.filter(inD);
+    if(dl.length===0) return `<h2 class="sec">分潤結算明細（${rangeTxt}）</h2><p class="sub">這個期間沒有分潤紀錄。</p>`;
     let gP=0,gB=0,gF=0;
-    const rows=[...state.deals].sort((a,b)=>(b.date||'').localeCompare(a.date||'')).map(d=>{ const c=dealCalc(d); gP+=c.profit;gB+=c.bonus;gF+=c.fund;
+    const rows=[...dl].sort((a,b)=>(b.date||'').localeCompare(a.date||'')).map(d=>{ const c=dealCalc(d); gP+=c.profit;gB+=c.bonus;gF+=c.fund;
     return `<tr><td>${esc(d.name)}</td><td class="num">${money(d.amount)}</td><td class="num">${money(c.tax)}</td><td class="num">${money((Number(d.amount)||0)-(c.tax||0))}</td><td class="num">${money(d.cost)}</td><td class="num">${money(c.profit)}</td><td class="num">${money(c.bonus)}</td><td class="num">${money(c.fund)}</td></tr>`;
     }).join('');
-    return `<h2 class="sec">分潤結算明細（累計至今）</h2>
+    return `<h2 class="sec">分潤結算明細（${rangeTxt}）</h2>
       <table><thead><tr><th>案場</th><th class="num">請款</th><th class="num">稅金</th><th class="num">稅後</th><th class="num">成本</th><th class="num">淨利</th><th class="num">獎金</th><th class="num">公積金</th></tr></thead>
       <tbody>${rows}<tr class="total-row"><td>合計</td><td class="num"></td><td class="num"></td><td class="num"></td><td class="num"></td><td class="num">${money(gP)}</td><td class="num">${money(gB)}</td><td class="num">${money(gF)}</td></tr></tbody></table>`;
+  }
+  // ⑥ 合作案損益（含管理人那半帶去公司分潤 30/70 的後續）
+  if(key==='coop'){
+    const coops=state.sites.filter(s2=>s2.coop||s2.type==='合作案');
+    if(!coops.length) return '';
+    const sc=SCHEMES['new'];
+    let G={bill:0,cost:0,tax:0,profit:0,mgr:0,own:0,bonus:0,fund:0};
+    const rows=coops.map(site=>{
+      const c=coopSiteCalc(site);
+      const bonus=c.companyShare>0?c.companyShare*sc.bonus:0, fund=c.companyShare-bonus;
+      G.bill+=c.totalBill; G.cost+=c.totalCost; G.tax+=c.tax; G.profit+=c.profit;
+      G.mgr+=c.companyShare; G.own+=c.partnerShare; G.bonus+=bonus; G.fund+=fund;
+      return `<tr><td>${esc(site.name)}</td><td class="num">${money(c.totalBill)}</td><td class="num">${money(c.totalCost)}</td>
+        <td class="num">${money(c.tax)}</td><td class="num" style="font-weight:600">${money(c.profit)}</td>
+        <td class="num">${c.mgrPct}%　${money(c.companyShare)}</td><td class="num">${c.ownerPct}%　${money(c.partnerShare)}</td>
+        <td class="num">${money(bonus)}</td><td class="num">${money(fund)}</td></tr>`;
+    }).join('');
+    return `<h2 class="sec">合作案損益（${rangeTxt}）</h2>
+      <table><thead><tr><th>案場</th><th class="num">已收款</th><th class="num">成本</th><th class="num">稅</th><th class="num">利潤</th><th class="num">管理人(我方)</th><th class="num">業主</th><th class="num">└ 負責人獎金</th><th class="num">└ 進公積金</th></tr></thead>
+      <tbody>${rows}<tr class="total-row"><td>合計</td><td class="num">${money(G.bill)}</td><td class="num">${money(G.cost)}</td><td class="num">${money(G.tax)}</td><td class="num">${money(G.profit)}</td><td class="num">${money(G.mgr)}</td><td class="num">${money(G.own)}</td><td class="num">${money(G.bonus)}</td><td class="num">${money(G.fund)}</td></tr></tbody></table>
+      <p class="sub">合作案：已收款（只算開給業主的）− 成本（手動成本＋子案場工程款，<b>不含出工工資</b>）− 稅 ＝ 利潤，依約定比例與業主對拆。<b>管理人那半再帶去公司分潤走 30/70</b>，即右側兩欄（負責人獎金／進公積金）。</p>`;
+  }
+  // ⑦ 獎金發放明細
+  if(key==='bonus'){
+    if(!state.parkAccId) return `<h2 class="sec">獎金發放明細</h2><p class="sub">尚未指定品佑帳戶，無法計算。請到「品佑帳戶結算」頁選定。</p>`;
+    const inD=d=>(!from||String(d.date||'')>=from)&&(!to||String(d.date||'')<=to);
+    const partners=state.employees.filter(e=>e.partner);
+    const pd=state.deals.filter(d=>d.moneyAcc===state.parkAccId && d.type!=='合作案' && inD(d));
+    let targetBonus={}, bookFund=0, totalTargetBonus=0;
+    pd.forEach(d=>{ const c=dealCalc(d); if(d.ownerId) targetBonus[d.ownerId]=(targetBonus[d.ownerId]||0)+c.bonus; bookFund+=c.fund; totalTargetBonus+=c.bonus; });
+    const balance=accountBalance(state.parkAccId);
+    const targetFund=Math.max(Math.max(0,Number(state.minFund)||0), Math.round(bookFund));
+    const fundPaid=Math.max(0, Math.min(balance, targetFund));
+    const avail=Math.max(0, balance-fundPaid);
+    const shDebtOf=pid=>state.shareholderTx.filter(t=>t.shId===pid).reduce((a,t)=>a+(t.kind==='borrow'?1:-1)*(Number(t.amount)||0),0);
+    const rs=partners.map(p2=>{
+      const tgt=Math.round(targetBonus[p2.id]||0);
+      const pay=totalTargetBonus<=0?0:(avail>=totalTargetBonus?tgt:Math.round(tgt*(avail/totalTargetBonus)));
+      const debt=Math.max(0,Math.round(shDebtOf(p2.id))), ded=Math.min(pay,debt);
+      return {p:p2,tgt,pay,ded,net:pay-ded,short:Math.max(0,tgt-pay),owed:Math.round(state.oweBonus[p2.id]||0)};
+    }).filter(r=>r.tgt||r.pay||r.ded||r.owed);
+    if(!rs.length) return `<h2 class="sec">獎金發放明細（${rangeTxt}）</h2><p class="sub">這個期間沒有可發放的獎金。</p>`;
+    const T=k=>rs.reduce((a,r)=>a+r[k],0);
+    return `<h2 class="sec">獎金發放明細（${rangeTxt}）</h2>
+      <table><tbody><tr><th style="width:55%">品佑帳戶餘額</th><td class="num">${money(balance)}</td></tr>
+      <tr><th>− 公積金（該留 ${money(targetFund)}）</th><td class="num">${money(fundPaid)}</td></tr>
+      <tr class="total-row"><th>＝ 可發獎金</th><td class="num">${money(avail)}</td></tr></tbody></table>
+      <table style="margin-top:8px"><thead><tr><th>股東</th><th class="num">應拿</th><th class="num">本期可發</th><th class="num">扣預支</th><th class="num">實發現金</th><th class="num">本期少拿</th><th class="num">累計欠他</th></tr></thead>
+      <tbody>${rs.map(r=>`<tr><td>${esc(r.p.name)}</td><td class="num">${money(r.tgt)}</td><td class="num">${money(r.pay)}</td><td class="num">${r.ded?'−'+money(r.ded):'—'}</td><td class="num" style="font-weight:700">${money(r.net)}</td><td class="num">${r.short?money(r.short):'—'}</td><td class="num">${r.owed?money(r.owed):'—'}</td></tr>`).join('')}
+      <tr class="total-row"><td>合計</td><td class="num">${money(T('tgt'))}</td><td class="num">${money(T('pay'))}</td><td class="num">${T('ded')?'−'+money(T('ded')):'—'}</td><td class="num">${money(T('net'))}</td><td class="num">${T('short')?money(T('short')):'—'}</td><td class="num">${T('owed')?money(T('owed')):'—'}</td></tr></tbody></table>
+      <div class="sign">${rs.map(r=>`<div class="sigcell"><div class="sigbox"></div><div class="siglabel">${esc(r.p.name)} 領款簽收</div></div>`).join('')}</div>`;
   }
   if(key==='sites'){
     const comp=computeRecords(state.attendance); const bySite={};
