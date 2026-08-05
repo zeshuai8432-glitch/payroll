@@ -112,7 +112,7 @@
 <nav id="nav"></nav>
 <main id="app"></main>
 <script>
-const APP_VERSION = 'vP2026.08.05b-sitepick'; // 版本號顯示在頁首，方便確認拿到新版
+const APP_VERSION = 'vP2026.08.05c-sitepick2'; // 版本號顯示在頁首，方便確認拿到新版
 const LS='pinyou_data_v1';
 // ── 雲端端對端加密（與 payroll／簡化版共用同一組密碼與鑰匙；同網域共用 localStorage，解鎖一次三系統都通）──
 const E2E_SALT='PMENC1|dz-gx-py|2026';
@@ -742,7 +742,7 @@ function viewInc(){
     <h2>新增請款</h2>
     <div class="row">
       <div class="field"><label>日期</label><input id="i-date" type="date" value="${today()}"></div>
-      <div class="field" style="flex:1;min-width:130px"><label>案場</label><input id="i-site" list="dl-sites2" placeholder="案場"></div>
+      <div class="field" style="flex:1;min-width:230px"><label>案場</label>${sitePickerHtml('i-site','',sites,{list:'dl-sites2'})}</div>
       <div class="field" style="min-width:110px"><label>請款金額</label><input id="i-amount" type="number" inputmode="numeric" placeholder="0"></div>
       <div class="field"><label>請款方式</label><input id="i-method" placeholder="匯款/支票"></div>
       <div class="field" style="min-width:150px"><label>入款帳號</label><select id="i-account"><option value="">（未指定）</option>${accOpts}</select></div>
@@ -1143,7 +1143,7 @@ function bind(){
   document.querySelectorAll('[data-codel]').forEach(b=>b.onclick=()=>{ if(confirm('刪除這間公司？')){ state.companies=state.companies.filter(x=>x.id!==b.dataset.codel); save(); } });
 
   // 設定
-  bindSitePicker('e-site'); bindSitePicker('ee-site');
+  bindSitePicker('e-site'); bindSitePicker('ee-site'); bindSitePicker('i-site');
   on('cloud-sync','onclick',()=>{ if(CLOUD_ON){ setStatus('同步中…'); loadCloud(); } });
   document.querySelectorAll('[data-snaprestore]').forEach(btn=>btn.onclick=()=>{
     const day=btn.dataset.snaprestore;

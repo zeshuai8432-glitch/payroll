@@ -509,7 +509,7 @@ const FS_ROOT = 'https://firestore.googleapis.com/v1/projects/'+FS_PROJECT+'/dat
 const FS_DOC_BASE = FS_ROOT+'payroll/';
 const FS_SIG_BASE = FS_ROOT+'payrollSignatures/';
 const FS_REST_URL = FS_DOC_BASE+'main?key='+FS_KEY;
-const APP_VERSION = 'v2026.08.02d-bonusdebt';
+const APP_VERSION = 'v2026.08.05a-pinyounote';
 let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], tools:[], locations:[], assets:[], advances:[], accounts:[], ledger:[], deals:[], billings:[], measurements:[], contracts:{}, costs:[], textMemory:{clients:[],companies:[]}, parkAccId:'', oweBonus:{}, minFund:'', shareholderTx:[], myCompanies:[], payrollSnapshots:[], yearIncomeAdj:[], deletedIds:[], resurrected:{ids:[],at:0}, tab:'dash' };
 let cloudStatus='連線中…';
 let localDirty=false, lastCloudTs=0;
@@ -1174,15 +1174,28 @@ async function rescueFromCloudSnapshots(){
   rescueMerge(top[idx].dd);
 }
 // ---- 🔗 品佑帳本互抓：讀品佑雲端的支出，抓到 payroll 沒有的就通知逐筆確認 ----
-const PINYOU_CLOUD_URL='https://script.google.com/macros/s/AKfycbxFLYgepJcn4-Sw_BvgTb-jUijDaSmRSfMkdfrnlwrVgDzDxE65KidWbao3Bq6ooL7q/exec';
+const PINYOU_FS_URL=FS_ROOT+'pinyou/main?key='+FS_KEY;   // 品佑帳本已改存 Firestore
+const PINYOU_CLOUD_URL='https://script.google.com/macros/s/AKfycbxFLYgepJcn4-Sw_BvgTb-jUijDaSmRSfMkdfrnlwrVgDzDxE65KidWbao3Bq6ooL7q/exec'; // 舊 GAS：只在 Firestore 還沒資料時回頭讀
+// 先讀 Firestore，讀不到才回頭讀舊 GAS（品佑還沒搬完的過渡期）
+async function pinyouRawData(){
+  try{
+    const r=await fetchT(PINYOU_FS_URL,{},20000);
+    if(r.ok){
+      const d=await r.json();
+      const raw=(d.fields&&d.fields.json)?d.fields.json.stringValue:null;
+      if(raw) return raw;
+    }
+  }catch(e){}
+  const r2=await fetchT(PINYOU_CLOUD_URL,{},20000);
+  const j=await r2.json();
+  if(!j||!j.ok||!j.data) throw new Error('品佑雲端無資料');
+  return j.data;
+}
 let pyFound=null, pyChecking=false, pySkippedNoMatch=0; // null=尚未檢查；[]=已檢查無新項目
 async function checkPinyouExpenses(showFail){
   if(pyChecking) return; pyChecking=true;
   try{
-    const r=await fetchT(PINYOU_CLOUD_URL,{},20000);
-    const j=await r.json();
-    if(!j||!j.ok||!j.data) throw new Error('品佑雲端無資料');
-    let raw=j.data;
+    let raw=await pinyouRawData();
     if(isEncBlob(raw)){ // 品佑帳本也加密時用同一把鑰匙解；還沒解鎖就先跳過這次背景檢查
       const key=await _loadE2eKey(); if(!key){ pyChecking=false; return; }
       try{ raw=await _tryE2eDecrypt(key,raw); }catch(e){ pyChecking=false; return; }
@@ -1215,7 +1228,8 @@ function pyAddCost(f){
   const e=f.e;
   const payer=String(e.account||'').includes('東澤')?'dz':(String(e.account||'').includes('廣昕')?'gx':'py');
   state.deletedIds=(state.deletedIds||[]).filter(x=>x!==f.cid);
-  state.costs.push({id:f.cid, siteId:f.siteId, date:e.date||'', item:String(e.item||'品佑支出'), amount:Number(e.amount)||0, payer, pinyouId:e.id});
+  const note=[String(e.note||'').trim(), String(e.method||'').trim()].filter(Boolean).join('｜');
+  state.costs.push({id:f.cid, siteId:f.siteId, date:e.date||'', item:String(e.item||'品佑支出'), amount:Number(e.amount)||0, payer, note, pinyouId:e.id});
 }
 // 檢查本機救援快照（合併雲端前自動留存的 pm_lost_local_v1）
 function rescueFromLocalSnapshot(){
@@ -2594,6 +2608,7 @@ function viewSites(){
           <div class="row" style="margin:6px 0">
             <div class="field"><label>日期</label><input type="date" id="ce-date" value="${c.date||''}"></div>
             <div class="field" style="flex:1;min-width:120px"><label>項目</label><input id="ce-item" value="${esc(c.item||'')}"></div>
+            <div class="field" style="flex:1;min-width:120px"><label>備註</label><input id="ce-note" value="${esc(c.note||'')}"></div>
             <div class="field"><label>金額</label><input type="number" id="ce-amount" value="${c.amount||0}" min="0" step="1000" style="width:120px"></div>
             <div class="field"><label>誰支付</label><select id="ce-payer"><option value="dz" ${c.payer==='dz'?'selected':''}>東澤</option><option value="gx" ${c.payer==='gx'?'selected':''}>廣昕</option><option value="py" ${c.payer==='py'?'selected':''}>品佑</option></select></div>
             <button class="btn" data-costeditok="${c.id}">儲存</button>
@@ -2610,7 +2625,7 @@ function viewSites(){
       const payerTag=c.payer==='dz'||c.payer==='gx'
         ? (c.reimbursed?'<span class="tag" style="background:#e3efe9;color:var(--accent)">已報銷</span>':'<span class="tag" style="background:var(--warn-bg);color:var(--warn-ink)">待報銷</span>')
         : '';
-      return `<tr${(canReimb&&!c.reimbursed)?' style="background:#fff8f0"':''}><td>${esc(c.date||'')}</td><td>${c.subSite?subSiteTag(siteOptionValue(site.name,c.subSite)):''} ${esc(c.item||'')}${c.pinyouId?'<span class="tag" style="background:#e3efe9;color:var(--accent)">品佑帳本</span>':''}</td><td class="num">${money(c.amount)}</td><td>${esc(payerName(c.payer))}${payerTag}</td><td>${reimbCell} <button class="act" data-costedit="${c.id}">改</button> <button class="act danger" data-delcost="${c.id}">刪</button></td></tr>`;
+      return `<tr${(canReimb&&!c.reimbursed)?' style="background:#fff8f0"':''}><td>${esc(c.date||'')}</td><td>${c.subSite?subSiteTag(siteOptionValue(site.name,c.subSite)):''} ${esc(c.item||'')}${c.pinyouId?'<span class="tag" style="background:#e3efe9;color:var(--accent)">品佑帳本</span>':''}${c.note?`<div style="font-size:11.5px;color:var(--muted)">${esc(c.note)}</div>`:''}</td><td class="num">${money(c.amount)}</td><td>${esc(payerName(c.payer))}${payerTag}</td><td>${reimbCell} <button class="act" data-costedit="${c.id}">改</button> <button class="act danger" data-delcost="${c.id}">刪</button></td></tr>`;
     }).join('');
     const byPayer={}; myCosts.forEach(c=>{ byPayer[c.payer||'—']=(byPayer[c.payer||'—']||0)+(Number(c.amount)||0); });
     const payerSummary=Object.keys(byPayer).length?`<div class="sub" style="margin:4px 0">各人墊付：${Object.entries(byPayer).map(([k,v])=>`${esc(payerName(k))} ${money(v)}`).join('、')}</div>`:'';
@@ -2638,6 +2653,7 @@ function viewSites(){
         <div class="row" style="margin:8px 0">
           <div class="field"><label>日期</label><input type="date" data-costdate="${sid}" value="${localISODate()}"></div>
           <div class="field" style="flex:1;min-width:120px"><label>項目</label><input data-costitem="${sid}" placeholder="材料、工資、機具…"></div>
+          <div class="field" style="flex:1;min-width:120px"><label>備註</label><input data-costnote="${sid}" placeholder="選填"></div>
           <div class="field"><label>金額</label><input type="number" data-costamount="${sid}" min="0" step="1000" style="width:120px"></div>
           <div class="field"><label>誰支付</label><select data-costpayer="${sid}"><option value="dz">東澤</option><option value="gx">廣昕</option><option value="py">品佑</option></select></div>
           <button class="act" data-costadd="${sid}" style="border:1px solid var(--accent);border-radius:6px;padding:0 12px;color:var(--accent);height:36px">＋ 加成本</button>
@@ -3476,7 +3492,9 @@ function bind(){
     const subSite=subSel?subSel.value:'';
     if(!date||isNaN(amount)||amount<=0){ alert('請填日期與金額'); return; }
     siteCostDetailsOpen[sid]=true;
-    state.costs.push({id:uid(),siteId:sid,date,item,amount,payer,subSite}); resyncAllSiteDeals();
+    const noteEl=document.querySelector(`[data-costnote="${sid}"]`);
+    const note=noteEl?noteEl.value.trim():'';
+    state.costs.push({id:uid(),siteId:sid,date,item,amount,payer,subSite,note}); resyncAllSiteDeals();
     saveData(); render();
   });
   document.querySelectorAll('[data-delcost]').forEach(b=>b.onclick=()=>{
@@ -3521,6 +3539,7 @@ function bind(){
     c.date=document.getElementById('ce-date').value;
     const subSel=document.getElementById('ce-subsite'); if(subSel) c.subSite=subSel.value;
     c.item=document.getElementById('ce-item').value.trim();
+    const ceNote=document.getElementById('ce-note'); if(ceNote) c.note=ceNote.value.trim();
     c.amount=amount;
     c.payer=document.getElementById('ce-payer').value; resyncAllSiteDeals();
     siteCostDetailsOpen[c.siteId]=true;
