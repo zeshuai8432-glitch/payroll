@@ -587,7 +587,7 @@ function rememberDeletedPhoto(id,url){
   state.billingPhotoDeleted=state.billingPhotoDeleted||{};
   state.billingPhotoDeleted[id]=[...new Set([...(state.billingPhotoDeleted[id]||[]),url])];
 }
-const APP_VERSION='vN2026.08.05c-billpick'; // 版本號顯示在右上角，方便確認拿到新版
+const APP_VERSION='vN2026.08.05d-billmerge'; // 版本號顯示在右上角，方便確認拿到新版
 // 本地時區的今天（yyyy-mm-dd）。toISOString 是 UTC，台灣早上 8 點前會差一天
 function localISODate(d=new Date()){ return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
 // 單價可打算式（例：1200*1.1）
@@ -1993,6 +1993,13 @@ function bind(){
     b.textContent=allOn?'全選此案場':'取消全選';
   });
   document.querySelectorAll('[data-batch-req],[data-batch-pick]').forEach(b=>b.onclick=printPicked);
+  document.querySelectorAll('[data-batch-merge]').forEach(b=>b.onclick=()=>{
+    const ids=pickedBillIds();
+    if(!ids.length){ alert('請先勾選要列印的單據'); return; }
+    const byId=new Map(state.billings.map(x=>[x.id,x]));
+    ids.sort((a,c)=>String((byId.get(a)||{}).date||'').localeCompare(String((byId.get(c)||{}).date||'')));
+    printMergedBillingDocs(ids);
+  });
   document.querySelectorAll('[data-batch-reqall]').forEach(b=>b.onclick=()=>{
     const site=b.dataset.batchReqall;
     const ids=state.billings.filter(x=>(x.docType||'請款單')==='請款單'&&parentSiteName(x.site)===site).sort((a,c)=>(a.date||'').localeCompare(c.date||'')).map(x=>x.id);
@@ -2711,8 +2718,9 @@ function viewBillingReq(){
     return `<details class="card" open><summary>${esc(name)}<span style="margin-left:auto;font-size:16px;font-weight:700">${money(groups[name].reduce((s,b)=>s+billingAmount(b),0))}</span></summary><div class="card-body"><div class="scroll"><table><thead><tr><th style="width:34px"></th><th>日期</th><th>說明</th><th>業主</th><th class="num">金額</th><th>收款</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
         <button class="act" data-bill-pickall="${esc(name)}">全選此案場</button>
-        <button class="act" data-batch-req="${esc(name)}">列印勾選</button>
-        <button class="act" data-batch-reqall="${esc(name)}">列印此案場全部</button>
+        <button class="act" data-batch-merge="1">列印勾選（合併一張）</button>
+        <button class="act" data-batch-req="${esc(name)}">列印勾選（分張）</button>
+        <button class="act" data-batch-reqall="${esc(name)}">列印此案場全部（分張）</button>
       </div></div></details>`;
   }).join('');
   const siteSelOpts=siteSelectOptions('');
@@ -2782,8 +2790,9 @@ function viewBillingAdd(){
     return `<details class="card" open><summary>${esc(name)}<span style="margin-left:auto;font-size:16px;font-weight:700">${money(groups[name].reduce((s,b)=>s+billingAmount(b),0))}</span></summary><div class="card-body"><div class="scroll"><table><thead><tr><th style="width:34px"></th><th>日期</th><th>追加項目</th><th>業主</th><th class="num">金額</th><th>收款</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
         <button class="act" data-bill-pickall="${esc(name)}">全選此案場</button>
-        <button class="act" data-batch-pick="1">列印勾選</button>
-        <button class="act" data-batch-add="${esc(name)}">列印此案場全部</button>
+        <button class="act" data-batch-merge="1">列印勾選（合併一張）</button>
+        <button class="act" data-batch-pick="1">列印勾選（分張）</button>
+        <button class="act" data-batch-add="${esc(name)}">列印此案場全部（分張）</button>
       </div></div></details>`;
   }).join('');
   return `<div class="metrics">
@@ -2912,6 +2921,69 @@ function buildBillingDocHTML(id){
       ? `<div class="sign"><div class="sigcell"><div class="sigbox"></div><div class="siglabel">申請單位</div></div><div class="sigcell"><div class="sigbox"></div><div class="siglabel">現場工程師確認項目</div></div><div class="sigcell"><div class="sigbox">${signImg}</div><div class="siglabel">業主簽收</div></div></div>`
       : `<div class="sign"><div class="sigcell"><div class="sigbox"></div><div class="siglabel">申請單位</div></div><div class="sigcell"><div class="sigbox">${signImg}</div><div class="siglabel">業主簽收</div></div></div>`}
   </div>`;
+}
+// 合併列印：把勾選的多張單據併成「一張」，每筆變成項目表的一列、最後結總
+function buildMergedBillingDocHTML(ids){
+  const list=ids.map(id=>state.billings.find(x=>x.id===id)).filter(Boolean);
+  if(!list.length) return '';
+  const uniq=arr=>[...new Set(arr.filter(v=>v!==undefined&&v!==null&&String(v)!==''))];
+  const types=uniq(list.map(b=>b.docType||'請款單'));
+  const title=types.length===1?types[0]:'請款單';
+  const co=issuerOf(list[0]);
+  const clients=uniq(list.map(b=>b.client));
+  const sites=uniq(list.map(b=>siteDisplayLabel(b.site)));
+  const methods=uniq(list.map(b=>b.method));
+  const issuers=uniq(list.map(b=>issuerOf(b).name));
+  const dates=uniq(list.map(b=>b.date)).sort();
+  // 有差異才多開一欄，全部一樣就寫在抬頭下面，版面不會無謂變寬
+  const showSite=sites.length>1;
+  const anyRooms=list.some(b=>billingRooms(b)>1);
+  const anyRemark=list.some(b=>String(b.remark||'').trim()!=='');
+  const total=list.reduce((s2,b)=>s2+billingAmount(b),0);
+  const rows=list.map((b,i)=>{
+    const qty=Number(b.qty)||0, price=Number(b.unitPrice)||0, rooms=billingRooms(b), rk=String(b.remark||'').trim();
+    return `<tr>
+      <td class="c-no">${i+1}</td>
+      <td class="c-unit">${esc(b.date||'')}</td>
+      ${showSite?`<td>${esc(siteDisplayLabel(b.site)||'')}</td>`:''}
+      <td>${esc(b.note||(b.docType||'請款單'))}</td>
+      <td class="c-unit">${esc(b.unit||'式')}</td>
+      <td class="num">${qty.toLocaleString('en-US')}</td>
+      ${anyRooms?`<td class="num">${rooms>1?rooms+' 間':'—'}</td>`:''}
+      <td class="num">${money(price)}${b.priceExpr?`<div style="font-size:10.5px;color:#9ca3af">${esc(b.priceExpr)}</div>`:''}</td>
+      <td class="num">${money(billingAmount(b))}</td>
+      ${anyRemark?`<td style="font-size:11.5px;color:#4b5563">${esc(rk)}</td>`:''}
+    </tr>`;
+  }).join('');
+  return `<div class="billdoc">
+    <div class="dh">
+      <div>
+        <div class="dh-co">${esc(co.name||'')}</div>
+        <div class="dh-meta">${[co.taxId?'統一編號 '+esc(co.taxId):'', esc(co.addr||''), co.tel?'電話 '+esc(co.tel):''].filter(Boolean).join('<br>')}</div>
+      </div>
+      <div>
+        <div class="dh-title">${esc(title)}${types.length>1?'<div style="font-size:11px;color:#6b7280;font-weight:400">含追加單</div>':''}</div>
+        <table class="dh-info"><tr><td>日期</td><td>${esc(dates.length>1?dates[0]+' ～ '+dates[dates.length-1]:(dates[0]||''))}</td></tr><tr><td>筆數</td><td>${list.length} 筆</td></tr></table>
+      </div>
+    </div>
+    <div class="party">
+      <div><span class="lbl">業主</span><b>${esc(clients.join('、')||'')}</b></div>
+      ${sites.length?`<div><span class="lbl">案場</span>${esc(sites.join('、'))}</div>`:''}
+      ${methods.length?`<div><span class="lbl">方式</span>${esc(methods.join('、'))}</div>`:''}
+    </div>
+    ${issuers.length>1?`<div class="sub" style="margin:0 0 6px;color:#b45309">⚠ 勾選的單據來自不同開單公司（${esc(issuers.join('、'))}），這裡以「${esc(co.name||'')}」的抬頭列印。要分開請改用分張列印。</div>`:''}
+    <table class="items">
+      <thead><tr><th class="c-no">#</th><th class="c-unit">日期</th>${showSite?'<th>案場</th>':''}<th>品項</th><th class="c-unit">單位</th><th class="num">數量</th>${anyRooms?'<th class="num">間數</th>':''}<th class="num">單價</th><th class="num">小計</th>${anyRemark?'<th>備註</th>':''}</tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    <div class="sumwrap"><table class="sum"><tr class="grand"><td>總計（${list.length} 筆）</td><td>${money(total)}</td></tr></table></div>
+    ${billBankInfoHtml(co)}
+    <div class="sign"><div class="sigcell"><div class="sigbox"></div><div class="siglabel">申請單位</div></div><div class="sigcell"><div class="sigbox"></div><div class="siglabel">業主簽收</div></div></div>
+  </div>`;
+}
+function printMergedBillingDocs(ids){
+  const html=buildMergedBillingDocHTML(ids); if(!html) return;
+  printHTML('合併列印', `<div data-docfit="1">${html}</div>`);
 }
 // 匯款資訊區塊（開單公司有填才顯示）
 function billBankInfoHtml(c){
