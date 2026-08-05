@@ -407,6 +407,7 @@ const LS_PHOTOS = 'pm_billing_photos_v1';
 const LS_SIGS = 'pm_billing_sigs_v1';
 const LS_SIGS_LOCKED = 'pm_billing_sigs_locked_v1';
 const LS_SIG_META = 'pm_billing_sig_meta_v1';
+const LS_SIG_PENDING = 'pm_billing_sig_pending_v1'; // 剛在本機簽完、還沒成功推上雲端的簽名；要存本機，重開才不會被當成「雲端已刪」清掉
 const LS_DIRTY = 'pm_cloud_dirty_v1';
 // ↓↓↓ 把這裡換成你自己的 Google Apps Script 網址（/exec 結尾）。留空則只用本機儲存。
 const CLOUD_URL = 'https://script.google.com/macros/s/AKfycbynPpe_rq76SrW5_sTNaXms4U65bRrb4oscpH0GMyIXsM4Gk2DUXpOlEimP0C-pCahOVw/exec'; // 舊 GAS：照片上傳仍走這裡；主資料只在搬家與寫入失敗時用
@@ -571,6 +572,7 @@ function foldBtn(key, label){
 function loadPhotos(){ try{ const raw=localStorage.getItem(LS_PHOTOS); if(raw) billingPhotos=JSON.parse(raw); }catch(e){} }
 function savePhotos(){ try{ localStorage.setItem(LS_PHOTOS,JSON.stringify(billingPhotos)); }catch(e){} }
 function saveSigMeta(){ try{ localStorage.setItem(LS_SIG_META,JSON.stringify(billingSigMeta)); }catch(e){} }
+function saveSigPending(){ try{ localStorage.setItem(LS_SIG_PENDING,JSON.stringify(localSigPending)); }catch(e){} }
 function mergeCloudPhotos(cloudPhotos){
   Object.entries(cloudPhotos||{}).forEach(([id,urls])=>{
     const existing=billingPhotos[id]||[];
@@ -585,7 +587,7 @@ function rememberDeletedPhoto(id,url){
   state.billingPhotoDeleted=state.billingPhotoDeleted||{};
   state.billingPhotoDeleted[id]=[...new Set([...(state.billingPhotoDeleted[id]||[]),url])];
 }
-const APP_VERSION='vN2026.08.05a-firestore'; // 版本號顯示在右上角，方便確認拿到新版
+const APP_VERSION='vN2026.08.05b-sigfix'; // 版本號顯示在右上角，方便確認拿到新版
 // 本地時區的今天（yyyy-mm-dd）。toISOString 是 UTC，台灣早上 8 點前會差一天
 function localISODate(d=new Date()){ return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
 // 單價可打算式（例：1200*1.1）
@@ -781,6 +783,7 @@ function applyCloudSigsBeforePush(cloudSigs={}, cloudLocked={}, cloudMeta={}){
       billingSigsLocked[id]=!!cloudLocked[id];
       billingSigMeta[id]=cloudMeta[id]||{updatedAt:Number((cloudMeta[id]||{}).updatedAt)||0};
     } else {
+      // 走到這裡代表：這筆不在 localSigPending（＝曾經成功推上去過），而雲端現在沒有 → 別台刪掉了
       delete billingSigs[id];
       delete billingSigsLocked[id];
       delete billingSigMeta[id];
@@ -794,12 +797,22 @@ function applyCloudSigsBeforePush(cloudSigs={}, cloudLocked={}, cloudMeta={}){
   });
   try{ localStorage.setItem(LS_SIGS,JSON.stringify(billingSigs)); }catch(e){}
   try{ localStorage.setItem(LS_SIGS_LOCKED,JSON.stringify(billingSigsLocked)); }catch(e){}
-  saveSigMeta();
+  saveSigMeta(); saveSigPending();
 }
 function loadSigs(){
   try{ const raw=localStorage.getItem(LS_SIGS); if(raw) billingSigs=JSON.parse(raw); }catch(e){}
   try{ const raw=localStorage.getItem(LS_SIGS_LOCKED); if(raw) billingSigsLocked=JSON.parse(raw); }catch(e){}
   try{ const raw=localStorage.getItem(LS_SIG_META); if(raw) billingSigMeta=JSON.parse(raw); }catch(e){}
+  try{ const raw=localStorage.getItem(LS_SIG_PENDING); if(raw) Object.assign(localSigPending,JSON.parse(raw)); }catch(e){}
+  // 一次性升級：舊版沒有把「待上傳簽名」存本機，升級後第一次同步可能把本機獨有的簽名當成已刪清掉。
+  // 這裡把現有簽名全部標成待上傳，寧可重傳一次（內容相同不影響）也不要弄丟。
+  try{
+    if(!localStorage.getItem('pmnew_sigpend_migrated_v1')){
+      Object.keys(billingSigs).forEach(id=>{ localSigPending[id]=true; });
+      localStorage.setItem('pmnew_sigpend_migrated_v1','1');
+      saveSigPending();
+    }
+  }catch(e){}
   (state.billings||[]).forEach(b=>{ if(b.signedPhoto){ billingSigs[b.id]=b.signedPhoto; billingSigMeta[b.id]=billingSigMeta[b.id]||{updatedAt:Date.now()}; delete b.signedPhoto; } });
   Object.keys(billingSigs).forEach(id=>{ billingSigMeta[id]=billingSigMeta[id]||{updatedAt:0}; });
   try{ localStorage.setItem(LS_SIGS,JSON.stringify(billingSigs)); }catch(e){}
@@ -811,6 +824,7 @@ function saveSig(id,url){
   billingSigsLocked[id]=true;
   billingSigMeta[id]={updatedAt:Date.now()};
   localSigPending[id]=true;
+  saveSigPending();
   try{ localStorage.setItem(LS_SIGS,JSON.stringify(billingSigs)); }catch(e){}
   try{ localStorage.setItem(LS_SIGS_LOCKED,JSON.stringify(billingSigsLocked)); }catch(e){}
   saveSigMeta();
@@ -819,6 +833,8 @@ function deleteSig(id){
   delete billingSigs[id];
   delete billingSigsLocked[id];
   delete billingSigMeta[id];
+  localSigPending[id]=true; // 刪除也要記成待同步，否則重開後雲端舊簽名會被補回來
+  saveSigPending();
   try{ localStorage.setItem(LS_SIGS,JSON.stringify(billingSigs)); }catch(e){}
   try{ localStorage.setItem(LS_SIGS_LOCKED,JSON.stringify(billingSigsLocked)); }catch(e){}
   saveSigMeta();
@@ -1070,7 +1086,7 @@ async function pushCloud(){
       payloadKB=await gasSetLegacy(plain);
       via=fe&&fe.tooBig?`（暫用舊雲端・${payloadKB}KB 超過 Firebase 上限）`:'（暫用舊雲端）';
     }
-    localSigPending={}; localDirty=false;
+    localSigPending={}; saveSigPending(); localDirty=false;
     try{ localStorage.removeItem(LS_DIRTY); }catch(e){}
     lastCloudTs=Date.now();
     setCloud('已同步'+via);
