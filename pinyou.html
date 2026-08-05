@@ -112,7 +112,7 @@
 <nav id="nav"></nav>
 <main id="app"></main>
 <script>
-const APP_VERSION = 'vP2026.08.05a-firestore'; // 版本號顯示在頁首，方便確認拿到新版
+const APP_VERSION = 'vP2026.08.05b-sitepick'; // 版本號顯示在頁首，方便確認拿到新版
 const LS='pinyou_data_v1';
 // ── 雲端端對端加密（與 payroll／簡化版共用同一組密碼與鑰匙；同網域共用 localStorage，解鎖一次三系統都通）──
 const E2E_SALT='PMENC1|dz-gx-py|2026';
@@ -470,6 +470,23 @@ function projGroupCalc(parent){
   return {contract,income,expense,profit,retain,hidden,netTake:profit-hidden,unbilled:contract-income,progress:contract?income/contract:0};
 }
 // 所有出現過的案場名（案場清單 + 支出/請款有用到的）
+// 案場輸入：左邊下拉選既有的、右邊照樣可以手動打新的
+// （原本只掛 datalist，iPhone Safari 上那條建議列很小、常常整個沒看到）
+function sitePickerHtml(inputId, value, sites, opt){
+  opt=opt||{};
+  return `<div style="display:flex;gap:6px;align-items:center">
+    <select id="${inputId}-pick" style="${opt.style||''};max-width:${opt.pickW||'118px'};flex:0 0 auto">
+      <option value="">選案場…</option>
+      ${sites.map(n=>`<option value="${esc(n)}">${esc(n)}</option>`).join('')}
+    </select>
+    <input id="${inputId}" list="${opt.list||'dl-sites'}" value="${esc(value||'')}" placeholder="${opt.placeholder||'或直接打新的'}" style="${opt.style||''};flex:1;min-width:${opt.inputW||'96px'}">
+  </div>`;
+}
+function bindSitePicker(inputId){
+  const sel=document.getElementById(inputId+'-pick'), inp=document.getElementById(inputId);
+  if(!sel||!inp) return;
+  sel.onchange=()=>{ if(sel.value){ inp.value=sel.value; sel.value=''; } };  // 選完歸零，下次還能再選
+}
 function allSiteNames(){
   const s=new Set(state.projects.map(p=>p.name));
   state.expenses.forEach(x=>x.site&&s.add(x.site));
@@ -643,7 +660,7 @@ function viewExp(){
       const ist='height:34px;padding:0 8px';
       return `<tr style="background:var(--bg)">
         <td><input id="ee-date" type="date" value="${x.date||''}" style="${ist}"></td>
-        <td><input id="ee-site" list="dl-sites" value="${esc(x.site)}" style="${ist}"></td>
+        <td>${sitePickerHtml('ee-site',x.site,sites,{style:ist,pickW:'96px',inputW:'88px',placeholder:'手動輸入'})}</td>
         <td><input id="ee-item" list="dl-items" value="${esc(x.item)}" style="${ist}"></td>
         <td><input id="ee-amount" type="number" inputmode="numeric" value="${x.amount}" style="${ist};text-align:right"></td>
         <td><select id="ee-account" style="${ist}">${acctOptions(x.account||'')}</select></td>
@@ -681,7 +698,7 @@ function viewExp(){
     <h2>新增支出</h2>
     <div class="row">
       <div class="field"><label>日期</label><input id="e-date" type="date" value="${today()}"></div>
-      <div class="field" style="flex:1;min-width:130px"><label>案場</label><input id="e-site" list="dl-sites" placeholder="案場"></div>
+      <div class="field" style="flex:1;min-width:230px"><label>案場</label>${sitePickerHtml('e-site','',sites)}</div>
       <div class="field" style="flex:1;min-width:120px"><label>項目名稱</label><input id="e-item" list="dl-items" placeholder="工資/材料/五金…"></div>
       <div class="field" style="min-width:110px"><label>金額</label><input id="e-amount" type="number" inputmode="numeric" placeholder="0"></div>
       <div class="field" style="min-width:140px"><label>出帳帳號</label><select id="e-account">${acctOptions('')}</select></div>
@@ -1126,6 +1143,7 @@ function bind(){
   document.querySelectorAll('[data-codel]').forEach(b=>b.onclick=()=>{ if(confirm('刪除這間公司？')){ state.companies=state.companies.filter(x=>x.id!==b.dataset.codel); save(); } });
 
   // 設定
+  bindSitePicker('e-site'); bindSitePicker('ee-site');
   on('cloud-sync','onclick',()=>{ if(CLOUD_ON){ setStatus('同步中…'); loadCloud(); } });
   document.querySelectorAll('[data-snaprestore]').forEach(btn=>btn.onclick=()=>{
     const day=btn.dataset.snaprestore;
