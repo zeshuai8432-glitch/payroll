@@ -587,7 +587,7 @@ function rememberDeletedPhoto(id,url){
   state.billingPhotoDeleted=state.billingPhotoDeleted||{};
   state.billingPhotoDeleted[id]=[...new Set([...(state.billingPhotoDeleted[id]||[]),url])];
 }
-const APP_VERSION='vN2026.08.05b-sigfix'; // 版本號顯示在右上角，方便確認拿到新版
+const APP_VERSION='vN2026.08.05c-billpick'; // 版本號顯示在右上角，方便確認拿到新版
 // 本地時區的今天（yyyy-mm-dd）。toISOString 是 UTC，台灣早上 8 點前會差一天
 function localISODate(d=new Date()){ return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
 // 單價可打算式（例：1200*1.1）
@@ -1976,6 +1976,29 @@ function bind(){
     printMeasurementsPDF(ids);
   };
   document.querySelectorAll('[data-billprint]').forEach(b=>b.onclick=()=>printBillingDoc(b.dataset.billprint));
+  const pickedBillIds=()=>[...document.querySelectorAll('[data-bill-pick]:checked')].map(x=>x.dataset.billPick);
+  // 依畫面上的順序列印（清單是新到舊，列印時改成舊到新，看起來比較順）
+  const printPicked=()=>{
+    const ids=pickedBillIds();
+    if(!ids.length){ alert('請先勾選要列印的單據'); return; }
+    const order=new Map(state.billings.map((b,i)=>[b.id,b]));
+    ids.sort((a,c)=>String((order.get(a)||{}).date||'').localeCompare(String((order.get(c)||{}).date||'')));
+    printBillingDocs(ids);
+  };
+  document.querySelectorAll('[data-bill-pickall]').forEach(b=>b.onclick=()=>{
+    const box=b.closest('.card-body'); if(!box) return;
+    const boxes=[...box.querySelectorAll('[data-bill-pick]')];
+    const allOn=boxes.length>0&&boxes.every(x=>x.checked);
+    boxes.forEach(x=>{ x.checked=!allOn; });   // 再按一次＝全部取消
+    b.textContent=allOn?'全選此案場':'取消全選';
+  });
+  document.querySelectorAll('[data-batch-req],[data-batch-pick]').forEach(b=>b.onclick=printPicked);
+  document.querySelectorAll('[data-batch-reqall]').forEach(b=>b.onclick=()=>{
+    const site=b.dataset.batchReqall;
+    const ids=state.billings.filter(x=>(x.docType||'請款單')==='請款單'&&parentSiteName(x.site)===site).sort((a,c)=>(a.date||'').localeCompare(c.date||'')).map(x=>x.id);
+    if(!ids.length){ alert('這個案場還沒有請款單'); return; }
+    printBillingDocs(ids);
+  });
   document.querySelectorAll('[data-batch-add]').forEach(b=>b.onclick=()=>{
     const site=b.dataset.batchAdd;
     const ids=state.billings.filter(x=>(x.docType||'請款單')==='追加單'&&parentSiteName(x.site)===site).sort((a,c)=>(a.date||'').localeCompare(c.date||'')).map(x=>x.id);
@@ -2677,6 +2700,7 @@ function viewBillingReq(){
   const siteCards=Object.keys(groups).sort((a,b)=>a.localeCompare(b,'zh-Hant')).map(name=>{
     const rows=groups[name].map(b=>`
       <tr>
+        <td><input type="checkbox" data-bill-pick="${b.id}" style="width:16px;height:16px"></td>
         <td>${esc(b.date||'')}</td>
         <td>${esc(b.note||'')}<div class="sub" style="margin:0">${billingLineMeta(b)}</div></td>
         <td>${esc(b.client||'')}</td>
@@ -2684,7 +2708,12 @@ function viewBillingReq(){
         <td><button class="act ${b.settled?'':'muted'}" data-togglesettle="${b.id}">${b.settled?'已收款':'未收款'}</button></td>
         <td><button class="act" data-copy-req="${b.id}">複製</button> <button class="act" data-billprint="${b.id}">列印</button> <button class="act danger" data-delbill="${b.id}">刪</button></td>
       </tr>`).join('');
-    return `<details class="card" open><summary>${esc(name)}<span style="margin-left:auto;font-size:16px;font-weight:700">${money(groups[name].reduce((s,b)=>s+billingAmount(b),0))}</span></summary><div class="card-body"><div class="scroll"><table><thead><tr><th>日期</th><th>說明</th><th>業主</th><th class="num">金額</th><th>收款</th><th></th></tr></thead><tbody>${rows}</tbody></table></div></div></details>`;
+    return `<details class="card" open><summary>${esc(name)}<span style="margin-left:auto;font-size:16px;font-weight:700">${money(groups[name].reduce((s,b)=>s+billingAmount(b),0))}</span></summary><div class="card-body"><div class="scroll"><table><thead><tr><th style="width:34px"></th><th>日期</th><th>說明</th><th>業主</th><th class="num">金額</th><th>收款</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+        <button class="act" data-bill-pickall="${esc(name)}">全選此案場</button>
+        <button class="act" data-batch-req="${esc(name)}">列印勾選</button>
+        <button class="act" data-batch-reqall="${esc(name)}">列印此案場全部</button>
+      </div></div></details>`;
   }).join('');
   const siteSelOpts=siteSelectOptions('');
   return `<div class="metrics">
@@ -2721,7 +2750,7 @@ function viewBillingAdd(){
     const rows=groups[name].map(b=>{
       const photos=billingPhotos[b.id]||[];
       if(billingAddEditId===b.id){
-        return `<tr><td colspan="6" style="background:var(--bg)">
+        return `<tr><td colspan="7" style="background:var(--bg)">
           <div class="row" style="margin:6px 0">
             <div class="field"><label>日期</label><input type="date" id="bae-date" value="${b.date||''}"></div>
             <div class="field" style="flex:1;min-width:150px"><label>案場</label><select id="bae-site">${siteSelectOptions(b.site||'')}</select></div>
@@ -2741,6 +2770,7 @@ function viewBillingAdd(){
       }
       const thumbs=photos.map((url,i)=>`<div style="position:relative;display:inline-block;margin:3px"><img src="${photoDisplayUrl(url)}" class="photo-thumb" style="width:80px;height:60px;object-fit:cover;border-radius:8px;border:1px solid var(--line)"><button data-photodel="${b.id}" data-photoidx="${i}" style="position:absolute;top:-5px;right:-5px;width:20px;height:20px;border:none;background:var(--danger);color:#fff;padding:0;line-height:20px">×</button></div>`).join('');
       return `<tr>
+        <td><input type="checkbox" data-bill-pick="${b.id}" style="width:16px;height:16px"></td>
         <td>${esc(b.date||'')}</td>
         <td>${esc(b.note||'')}<div class="sub" style="margin:0">${billingLineMeta(b)} ${b.remark?`｜${esc(b.remark)}`:''}</div>${thumbs}</td>
         <td>${esc(b.client||'')}</td>
@@ -2749,7 +2779,12 @@ function viewBillingAdd(){
         <td><button class="act" data-copy-add="${b.id}">複製</button> <button class="act" data-billedit-add="${b.id}">改</button> <button class="act" data-billprint="${b.id}">列印</button> <button class="act" data-billsign="${b.id}">${billingSigs[b.id]?'已簽':'簽名'}</button> <button class="act" data-photoup="${b.id}">照片</button> <button class="act danger" data-delbill="${b.id}">刪</button></td>
       </tr>`;
     }).join('');
-    return `<details class="card" open><summary>${esc(name)}<span style="margin-left:auto;font-size:16px;font-weight:700">${money(groups[name].reduce((s,b)=>s+billingAmount(b),0))}</span></summary><div class="card-body"><div class="scroll"><table><thead><tr><th>日期</th><th>追加項目</th><th>業主</th><th class="num">金額</th><th>收款</th><th></th></tr></thead><tbody>${rows}</tbody></table></div><button class="act" data-batch-add="${esc(name)}" style="margin-top:8px">列印此案場追加單</button></div></details>`;
+    return `<details class="card" open><summary>${esc(name)}<span style="margin-left:auto;font-size:16px;font-weight:700">${money(groups[name].reduce((s,b)=>s+billingAmount(b),0))}</span></summary><div class="card-body"><div class="scroll"><table><thead><tr><th style="width:34px"></th><th>日期</th><th>追加項目</th><th>業主</th><th class="num">金額</th><th>收款</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+        <button class="act" data-bill-pickall="${esc(name)}">全選此案場</button>
+        <button class="act" data-batch-pick="1">列印勾選</button>
+        <button class="act" data-batch-add="${esc(name)}">列印此案場全部</button>
+      </div></div></details>`;
   }).join('');
   return `<div class="metrics">
     <div class="metric"><div class="l">追加單數</div><div class="v">${list.length}</div></div>
