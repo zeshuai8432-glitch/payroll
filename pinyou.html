@@ -112,7 +112,7 @@
 <nav id="nav"></nav>
 <main id="app"></main>
 <script>
-const APP_VERSION = 'vP2026.08.02a-remark'; // 版本號顯示在頁首，方便確認拿到新版
+const APP_VERSION = 'vP2026.08.05a-firestore'; // 版本號顯示在頁首，方便確認拿到新版
 const LS='pinyou_data_v1';
 // ── 雲端端對端加密（與 payroll／簡化版共用同一組密碼與鑰匙；同網域共用 localStorage，解鎖一次三系統都通）──
 const E2E_SALT='PMENC1|dz-gx-py|2026';
@@ -193,8 +193,55 @@ let docDraft=null; // 編輯中的報價單/請款單草稿
 let showHidden=false; try{ showHidden=localStorage.getItem('pinyou_showhidden')==='1'; }catch(e){} // 暗帳預設收合
 let pEditId=null; // 正在就地編輯的案場
 const DEFAULT_CLOUD_URL='https://script.google.com/macros/s/AKfycbxFLYgepJcn4-Sw_BvgTb-jUijDaSmRSfMkdfrnlwrVgDzDxE65KidWbao3Bq6ooL7q/exec';
-let cloudUrl=localStorage.getItem(LS_CLOUD)||DEFAULT_CLOUD_URL;
+let cloudUrl=localStorage.getItem(LS_CLOUD)||DEFAULT_CLOUD_URL; // 舊 GAS：只在 Firestore 還沒有資料時讀一次，用來搬家
 let cloudStatus='', saving=false, pendingSave=false, saveTimer=null, localDirty=false, _prevIds=null;
+// ── 主資料改存 Firebase Firestore（與 payroll／進度請款同專案，各自獨立文件）──
+const FS_PROJECT='payroll-d1abe';
+const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
+const FS_URL='https://firestore.googleapis.com/v1/projects/'+FS_PROJECT+'/databases/(default)/documents/pinyou/main?key='+FS_KEY;
+const CLOUD_ON=true;
+function fetchT(url,opt={},ms=12000){
+  if(typeof AbortController==='undefined') return fetch(url,opt);
+  const c=new AbortController(), t=setTimeout(()=>c.abort(),ms);
+  return fetch(url,Object.assign({},opt,{signal:c.signal})).finally(()=>clearTimeout(t));
+}
+// 讀 Firestore；回傳 {ok, data:明文JSON字串, updateTime}
+async function fsGet(){
+  const r=await fetchT(FS_URL,{},12000);
+  if(r.status===404) return {ok:false,data:null,updateTime:''};
+  if(!r.ok) throw new Error('HTTP '+r.status);
+  const d=await r.json();
+  const raw=(d.fields&&d.fields.json)?d.fields.json.stringValue:null;
+  const data=raw?await e2eDecrypt(raw):null;   // 沒解鎖會丟 {locked:true}
+  return {ok:!!data,data,updateTime:d.updateTime||''};
+}
+// 寫 Firestore（明文進來，出門前才加密）
+async function fsSet(plain){
+  const payload=await e2eEncrypt(plain);
+  const bytes=typeof TextEncoder!=='undefined'?new TextEncoder().encode(payload).length:payload.length;
+  if(bytes>900000) throw new Error(`資料已達 ${Math.round(bytes/1024)}KB，接近單一文件上限 1MB，請先匯出備份再整理舊資料`);
+  const r=await fetchT(FS_URL,{method:'PATCH',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({fields:{json:{stringValue:payload},savedAt:{integerValue:String(Date.now())}}})},15000);
+  if(!r.ok){ const detail=await r.text().catch(()=>''); throw new Error('HTTP '+r.status+(detail?(' '+detail.slice(0,120)):'')); }
+  return Math.round(bytes/1024);
+}
+// 舊 GAS 寫入：只在 Firestore 寫失敗時當保險（例如規則還沒開），資料才不會卡在單機
+async function gasSetLegacy(plain){
+  if(!cloudUrl) throw new Error('沒有舊雲端可退回');
+  const payload=await e2eEncrypt(plain);
+  const r=await fetchT(cloudUrl,{method:'POST',body:payload},20000);
+  const txt=await r.text(); let j=null; try{ j=JSON.parse(txt); }catch(_){}
+  if(!(j&&j.ok)) throw new Error((j&&j.error)||('HTTP '+r.status));
+  return Math.round(payload.length/1024);
+}
+// 舊 GAS 讀一次（搬家用）；回傳明文 JSON 字串或 null
+async function gasGetLegacy(){
+  if(!cloudUrl) return null;
+  const r=await fetchT(cloudUrl,{method:'GET'},20000);
+  const txt=await r.text(); let j=null; try{ j=JSON.parse(txt); }catch(_){}
+  if(!j||!j.ok||!j.data) return null;
+  return await e2eDecrypt(j.data);
+}
 
 function blank(){ return {projects:[],expenses:[],incomes:[],companies:[],accounts:['東澤工程行','品佑工程有限公司','廣昕工程行'],items:[],myCompanies:[
   {id:'c-py',name:'品佑工程有限公司',taxId:'',addr:'',tel:'',bank:''},
@@ -265,10 +312,10 @@ function save(){
   refreshRecordBaseline();
   keepDailySnapshot();
   render();
-  if(cloudUrl){ setStatus('儲存中…'); if(saveTimer) clearTimeout(saveTimer); saveTimer=setTimeout(pushCloud,400); }
+  if(CLOUD_ON){ setStatus('儲存中…'); if(saveTimer) clearTimeout(saveTimer); saveTimer=setTimeout(pushCloud,400); }
 }
-// ---- 雲端同步（Google Apps Script，Drive 儲存；逐筆合併、防資料遺失）----
-function setStatus(s){ cloudStatus=s; const el=document.getElementById('cloud-status'); if(el) el.textContent=(cloudUrl?'☁ ':'')+s; }
+// ---- 雲端同步（Firebase Firestore；逐筆合併、防資料遺失。舊 GAS 只在首次搬家時讀一次）----
+function setStatus(s){ cloudStatus=s; const el=document.getElementById('cloud-status'); if(el) el.textContent=(CLOUD_ON?'☁ ':'')+s; }
 function safeRender(){ const a=document.activeElement; if(a&&/^(INPUT|SELECT|TEXTAREA)$/.test(a.tagName)) return; render(); }
 function collectIds(){ const s=new Set(); MERGE.forEach(k=>(state[k]||[]).forEach(r=>{ if(r&&r.id!=null) s.add(r.id); })); return s; }
 function recordDeletions(){ const cur=collectIds(); if(_prevIds){ const del=new Set(state.deletedIds||[]); const newlyDel=new Set(); _prevIds.forEach(id=>{ if(!cur.has(id)){ del.add(id); newlyDel.add(id); } }); state.deletedIds=[...del];
@@ -326,19 +373,29 @@ function mergeCloudDoc(cd){
   refreshRecordBaseline(); // 合併進來的紀錄不算「本機修改」，之後儲存不重新蓋時間戳
 }
 async function loadCloud(){
-  if(!cloudUrl) { setStatus('本機模式'); return; }
+  if(!CLOUD_ON){ setStatus('本機模式'); return; }
   setStatus('讀取雲端中…');
   try{
-    const r=await fetch(cloudUrl,{method:'GET'});
-    const txt=await r.text(); let j=null; try{ j=JSON.parse(txt); }catch(_){}
-    if(!j){ setStatus(`雲端回應異常 HTTP${r.status}（GAS未回JSON）`); return; }
-    if(j.ok && j.data){
-      mergeCloudDoc(JSON.parse(await e2eDecrypt(j.data)));
-      try{ localStorage.setItem(LS,JSON.stringify(packData())); }catch(e){}
+    let got=await fsGet();
+    // Firestore 還沒有資料 → 從舊的 GAS 讀一次搬過來（只會發生一次，之後都走 Firestore）
+    if(!got.ok){
+      let legacy=null;
+      try{ legacy=await gasGetLegacy(); }catch(e){ if(e&&e.locked) throw e; }
+      if(legacy){
+        setStatus('正在把舊雲端資料搬到 Firebase…');
+        mergeCloudDoc(JSON.parse(legacy));
+        persistMainLocal(JSON.stringify(packData()));
+        localDirty=true; try{ localStorage.setItem(LS_DIRTY,'1'); }catch(e){}
+        safeRender(); await pushCloud(); return;
+      }
+    }
+    if(got.ok){
+      mergeCloudDoc(JSON.parse(got.data));
+      persistMainLocal(JSON.stringify(packData()));
       safeRender();
       if(localDirty){ setStatus('已同步（回傳中…）'); pushCloud(); } else setStatus('已同步');
     } else {
-      // 雲端還沒資料：若本機有資料就上傳當底（不管有沒有未存變更）
+      // 兩邊都沒有：本機有資料就上傳當底
       const hasLocal=MERGE.some(k=>(state[k]||[]).length>0);
       if(hasLocal){ localDirty=true; setStatus('雲端無資料，正在上傳本機…'); pushCloud(); }
       else setStatus('雲端尚無資料（本機也是空的）');
@@ -349,32 +406,31 @@ async function loadCloud(){
   }
 }
 async function pushCloud(){
-  if(!cloudUrl) return;
+  if(!CLOUD_ON) return;
   if(saving){ pendingSave=true; return; }
   if(!localDirty){ if(!/未解鎖|加密/.test(cloudStatus||'')) setStatus('已同步'); return; }
   saving=true;
   let kb=0, getOK=false;
   try{
+    // 先把雲端最新的合併進來，再整份寫回（多裝置同時改也不會互相蓋掉）
     let lockedAbort=false;
     try{
-      const gr=await fetch(cloudUrl,{method:'GET'}); const gt=await gr.text(); const gj=JSON.parse(gt); getOK=true;
-      if(gj&&gj.ok&&gj.data){
-        let rawCd=gj.data;
-        try{ rawCd=await e2eDecrypt(rawCd); }catch(err){ if(err&&err.locked) lockedAbort=true; else throw err; }
-        if(!lockedAbort) mergeCloudDoc(JSON.parse(rawCd));
-      }
-    }catch(e){}
+      const got=await fsGet(); getOK=true;
+      if(got.ok) mergeCloudDoc(JSON.parse(got.data));
+    }catch(e){ if(e&&e.locked) lockedAbort=true; }
     if(lockedAbort){ setStatus('🔒 已加密未解鎖，暫停上傳（資料已存本機）'); saving=false; return; } // 未解鎖不推，避免明文蓋掉密文
     const plain=JSON.stringify(packData());
-    try{ localStorage.setItem(LS,plain); }catch(e){} // 本機維持明文
-    const payload=await e2eEncrypt(plain);
-    kb=Math.round(payload.length/1024);
-    const pr=await fetch(cloudUrl,{method:'POST',body:payload});
-    let pj=null; const txt=await pr.text(); try{ pj=JSON.parse(txt); }catch(_){}
-    if(pj&&pj.ok){ localDirty=false; try{ localStorage.removeItem(LS_DIRTY); }catch(e){} setStatus('已同步'); safeRender(); }
-    else if(pj){ setStatus('推送失敗：'+String(pj.error||'').slice(0,40)); }
-    else { setStatus(`雲端回應異常 HTTP${pr.status}・資料${kb}KB`); }
-  }catch(e){ setStatus('儲存失敗：'+String((e&&e.message)||e).slice(0,22)+`・資料${kb}KB・讀取${getOK?'OK':'也失敗'}`); }
+    persistMainLocal(plain); // 本機維持明文
+    let via='';
+    try{ kb=await fsSet(plain); }
+    catch(fe){
+      // Firestore 寫不進去（規則沒開、額度、網路…）→ 退回舊 GAS，至少資料有上雲端
+      if(/接近單一文件上限/.test(String(fe&&fe.message||''))) throw fe; // 太大就別退回了，要先整理
+      kb=await gasSetLegacy(plain); via='（暫用舊雲端）';
+    }
+    localDirty=false; try{ localStorage.removeItem(LS_DIRTY); }catch(e){}
+    setStatus('已同步'+via); safeRender();
+  }catch(e){ setStatus('儲存失敗：'+String((e&&e.message)||e).slice(0,30)+`・資料${kb}KB・讀取${getOK?'OK':'也失敗'}`); }
   saving=false;
   if(pendingSave){ pendingSave=false; pushCloud(); }
 }
@@ -907,8 +963,8 @@ function viewSet(){
   const accRows=state.accounts.map((a,i)=>`<tr><td>${esc(a)}</td><td class="num"><button class="act danger" data-accdel="${i}">刪</button></td></tr>`).join('');
   return `<div class="card">
     <h2>雲端同步</h2>
-    <p class="sub">已內建雲端，多裝置自動同步（不用設定）。目前狀態：<b>${esc(cloudStatus||(cloudUrl?'—':'本機模式'))}</b></p>
-    ${cloudUrl?'<button class="act" id="cloud-sync">立即同步</button> <button class="act" id="cloud-force">強制上傳（合併）</button>':''}
+    <p class="sub">已內建雲端（Firebase Firestore），多裝置自動同步，不用設定。目前狀態：<b>${esc(cloudStatus||'—')}</b></p>
+    ${CLOUD_ON?'<button class="act" id="cloud-sync">立即同步</button> <button class="act" id="cloud-force">強制上傳（合併）</button>':''}
     <p class="sub" style="margin-top:6px">若某台裝置的紀錄沒出現在其他裝置，請在「有那筆資料」的裝置按「強制上傳（合併）」，它會先讀雲端再把本機獨有的紀錄併回雲端，不會蓋掉別台的資料。</p>
     <div style="margin-top:12px;padding-top:10px;border-top:1px dashed var(--line)">
       <div style="font-size:13px;font-weight:700;margin-bottom:4px">🔐 雲端加密${e2eOn()?'（已啟用）':'（未啟用）'}</div>
@@ -1070,13 +1126,13 @@ function bind(){
   document.querySelectorAll('[data-codel]').forEach(b=>b.onclick=()=>{ if(confirm('刪除這間公司？')){ state.companies=state.companies.filter(x=>x.id!==b.dataset.codel); save(); } });
 
   // 設定
-  on('cloud-sync','onclick',()=>{ if(cloudUrl){ setStatus('同步中…'); loadCloud(); } });
+  on('cloud-sync','onclick',()=>{ if(CLOUD_ON){ setStatus('同步中…'); loadCloud(); } });
   document.querySelectorAll('[data-snaprestore]').forEach(btn=>btn.onclick=()=>{
     const day=btn.dataset.snaprestore;
     if(!confirm('用 '+day+' 的本機快照做「合併救回」？\n只會補回「快照有、現在沒有」的紀錄，不覆蓋現有資料。')) return;
     rescueFromDailySnapshot(day);
   });
-  on('cloud-force','onclick',()=>{ if(cloudUrl){ localDirty=true; try{ localStorage.setItem(LS_DIRTY,'1'); }catch(e){} setStatus('強制上傳中…'); pushCloud(); } });
+  on('cloud-force','onclick',()=>{ if(CLOUD_ON){ localDirty=true; try{ localStorage.setItem(LS_DIRTY,'1'); }catch(e){} setStatus('強制上傳中…'); pushCloud(); } });
   on('e2e-on','onclick',()=>e2eEnable().then(()=>render()));
   on('e2e-off','onclick',()=>{ e2eDisable(); render(); });
   on('app-lock-chk','onchange',()=>{ appLockToggle(); render(); });
@@ -1212,11 +1268,11 @@ document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==
 
 load(); keepDailySnapshot();
 (function(){ const v=document.getElementById('app-version'); if(v) v.textContent=APP_VERSION; })();
-setStatus(cloudUrl?'連線中…':'本機模式');
-appLockGate(function(){ render(); if(cloudUrl) loadCloud(); });
+setStatus(CLOUD_ON?'連線中…':'本機模式');
+appLockGate(function(){ render(); if(CLOUD_ON) loadCloud(); });
 setTimeout(()=>{ try{ checkPayrollCosts(false); }catch(e){} }, 3000); // 開頁自動檢查 PAYROLL 有沒有新成本（背景、不打擾）
 // 離開頁面時「不」盲目覆蓋雲端（sendBeacon 無法先讀取合併，會把另一台裝置剛新增的紀錄洗掉）。
 // 未存變更已用 LS_DIRTY 記在本機，下次開啟或切回前景時 loadCloud→pushCloud 會安全合併回推。
-window.addEventListener('pagehide',()=>{ if(cloudUrl&&localDirty){ try{ localStorage.setItem(LS_DIRTY,'1'); localStorage.setItem(LS,JSON.stringify(packData())); }catch(e){} } });
-window.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='visible'&&cloudUrl&&!saving) loadCloud(); });
+window.addEventListener('pagehide',()=>{ if(CLOUD_ON&&localDirty){ try{ localStorage.setItem(LS_DIRTY,'1'); localStorage.setItem(LS,JSON.stringify(packData())); }catch(e){} } });
+window.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='visible'&&CLOUD_ON&&!saving) loadCloud(); });
 </script>
