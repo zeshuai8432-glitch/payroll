@@ -112,7 +112,7 @@
 <nav id="nav"></nav>
 <main id="app"></main>
 <script>
-const APP_VERSION = 'vP2026.08.06b-dupguard'; // 版本號顯示在頁首，方便確認拿到新版
+const APP_VERSION = 'vP2026.08.06c-partnertab'; // 版本號顯示在頁首，方便確認拿到新版
 const LS='pinyou_data_v1';
 // ── 雲端端對端加密（與 payroll／簡化版共用同一組密碼與鑰匙；同網域共用 localStorage，解鎖一次三系統都通）──
 const E2E_SALT='PMENC1|dz-gx-py|2026';
@@ -185,10 +185,11 @@ function e2eDisable(){
 const LS_CLOUD='pinyou_cloud_url';
 const LS_DIRTY='pinyou_dirty';
 const MERGE=['projects','expenses','incomes','companies','quotes','invoices','purchases','myCompanies'];
-const TABS=[['dash','儀表板'],['proj','案場'],['exp','支出'],['inc','請款'],['quote','報價單'],['invoice','請款單'],['purchase','採購單'],['co','通訊錄'],['set','設定']];
+const TABS=[['dash','儀表板'],['proj','案場'],['exp','支出'],['inc','請款'],['partner','往來'],['quote','報價單'],['invoice','請款單'],['purchase','採購單'],['co','通訊錄'],['set','設定']];
 let state=blank();
 let tab='dash';
 let expFilter='', expItemFilter='', incFilter='', expEditId=null, expFrom='', expTo='';
+let partnerPick='', partnerFrom='', partnerTo=''; // 往來分頁的篩選
 let docDraft=null; // 編輯中的報價單/請款單草稿
 let showHidden=false; try{ showHidden=localStorage.getItem('pinyou_showhidden')==='1'; }catch(e){} // 暗帳預設收合
 let pEditId=null; // 正在就地編輯的案場
@@ -588,7 +589,7 @@ function viewDash(){
     // 還沒帶入任何東西時也要顯示，因為那正是最需要對帳的時候
     if(!rows.length && !(prRecon&&prRecon.length)) return '';
     return `<div class="card" style="border-left:3px solid #f59e0b;background:#fffbeb">
-      <h2 style="color:#92400e">往來結餘</h2>
+      <h2 style="color:#92400e">往來結餘<button class="act" id="go-partner" style="margin-left:auto">看明細 →</button></h2>
       <p class="sub" style="margin:0 0 8px">品佑代他們付掉的錢<b>不是品佑的成本</b>（已排除在上面的損益外）；發包給他們的工程款<b>是品佑的成本</b>（已計入損益），但錢還沒給就算品佑欠他們。</p>
       ${rows.length?`<div class="scroll"><table><thead><tr><th>對象</th><th class="num">品佑代付</th><th class="num">他們賺走</th><th class="num">已收結清／代收</th><th class="num">結餘</th><th></th></tr></thead><tbody>
         ${rows.map(r=>`<tr><td><b>${esc(r.label)}</b></td><td class="num" style="color:var(--danger)">${money(r.out)}</td><td class="num">${money(r.earned)}</td><td class="num" style="color:var(--accent)">${money(r.inn)}</td>
@@ -1134,6 +1135,46 @@ function printHTMLDoc(title, inner){
   document.getElementById('po-close').onclick=()=>ov.remove();
   ov.scrollTop=0;
 }
+// ── 往來分頁：把散在各案場的代付／發包款／結清集中在一頁 ──
+function viewPartner(){
+  const stats=partnerStats();
+  const names=PARTNERS.map(p=>p.label);
+  const cur=partnerPick||(stats[0]&&stats[0].label)||names[0];
+  const inR=x=>inDateRange(x&&x.date,partnerFrom,partnerTo);
+  const mine=x=>partnerOf(x)===cur&&inR(x);
+  const paid=state.expenses.filter(x=>isPartnerTx(x)&&mine(x)).sort((a,b)=>String(b.date||'').localeCompare(String(a.date||'')));
+  const earned=state.expenses.filter(x=>isPartnerEarned(x)&&mine(x)).sort((a,b)=>String(b.date||'').localeCompare(String(a.date||'')));
+  const settled=state.incomes.filter(x=>isPartnerTx(x)&&mine(x)).sort((a,b)=>String(b.date||'').localeCompare(String(a.date||'')));
+  const T=arr=>arr.reduce((s,x)=>s+num(x.amount),0);
+  const tp=T(paid), te=T(earned), ts=T(settled), net=tp-te-ts;
+  const sec=(title,arr,opt)=>`<div class="card">
+    <h2>${title}　<span class="tag">${arr.length} 筆</span><span style="margin-left:auto;font-size:16px;font-weight:700;color:${opt.color}">${money(T(arr))}</span></h2>
+    <p class="sub" style="margin:0 0 8px">${opt.hint}</p>
+    ${arr.length?`<div class="scroll"><table><thead><tr><th>日期</th>${opt.site?'<th>案場</th>':''}<th>項目</th><th class="num">金額</th><th>備註</th><th></th></tr></thead><tbody>
+      ${arr.map(x=>`<tr><td>${esc(x.date||'')}</td>${opt.site?`<td>${esc(x.site||'')}</td>`:''}<td>${esc(x.item||opt.dft)}</td>
+        <td class="num" style="color:${opt.color}">${money(x.amount)}</td><td style="font-size:12px;color:var(--muted)">${esc(x.note||'')}</td>
+        <td class="num"><button class="act danger" data-ptdel="${opt.kind}::${esc(x.id)}">刪</button></td></tr>`).join('')}
+    </tbody></table></div>`:'<div class="empty">目前沒有紀錄。</div>'}
+  </div>`;
+  return `<div class="card">
+    <div class="row" style="align-items:center">
+      <div class="field" style="min-width:150px"><label>往來對象</label><select id="pt-pick">${names.map(n=>`<option ${n===cur?'selected':''}>${esc(n)}</option>`).join('')}</select></div>
+      <div class="field"><label>起</label><input type="date" id="pt-from" value="${esc(partnerFrom)}"></div>
+      <div class="field"><label>迄</label><input type="date" id="pt-to" value="${esc(partnerTo)}"></div>
+      ${(partnerFrom||partnerTo)?'<button class="act" id="pt-clear" style="align-self:flex-end;height:38px">清除期間</button>':''}
+      <button class="btn" id="pt-print" style="margin-left:auto">🖨 列印對帳單</button>
+    </div>
+  </div>
+  <div class="metrics">
+    <div class="metric"><div class="l">品佑代付</div><div class="v" style="color:var(--danger)">${money(tp)}</div></div>
+    <div class="metric"><div class="l">他們賺走（發包款）</div><div class="v">${money(te)}</div></div>
+    <div class="metric"><div class="l">已收結清／代收</div><div class="v" style="color:var(--accent)">${money(ts)}</div></div>
+    <div class="metric accent"><div class="l">${net>=0?esc(cur)+' 尚欠品佑':'品佑尚欠 '+esc(cur)}</div><div class="v">${money(Math.abs(net))}</div></div>
+  </div>
+  ${sec('品佑代付',paid,{color:'var(--danger)',kind:'exp',dft:'代支出',site:false,hint:'品佑幫他們付掉的錢（工資、代墊款報銷等）。<b>不是品佑的成本</b>，不進損益，之後要跟他們結清。'})}
+  ${sec('他們賺走（發包款）',earned,{color:'#92400e',kind:'exp',dft:'發包工程款',site:true,hint:'品佑的案場發包給他們、他們賺走的工程款。<b>是品佑的成本</b>（已計入該案場損益），但錢還沒給就算品佑欠他們。'})}
+  ${sec('已收結清／代收',settled,{color:'var(--accent)',kind:'inc',dft:'結清',site:false,hint:'品佑收到的結清款，或幫他們代收（他們做外面公司的）的錢。都不算品佑的營收。'})}`;
+}
 function viewCo(){
   const rows=state.companies.map(c=>`<tr>
       <td>${esc(c.name)}</td><td>${esc(c.taxId||'')}</td><td>${esc(c.contact||'')}</td><td>${esc(c.addr||'')}</td>
@@ -1223,7 +1264,7 @@ function viewSet(){
 function render(){
   const _sx=window.scrollX,_sy=window.scrollY; // 重繪後還原捲動位置，避免畫面跳動
   document.getElementById('nav').innerHTML=TABS.map(([k,t])=>`<button class="${tab===k?'on':''}" data-tab="${k}">${(k==='exp'&&typeof prFound!=='undefined'&&prFound&&prFound.length)?t+' 🔺'+prFound.length:t}</button>`).join('');
-  const v={dash:viewDash,proj:viewProj,exp:viewExp,inc:viewInc,quote:()=>viewDoc('quote'),invoice:()=>viewDoc('invoice'),purchase:()=>viewDoc('purchase'),co:viewCo,set:viewSet}[tab];
+  const v={dash:viewDash,proj:viewProj,exp:viewExp,inc:viewInc,partner:viewPartner,quote:()=>viewDoc('quote'),invoice:()=>viewDoc('invoice'),purchase:()=>viewDoc('purchase'),co:viewCo,set:viewSet}[tab];
   document.getElementById('app').innerHTML=v();
   setBalance();
   bind();
@@ -1278,6 +1319,22 @@ function bind(){
     printPartnerStatement(lb, f.trim(), t.trim());
   });
   document.querySelectorAll('[data-projpl]').forEach(b=>b.onclick=()=>printProjectPL(b.dataset.projpl));
+  on('go-partner','onclick',()=>{ tab='partner'; render(); });
+  on('pt-pick','onchange',e=>{ partnerPick=e.target.value; render(); });
+  on('pt-from','onchange',e=>{ partnerFrom=e.target.value; render(); });
+  on('pt-to','onchange',e=>{ partnerTo=e.target.value; render(); });
+  on('pt-clear','onclick',()=>{ partnerFrom=''; partnerTo=''; render(); });
+  on('pt-print','onclick',()=>{
+    const cur=partnerPick||(partnerStats()[0]||{}).label||PARTNERS[0].label;
+    printPartnerStatement(cur, partnerFrom, partnerTo);
+  });
+  document.querySelectorAll('[data-ptdel]').forEach(b=>b.onclick=()=>{
+    const [kind,id]=b.dataset.ptdel.split('::');
+    if(!confirm('刪除這筆往來紀錄？（PAYROLL 那邊不受影響，下次檢查會再列出來讓你重新帶入）')) return;
+    if(kind==='inc') state.incomes=state.incomes.filter(x=>x.id!==id);
+    else state.expenses=state.expenses.filter(x=>x.id!==id);
+    save();
+  });
   on('e-filter','onchange',e=>{ expFilter=e.target.value; render(); });
   on('e-item-filter','onchange',e=>{ expItemFilter=e.target.value; render(); });
   on('e-clearfilter','onclick',()=>{ expFilter=''; expItemFilter=''; expFrom=''; expTo=''; render(); });
