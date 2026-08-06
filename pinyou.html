@@ -112,7 +112,7 @@
 <nav id="nav"></nav>
 <main id="app"></main>
 <script>
-const APP_VERSION = 'vP2026.08.05h-autodeal'; // 版本號顯示在頁首，方便確認拿到新版
+const APP_VERSION = 'vP2026.08.05i-partneracct'; // 版本號顯示在頁首，方便確認拿到新版
 const LS='pinyou_data_v1';
 // ── 雲端端對端加密（與 payroll／簡化版共用同一組密碼與鑰匙；同網域共用 localStorage，解鎖一次三系統都通）──
 const E2E_SALT='PMENC1|dz-gx-py|2026';
@@ -499,9 +499,14 @@ function itemNames(){
   return [...s];
 }
 
+// 東澤建龍往來：品佑幫他們代付／代收的錢，之後要跟他們結清。
+// 那不是品佑自己的成本，所以一律排除在品佑的損益之外，只單獨列結餘。
+const isPartnerTx = x => !!(x && (x.partnerAcct || x.site===PARK_SITE));
+const partnerOut = () => state.expenses.filter(isPartnerTx).reduce((s,x)=>s+num(x.amount),0);
+const partnerIn  = () => state.incomes.filter(isPartnerTx).reduce((s,x)=>s+num(x.amount),0);
 function setBalance(){
-  const billed=state.projects.reduce((s,p)=>s+projOpening(p),0)+state.incomes.reduce((s,x)=>s+num(x.amount),0);
-  const exp=state.expenses.reduce((s,x)=>s+num(x.amount),0);
+  const billed=state.projects.reduce((s,p)=>s+projOpening(p),0)+state.incomes.filter(x=>!isPartnerTx(x)).reduce((s,x)=>s+num(x.amount),0);
+  const exp=state.expenses.filter(x=>!isPartnerTx(x)).reduce((s,x)=>s+num(x.amount),0);
   const el=document.getElementById('bal-v'); if(el) el.textContent=money(billed-exp);
   const l=document.getElementById('bal-l'); if(l) l.textContent='已請款−支出';
 }
@@ -511,7 +516,7 @@ function viewDash(){
   const projs=state.projects;
   const totContract=projs.reduce((s,p)=>s+num(p.contract),0);
   const totIncome=projs.reduce((s,p)=>s+projCalc(p).income,0);
-  const totExpense=state.expenses.reduce((s,x)=>s+num(x.amount),0);
+  const totExpense=state.expenses.filter(x=>!isPartnerTx(x)).reduce((s,x)=>s+num(x.amount),0); // 不含東澤建龍往來
   const totProfit=projs.reduce((s,p)=>s+projCalc(p).profit,0);
   const totHidden=projs.reduce((s,p)=>s+projCalc(p).hidden,0);
 
@@ -521,7 +526,17 @@ function viewDash(){
     <div class="metric"><div class="l">已請款總額</div><div class="v" style="color:var(--info)">${money(totIncome)}</div></div>
     <div class="metric"><div class="l">累積支出總額</div><div class="v" style="color:var(--danger)">${money(totExpense)}</div></div>
     <div class="metric accent"><div class="l">已請款−支出</div><div class="v">${money(totIncome-totExpense)}</div></div>
-  </div>`;
+  </div>
+  ${(()=>{ const po=partnerOut(), pi=partnerIn(); if(!po&&!pi) return '';
+    return `<div class="card" style="border-left:3px solid #f59e0b;background:#fffbeb">
+      <h2 style="color:#92400e">東澤建龍往來</h2>
+      <p class="sub" style="margin:0 0 8px">品佑幫他們代付／代收的錢，之後要跟他們結清。<b>不是品佑的成本，已排除在上面的損益之外。</b></p>
+      <div style="display:flex;gap:20px;flex-wrap:wrap;font-size:14px">
+        <span>代付出去 <b style="color:var(--danger)">${money(po)}</b></span>
+        <span>已結清／代收 <b style="color:var(--accent)">${money(pi)}</b></span>
+        <span>尚未結清 <b style="font-size:18px;color:#92400e">${money(po-pi)}</b></span>
+      </div>
+    </div>`; })()}`;
 
   // 各入款帳號收款
   const byAcc={};
@@ -670,7 +685,7 @@ function viewExp(){
       </tr>`;
     }
     return `<tr>
-      <td>${esc(x.date)}</td><td>${esc(x.site)}</td><td>${esc(x.item)}${x.payrollId?'<span class="tag" style="background:#dbeafe;color:#2563eb;margin-left:4px">PAYROLL</span>':''}</td>
+      <td>${esc(x.date)}</td><td>${esc(x.site)}</td><td>${esc(x.item)}${x.payrollId?'<span class="tag" style="background:#dbeafe;color:#2563eb;margin-left:4px">PAYROLL</span>':''}${isPartnerTx(x)?'<span class="tag" style="background:#fef3c7;color:#92400e;margin-left:4px">往來</span>':''}</td>
       <td class="num" style="color:var(--danger)">${money(x.amount)}</td>
       <td>${esc(x.account||'')}</td>
       <td>${esc(x.method||'')}</td><td>${esc(x.note||'')}</td>
@@ -704,6 +719,7 @@ function viewExp(){
       <div class="field" style="min-width:140px"><label>出帳帳號</label><select id="e-account">${acctOptions('')}</select></div>
       <div class="field"><label>付款方式</label><input id="e-method" placeholder="選填"></div>
       <div class="field" style="flex:1;min-width:110px"><label>備註</label><input id="e-note" placeholder="選填"></div>
+      <div class="field" style="min-width:210px"><label>&nbsp;</label><label style="cursor:pointer;display:flex;align-items:center;gap:6px;height:36px"><input type="checkbox" id="e-partner" style="width:16px;height:16px"><span style="font-size:13px">東澤建龍往來（不進損益）</span></label></div>
       <button class="btn" id="e-add">＋ 新增</button>
     </div>
     <datalist id="dl-sites">${sites.map(s=>`<option value="${esc(s)}">`).join('')}</datalist>
@@ -747,6 +763,7 @@ function viewInc(){
       <div class="field"><label>請款方式</label><input id="i-method" placeholder="匯款/支票"></div>
       <div class="field" style="min-width:150px"><label>入款帳號</label><select id="i-account"><option value="">（未指定）</option>${accOpts}</select></div>
       <div class="field" style="flex:1;min-width:110px"><label>備註</label><input id="i-note" placeholder="選填"></div>
+      <div class="field" style="min-width:210px"><label>&nbsp;</label><label style="cursor:pointer;display:flex;align-items:center;gap:6px;height:36px"><input type="checkbox" id="i-partner" style="width:16px;height:16px"><span style="font-size:13px">東澤建龍結清（不進損益）</span></label></div>
       <button class="btn" id="i-add">＋ 新增</button>
     </div>
     <datalist id="dl-sites2">${sites.map(s=>`<option value="${esc(s)}">`).join('')}</datalist>
@@ -1086,7 +1103,9 @@ function bind(){
     const amount=num(document.getElementById('e-amount').value);
     const site=document.getElementById('e-site').value.trim();
     if(!site||amount<=0){ alert('請填案場與金額'); return; }
-    state.expenses.push({id:uid(),date:document.getElementById('e-date').value||today(),site,item:document.getElementById('e-item').value.trim(),amount,account:document.getElementById('e-account').value,method:document.getElementById('e-method').value.trim(),note:document.getElementById('e-note').value.trim()});
+    const eRow={id:uid(),date:document.getElementById('e-date').value||today(),site,item:document.getElementById('e-item').value.trim(),amount,account:document.getElementById('e-account').value,method:document.getElementById('e-method').value.trim(),note:document.getElementById('e-note').value.trim()};
+    const ep=document.getElementById('e-partner'); if(ep&&ep.checked) eRow.partnerAcct=true;
+    state.expenses.push(eRow);
     save();
   });
   on('e-filter','onchange',e=>{ expFilter=e.target.value; render(); });
@@ -1128,7 +1147,9 @@ function bind(){
     const amount=num(document.getElementById('i-amount').value);
     const site=document.getElementById('i-site').value.trim();
     if(!site||amount<=0){ alert('請填案場與金額'); return; }
-    state.incomes.push({id:uid(),date:document.getElementById('i-date').value||today(),site,amount,method:document.getElementById('i-method').value.trim(),account:document.getElementById('i-account').value,note:document.getElementById('i-note').value.trim()});
+    const iRow={id:uid(),date:document.getElementById('i-date').value||today(),site,amount,method:document.getElementById('i-method').value.trim(),account:document.getElementById('i-account').value,note:document.getElementById('i-note').value.trim()};
+    const ip=document.getElementById('i-partner'); if(ip&&ip.checked) iRow.partnerAcct=true;
+    state.incomes.push(iRow);
     save();
   });
   on('i-filter','onchange',e=>{ incFilter=e.target.value; render(); });
@@ -1262,7 +1283,7 @@ function prAddExpense(f){
   const c=f.c, isPark=f.src==='park';
   state.deletedIds=(state.deletedIds||[]).filter(x=>x!==f.eid);
   const row={id:f.eid, date:c.date||'', site:f.site, item:String(c.item||(isPark?'品佑代支出':'PAYROLL成本')), amount:Number(c.amount)||0, account:f.account, method:'', note:isPark?'PAYROLL 品佑代支出帳戶':''};
-  if(isPark) row.payrollLedgerId=c.id; else row.payrollId=c.id;
+  if(isPark){ row.payrollLedgerId=c.id; row.partnerAcct=true; } else row.payrollId=c.id;
   state.expenses.push(row);
 }
 
