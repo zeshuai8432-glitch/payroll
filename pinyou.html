@@ -112,7 +112,7 @@
 <nav id="nav"></nav>
 <main id="app"></main>
 <script>
-const APP_VERSION = 'vP2026.08.05i-partneracct'; // 版本號顯示在頁首，方便確認拿到新版
+const APP_VERSION = 'vP2026.08.05j-earned'; // 版本號顯示在頁首，方便確認拿到新版
 const LS='pinyou_data_v1';
 // ── 雲端端對端加密（與 payroll／簡化版共用同一組密碼與鑰匙；同網域共用 localStorage，解鎖一次三系統都通）──
 const E2E_SALT='PMENC1|dz-gx-py|2026';
@@ -247,7 +247,7 @@ function blank(){ return {projects:[],expenses:[],incomes:[],companies:[],accoun
   {id:'c-py',name:'品佑工程有限公司',taxId:'',addr:'',tel:'',bank:''},
   {id:'c-dz',name:'東澤工程行',taxId:'',addr:'',tel:'',bank:''},
   {id:'c-gx',name:'廣昕工程行',taxId:'',addr:'',tel:'',bank:''}
-],quotes:[],invoices:[],purchases:[],deletedIds:[],resurrected:{ids:[],at:0}}; }
+],quotes:[],invoices:[],purchases:[],siteMap:{},deletedIds:[],resurrected:{ids:[],at:0}}; }
 function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
 function money(n){ n=Math.round(Number(n)||0); return (n<0?'-':'')+'$'+Math.abs(n).toLocaleString('en-US'); }
 function pct(n){ return (Number(n)||0*1).toLocaleString('en-US',{style:'percent',maximumFractionDigits:1}); }
@@ -256,7 +256,7 @@ function escBr(s){ return esc(s).replace(/\n/g,'<br>'); }
 function today(){ const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; } // 本地時區；toISOString 是 UTC，台灣早上 8 點前會差一天
 function num(v){ const n=parseFloat(v); return isNaN(n)?0:n; }
 
-function packData(){ return {projects:state.projects,expenses:state.expenses,incomes:state.incomes,companies:state.companies,accounts:state.accounts,items:state.items||[],quotes:state.quotes||[],invoices:state.invoices||[],purchases:state.purchases||[],myCompanies:state.myCompanies||[],deletedIds:state.deletedIds||[],resurrected:state.resurrected||{ids:[],at:0},savedAt:Date.now()}; }
+function packData(){ return {projects:state.projects,expenses:state.expenses,incomes:state.incomes,companies:state.companies,accounts:state.accounts,items:state.items||[],quotes:state.quotes||[],invoices:state.invoices||[],purchases:state.purchases||[],myCompanies:state.myCompanies||[],siteMap:state.siteMap||{},deletedIds:state.deletedIds||[],resurrected:state.resurrected||{ids:[],at:0},savedAt:Date.now()}; }
 function load(){ try{ const r=localStorage.getItem(LS); if(r){ state=Object.assign(blank(),JSON.parse(r)); } }catch(e){} localDirty=!!localStorage.getItem(LS_DIRTY); _prevIds=collectIds(); refreshRecordBaseline(); }
 // 每日本機快照：每天第一次開啟/儲存時留一份當下資料，保留 7 天（雲端是單一檔案沒歷史，這是誤刪保險）
 function keepDailySnapshot(){
@@ -501,12 +501,18 @@ function itemNames(){
 
 // 東澤建龍往來：品佑幫他們代付／代收的錢，之後要跟他們結清。
 // 那不是品佑自己的成本，所以一律排除在品佑的損益之外，只單獨列結餘。
+// partnerAcct  ＝品佑代他們付掉的（不是品佑的成本，他們欠品佑）
+// partnerEarned＝發包給他們、他們賺走的（是品佑的成本，品佑欠他們）
 const isPartnerTx = x => !!(x && (x.partnerAcct || x.site===PARK_SITE));
-const partnerOut = () => state.expenses.filter(isPartnerTx).reduce((s,x)=>s+num(x.amount),0);
-const partnerIn  = () => state.incomes.filter(isPartnerTx).reduce((s,x)=>s+num(x.amount),0);
+const isPartnerEarned = x => !!(x && x.partnerEarned);
+const partnerOut    = () => state.expenses.filter(isPartnerTx).reduce((s,x)=>s+num(x.amount),0);
+const partnerEarned = () => state.expenses.filter(isPartnerEarned).reduce((s,x)=>s+num(x.amount),0);
+const partnerIn     = () => state.incomes.filter(isPartnerTx).reduce((s,x)=>s+num(x.amount),0);
+// 正數＝東澤建龍還欠品佑；負數＝品佑還欠他們
+const partnerNet = () => partnerOut() - partnerEarned() - partnerIn();
 function setBalance(){
   const billed=state.projects.reduce((s,p)=>s+projOpening(p),0)+state.incomes.filter(x=>!isPartnerTx(x)).reduce((s,x)=>s+num(x.amount),0);
-  const exp=state.expenses.filter(x=>!isPartnerTx(x)).reduce((s,x)=>s+num(x.amount),0);
+  const exp=state.expenses.filter(x=>!isPartnerTx(x)).reduce((s,x)=>s+num(x.amount),0); // 發包款沒有 partnerAcct，照樣算成本
   const el=document.getElementById('bal-v'); if(el) el.textContent=money(billed-exp);
   const l=document.getElementById('bal-l'); if(l) l.textContent='已請款−支出';
 }
@@ -527,15 +533,17 @@ function viewDash(){
     <div class="metric"><div class="l">累積支出總額</div><div class="v" style="color:var(--danger)">${money(totExpense)}</div></div>
     <div class="metric accent"><div class="l">已請款−支出</div><div class="v">${money(totIncome-totExpense)}</div></div>
   </div>
-  ${(()=>{ const po=partnerOut(), pi=partnerIn(); if(!po&&!pi) return '';
+  ${(()=>{ const po=partnerOut(), pe=partnerEarned(), pi=partnerIn(); if(!po&&!pe&&!pi) return '';
+    const net=partnerNet();
     return `<div class="card" style="border-left:3px solid #f59e0b;background:#fffbeb">
       <h2 style="color:#92400e">東澤建龍往來</h2>
-      <p class="sub" style="margin:0 0 8px">品佑幫他們代付／代收的錢，之後要跟他們結清。<b>不是品佑的成本，已排除在上面的損益之外。</b></p>
-      <div style="display:flex;gap:20px;flex-wrap:wrap;font-size:14px">
-        <span>代付出去 <b style="color:var(--danger)">${money(po)}</b></span>
-        <span>已結清／代收 <b style="color:var(--accent)">${money(pi)}</b></span>
-        <span>尚未結清 <b style="font-size:18px;color:#92400e">${money(po-pi)}</b></span>
+      <p class="sub" style="margin:0 0 8px">品佑代他們付掉的錢<b>不是品佑的成本</b>（已排除在上面的損益外）；發包給他們的工程款<b>是品佑的成本</b>（已計入損益），但錢還沒給就算品佑欠他們。</p>
+      <div style="display:flex;gap:20px;flex-wrap:wrap;font-size:14px;margin-bottom:6px">
+        <span>品佑代付出去 <b style="color:var(--danger)">${money(po)}</b></span>
+        <span>他們賺走（發包款） <b style="color:var(--accent)">${money(pe)}</b></span>
+        <span>已收到的結清款 <b style="color:var(--accent)">${money(pi)}</b></span>
       </div>
+      <div style="font-size:15px;font-weight:700;color:#92400e">${net>=0?`東澤建龍尚欠品佑 ${money(net)}`:`品佑尚欠東澤建龍 ${money(-net)}`}</div>
     </div>`; })()}`;
 
   // 各入款帳號收款
@@ -696,10 +704,13 @@ function viewExp(){
   const itemOpts=`<option value="">全部項目</option>`+items.map(s=>`<option ${expItemFilter===s?'selected':''}>${esc(s)}</option>`).join('');
   const prCard=(typeof prFound!=='undefined'&&prFound&&prFound.length)?`<div class="card" style="border-left:3px solid #2563eb">
     <h2>📥 PAYROLL 有 ${prFound.length} 筆支出還沒帶入</h2>
-    <p class="sub" style="margin:0 0 8px">兩種來源：<b>案場成本</b>（材料、機具等，只列兩邊同名的案場）與<b>品佑代支出帳戶</b>（公司負擔工資、代墊款報銷、手動記帳，統一掛在「${esc(PARK_SITE)}」底下）。已經走案場成本進來的報銷、以及分潤結算的公積金分配，都不會重複列出。「＋新增」帶入本帳的支出（帶入後可自行改刪）；「忽略」則這筆不再提醒。</p>
+    <p class="sub" style="margin:0 0 8px">三種來源：<b>案場成本</b>（材料、機具等）、<b>代支出</b>（品佑幫他們付的工資等，不算品佑成本）、<b>發包款</b>（發包給東澤建龍、他們賺走的，<b>是品佑的成本</b>）。已走案場成本進來的報銷與分潤結算不會重複列出。發包款請先選「算到哪個案場」再新增（PAYROLL 是母子案場、名字常跟這邊不同，選過一次就會記住）。</p>
     <div class="scroll"><table><thead><tr><th>日期</th><th>案場</th><th>項目</th><th class="num">金額</th><th>出帳</th><th></th></tr></thead>
     <tbody>${prFound.map((f,i)=>`<tr>
-      <td>${esc(f.c.date||'')}</td><td>${esc(f.site)}${f.src==='park'?'<span class="tag" style="background:#eef6ff;color:#2563eb;margin-left:4px">代支出</span>':''}</td><td>${esc(String(f.c.item||''))}</td>
+      <td>${esc(f.c.date||'')}</td>
+      <td>${f.src==='earned'
+        ? `<select data-prsite="${i}" style="max-width:170px"><option value="">選案場…</option>${(state.projects||[]).map(pj=>`<option value="${esc(pj.name)}" ${f.site===pj.name?'selected':''}>${esc(pj.name)}</option>`).join('')}</select>${f.payrollSite?`<div class="sub" style="margin:2px 0 0">PAYROLL：${esc(f.payrollSite)}</div>`:''}`
+        : esc(f.site)}${f.src==='park'?'<span class="tag" style="background:#eef6ff;color:#2563eb;margin-left:4px">代支出</span>':''}${f.src==='earned'?'<span class="tag" style="background:#fef3c7;color:#92400e;margin-left:4px">發包款</span>':''}</td><td>${esc(String(f.c.item||''))}</td>
       <td class="num">${money(f.c.amount)}</td><td>${esc(f.account)}</td>
       <td class="num" style="white-space:nowrap"><button class="act on" data-pradd="${i}">＋新增</button> <button class="act" data-prskip="${i}">忽略</button></td>
     </tr>`).join('')}</tbody></table></div>
@@ -1124,9 +1135,15 @@ function bind(){
   document.querySelectorAll('[data-exdel]').forEach(b=>b.onclick=()=>{ if(confirm('刪除這筆支出？')){ state.expenses=state.expenses.filter(x=>x.id!==b.dataset.exdel); save(); } });
   // PAYROLL 互抓：新增/忽略
   on('pr-check','onclick',()=>{ checkPayrollCosts(true); render(); });
-  document.querySelectorAll('[data-pradd]').forEach(b=>b.onclick=()=>{ const f=prFound&&prFound[+b.dataset.pradd]; if(!f) return; prAddExpense(f); prFound.splice(+b.dataset.pradd,1); save(); });
+  document.querySelectorAll('[data-prsite]').forEach(sel=>sel.onchange=()=>{ const f=prFound&&prFound[+sel.dataset.prsite]; if(f) f.site=sel.value; });
+  document.querySelectorAll('[data-pradd]').forEach(b=>b.onclick=()=>{ const f=prFound&&prFound[+b.dataset.pradd]; if(!f) return;
+    if(f.src==='earned'&&!f.site){ alert('這筆是發包款，請先選「算到哪個案場」再新增。'); return; }
+    prAddExpense(f); prFound.splice(+b.dataset.pradd,1); save(); });
   document.querySelectorAll('[data-prskip]').forEach(b=>b.onclick=()=>{ const f=prFound&&prFound[+b.dataset.prskip]; if(!f) return; state.deletedIds=[...new Set([...(state.deletedIds||[]),f.eid])]; prFound.splice(+b.dataset.prskip,1); save(); });
-  on('pr-addall','onclick',()=>{ if(!prFound||!prFound.length) return; if(!confirm(`把 ${prFound.length} 筆 PAYROLL 支出全部帶入？`)) return; prFound.forEach(prAddExpense); prFound=[]; save(); });
+  on('pr-addall','onclick',()=>{ if(!prFound||!prFound.length) return;
+    const pending=prFound.filter(f=>f.src==='earned'&&!f.site).length;
+    if(!confirm(`把 ${prFound.length-pending} 筆 PAYROLL 支出全部帶入？`+(pending?`\n\n（另有 ${pending} 筆發包款還沒選案場，會先留著）`:''))) return;
+    const left=[]; prFound.forEach(f=>{ if(!prAddExpense(f)) left.push(f); }); prFound=left; save(); });
   on('pr-skipall','onclick',()=>{ if(!prFound||!prFound.length) return; if(!confirm(`全部忽略這 ${prFound.length} 筆？之後不會再提醒。`)) return; state.deletedIds=[...new Set([...(state.deletedIds||[]),...prFound.map(f=>f.eid)])]; prFound=[]; save(); });
   document.querySelectorAll('[data-exedit]').forEach(b=>b.onclick=()=>{ expEditId=b.dataset.exedit; render(); });
   document.querySelectorAll('[data-exeditcancel]').forEach(b=>b.onclick=()=>{ expEditId=null; render(); });
@@ -1275,16 +1292,37 @@ async function checkPayrollCosts(showFail){
       prFound.push({c:{id:t.id, date:t.date, item:String(t.note||'品佑代支出'), amount:t.amount},
         eid, site:PARK_SITE, account:'品佑工程有限公司', src:'park'});
     });
+    // 請款進帳＝品佑發包給東澤建龍、他們賺走的工程款。對品佑來說那是「該案場的成本」。
+    // 帳目本身沒有案場，要走 autoDealId → 分潤 → autoSiteId → 案場，再往上找母案場（＝跟品佑的合作案）。
+    const dealById={}; (dd.deals||[]).forEach(x=>{ if(x&&x.id) dealById[x.id]=x; });
+    if(parkAcc) (dd.ledger||[]).forEach(t=>{
+      if(!t||t.id==null) return;
+      if(t.accId!==parkAcc || t.kind!=='in' || !t.autoDealId) return;
+      const eid='pe-'+t.id;
+      if(have.has(eid)||haveLed.has(t.id)||del.has(eid)) return;
+      const dl=dealById[t.autoDealId];
+      const payrollSite=(dl&&dl.autoSiteId?topName(dl.autoSiteId):'')||String((dl&&dl.name)||'').trim();
+      // 名字兩邊常常不一樣（PAYROLL 是母子案場、品佑是自己的命名），所以給對應表＋讓使用者自己選
+      const mapped=(state.siteMap&&state.siteMap[payrollSite])||(myProjects.has(payrollSite)?payrollSite:'');
+      prFound.push({c:{id:t.id, date:t.date, item:'發包工程款'+(payrollSite?'·'+payrollSite:''), amount:t.amount},
+        eid, site:mapped, payrollSite, account:'品佑工程有限公司', src:'earned'});
+    });
   }catch(e){ if(showFail) alert('讀取 PAYROLL 失敗：'+String(e&&e.message||e).slice(0,60)); prChecking=false; return; }
   prChecking=false;
   safeRender();
 }
 function prAddExpense(f){
-  const c=f.c, isPark=f.src==='park';
+  const c=f.c, isPark=f.src==='park', isEarned=f.src==='earned';
+  if(isEarned && !f.site) return false; // 沒指定要算到哪個案場就先不帶
   state.deletedIds=(state.deletedIds||[]).filter(x=>x!==f.eid);
-  const row={id:f.eid, date:c.date||'', site:f.site, item:String(c.item||(isPark?'品佑代支出':'PAYROLL成本')), amount:Number(c.amount)||0, account:f.account, method:'', note:isPark?'PAYROLL 品佑代支出帳戶':''};
-  if(isPark){ row.payrollLedgerId=c.id; row.partnerAcct=true; } else row.payrollId=c.id;
+  const row={id:f.eid, date:c.date||'', site:f.site, item:String(c.item||(isPark?'品佑代支出':'PAYROLL成本')), amount:Number(c.amount)||0, account:f.account, method:'',
+    note:isPark?'PAYROLL 品佑代支出帳戶':(isEarned?'發包給東澤建龍'+(f.payrollSite?'（PAYROLL：'+f.payrollSite+'）':''):'')};
+  if(isPark){ row.payrollLedgerId=c.id; row.partnerAcct=true; }
+  else if(isEarned){ row.payrollLedgerId=c.id; row.partnerEarned=true;
+    if(f.payrollSite){ state.siteMap=state.siteMap||{}; state.siteMap[f.payrollSite]=f.site; } } // 記住對應，下次自動帶
+  else row.payrollId=c.id;
   state.expenses.push(row);
+  return true;
 }
 
 
