@@ -112,7 +112,7 @@
 <nav id="nav"></nav>
 <main id="app"></main>
 <script>
-const APP_VERSION = 'vP2026.08.05p-recon'; // 版本號顯示在頁首，方便確認拿到新版
+const APP_VERSION = 'vP2026.08.06a-reports'; // 版本號顯示在頁首，方便確認拿到新版
 const LS='pinyou_data_v1';
 // ── 雲端端對端加密（與 payroll／簡化版共用同一組密碼與鑰匙；同網域共用 localStorage，解鎖一次三系統都通）──
 const E2E_SALT='PMENC1|dz-gx-py|2026';
@@ -188,7 +188,7 @@ const MERGE=['projects','expenses','incomes','companies','quotes','invoices','pu
 const TABS=[['dash','儀表板'],['proj','案場'],['exp','支出'],['inc','請款'],['quote','報價單'],['invoice','請款單'],['purchase','採購單'],['co','通訊錄'],['set','設定']];
 let state=blank();
 let tab='dash';
-let expFilter='', expItemFilter='', incFilter='', expEditId=null;
+let expFilter='', expItemFilter='', incFilter='', expEditId=null, expFrom='', expTo='';
 let docDraft=null; // 編輯中的報價單/請款單草稿
 let showHidden=false; try{ showHidden=localStorage.getItem('pinyou_showhidden')==='1'; }catch(e){} // 暗帳預設收合
 let pEditId=null; // 正在就地編輯的案場
@@ -588,9 +588,10 @@ function viewDash(){
     return `<div class="card" style="border-left:3px solid #f59e0b;background:#fffbeb">
       <h2 style="color:#92400e">往來結餘</h2>
       <p class="sub" style="margin:0 0 8px">品佑代他們付掉的錢<b>不是品佑的成本</b>（已排除在上面的損益外）；發包給他們的工程款<b>是品佑的成本</b>（已計入損益），但錢還沒給就算品佑欠他們。</p>
-      ${rows.length?`<div class="scroll"><table><thead><tr><th>對象</th><th class="num">品佑代付</th><th class="num">他們賺走</th><th class="num">已收結清／代收</th><th class="num">結餘</th></tr></thead><tbody>
+      ${rows.length?`<div class="scroll"><table><thead><tr><th>對象</th><th class="num">品佑代付</th><th class="num">他們賺走</th><th class="num">已收結清／代收</th><th class="num">結餘</th><th></th></tr></thead><tbody>
         ${rows.map(r=>`<tr><td><b>${esc(r.label)}</b></td><td class="num" style="color:var(--danger)">${money(r.out)}</td><td class="num">${money(r.earned)}</td><td class="num" style="color:var(--accent)">${money(r.inn)}</td>
-          <td class="num" style="font-weight:700;color:#92400e;white-space:nowrap">${r.net>=0?`${esc(r.label)}欠品佑 ${money(r.net)}`:`品佑欠${esc(r.label)} ${money(-r.net)}`}</td></tr>`).join('')}
+          <td class="num" style="font-weight:700;color:#92400e;white-space:nowrap">${r.net>=0?`${esc(r.label)}欠品佑 ${money(r.net)}`:`品佑欠${esc(r.label)} ${money(-r.net)}`}</td>
+          <td class="num"><button class="act on" data-pstmt="${esc(r.label)}">🖨 對帳單</button></td></tr>`).join('')}
       </tbody></table></div>`:'<p class="sub" style="margin:0">目前還沒有帶入任何往來項目。</p>'}
       ${reconPanelHtml()}
     </div>`; })()}`;
@@ -685,7 +686,7 @@ function viewProj(){
       <td class="num" style="color:var(--info)">${money(c.income)}</td>
       <td class="num" style="color:var(--danger)">${money(c.expense)}</td>
       <td class="num ${c.profit<0?'neg':'pos'}">${money(c.profit)}${showHidden&&c.hidden?`<div style="font-size:11px;color:#b45309">實拿 ${money(c.netTake)}</div>`:''}</td>
-      <td class="num"><button class="act" data-pedit="${p.id}">改</button> <button class="act danger" data-pdel="${p.id}">刪</button></td>
+      <td class="num" style="white-space:nowrap"><button class="act on" data-projpl="${p.id}">🖨 損益表</button> <button class="act" data-pedit="${p.id}">改</button> <button class="act danger" data-pdel="${p.id}">刪</button></td>
     </tr>`;
   };
   const subHtml=(parent)=>{ const g=projGroupCalc(parent);
@@ -725,7 +726,7 @@ function viewProj(){
 function acctOptions(sel){ return '<option value="">（未指定）</option>'+state.accounts.map(a=>`<option ${sel===a?'selected':''}>${esc(a)}</option>`).join(''); }
 function viewExp(){
   const sites=allSiteNames(), items=itemNames();
-  const filtered=state.expenses.filter(x=>(!expFilter||x.site===expFilter)&&(!expItemFilter||x.item===expItemFilter)).sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+  const filtered=state.expenses.filter(x=>(!expFilter||x.site===expFilter)&&(!expItemFilter||x.item===expItemFilter)&&inDateRange(x.date,expFrom,expTo)).sort((a,b)=>(b.date||'').localeCompare(a.date||''));
   const tot=filtered.reduce((s,x)=>s+num(x.amount),0);
   const rows=filtered.map(x=>{
     if(expEditId===x.id){
@@ -790,7 +791,10 @@ function viewExp(){
       <h2 style="margin:0">支出明細（${filtered.length}）</h2>
       <select id="e-filter" style="width:auto;height:34px">${siteOpts}</select>
       <select id="e-item-filter" style="width:auto;height:34px">${itemOpts}</select>
-      ${(expFilter||expItemFilter)?'<button class="act" id="e-clearfilter">清除篩選</button>':''}
+      <input type="date" id="e-from" value="${esc(expFrom)}" title="起" style="width:auto;height:34px">
+      <input type="date" id="e-to" value="${esc(expTo)}" title="迄" style="width:auto;height:34px">
+      <button class="act on" id="e-print">🖨 匯出明細 PDF</button>
+      ${(expFilter||expItemFilter||expFrom||expTo)?'<button class="act" id="e-clearfilter">清除篩選</button>':''}
       <button class="act" id="e-rename" title="把某個項目名稱一次全部改掉，用來整理混亂的名稱">項目批次改名</button>
       <button class="act" id="pr-check" title="讀 PAYROLL 雲端的案場成本，有這邊沒記的會列出來讓你確認">${(typeof prChecking!=='undefined'&&prChecking)?'檢查中…':'🔗 檢查PAYROLL'}</button>
       ${(typeof prFound!=='undefined'&&prFound&&!prFound.length)?'<span class="sub" style="margin:0">PAYROLL 沒有新成本 ✓</span>':''}
@@ -993,6 +997,97 @@ function bankInfoHtml(c){
   if(c.bank) return `<div class="bankblk"><div class="h">匯款資訊</div><div>${esc(c.bank)}</div></div>`;
   return '';
 }
+// ── 報表列印（共用抬頭）──
+function repHeader(title, metaRows){
+  const co=state.myCompanies[0]||{};
+  return `<div class="dh">
+    <div><div class="dh-co">${esc(co.name||'品佑工程有限公司')}</div>
+      <div class="dh-meta">${[co.taxId?'統一編號 '+esc(co.taxId):'', esc(co.addr||''), co.tel?'電話 '+esc(co.tel):''].filter(Boolean).join('<br>')}</div></div>
+    <div><div class="dh-title">${esc(title)}</div>
+      <table class="dh-info">${metaRows.map(([k,v])=>`<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>`).join('')}</table></div>
+  </div>`;
+}
+const dateRangeText = (from,to) => (from||to)?`${from||'起始'} ～ ${to||today()}`:'全部期間';
+const inDateRange = (d,from,to) => (!from||String(d||'')>=from)&&(!to||String(d||'')<=to);
+
+// ① 往來對帳單：跟東澤建龍／進凱結算時列印給對方確認
+function printPartnerStatement(label, from, to){
+  const inR=x=>inDateRange(x&&x.date,from,to);
+  const paid=state.expenses.filter(x=>isPartnerTx(x)&&partnerOf(x)===label&&inR(x)).sort((a,b)=>String(a.date||'').localeCompare(String(b.date||'')));
+  const earned=state.expenses.filter(x=>isPartnerEarned(x)&&partnerOf(x)===label&&inR(x)).sort((a,b)=>String(a.date||'').localeCompare(String(b.date||'')));
+  const settled=state.incomes.filter(x=>isPartnerTx(x)&&partnerOf(x)===label&&inR(x)).sort((a,b)=>String(a.date||'').localeCompare(String(b.date||'')));
+  const T=arr=>arr.reduce((s,x)=>s+num(x.amount),0);
+  const tp=T(paid), te=T(earned), ts=T(settled), net=tp-te-ts;
+  const sec=(t,arr,cols)=>`<div style="font-weight:700;color:#1E3A8A;margin:18px 0 6px;font-size:13px">${t}</div>
+    ${arr.length?`<div class="itemsc"><table class="items"><thead><tr><th class="c-unit">日期</th>${cols}<th class="num">金額</th></tr></thead><tbody>
+      ${arr.map(x=>`<tr><td class="c-unit">${esc(x.date||'')}</td>${cols.includes('案場')?`<td>${esc(x.site||'')}</td>`:''}<td>${esc(x.item||x.note||'')}</td><td class="num">${money(x.amount)}</td></tr>`).join('')}
+    </tbody></table></div>`:'<div style="color:#9ca3af;font-size:12.5px;padding:4px 0">（無）</div>'}`;
+  const inner=`<div class="pdoc">
+    ${repHeader('往來對帳單',[['對象',label],['期間',dateRangeText(from,to)],['列印日',today()]])}
+    ${sec('品佑代付（品佑幫他們付掉的，不是品佑的成本）',paid,'<th>項目</th>')}
+    ${sec('他們賺走（品佑發包的工程款）',earned,'<th>案場</th><th>項目</th>')}
+    ${sec('已收結清／代收',settled,'<th>項目</th>')}
+    <div class="sumwrap"><table class="sum">
+      <tr><td>品佑代付合計</td><td>${money(tp)}</td></tr>
+      <tr><td>減：他們賺走</td><td>−${money(te)}</td></tr>
+      <tr><td>減：已收結清／代收</td><td>−${money(ts)}</td></tr>
+      <tr class="grand"><td>${net>=0?label+' 尚欠品佑':'品佑尚欠 '+label}</td><td>${money(Math.abs(net))}</td></tr>
+    </table></div>
+    <div class="note">以上金額經雙方核對無誤後簽章。代付項目為品佑代為支付、應由 ${esc(label)} 負擔者；發包工程款為品佑應付予 ${esc(label)} 之工程款。</div>
+    <div class="sign"><div>品佑工程有限公司　簽章</div><div>${esc(label)}　簽章</div></div>
+  </div>`;
+  printHTMLDoc('往來對帳單',inner);
+}
+
+// ② 單一案場損益表
+function printProjectPL(pid){
+  const pj=(state.projects||[]).find(x=>x.id===pid); if(!pj) return;
+  const c=projCalc(pj);
+  const exps=state.expenses.filter(x=>x.site===pj.name).sort((a,b)=>String(a.date||'').localeCompare(String(b.date||'')));
+  const incs=state.incomes.filter(x=>x.site===pj.name).sort((a,b)=>String(a.date||'').localeCompare(String(b.date||'')));
+  const byItem={}; exps.forEach(x=>{ const k=isPartnerEarned(x)?('發包款·'+partnerOf(x)):(x.item||'其他'); byItem[k]=(byItem[k]||0)+num(x.amount); });
+  const itemRows=Object.entries(byItem).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`<tr><td>${esc(k)}</td><td class="num">${money(v)}</td></tr>`).join('');
+  const inner=`<div class="pdoc">
+    ${repHeader('案場損益表',[['案場',pj.name],['列印日',today()]])}
+    <div class="sumwrap" style="justify-content:flex-start"><table class="sum" style="min-width:360px">
+      <tr><td>合約金額</td><td>${money(num(pj.contract))}</td></tr>
+      <tr><td>已請款</td><td>${money(c.income)}</td></tr>
+      <tr><td>未請領餘額</td><td>${money(c.unbilled)}</td></tr>
+      <tr><td>累積支出</td><td>${money(c.expense)}</td></tr>
+      <tr class="grand"><td>預計剩餘利潤</td><td>${money(c.profit)}</td></tr>
+    </table></div>
+    <div style="font-weight:700;color:#1E3A8A;margin:20px 0 6px;font-size:13px">支出彙總（依項目）</div>
+    <div class="itemsc"><table class="items"><thead><tr><th>項目</th><th class="num">金額</th></tr></thead><tbody>${itemRows||'<tr><td colspan="2" style="color:#9ca3af">（無）</td></tr>'}</tbody></table></div>
+    <div style="font-weight:700;color:#1E3A8A;margin:20px 0 6px;font-size:13px">支出明細（${exps.length} 筆）</div>
+    <div class="itemsc"><table class="items"><thead><tr><th class="c-unit">日期</th><th>項目</th><th>出帳</th><th>備註</th><th class="num">金額</th></tr></thead><tbody>
+      ${exps.map(x=>`<tr><td class="c-unit">${esc(x.date||'')}</td><td>${esc(x.item||'')}${isPartnerEarned(x)?`<span style="color:#92400e"> · 發包款(${esc(partnerOf(x))})</span>`:''}</td><td>${esc(x.account||'')}</td><td style="font-size:11.5px;color:#6b7280">${esc(x.note||'')}</td><td class="num">${money(x.amount)}</td></tr>`).join('')||'<tr><td colspan="5" style="color:#9ca3af">（無）</td></tr>'}
+    </tbody></table></div>
+    <div style="font-weight:700;color:#1E3A8A;margin:20px 0 6px;font-size:13px">請款明細（${incs.length} 筆）</div>
+    <div class="itemsc"><table class="items"><thead><tr><th class="c-unit">日期</th><th>方式</th><th>入款帳號</th><th>備註</th><th class="num">金額</th></tr></thead><tbody>
+      ${incs.map(x=>`<tr><td class="c-unit">${esc(x.date||'')}</td><td>${esc(x.method||'')}</td><td>${esc(x.account||'')}</td><td style="font-size:11.5px;color:#6b7280">${esc(x.note||'')}</td><td class="num">${money(x.amount)}</td></tr>`).join('')||'<tr><td colspan="5" style="color:#9ca3af">（無）</td></tr>'}
+    </tbody></table></div>
+    <div class="note">利潤＝合約金額 − 累積支出。發包款為應付予協力廠商之工程款，已計入支出。</div>
+  </div>`;
+  printHTMLDoc('案場損益表',inner);
+}
+
+// ③ 支出明細表（沿用畫面上的篩選條件）
+function printExpenses(list, from, to){
+  const tot=list.reduce((s,x)=>s+num(x.amount),0);
+  const byItem={}; list.forEach(x=>{ const k=x.item||'其他'; byItem[k]=(byItem[k]||0)+num(x.amount); });
+  const inner=`<div class="pdoc">
+    ${repHeader('支出明細表',[['期間',dateRangeText(from,to)],['案場',expFilter||'全部'],['項目',expItemFilter||'全部'],['筆數',String(list.length)]])}
+    <div class="itemsc"><table class="items"><thead><tr><th class="c-unit">日期</th><th>案場</th><th>項目</th><th>出帳帳號</th><th>付款</th><th>備註</th><th class="num">金額</th></tr></thead><tbody>
+      ${list.map(x=>`<tr><td class="c-unit">${esc(x.date||'')}</td><td>${esc(x.site||'')}</td><td>${esc(x.item||'')}${isPartnerEarned(x)?`<span style="color:#92400e"> · 發包款</span>`:''}${isPartnerTx(x)?`<span style="color:#92400e"> · 代支出</span>`:''}</td><td>${esc(x.account||'')}</td><td>${esc(x.method||'')}</td><td style="font-size:11.5px;color:#6b7280">${esc(x.note||'')}</td><td class="num">${money(x.amount)}</td></tr>`).join('')||'<tr><td colspan="7" style="color:#9ca3af">（無符合條件的支出）</td></tr>'}
+    </tbody></table></div>
+    <div class="sumwrap"><table class="sum"><tr class="grand"><td>合計</td><td>${money(tot)}</td></tr></table></div>
+    <div style="font-weight:700;color:#1E3A8A;margin:20px 0 6px;font-size:13px">依項目彙總</div>
+    <div class="itemsc"><table class="items"><thead><tr><th>項目</th><th class="num">金額</th></tr></thead><tbody>
+      ${Object.entries(byItem).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`<tr><td>${esc(k)}</td><td class="num">${money(v)}</td></tr>`).join('')}
+    </tbody></table></div>
+  </div>`;
+  printHTMLDoc('支出明細表',inner);
+}
 function printDoc(id){
   const doc=findDoc(id); if(!doc) return;
   const m=DOC_META[doc.type], c=docCalc(doc);
@@ -1170,9 +1265,24 @@ function bind(){
     state.expenses.push(eRow);
     save();
   });
+  document.querySelectorAll('[data-pstmt]').forEach(b=>b.onclick=()=>{
+    const lb=b.dataset.pstmt;
+    const f=prompt('對帳期間 起（YYYY-MM-DD，留空＝不限）','')||'';
+    if(f===null) return;
+    const t=prompt('對帳期間 迄（YYYY-MM-DD，留空＝到今天）','')||'';
+    printPartnerStatement(lb, f.trim(), t.trim());
+  });
+  document.querySelectorAll('[data-projpl]').forEach(b=>b.onclick=()=>printProjectPL(b.dataset.projpl));
   on('e-filter','onchange',e=>{ expFilter=e.target.value; render(); });
   on('e-item-filter','onchange',e=>{ expItemFilter=e.target.value; render(); });
-  on('e-clearfilter','onclick',()=>{ expFilter=''; expItemFilter=''; render(); });
+  on('e-clearfilter','onclick',()=>{ expFilter=''; expItemFilter=''; expFrom=''; expTo=''; render(); });
+  on('e-from','onchange',e=>{ expFrom=e.target.value; render(); });
+  on('e-to','onchange',e=>{ expTo=e.target.value; render(); });
+  on('e-print','onclick',()=>{
+    const list=state.expenses.filter(x=>(!expFilter||x.site===expFilter)&&(!expItemFilter||x.item===expItemFilter)&&inDateRange(x.date,expFrom,expTo))
+      .sort((a,b)=>String(a.date||'').localeCompare(String(b.date||'')));
+    printExpenses(list, expFrom, expTo);
+  });
   on('e-rename','onclick',()=>{
     const names=itemNames().sort();
     const from=prompt('要整理的「項目名稱」（打完整）。目前有：\n'+names.join('、')); if(from===null) return;
