@@ -509,7 +509,7 @@ const FS_ROOT = 'https://firestore.googleapis.com/v1/projects/'+FS_PROJECT+'/dat
 const FS_DOC_BASE = FS_ROOT+'payroll/';
 const FS_SIG_BASE = FS_ROOT+'payrollSignatures/';
 const FS_REST_URL = FS_DOC_BASE+'main?key='+FS_KEY;
-const APP_VERSION = 'v2026.08.05e-noescrow';
+const APP_VERSION = 'v2026.08.05f-incomename';
 let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], tools:[], locations:[], assets:[], advances:[], accounts:[], ledger:[], deals:[], billings:[], measurements:[], contracts:{}, costs:[], textMemory:{clients:[],companies:[]}, parkAccId:'', oweBonus:{}, minFund:'', shareholderTx:[], myCompanies:[], payrollSnapshots:[], yearIncomeAdj:[], deletedIds:[], resurrected:{ids:[],at:0}, tab:'dash' };
 let cloudStatus='連線中…';
 let localDirty=false, lastCloudTs=0;
@@ -919,9 +919,17 @@ const taxBreakdownHtml = (d,c) => {
   return `<div style="font-size:10px;color:var(--muted);line-height:1.35">請款 ${money(d.amount)} − 稅金 ${money(c.tax)} = 稅後 ${money((Number(d.amount)||0)-(c.tax||0))}</div>`;
 };
 
+// 一次性改名：舊版把案場請款進帳寫成「分潤進帳」，名稱會誤導（那是請款進來的錢，還沒分潤）。
+// 只改自動產生（有 autoDealId）的那些，手動記的摘要一律不動。
+function migrateDealIncomeNote(){
+  let n=0;
+  (state.ledger||[]).forEach(t=>{ if(t&&t.autoDealId&&typeof t.note==='string'&&t.note.startsWith('分潤進帳·')){ t.note='請款進帳·'+t.note.slice(5); n++; } });
+  return n;
+}
 function applyData(d){
   if(!d) return;
   state.employees=d.employees||[]; state.sites=d.sites||[]; state.attendance=d.attendance||[]; state.adjustments=d.adjustments||[]; state.loans=d.loans||[]; state.tools=d.tools||[]; state.locations=d.locations||[]; state.assets=d.assets||[]; state.advances=d.advances||[]; state.accounts=d.accounts||[]; state.ledger=d.ledger||[]; state.deals=d.deals||[]; state.billings=d.billings||[]; state.measurements=d.measurements||[]; state.contracts=d.contracts||{}; state.costs=d.costs||[]; state.textMemory=d.textMemory||{clients:[],companies:[]}; state.parkAccId=d.parkAccId||''; state.oweBonus=d.oweBonus||{}; state.minFund=(d.minFund!==undefined?d.minFund:''); state.shareholderTx=d.shareholderTx||[]; state.myCompanies=d.myCompanies||[]; state.payrollSnapshots=d.payrollSnapshots||[]; state.yearIncomeAdj=d.yearIncomeAdj||[]; state.deletedIds=d.deletedIds||[]; if(d.resurrected&&Array.isArray(d.resurrected.ids)) state.resurrected={ids:d.resurrected.ids,at:Number(d.resurrected.at)||0}; else if(!state.resurrected) state.resurrected={ids:[],at:0};
+  migrateDealIncomeNote(); // 舊的「分潤進帳」摘要改成「請款進帳」
   state.employees.forEach(e=>{ if(e.active===undefined) e.active=true; });
   state.sites.forEach(s=>{
     if(s.parentSiteId){
@@ -2994,7 +3002,7 @@ function bind(){
   const ed=document.getElementById('export-deals'); if(ed) ed.onclick=()=>exportDealsPDF();
   const eds=document.getElementById('export-deals-sel'); if(eds) eds.onclick=()=>exportDealsPDF(true);
   const rbi=document.getElementById('rebuild-income'); if(rbi) rbi.onclick=()=>{
-    if(!confirm('重建所有分潤的「帳戶自動進帳」？\n會先清掉舊的自動進帳，再依每筆分潤的「錢進哪個帳戶」重新產生（代工/公司分潤＝金額−稅）。\n你手動記的收支不受影響。')) return;
+    if(!confirm('重建所有分潤的「帳戶自動進帳」？\n會先清掉舊的自動進帳，再依每筆分潤的「錢進哪個帳戶」重新產生（代工/公司分潤＝金額−稅，摘要為「請款進帳」）。\n你手動記的收支不受影響。')) return;
     rebuildAllDealIncome(); saveData(); render();
   };
   const rsd=document.getElementById('resync-deals'); if(rsd) rsd.onclick=()=>{
@@ -5949,7 +5957,7 @@ let billingSigsLocked={}; // { [billingId]: true } — 已鎖定不可覆寫
 let billingSigMeta={}; // { [billingId]: {updatedAt} } — 避免舊測試簽名蓋掉新簽名
 let localSigPending={}; // 剛在本機簽完、尚未成功推到雲端的簽名
 
-// 一筆分潤進帳戶的金額：代工/公司分潤＝金額−稅；（合作案在卡片另算，這裡不處理）
+// 一筆進帳戶的金額：代工/公司分潤＝金額−稅（這是「請款進來的錢」，還沒分潤；合作案在卡片另算）
 function dealIncomeAmount(d){
   const c=dealCalc(d);
   return Math.round((Number(d.amount)||0) - (c.tax||0)); // 金額 − 稅
@@ -5961,14 +5969,14 @@ function syncDealIncome(d){
   if(d.moneyAcc && d.type!=='合作案'){
     const amt=dealIncomeAmount(d);
     if(amt!==0){
-      state.ledger.push({id:uid(), date:d.date||localISODate(), accId:d.moneyAcc, kind: amt>=0?'in':'out', amount:Math.abs(amt), note:`分潤進帳·${d.name}`, autoDealId:d.id});
+      state.ledger.push({id:uid(), date:d.date||localISODate(), accId:d.moneyAcc, kind: amt>=0?'in':'out', amount:Math.abs(amt), note:`請款進帳·${d.name}`, autoDealId:d.id});
     }
   }
 }
 // 重建所有分潤的自動收入（A方案：一次補齊）
 function rebuildAllDealIncome(){
   state.ledger=state.ledger.filter(t=>!t.autoDealId);
-  state.deals.forEach(d=>{ if(d.moneyAcc && d.type!=='合作案'){ const amt=dealIncomeAmount(d); if(amt!==0) state.ledger.push({id:uid(), date:d.date||localISODate(), accId:d.moneyAcc, kind:amt>=0?'in':'out', amount:Math.abs(amt), note:`分潤進帳·${d.name}`, autoDealId:d.id}); } });
+  state.deals.forEach(d=>{ if(d.moneyAcc && d.type!=='合作案'){ const amt=dealIncomeAmount(d); if(amt!==0) state.ledger.push({id:uid(), date:d.date||localISODate(), accId:d.moneyAcc, kind:amt>=0?'in':'out', amount:Math.abs(amt), note:`請款進帳·${d.name}`, autoDealId:d.id}); } });
 }
 // 案場成本（給分潤算淨利用）＝出工工資+津貼 + 手動成本 +（期初，但舊制不算期初）
 function siteCostForDeal(site){
@@ -6012,7 +6020,7 @@ function resyncAllSiteDeals(){
     doneNames.add(s.name);
     resyncSiteDeal(s);
   });
-  // ② 清孤兒：autoDealId 指向已不存在的分潤（多裝置舊隨機 id 殘留的「分潤進帳」），
+  // ② 清孤兒：autoDealId 指向已不存在的分潤（多裝置舊隨機 id 殘留的「請款進帳」），
   //    這些就是同一案場被重複算進公積金帳戶的來源，一律移除。
   const dealIds=new Set(state.deals.map(d=>d.id));
   state.ledger=state.ledger.filter(t=>!(t && t.autoDealId!=null && !dealIds.has(t.autoDealId)));
@@ -6021,7 +6029,7 @@ function resyncAllSiteDeals(){
   const tombs=new Set(state.deletedIds||[]);
   const costIds=new Set((state.costs||[]).map(c=>c&&c.id));
   state.ledger=state.ledger.filter(t=>!(t && t.reimbCostId && !costIds.has(t.reimbCostId) && tombs.has(t.reimbCostId)));
-  // ④ 清自動分潤孤兒：案場已刪，它的自動分潤（無刪除鈕）與「分潤進帳」會卡成幽靈帳 → 一併移除。
+  // ④ 清自動分潤孤兒：案場已刪，它的自動分潤（無刪除鈕）與「請款進帳」會卡成幽靈帳 → 一併移除。
   //    自動分潤是衍生資料、每次合併後重算，這裡只動 autoSiteId 的，不會誤殺手動分潤。
   if((state.sites||[]).length){
     const siteIds=new Set(state.sites.map(s=>s&&s.id));
