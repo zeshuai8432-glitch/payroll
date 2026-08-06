@@ -112,7 +112,7 @@
 <nav id="nav"></nav>
 <main id="app"></main>
 <script>
-const APP_VERSION = 'vP2026.08.05k-held'; // 版本號顯示在頁首，方便確認拿到新版
+const APP_VERSION = 'vP2026.08.05m-multi'; // 版本號顯示在頁首，方便確認拿到新版
 const LS='pinyou_data_v1';
 // ── 雲端端對端加密（與 payroll／簡化版共用同一組密碼與鑰匙；同網域共用 localStorage，解鎖一次三系統都通）──
 const E2E_SALT='PMENC1|dz-gx-py|2026';
@@ -503,13 +503,23 @@ function itemNames(){
 // 那不是品佑自己的成本，所以一律排除在品佑的損益之外，只單獨列結餘。
 // partnerAcct  ＝品佑代他們付掉的（不是品佑的成本，他們欠品佑）
 // partnerEarned＝發包給他們、他們賺走的（是品佑的成本，品佑欠他們）
-const isPartnerTx = x => !!(x && (x.partnerAcct || x.site===PARK_SITE));
+const isPartnerTx = x => !!(x && (x.partnerAcct || PARTNER_SITES.has(x.site)));
 const isPartnerEarned = x => !!(x && x.partnerEarned);
 const partnerOut    = () => state.expenses.filter(isPartnerTx).reduce((s,x)=>s+num(x.amount),0);
 const partnerEarned = () => state.expenses.filter(isPartnerEarned).reduce((s,x)=>s+num(x.amount),0);
 const partnerIn     = () => state.incomes.filter(isPartnerTx).reduce((s,x)=>s+num(x.amount),0);
-// 正數＝東澤建龍還欠品佑；負數＝品佑還欠他們
+// 正數＝對方還欠品佑；負數＝品佑還欠對方
 const partnerNet = () => partnerOut() - partnerEarned() - partnerIn();
+// 依往來對象分開結算（品佑要知道分別欠誰多少）
+function partnerStats(){
+  const sum=(arr,f)=>arr.filter(f).reduce((s,x)=>s+num(x.amount),0);
+  return PARTNERS.map(pt=>{
+    const out=sum(state.expenses, x=>isPartnerTx(x)&&partnerOf(x)===pt.label);
+    const earned=sum(state.expenses, x=>isPartnerEarned(x)&&partnerOf(x)===pt.label);
+    const inn=sum(state.incomes, x=>isPartnerTx(x)&&partnerOf(x)===pt.label);
+    return {label:pt.label, out, earned, inn, net:out-earned-inn};
+  }).filter(r=>r.out||r.earned||r.inn);
+}
 function setBalance(){
   const billed=state.projects.reduce((s,p)=>s+projOpening(p),0)+state.incomes.filter(x=>!isPartnerTx(x)).reduce((s,x)=>s+num(x.amount),0);
   const exp=state.expenses.filter(x=>!isPartnerTx(x)).reduce((s,x)=>s+num(x.amount),0); // 發包款沒有 partnerAcct，照樣算成本
@@ -533,17 +543,14 @@ function viewDash(){
     <div class="metric"><div class="l">累積支出總額</div><div class="v" style="color:var(--danger)">${money(totExpense)}</div></div>
     <div class="metric accent"><div class="l">已請款−支出</div><div class="v">${money(totIncome-totExpense)}</div></div>
   </div>
-  ${(()=>{ const po=partnerOut(), pe=partnerEarned(), pi=partnerIn(); if(!po&&!pe&&!pi) return '';
-    const net=partnerNet();
+  ${(()=>{ const rows=partnerStats(); if(!rows.length) return '';
     return `<div class="card" style="border-left:3px solid #f59e0b;background:#fffbeb">
-      <h2 style="color:#92400e">東澤建龍往來</h2>
+      <h2 style="color:#92400e">往來結餘</h2>
       <p class="sub" style="margin:0 0 8px">品佑代他們付掉的錢<b>不是品佑的成本</b>（已排除在上面的損益外）；發包給他們的工程款<b>是品佑的成本</b>（已計入損益），但錢還沒給就算品佑欠他們。</p>
-      <div style="display:flex;gap:20px;flex-wrap:wrap;font-size:14px;margin-bottom:6px">
-        <span>品佑代付出去 <b style="color:var(--danger)">${money(po)}</b></span>
-        <span>他們賺走（發包款） <b style="color:var(--accent)">${money(pe)}</b></span>
-        <span>已收到的結清款 <b style="color:var(--accent)">${money(pi)}</b></span>
-      </div>
-      <div style="font-size:15px;font-weight:700;color:#92400e">${net>=0?`東澤建龍尚欠品佑 ${money(net)}`:`品佑尚欠東澤建龍 ${money(-net)}`}</div>
+      <div class="scroll"><table><thead><tr><th>對象</th><th class="num">品佑代付</th><th class="num">他們賺走</th><th class="num">已收結清／代收</th><th class="num">結餘</th></tr></thead><tbody>
+        ${rows.map(r=>`<tr><td><b>${esc(r.label)}</b></td><td class="num" style="color:var(--danger)">${money(r.out)}</td><td class="num">${money(r.earned)}</td><td class="num" style="color:var(--accent)">${money(r.inn)}</td>
+          <td class="num" style="font-weight:700;color:#92400e;white-space:nowrap">${r.net>=0?`${esc(r.label)}欠品佑 ${money(r.net)}`:`品佑欠${esc(r.label)} ${money(-r.net)}`}</td></tr>`).join('')}
+      </tbody></table></div>
     </div>`; })()}`;
 
   // 各入款帳號收款
@@ -704,13 +711,13 @@ function viewExp(){
   const itemOpts=`<option value="">全部項目</option>`+items.map(s=>`<option ${expItemFilter===s?'selected':''}>${esc(s)}</option>`).join('');
   const prCard=(typeof prFound!=='undefined'&&prFound&&prFound.length)?`<div class="card" style="border-left:3px solid #2563eb">
     <h2>📥 PAYROLL 有 ${prFound.length} 筆支出還沒帶入</h2>
-    <p class="sub" style="margin:0 0 8px">三種來源：<b>案場成本</b>（材料、機具等）、<b>代支出</b>（品佑幫他們付的工資等，不算品佑成本）、<b>發包款</b>（發包給東澤建龍、他們賺走的，<b>是品佑的成本</b>）。已走案場成本進來的報銷與分潤結算不會重複列出。發包款請先選「算到哪個案場」再新增（PAYROLL 是母子案場、名字常跟這邊不同，選過一次就會記住）；如果那筆是<b>他們做外面公司的</b>，下拉選「他們做外面的（記代收）」，會記成代收、不進品佑損益。</p>
+    <p class="sub" style="margin:0 0 8px">來源有東澤建龍與進凱兩套 PAYROLL，各列右邊會標對象。三種類型：<b>案場成本</b>（材料、機具等）、<b>代支出</b>（品佑幫他們付的工資等，不算品佑成本）、<b>發包款</b>（發包給東澤建龍、他們賺走的，<b>是品佑的成本</b>）。已走案場成本進來的報銷與分潤結算不會重複列出。發包款請先選「算到哪個案場」再新增（PAYROLL 是母子案場、名字常跟這邊不同，選過一次就會記住）；如果那筆是<b>他們做外面公司的</b>，下拉選「他們做外面的（記代收）」，會記成代收、不進品佑損益。</p>
     <div class="scroll"><table><thead><tr><th>日期</th><th>案場</th><th>項目</th><th class="num">金額</th><th>出帳</th><th></th></tr></thead>
     <tbody>${prFound.map((f,i)=>`<tr>
       <td>${esc(f.c.date||'')}</td>
       <td>${f.src==='earned'
         ? `<select data-prsite="${i}" style="max-width:190px"><option value="">選案場…</option>${(state.projects||[]).map(pj=>`<option value="${esc(pj.name)}" ${f.site===pj.name?'selected':''}>${esc(pj.name)}</option>`).join('')}<option value="__held__" ${f.site==='__held__'?'selected':''}>— 他們做外面的（記代收）</option></select>${f.payrollSite?`<div class="sub" style="margin:2px 0 0">PAYROLL：${esc(f.payrollSite)}</div>`:''}`
-        : esc(f.site)}${f.src==='park'?'<span class="tag" style="background:#eef6ff;color:#2563eb;margin-left:4px">代支出</span>':''}${f.src==='earned'?'<span class="tag" style="background:#fef3c7;color:#92400e;margin-left:4px">發包款</span>':''}</td><td>${esc(String(f.c.item||''))}</td>
+        : esc(f.site)}${f.src==='park'?'<span class="tag" style="background:#eef6ff;color:#2563eb;margin-left:4px">代支出</span>':''}${f.src==='earned'?'<span class="tag" style="background:#fef3c7;color:#92400e;margin-left:4px">發包款</span>':''}${f.partner?`<span class="tag" style="background:#f1f5f9;color:#475569;margin-left:4px">${esc(f.partner)}</span>`:''}</td><td>${esc(String(f.c.item||''))}</td>
       <td class="num">${money(f.c.amount)}</td><td>${esc(f.account)}</td>
       <td class="num" style="white-space:nowrap"><button class="act on" data-pradd="${i}">＋新增</button> <button class="act" data-prskip="${i}">忽略</button></td>
     </tr>`).join('')}</tbody></table></div>
@@ -1250,68 +1257,88 @@ function doImport(text,merge){
 const PAYROLL_FS_URL='https://firestore.googleapis.com/v1/projects/payroll-d1abe/databases/(default)/documents/payroll/main?key=AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
 let prFound=null, prChecking=false, prSkippedNoMatch=0; // null=尚未檢查；[]=已檢查無新項目
 // 品佑代支出帳戶的項目沒有案場欄位，統一掛在這個名稱底下，才不會變成看不到的無案場雜支
-const PARK_SITE='代支出(東澤,建龍)';
+const PAYROLLNEW_FS_URL='https://firestore.googleapis.com/v1/projects/payroll-d1abe/databases/(default)/documents/payrollNew/main?key=AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
+// 往來對象：各自一套 PAYROLL、各自一個代支出案場名，結餘分開算
+const PARTNERS=[
+  {key:'dz', label:'東澤建龍', url:PAYROLL_FS_URL,    site:'代支出(東澤,建龍)', prefix:''},
+  {key:'jk', label:'進凱',     url:PAYROLLNEW_FS_URL, site:'代支出(進凱)',     prefix:'n'}
+];
+const PARK_SITE=PARTNERS[0].site; // 相容舊資料
+const PARTNER_SITES=new Set(PARTNERS.map(p=>p.site));
+// 舊資料沒有 partner 欄位，一律算東澤建龍（改版前只有那一組）
+const partnerOf = x => (x&&x.partner) || (PARTNERS.find(p=>p.site===(x&&x.site))||PARTNERS[0]).label;
+// 品佑帳戶的帳目：payroll 是 ledger[] 挑 parkAccId，簡化版是整包 parkLedger[]
+function parkEntriesOf(dd){
+  if(Array.isArray(dd.parkLedger)) return dd.parkLedger.filter(Boolean);
+  const acc=dd.parkAccId||''; if(!acc) return [];
+  return (dd.ledger||[]).filter(t=>t&&t.accId===acc);
+}
+async function fetchPayrollDoc(url){
+  const r=await fetch(url);
+  const d=await r.json();
+  let rawJs=d&&d.fields&&d.fields.json?d.fields.json.stringValue:null;
+  if(!rawJs) return null;
+  if(isEncBlob(rawJs)){ // 對方也加密時用同一把鑰匙解；還沒解鎖就先跳過這次背景檢查
+    const key=await _loadE2eKey(); if(!key) return null;
+    try{ rawJs=await _tryE2eDecrypt(key,rawJs); }catch(e){ return null; }
+  }
+  return JSON.parse(rawJs);
+}
 async function checkPayrollCosts(showFail){
   if(prChecking) return; prChecking=true;
-  try{
-    const r=await fetch(PAYROLL_FS_URL);
-    const d=await r.json();
-    let rawJs=d.fields.json.stringValue;
-    if(isEncBlob(rawJs)){ // payroll 也加密時用同一把鑰匙解；還沒解鎖就先跳過這次背景檢查
-      const key=await _loadE2eKey(); if(!key){ prChecking=false; return; }
-      try{ rawJs=await _tryE2eDecrypt(key,rawJs); }catch(e){ prChecking=false; return; }
-    }
-    const dd=JSON.parse(rawJs);
-    const byId={}; (dd.sites||[]).forEach(s=>{ if(s&&s.id) byId[s.id]=s; });
-    const topName=sid=>{ let s=byId[sid],hops=0; while(s&&s.parentSiteId&&byId[s.parentSiteId]&&hops++<5) s=byId[s.parentSiteId]; return s?s.name:''; };
-    const have=new Set(state.expenses.map(x=>x&&x.id));
-    const haveSrc=new Set(state.expenses.map(x=>x&&x.payrollId).filter(Boolean));
-    const del=new Set(state.deletedIds||[]);
-    const accName={dz:'東澤工程行',gx:'廣昕工程行',py:'品佑工程有限公司'};
-    const myProjects=new Set((state.projects||[]).map(p=>String(p&&p.name||'').trim()).filter(Boolean));
-    const haveLed=new Set([...state.expenses,...state.incomes].map(x=>x&&x.payrollLedgerId).filter(Boolean));
-    const haveInc=new Set(state.incomes.map(x=>x&&x.id));
-    prFound=[]; prSkippedNoMatch=0;
+  const have=new Set(state.expenses.map(x=>x&&x.id));
+  const haveInc=new Set(state.incomes.map(x=>x&&x.id));
+  const haveSrc=new Set(state.expenses.map(x=>x&&x.payrollId).filter(Boolean));
+  const haveLed=new Set([...state.expenses,...state.incomes].map(x=>x&&x.payrollLedgerId).filter(Boolean));
+  const del=new Set(state.deletedIds||[]);
+  const accName={dz:'東澤工程行',gx:'廣昕工程行',py:'品佑工程有限公司'};
+  const myProjects=new Set((state.projects||[]).map(p=>String(p&&p.name||'').trim()).filter(Boolean));
+  const found=[]; let skipped=0; let anyOK=false, lastErr=null;
+  for(const pt of PARTNERS){
+    let dd=null;
+    try{ dd=await fetchPayrollDoc(pt.url); }catch(e){ lastErr=e; continue; }
+    if(!dd) continue;
+    anyOK=true;
+    const byId={}; (dd.sites||[]).forEach(x=>{ if(x&&x.id) byId[x.id]=x; });
+    const topName=sid=>{ let x=byId[sid],hops=0; while(x&&x.parentSiteId&&byId[x.parentSiteId]&&hops++<5) x=byId[x.parentSiteId]; return x?x.name:''; };
+    const P=pt.prefix; // 兩套來源的 id 可能撞號，加前綴隔開
+    // ① 案場成本（簡化版沒有這個集合，自然就是空的）
     (dd.costs||[]).forEach(c=>{
       if(!c||c.id==null) return;
-      if(String(c.id).startsWith('py-')) return; // 這筆本來就是品佑帶去 PAYROLL 的，不要再帶回來
-      const eid='pr-'+c.id;
-      if(have.has(eid)||haveSrc.has(c.id)||del.has(eid)) return; // 已帶入或已忽略
+      if(String(c.id).startsWith('py-')) return; // 本來就是品佑帶過去的，不要再帶回來
+      const eid='pr-'+P+c.id;
+      if(have.has(eid)||haveSrc.has(c.id)||del.has(eid)) return;
       const site=topName(c.siteId); if(!site) return;
-      if(!myProjects.has(site)){ prSkippedNoMatch++; return; } // 只抓「兩邊同名」的案場，其他直接略過不打擾
-      prFound.push({c, eid, site, account:accName[c.payer]||'品佑工程有限公司', src:'cost'});
+      if(!myProjects.has(site)){ skipped++; return; }
+      found.push({c, eid, site, account:accName[c.payer]||'品佑工程有限公司', src:'cost', partner:pt.label});
     });
-    // 品佑代支出帳戶（PAYROLL 的「品佑帳戶結算」）：品佑實際掏錢、但本帳完全看不到的項目
-    // 只抓沒有其他管道進來的：公司負擔工資、代墊款報銷、手動記帳
-    //   · reimbCostId＝報銷案場成本 → 已經走上面 costs 那條，再抓會重複記帳
-    //   · fromDeal／autoDealId＝分潤結算與分潤進帳 → 內部分配，不是真的對外支出
-    //     （分潤進帳金額為負時會記成「支出」，所以這裡一定要一起排除）
-    const parkAcc=dd.parkAccId||'';
-    if(parkAcc) (dd.ledger||[]).forEach(t=>{
-      if(!t||t.id==null) return;
-      if(t.accId!==parkAcc || t.kind!=='out') return;
-      if(t.reimbCostId || t.fromDeal || t.autoDealId) return;
-      const eid='pk-'+t.id;
-      if(have.has(eid)||haveLed.has(t.id)||del.has(eid)) return;
-      prFound.push({c:{id:t.id, date:t.date, item:String(t.note||'品佑代支出'), amount:t.amount},
-        eid, site:PARK_SITE, account:'品佑工程有限公司', src:'park'});
-    });
-    // 請款進帳＝品佑發包給東澤建龍、他們賺走的工程款。對品佑來說那是「該案場的成本」。
-    // 帳目本身沒有案場，要走 autoDealId → 分潤 → autoSiteId → 案場，再往上找母案場（＝跟品佑的合作案）。
+    const entries=parkEntriesOf(dd);
     const dealById={}; (dd.deals||[]).forEach(x=>{ if(x&&x.id) dealById[x.id]=x; });
-    if(parkAcc) (dd.ledger||[]).forEach(t=>{
+    entries.forEach(t=>{
       if(!t||t.id==null) return;
-      if(t.accId!==parkAcc || t.kind!=='in' || !t.autoDealId) return;
-      const eid='pe-'+t.id;
-      if(have.has(eid)||haveInc.has(eid)||haveLed.has(t.id)||del.has(eid)) return;
-      const dl=dealById[t.autoDealId];
-      const payrollSite=(dl&&dl.autoSiteId?topName(dl.autoSiteId):'')||String((dl&&dl.name)||'').trim();
-      // 名字兩邊常常不一樣（PAYROLL 是母子案場、品佑是自己的命名），所以給對應表＋讓使用者自己選
-      const mapped=(state.siteMap&&state.siteMap[payrollSite])||(myProjects.has(payrollSite)?payrollSite:'');
-      prFound.push({c:{id:t.id, date:t.date, item:'發包工程款'+(payrollSite?'·'+payrollSite:''), amount:t.amount},
-        eid, site:mapped, payrollSite, account:'品佑工程有限公司', src:'earned'});
+      if(t.fromDeal) return;   // 分潤結算的公積金分配＝內部分配，不是真的收付
+      const key=P+t.id;
+      if(t.kind==='out'){
+        // 品佑代他們付掉的：不是品佑的成本
+        if(t.reimbCostId || t.autoDealId) return; // 報銷已走案場成本；分潤進帳為負時也會記成支出
+        const eid='pk-'+key;
+        if(have.has(eid)||haveLed.has(key)||del.has(eid)) return;
+        found.push({c:{id:key, date:t.date, item:String(t.note||'品佑代支出'), amount:t.amount},
+          eid, site:pt.site, account:'品佑工程有限公司', src:'park', partner:pt.label});
+      } else {
+        // 進來的錢：可能是品佑發包給他們（品佑的成本），也可能是他們做外面的（代收）
+        const eid='pe-'+key;
+        if(have.has(eid)||haveInc.has(eid)||haveLed.has(key)||del.has(eid)) return;
+        const dl=t.autoDealId?dealById[t.autoDealId]:null;
+        const payrollSite=(dl&&dl.autoSiteId?topName(dl.autoSiteId):'')||String((dl&&dl.name)||'').trim();
+        const mapped=(state.siteMap&&state.siteMap[payrollSite])||(myProjects.has(payrollSite)?payrollSite:'');
+        found.push({c:{id:key, date:t.date, item:String(t.note||'發包工程款'), amount:t.amount},
+          eid, site:mapped, payrollSite, account:'品佑工程有限公司', src:'earned', partner:pt.label});
+      }
     });
-  }catch(e){ if(showFail) alert('讀取 PAYROLL 失敗：'+String(e&&e.message||e).slice(0,60)); prChecking=false; return; }
+  }
+  if(!anyOK){ if(showFail) alert('讀取 PAYROLL 失敗：'+String((lastErr&&lastErr.message)||lastErr||'雲端無資料').slice(0,60)); prChecking=false; return; }
+  prFound=found; prSkippedNoMatch=skipped;
   prChecking=false;
   safeRender();
 }
@@ -1323,12 +1350,13 @@ function prAddExpense(f){
     state.deletedIds=(state.deletedIds||[]).filter(x=>x!==f.eid);
     state.incomes.push({id:f.eid, date:c.date||'', site:PARK_SITE, amount:Number(c.amount)||0,
       method:'', account:'品佑工程有限公司', note:'代收（東澤建龍做外面的）'+(f.payrollSite?'·'+f.payrollSite:''),
-      partnerAcct:true, payrollLedgerId:c.id});
+      partnerAcct:true, partner:f.partner, payrollLedgerId:c.id});
     return true;
   }
   state.deletedIds=(state.deletedIds||[]).filter(x=>x!==f.eid);
   const row={id:f.eid, date:c.date||'', site:f.site, item:String(c.item||(isPark?'品佑代支出':'PAYROLL成本')), amount:Number(c.amount)||0, account:f.account, method:'',
     note:isPark?'PAYROLL 品佑代支出帳戶':(isEarned?'發包給東澤建龍'+(f.payrollSite?'（PAYROLL：'+f.payrollSite+'）':''):'')};
+  if(f.partner) row.partner=f.partner;
   if(isPark){ row.payrollLedgerId=c.id; row.partnerAcct=true; }
   else if(isEarned){ row.payrollLedgerId=c.id; row.partnerEarned=true;
     if(f.payrollSite){ state.siteMap=state.siteMap||{}; state.siteMap[f.payrollSite]=f.site; } } // 記住對應，下次自動帶
