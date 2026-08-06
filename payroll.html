@@ -509,7 +509,7 @@ const FS_ROOT = 'https://firestore.googleapis.com/v1/projects/'+FS_PROJECT+'/dat
 const FS_DOC_BASE = FS_ROOT+'payroll/';
 const FS_SIG_BASE = FS_ROOT+'payrollSignatures/';
 const FS_REST_URL = FS_DOC_BASE+'main?key='+FS_KEY;
-const APP_VERSION = 'v2026.08.05c-escrow';
+const APP_VERSION = 'v2026.08.05d-escrowfix';
 let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], tools:[], locations:[], assets:[], advances:[], accounts:[], ledger:[], deals:[], billings:[], measurements:[], contracts:{}, costs:[], textMemory:{clients:[],companies:[]}, parkAccId:'', oweBonus:{}, minFund:'', shareholderTx:[], myCompanies:[], payrollSnapshots:[], yearIncomeAdj:[], deletedIds:[], resurrected:{ids:[],at:0}, tab:'dash' };
 let cloudStatus='連線中…';
 let localDirty=false, lastCloudTs=0;
@@ -988,7 +988,8 @@ function refreshRecordBaseline(){
 }
 function refreshPrevIds(){ _prevIds=collectIds(); refreshRecordBaseline(); }
 function stampRecordChanges(forceAll=false){
-  const now=Date.now();
+  // 至少要比「目前這份雲端文件」新 1ms，否則對方裝置時鐘快幾秒，剛改的東西就會被合併判成舊的而還原
+  const now=Math.max(Date.now(), (Number(lastCloudTs)||0)+1);
   MERGE_COLLECTIONS.forEach(k=>{
     const old=_recordBaseline&&_recordBaseline[k];
     (state[k]||[]).forEach(r=>{
@@ -5854,7 +5855,7 @@ function viewAccounts(){
     <td data-label="項目">${esc(t.note||'')}${t.fromAdvance?'<span class="tag" style="background:#e3efe9;color:var(--accent)">代墊報銷</span>':''}${isEscrow(t)?'<span class="tag" style="background:#fef3c7;color:#92400e">代收代付</span>':''}</td>
     <td class="num" data-label="收入" style="color:var(--accent)">${t.kind==='in'?money(t.amount):'—'}</td>
     <td class="num" data-label="支出" style="color:var(--danger)">${t.kind==='out'?money(t.amount):'—'}</td>
-    <td class="actions"><button class="act" data-togesc="${t.id}" title="標記／取消「代收代付（東澤建龍的錢）」">${isEscrow(t)?'↩ 取消代收':'標為代收'}</button> <button class="act danger" data-delledger="${t.id}">刪</button></td>
+    <td class="actions"><button class="act" data-togesc="${t.id}" title="${isEscrow(t)?'目前已標記為代收代付，點一下取消':'標記成「代收代付（東澤建龍的錢）」，不計入公積金與可發獎金'}" ${isEscrow(t)?'style="border:1px solid #f59e0b;color:#92400e"':''}>${isEscrow(t)?'✓ 代收代付（點此取消）':'標為代收代付'}</button> <button class="act danger" data-delledger="${t.id}">刪</button></td>
   </tr>`).join('');
   const rangeIn=txs.filter(t=>t.kind==='in').reduce((s,t)=>s+(Number(t.amount)||0),0);
   const rangeOut=txs.filter(t=>t.kind==='out').reduce((s,t)=>s+(Number(t.amount)||0),0);
