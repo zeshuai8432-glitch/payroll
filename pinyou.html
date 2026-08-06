@@ -112,7 +112,7 @@
 <nav id="nav"></nav>
 <main id="app"></main>
 <script>
-const APP_VERSION = 'vP2026.08.05e-parkname'; // 版本號顯示在頁首，方便確認拿到新版
+const APP_VERSION = 'vP2026.08.05f-escrow'; // 版本號顯示在頁首，方便確認拿到新版
 const LS='pinyou_data_v1';
 // ── 雲端端對端加密（與 payroll／簡化版共用同一組密碼與鑰匙；同網域共用 localStorage，解鎖一次三系統都通）──
 const E2E_SALT='PMENC1|dz-gx-py|2026';
@@ -1248,6 +1248,7 @@ async function checkPayrollCosts(showFail){
       if(!t||t.id==null) return;
       if(t.accId!==parkAcc || t.kind!=='out') return;
       if(t.reimbCostId || t.fromDeal) return;
+      if(t.escrow) return; // 代收代付＝東澤建龍的錢，不是品佑的支出
       const eid='pk-'+t.id;
       if(have.has(eid)||haveLed.has(t.id)||del.has(eid)) return;
       prFound.push({c:{id:t.id, date:t.date, item:String(t.note||'品佑代支出'), amount:t.amount},

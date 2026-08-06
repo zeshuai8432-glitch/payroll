@@ -509,7 +509,7 @@ const FS_ROOT = 'https://firestore.googleapis.com/v1/projects/'+FS_PROJECT+'/dat
 const FS_DOC_BASE = FS_ROOT+'payroll/';
 const FS_SIG_BASE = FS_ROOT+'payrollSignatures/';
 const FS_REST_URL = FS_DOC_BASE+'main?key='+FS_KEY;
-const APP_VERSION = 'v2026.08.05b-parkbridge';
+const APP_VERSION = 'v2026.08.05c-escrow';
 let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], tools:[], locations:[], assets:[], advances:[], accounts:[], ledger:[], deals:[], billings:[], measurements:[], contracts:{}, costs:[], textMemory:{clients:[],companies:[]}, parkAccId:'', oweBonus:{}, minFund:'', shareholderTx:[], myCompanies:[], payrollSnapshots:[], yearIncomeAdj:[], deletedIds:[], resurrected:{ids:[],at:0}, tab:'dash' };
 let cloudStatus='連線中…';
 let localDirty=false, lastCloudTs=0;
@@ -3834,9 +3834,17 @@ function bind(){
     const amount=parseFloat(document.getElementById('led-amount').value);
     const note=document.getElementById('led-note').value.trim();
     if(!date||!accId||isNaN(amount)||amount<=0){ alert('請填日期、帳戶、金額'); return; }
-    state.ledger.push({id:uid(),date,accId,kind,amount,note});
+    const escEl=document.getElementById('led-escrow');
+    const rec={id:uid(),date,accId,kind,amount,note};
+    if(escEl&&escEl.checked) rec.escrow=true;
+    state.ledger.push(rec);
     saveData(); render();
   };
+  document.querySelectorAll('[data-togesc]').forEach(b=>b.onclick=()=>{
+    const t=state.ledger.find(x=>x.id===b.dataset.togesc); if(!t) return;
+    if(isEscrow(t)) delete t.escrow; else t.escrow=true;
+    saveData(); render();
+  });
   document.querySelectorAll('[data-delledger]').forEach(b=>b.onclick=()=>{
     const t=state.ledger.find(x=>x.id===b.dataset.delledger);
     if(t&&t.reimbCostId){
@@ -4549,7 +4557,7 @@ function bind(){
     const parkDeals=state.deals.filter(d=>d.moneyAcc===state.parkAccId && d.type!=='合作案' && inRange(d.date));
     let targetBonus={}, bookFund=0, totalTargetBonus=0;
     parkDeals.forEach(d=>{ const c=dealCalc(d); if(d.ownerId) targetBonus[d.ownerId]=(targetBonus[d.ownerId]||0)+c.bonus; bookFund+=c.fund; totalTargetBonus+=c.bonus; });
-    const balance=accountBalance(state.parkAccId);
+    const balance=accountBalance(state.parkAccId)-escrowBalance(state.parkAccId); // 扣掉代收代付（東澤建龍寄放的錢，不能拿來發獎金）
     const minFund=Math.max(0, Number(state.minFund)||0);
     const targetFund=Math.max(minFund, Math.round(bookFund));
     const fundPaid=Math.max(0,Math.min(balance,targetFund));
@@ -4645,7 +4653,7 @@ function exportBonusPDF(){
   const parkDeals=state.deals.filter(d=>d.moneyAcc===state.parkAccId && d.type!=='合作案' && inRange(d.date));
   let targetBonus={}, bookFund=0, totalTargetBonus=0;
   parkDeals.forEach(d=>{ const c=dealCalc(d); if(d.ownerId) targetBonus[d.ownerId]=(targetBonus[d.ownerId]||0)+c.bonus; bookFund+=c.fund; totalTargetBonus+=c.bonus; });
-  const balance=accountBalance(state.parkAccId);
+  const balance=accountBalance(state.parkAccId)-escrowBalance(state.parkAccId); // 扣掉代收代付（東澤建龍寄放的錢，不能拿來發獎金）
   const minFund=Math.max(0, Number(state.minFund)||0);
   const targetFund=Math.max(minFund, Math.round(bookFund));
   const fundPaid=Math.max(0, Math.min(balance, targetFund));
@@ -5816,6 +5824,13 @@ document.getElementById('scrim').onclick=closeSidebar;
 
 // ---- 公積金帳戶 ----
 function accountName(id){ const a=state.accounts.find(x=>x.id===id); return a?a.name:'（已移除）'; }
+// 代收代付：東澤/建龍做別人的場、錢先寄放在品佑，之後要結算還他們。
+// 這筆錢在帳戶裡但不是品佑的，不能算進公積金、更不能拿去發獎金。
+const isEscrow = t => !!(t && t.escrow);
+function escrowBalance(accId){
+  return (state.ledger||[]).filter(t=>t.accId===accId&&isEscrow(t))
+    .reduce((s,t)=>s+(t.kind==='in'?1:-1)*(Number(t.amount)||0),0);
+}
 function accountBalance(accId){
   const acc=state.accounts.find(a=>a.id===accId); if(!acc) return 0;
   const opening=Number(acc.opening)||0;
@@ -5836,10 +5851,10 @@ function viewAccounts(){
   const txs=state.ledger.filter(t=>(!ledgerAcc||t.accId===ledgerAcc)&&inLedRange(t.date)).sort((a,b)=>b.date.localeCompare(a.date)||b.id.localeCompare(a.id));
   const txRows=txs.slice(0,300).map(t=>`<tr>
     <td data-label="日期">${esc(t.date)}</td><td data-label="帳戶">${esc(accountName(t.accId))}</td>
-    <td data-label="項目">${esc(t.note||'')}${t.fromAdvance?'<span class="tag" style="background:#e3efe9;color:var(--accent)">代墊報銷</span>':''}</td>
+    <td data-label="項目">${esc(t.note||'')}${t.fromAdvance?'<span class="tag" style="background:#e3efe9;color:var(--accent)">代墊報銷</span>':''}${isEscrow(t)?'<span class="tag" style="background:#fef3c7;color:#92400e">代收代付</span>':''}</td>
     <td class="num" data-label="收入" style="color:var(--accent)">${t.kind==='in'?money(t.amount):'—'}</td>
     <td class="num" data-label="支出" style="color:var(--danger)">${t.kind==='out'?money(t.amount):'—'}</td>
-    <td class="actions"><button class="act danger" data-delledger="${t.id}">刪</button></td>
+    <td class="actions"><button class="act" data-togesc="${t.id}" title="標記／取消「代收代付（東澤建龍的錢）」">${isEscrow(t)?'↩ 取消代收':'標為代收'}</button> <button class="act danger" data-delledger="${t.id}">刪</button></td>
   </tr>`).join('');
   const rangeIn=txs.filter(t=>t.kind==='in').reduce((s,t)=>s+(Number(t.amount)||0),0);
   const rangeOut=txs.filter(t=>t.kind==='out').reduce((s,t)=>s+(Number(t.amount)||0),0);
@@ -5878,6 +5893,7 @@ function viewAccounts(){
       <div class="field"><label>性質</label><select id="led-kind"><option value="out">支出（−）</option><option value="in">收入（+）</option></select></div>
       <div class="field"><label>金額</label><input type="number" id="led-amount" min="0" step="100" style="width:120px"></div>
       <div class="field" style="flex:1;min-width:200px"><label>項目/來源說明</label><input id="led-note" placeholder="例：酷擊五金材料、Hilti租金、台北住宿"></div>
+      <div class="field" style="min-width:230px"><label>&nbsp;</label><label style="cursor:pointer;display:flex;align-items:center;gap:6px;height:36px"><input type="checkbox" id="led-escrow" style="width:16px;height:16px"><span style="font-size:13px">代收／代付（東澤建龍的錢）</span></label></div>
       <button class="btn" id="led-add">＋ 記帳</button>
     </div>
   </div>
@@ -7239,7 +7255,7 @@ function reconSection(key, from, to){
     const pd=state.deals.filter(d=>d.moneyAcc===state.parkAccId && d.type!=='合作案' && inD(d));
     let targetBonus={}, bookFund=0, totalTargetBonus=0;
     pd.forEach(d=>{ const c=dealCalc(d); if(d.ownerId) targetBonus[d.ownerId]=(targetBonus[d.ownerId]||0)+c.bonus; bookFund+=c.fund; totalTargetBonus+=c.bonus; });
-    const balance=accountBalance(state.parkAccId);
+    const balance=accountBalance(state.parkAccId)-escrowBalance(state.parkAccId); // 扣掉代收代付（東澤建龍寄放的錢，不能拿來發獎金）
     const targetFund=Math.max(Math.max(0,Number(state.minFund)||0), Math.round(bookFund));
     const fundPaid=Math.max(0, Math.min(balance, targetFund));
     const avail=Math.max(0, balance-fundPaid);
@@ -7449,7 +7465,7 @@ function viewParkAcc(){
       <td class="num">${money(d.amount)}${taxBreakdownHtml(d,c)}</td><td class="num">${money(c.tax)}</td><td class="num">${money(afterTax)}</td><td class="num" style="color:var(--accent)">${money(c.bonus)}</td><td class="num">${money(c.fund)}</td></tr>`;
   }).join('');
 
-  const balance=accountBalance(state.parkAccId); // 已扣完品佑垫付（記在帳戶支出）後的餘額
+  const balance=accountBalance(state.parkAccId)-escrowBalance(state.parkAccId); // 已扣完品佑墊付（記在帳戶支出）後的餘額；代收代付是別人的錢，先扣掉
 
   // 股東個人跟品佑借錢＝預支自己的獎金：不記帳戶收支、不影響公積金，發獎金時從他的獎金扣。
   const shDebtOf=pid=>state.shareholderTx.filter(t=>t.shId===pid).reduce((s,t)=>s+(t.kind==='borrow'?1:-1)*(Number(t.amount)||0),0);
@@ -7587,7 +7603,19 @@ function viewParkAcc(){
   ${verify}
   <div class="card">
     <div style="font-size:14px;font-weight:600;margin-bottom:6px">本期分配（公積金先填該留，獎金不夠照比例分）</div>
-    <p class="sub" style="margin:0 0 8px">餘額 ${money(balance)} 先填公積金 ${money(fundPaid)}，剩 ${money(availForBonus)} 分獎金。獎金不夠時按各人應拿比例分，少拿的列在「本期少拿」，可累加到下方「累計欠獎金」。<b>股東先前跟品佑借的錢，在「扣預支」欄直接從他的獎金扣回</b>，不影響公積金。</p>
+    ${(()=>{ const esc2=escrowBalance(state.parkAccId); if(!esc2) return '';
+      const inA=(state.ledger||[]).filter(t=>t.accId===state.parkAccId&&isEscrow(t)&&t.kind==='in').reduce((a,t)=>a+(Number(t.amount)||0),0);
+      const outA=(state.ledger||[]).filter(t=>t.accId===state.parkAccId&&isEscrow(t)&&t.kind==='out').reduce((a,t)=>a+(Number(t.amount)||0),0);
+      return `<div class="card" style="margin:0 0 10px;border-left:3px solid #f59e0b;background:#fffbeb">
+        <div style="font-size:14px;font-weight:700;color:#92400e;margin-bottom:4px">代收代付結餘（東澤／建龍的錢）</div>
+        <p class="sub" style="margin:0 0 8px">他們做別人的場、錢先寄放在這裡，之後要結算還他們。<b>這筆不是品佑的錢</b>，已經從下面的公積金與可發獎金裡扣掉了。</p>
+        <div style="display:flex;gap:18px;flex-wrap:wrap;font-size:13px">
+          <span>代收 <b style="color:var(--accent)">${money(inA)}</b></span>
+          <span>已代付 <b style="color:var(--danger)">${money(outA)}</b></span>
+          <span>尚欠他們 <b style="font-size:16px;color:#92400e">${money(esc2)}</b></span>
+        </div>
+      </div>`; })()}
+    <p class="sub" style="margin:0 0 8px">餘額 ${money(balance)}（已扣掉代收代付）先填公積金 ${money(fundPaid)}，剩 ${money(availForBonus)} 分獎金。獎金不夠時按各人應拿比例分，少拿的列在「本期少拿」，可累加到下方「累計欠獎金」。<b>股東先前跟品佑借的錢，在「扣預支」欄直接從他的獎金扣回</b>，不影響公積金。</p>
     <table><thead><tr><th>項目</th><th class="num">應拿</th><th class="num">可發</th><th class="num">扣預支</th><th class="num">實發現金</th><th class="num">本期少拿</th></tr></thead><tbody>
       ${bonusRows}
       <tr><td>公積金</td><td class="num">${money(targetFund)}</td><td class="num">${money(fundPaid)}</td><td class="num">—</td><td class="num" style="font-weight:600">${money(fundPaid)}</td><td class="num">${fundShort>0?money(fundShort):'—'}</td></tr>
@@ -7621,7 +7649,7 @@ function exportParkVerify(){
   const parkDeals=state.deals.filter(d=>d.moneyAcc===state.parkAccId && d.type!=='合作案' && inRange(d.date));
   let targetBonus={}, bookFund=0, totalTargetBonus=0;
   parkDeals.forEach(d=>{ const c=dealCalc(d); if(d.ownerId) targetBonus[d.ownerId]=(targetBonus[d.ownerId]||0)+c.bonus; bookFund+=c.fund; totalTargetBonus+=c.bonus; });
-  const balance=accountBalance(state.parkAccId);
+  const balance=accountBalance(state.parkAccId)-escrowBalance(state.parkAccId); // 扣掉代收代付（東澤建龍寄放的錢，不能拿來發獎金）
   const minFund=Math.max(0,Number(state.minFund)||0);
   const targetFund=Math.max(minFund,Math.round(bookFund));
   const fundPaid=Math.max(0,Math.min(balance,targetFund));
