@@ -112,7 +112,7 @@
 <nav id="nav"></nav>
 <main id="app"></main>
 <script>
-const APP_VERSION = 'vP2026.08.06a-reports'; // 版本號顯示在頁首，方便確認拿到新版
+const APP_VERSION = 'vP2026.08.06b-dupguard'; // 版本號顯示在頁首，方便確認拿到新版
 const LS='pinyou_data_v1';
 // ── 雲端端對端加密（與 payroll／簡化版共用同一組密碼與鑰匙；同網域共用 localStorage，解鎖一次三系統都通）──
 const E2E_SALT='PMENC1|dz-gx-py|2026';
@@ -194,7 +194,7 @@ let showHidden=false; try{ showHidden=localStorage.getItem('pinyou_showhidden')=
 let pEditId=null; // 正在就地編輯的案場
 const DEFAULT_CLOUD_URL='https://script.google.com/macros/s/AKfycbxFLYgepJcn4-Sw_BvgTb-jUijDaSmRSfMkdfrnlwrVgDzDxE65KidWbao3Bq6ooL7q/exec';
 let cloudUrl=localStorage.getItem(LS_CLOUD)||DEFAULT_CLOUD_URL; // 舊 GAS：只在 Firestore 還沒有資料時讀一次，用來搬家
-let cloudStatus='', saving=false, pendingSave=false, saveTimer=null, localDirty=false, _prevIds=null;
+let cloudStatus='', saving=false, pendingSave=false, saveTimer=null, localDirty=false, _prevIds=null, lastCloudTs=0;
 // ── 主資料改存 Firebase Firestore（與 payroll／進度請款同專案，各自獨立文件）──
 const FS_PROJECT='payroll-d1abe';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -334,12 +334,14 @@ function mergeById(base,add,del,baseTs=0,addTs=0){
 let _recordBaseline=null;
 function refreshRecordBaseline(){ _recordBaseline={}; MERGE.forEach(k=>{ const m=new Map(); (state[k]||[]).forEach(r=>{ if(r&&r.id!=null) m.set(r.id,recordComparable(r)); }); _recordBaseline[k]=m; }); }
 function stampRecordChanges(){ // 新增或內容有變的紀錄，蓋上本次時間戳，合併時「新的贏」
-  const now=Date.now();
+  // 至少比「目前這份雲端文件」新 1ms：別台裝置時鐘快幾秒時，剛改的東西才不會被判成舊的而還原
+  const now=Math.max(Date.now(), (Number(lastCloudTs)||0)+1);
   MERGE.forEach(k=>{ const old=_recordBaseline&&_recordBaseline[k]; (state[k]||[]).forEach(r=>{ if(!r||r.id==null) return; if(!old||!old.has(r.id)||old.get(r.id)!==recordComparable(r)) r.updatedAt=now; }); });
 }
 function mergeCloudDoc(cd){
   const localTs=Number((JSON.parse(localStorage.getItem(LS)||'{}')||{}).savedAt)||0;
   const cloudTs=Number(cd.savedAt)||0;
+  if(cloudTs>lastCloudTs) lastCloudTs=cloudTs;
   const keep={}; MERGE.forEach(k=>keep[k]=(state[k]||[]).slice());
   const keepDel=(state.deletedIds||[]).slice();
   const cloudIds=new Set(); MERGE.forEach(k=>(Array.isArray(cd[k])?cd[k]:[]).forEach(r=>{ if(r&&r.id!=null) cloudIds.add(r.id); }));
@@ -760,7 +762,10 @@ function viewExp(){
       <td>${esc(f.c.date||'')}</td>
       <td>${f.src==='earned'
         ? `<select data-prsite="${i}" style="max-width:190px"><option value="">選案場…</option>${(state.projects||[]).map(pj=>`<option value="${esc(pj.name)}" ${f.site===pj.name?'selected':''}>${esc(pj.name)}</option>`).join('')}<option value="__held__" ${f.site==='__held__'?'selected':''}>— 他們做外面的（記代收）</option></select>${f.payrollSite?`<div class="sub" style="margin:2px 0 0">PAYROLL：${esc(f.payrollSite)}</div>`:''}`
-        : esc(f.site)}${f.src==='park'?'<span class="tag" style="background:#eef6ff;color:#2563eb;margin-left:4px">代支出</span>':''}${f.src==='earned'?'<span class="tag" style="background:#fef3c7;color:#92400e;margin-left:4px">發包款</span>':''}${f.partner?`<span class="tag" style="background:#f1f5f9;color:#475569;margin-left:4px">${esc(f.partner)}</span>`:''}</td><td>${esc(String(f.c.item||''))}</td>
+        : esc(f.site)}${f.src==='park'?'<span class="tag" style="background:#eef6ff;color:#2563eb;margin-left:4px">代支出</span>':''}${f.src==='earned'?'<span class="tag" style="background:#fef3c7;color:#92400e;margin-left:4px">發包款</span>':''}${f.partner?`<span class="tag" style="background:#f1f5f9;color:#475569;margin-left:4px">${esc(f.partner)}</span>`:''}${(()=>{
+        const dup=[...state.expenses,...state.incomes].some(x=>x&&num(x.amount)===num(f.c.amount)&&String(x.date||'')===String(f.c.date||'')&&(partnerOf(x)===f.partner));
+        return dup?'<span class="tag" style="background:#fee2e2;color:#b91c1c;margin-left:4px" title="本帳已經有同日期同金額的紀錄，確認一下是不是已經帶過">疑似已帶入</span>':'';
+      })()}</td><td>${esc(String(f.c.item||''))}</td>
       <td class="num">${money(f.c.amount)}</td><td>${esc(f.account)}</td>
       <td class="num" style="white-space:nowrap"><button class="act on" data-pradd="${i}">＋新增</button> <button class="act" data-prskip="${i}">忽略</button></td>
     </tr>`).join('')}</tbody></table></div>
@@ -1441,7 +1446,7 @@ async function checkPayrollCosts(showFail){
   const have=new Set(state.expenses.map(x=>x&&x.id));
   const haveInc=new Set(state.incomes.map(x=>x&&x.id));
   const haveSrc=new Set(state.expenses.map(x=>x&&x.payrollId).filter(Boolean));
-  const haveLed=new Set([...state.expenses,...state.incomes].map(x=>x&&x.payrollLedgerId).filter(Boolean));
+  const haveLed=new Set([...state.expenses,...state.incomes].map(x=>x&&x.payrollLedgerId).filter(Boolean).map(String));
   const del=new Set(state.deletedIds||[]);
   const accName={dz:'東澤工程行',gx:'廣昕工程行',py:'品佑工程有限公司'};
   const myProjects=new Set((state.projects||[]).map(p=>String(p&&p.name||'').trim()).filter(Boolean));
@@ -1482,18 +1487,18 @@ async function checkPayrollCosts(showFail){
     entries.forEach(t=>{
       if(!t||t.id==null) return;
       if(t.fromDeal) return;   // 分潤結算的公積金分配＝內部分配，不是真的收付
-      const key=P+t.id;
+      const key=P+String(t.id);
       if(t.kind==='out'){
         // 品佑代他們付掉的：不是品佑的成本
         if(t.reimbCostId || t.autoDealId) return; // 報銷已走案場成本；分潤進帳為負時也會記成支出
         const eid='pk-'+key;
-        if(have.has(eid)||haveLed.has(key)||del.has(eid)) return;
+        if(have.has(eid)||haveLed.has(String(key))||del.has(eid)) return;
         found.push({c:{id:key, date:t.date, item:String(t.note||'品佑代支出'), amount:t.amount},
           eid, site:pt.site, account:'品佑工程有限公司', src:'park', partner:pt.label});
       } else {
         // 進來的錢：可能是品佑發包給他們（品佑的成本），也可能是他們做外面的（代收）
         const eid='pe-'+key;
-        if(have.has(eid)||haveInc.has(eid)||haveLed.has(key)||del.has(eid)) return;
+        if(have.has(eid)||haveInc.has(eid)||haveLed.has(String(key))||del.has(eid)) return;
         const dl=t.autoDealId?dealById[t.autoDealId]:null;
         const payrollSite=(dl&&dl.autoSiteId?topName(dl.autoSiteId):'')||String((dl&&dl.name)||'').trim();
         const mapped=(state.siteMap&&state.siteMap[payrollSite])||(myProjects.has(payrollSite)?payrollSite:'');
