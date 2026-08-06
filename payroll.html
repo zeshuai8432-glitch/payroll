@@ -509,7 +509,7 @@ const FS_ROOT = 'https://firestore.googleapis.com/v1/projects/'+FS_PROJECT+'/dat
 const FS_DOC_BASE = FS_ROOT+'payroll/';
 const FS_SIG_BASE = FS_ROOT+'payrollSignatures/';
 const FS_REST_URL = FS_DOC_BASE+'main?key='+FS_KEY;
-const APP_VERSION = 'v2026.08.05a-pinyounote';
+const APP_VERSION = 'v2026.08.05b-parkbridge';
 let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], tools:[], locations:[], assets:[], advances:[], accounts:[], ledger:[], deals:[], billings:[], measurements:[], contracts:{}, costs:[], textMemory:{clients:[],companies:[]}, parkAccId:'', oweBonus:{}, minFund:'', shareholderTx:[], myCompanies:[], payrollSnapshots:[], yearIncomeAdj:[], deletedIds:[], resurrected:{ids:[],at:0}, tab:'dash' };
 let cloudStatus='連線中…';
 let localDirty=false, lastCloudTs=0;
@@ -1212,7 +1212,7 @@ async function checkPinyouExpenses(showFail){
     pyFound=[]; pySkippedNoMatch=0;
     exps.forEach(e=>{
       if(!e||e.id==null) return;
-      if(String(e.id).startsWith('pr-')) return; // 這筆本來就是 PAYROLL 帶過去品佑的，不要再帶回來
+      if(String(e.id).startsWith('pr-')||String(e.id).startsWith('pk-')) return; // 這筆本來就是 PAYROLL 帶過去品佑的（pr-=案場成本、pk-=品佑代支出帳戶），不要再帶回來
       const name=String(e.site||'').trim();
       if(!name) return; // 沒掛案場的公司雜支，不屬於案場成本
       const cid='py-'+e.id;
