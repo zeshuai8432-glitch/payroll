@@ -112,7 +112,7 @@
 <nav id="nav"></nav>
 <main id="app"></main>
 <script>
-const APP_VERSION = 'vP2026.08.05n-tag'; // 版本號顯示在頁首，方便確認拿到新版
+const APP_VERSION = 'vP2026.08.05p-recon'; // 版本號顯示在頁首，方便確認拿到新版
 const LS='pinyou_data_v1';
 // ── 雲端端對端加密（與 payroll／簡化版共用同一組密碼與鑰匙；同網域共用 localStorage，解鎖一次三系統都通）──
 const E2E_SALT='PMENC1|dz-gx-py|2026';
@@ -511,6 +511,45 @@ const partnerIn     = () => state.incomes.filter(isPartnerTx).reduce((s,x)=>s+nu
 // 正數＝對方還欠品佑；負數＝品佑還欠對方
 const partnerNet = () => partnerOut() - partnerEarned() - partnerIn();
 // 依往來對象分開結算（品佑要知道分別欠誰多少）
+// 跟 PAYROLL 對帳：來源端帳戶金額 → 扣掉不該進往來的 → 應該等於品佑帳本帶入的
+function reconPanelHtml(){
+  if(!prRecon||!prRecon.length) return '<p class="sub" style="margin:8px 0 0">（開頁約 3 秒後會自動跟 PAYROLL 對帳，或到「支出」頁按「🔗 檢查PAYROLL」）</p>';
+  const sum=(arr,f)=>arr.filter(f).reduce((s,x)=>s+num(x.amount),0);
+  const line=(label,val,opt)=>`<div style="display:flex;justify-content:space-between;gap:12px;padding:3px 0;${opt&&opt.strong?'font-weight:700;border-top:1px solid var(--line2);margin-top:3px;padding-top:5px':''}${opt&&opt.sub?';color:var(--muted);font-size:12px':''}"><span>${label}</span><span class="num">${money(val)}</span></div>`;
+  return prRecon.map(R=>{
+    const pend=(prFound||[]).filter(f=>f.partner===R.label);
+    const pendOut=pend.filter(f=>f.src==='park').reduce((s,f)=>s+num(f.c.amount),0);
+    const pendIn=pend.filter(f=>f.src==='earned').reduce((s,f)=>s+num(f.c.amount),0);
+    const gotOut=sum(state.expenses, x=>isPartnerTx(x)&&partnerOf(x)===R.label&&x.payrollLedgerId);
+    const gotEarn=sum(state.expenses, x=>isPartnerEarned(x)&&partnerOf(x)===R.label&&x.payrollLedgerId);
+    const gotHeld=sum(state.incomes, x=>isPartnerTx(x)&&partnerOf(x)===R.label&&x.payrollLedgerId);
+    const ignOut=R.outBridgeable-gotOut-pendOut;
+    const ignIn=R.inBridgeable-gotEarn-gotHeld-pendIn;
+    const okOut=Math.abs(ignOut)<1, okIn=Math.abs(ignIn)<1;
+    return `<details style="margin-top:10px;background:#fff;border:1px solid var(--line2);border-radius:8px;padding:8px 10px">
+      <summary style="cursor:pointer;font-weight:600;font-size:13px">跟 PAYROLL 對帳：${esc(R.label)} ${okOut&&okIn?'<span class="tag" style="background:#e3efe9;color:var(--accent)">相符</span>':'<span class="tag" style="background:#fee2e2;color:#b91c1c">有差額</span>'}</summary>
+      <div style="font-size:13px;margin-top:8px">
+        <div style="font-weight:700;margin:6px 0 2px">支出側（品佑幫他們付的）</div>
+        ${line('PAYROLL 帳戶支出合計（全期間）',R.outTotal)}
+        ${line('− 報銷（已走案場成本那條）',R.outReimb,{sub:true})}
+        ${line('− 分潤結算／內部分配',R.outInternal,{sub:true})}
+        ${line('＝ 可帶入往來的',R.outBridgeable,{strong:true})}
+        ${line('已帶入（品佑代付）',gotOut,{sub:true})}
+        ${line('還沒帶入（確認卡片上待處理）',pendOut,{sub:true})}
+        ${line(okOut?'已忽略':'<b style="color:#b91c1c">對不起來的差額</b>',ignOut,{sub:true})}
+        <div style="font-weight:700;margin:10px 0 2px">收入側（他們賺的／代收）</div>
+        ${line('PAYROLL 帳戶收入合計（全期間）',R.inTotal)}
+        ${line('− 分潤結算（公積金內部分配）',R.inInternal,{sub:true})}
+        ${line('＝ 可帶入往來的',R.inBridgeable,{strong:true})}
+        ${line('已帶入為發包款',gotEarn,{sub:true})}
+        ${line('已帶入為代收',gotHeld,{sub:true})}
+        ${line('還沒帶入（待分類）',pendIn,{sub:true})}
+        ${line(okIn?'已忽略':'<b style="color:#b91c1c">對不起來的差額</b>',ignIn,{sub:true})}
+        <p class="sub" style="margin:8px 0 0">數字對照 PAYROLL 時，記得把「帳戶」下拉選成品佑代支出帳戶、日期清空 —— 預設是<b>全部帳戶、全部期間</b>，跟這裡的單一帳戶合計不一樣。</p>
+      </div>
+    </details>`;
+  }).join('');
+}
 function partnerStats(){
   const sum=(arr,f)=>arr.filter(f).reduce((s,x)=>s+num(x.amount),0);
   return PARTNERS.map(pt=>{
@@ -543,14 +582,17 @@ function viewDash(){
     <div class="metric"><div class="l">累積支出總額</div><div class="v" style="color:var(--danger)">${money(totExpense)}</div></div>
     <div class="metric accent"><div class="l">已請款−支出</div><div class="v">${money(totIncome-totExpense)}</div></div>
   </div>
-  ${(()=>{ const rows=partnerStats(); if(!rows.length) return '';
+  ${(()=>{ const rows=partnerStats();
+    // 還沒帶入任何東西時也要顯示，因為那正是最需要對帳的時候
+    if(!rows.length && !(prRecon&&prRecon.length)) return '';
     return `<div class="card" style="border-left:3px solid #f59e0b;background:#fffbeb">
       <h2 style="color:#92400e">往來結餘</h2>
       <p class="sub" style="margin:0 0 8px">品佑代他們付掉的錢<b>不是品佑的成本</b>（已排除在上面的損益外）；發包給他們的工程款<b>是品佑的成本</b>（已計入損益），但錢還沒給就算品佑欠他們。</p>
-      <div class="scroll"><table><thead><tr><th>對象</th><th class="num">品佑代付</th><th class="num">他們賺走</th><th class="num">已收結清／代收</th><th class="num">結餘</th></tr></thead><tbody>
+      ${rows.length?`<div class="scroll"><table><thead><tr><th>對象</th><th class="num">品佑代付</th><th class="num">他們賺走</th><th class="num">已收結清／代收</th><th class="num">結餘</th></tr></thead><tbody>
         ${rows.map(r=>`<tr><td><b>${esc(r.label)}</b></td><td class="num" style="color:var(--danger)">${money(r.out)}</td><td class="num">${money(r.earned)}</td><td class="num" style="color:var(--accent)">${money(r.inn)}</td>
           <td class="num" style="font-weight:700;color:#92400e;white-space:nowrap">${r.net>=0?`${esc(r.label)}欠品佑 ${money(r.net)}`:`品佑欠${esc(r.label)} ${money(-r.net)}`}</td></tr>`).join('')}
-      </tbody></table></div>
+      </tbody></table></div>`:'<p class="sub" style="margin:0">目前還沒有帶入任何往來項目。</p>'}
+      ${reconPanelHtml()}
     </div>`; })()}`;
 
   // 各入款帳號收款
@@ -1255,7 +1297,7 @@ function doImport(text,merge){
 
 // ---- 🔗 PAYROLL 互抓：讀 PAYROLL 雲端的案場手動成本，抓到這邊沒有的就通知逐筆確認 ----
 const PAYROLL_FS_URL='https://firestore.googleapis.com/v1/projects/payroll-d1abe/databases/(default)/documents/payroll/main?key=AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
-let prFound=null, prChecking=false, prSkippedNoMatch=0; // null=尚未檢查；[]=已檢查無新項目
+let prFound=null, prChecking=false, prSkippedNoMatch=0, prRecon=null; // prRecon＝對帳用的來源端統計 // null=尚未檢查；[]=已檢查無新項目
 // 品佑代支出帳戶的項目沒有案場欄位，統一掛在這個名稱底下，才不會變成看不到的無案場雜支
 const PAYROLLNEW_FS_URL='https://firestore.googleapis.com/v1/projects/payroll-d1abe/databases/(default)/documents/payrollNew/main?key=AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
 // 往來對象：各自一套 PAYROLL、各自一個代支出案場名，結餘分開算
@@ -1293,7 +1335,7 @@ async function checkPayrollCosts(showFail){
   const del=new Set(state.deletedIds||[]);
   const accName={dz:'東澤工程行',gx:'廣昕工程行',py:'品佑工程有限公司'};
   const myProjects=new Set((state.projects||[]).map(p=>String(p&&p.name||'').trim()).filter(Boolean));
-  const found=[]; let skipped=0; let anyOK=false, lastErr=null;
+  const found=[]; const recon=[]; let skipped=0; let anyOK=false, lastErr=null;
   for(const pt of PARTNERS){
     let dd=null;
     try{ dd=await fetchPayrollDoc(pt.url); }catch(e){ lastErr=e; continue; }
@@ -1314,6 +1356,19 @@ async function checkPayrollCosts(showFail){
     });
     const entries=parkEntriesOf(dd);
     const dealById={}; (dd.deals||[]).forEach(x=>{ if(x&&x.id) dealById[x.id]=x; });
+    // 對帳：把來源端的帳戶金額先分類統計起來，之後跟品佑帳本實際帶入的比對
+    const R={label:pt.label, outTotal:0, outReimb:0, outInternal:0, inTotal:0, inInternal:0};
+    entries.forEach(t=>{
+      if(!t||t.id==null) return;
+      const a=Number(t.amount)||0;
+      if(t.kind==='out'){ R.outTotal+=a;
+        if(t.reimbCostId) R.outReimb+=a;
+        else if(t.fromDeal||t.autoDealId) R.outInternal+=a;
+      } else { R.inTotal+=a; if(t.fromDeal) R.inInternal+=a; }
+    });
+    R.outBridgeable=R.outTotal-R.outReimb-R.outInternal;
+    R.inBridgeable=R.inTotal-R.inInternal;
+    recon.push(R);
     entries.forEach(t=>{
       if(!t||t.id==null) return;
       if(t.fromDeal) return;   // 分潤結算的公積金分配＝內部分配，不是真的收付
@@ -1338,7 +1393,7 @@ async function checkPayrollCosts(showFail){
     });
   }
   if(!anyOK){ if(showFail) alert('讀取 PAYROLL 失敗：'+String((lastErr&&lastErr.message)||lastErr||'雲端無資料').slice(0,60)); prChecking=false; return; }
-  prFound=found; prSkippedNoMatch=skipped;
+  prFound=found; prSkippedNoMatch=skipped; prRecon=recon;
   prChecking=false;
   safeRender();
 }
