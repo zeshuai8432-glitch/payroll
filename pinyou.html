@@ -112,7 +112,7 @@
 <nav id="nav"></nav>
 <main id="app"></main>
 <script>
-const APP_VERSION = 'vP2026.08.05c-sitepick2'; // 版本號顯示在頁首，方便確認拿到新版
+const APP_VERSION = 'vP2026.08.05d-parkbridge'; // 版本號顯示在頁首，方便確認拿到新版
 const LS='pinyou_data_v1';
 // ── 雲端端對端加密（與 payroll／簡化版共用同一組密碼與鑰匙；同網域共用 localStorage，解鎖一次三系統都通）──
 const E2E_SALT='PMENC1|dz-gx-py|2026';
@@ -680,11 +680,11 @@ function viewExp(){
   const siteOpts=`<option value="">全部案場</option>`+sites.map(s=>`<option ${expFilter===s?'selected':''}>${esc(s)}</option>`).join('');
   const itemOpts=`<option value="">全部項目</option>`+items.map(s=>`<option ${expItemFilter===s?'selected':''}>${esc(s)}</option>`).join('');
   const prCard=(typeof prFound!=='undefined'&&prFound&&prFound.length)?`<div class="card" style="border-left:3px solid #2563eb">
-    <h2>📥 PAYROLL 有 ${prFound.length} 筆案場成本還沒帶入</h2>
-    <p class="sub" style="margin:0 0 8px">在點工薪資系統記的案場成本（材料、機具等，只列兩邊同名的案場）。「＋新增」帶入本帳的支出（帶入後可自行改刪）；「忽略」則這筆不再提醒。</p>
+    <h2>📥 PAYROLL 有 ${prFound.length} 筆支出還沒帶入</h2>
+    <p class="sub" style="margin:0 0 8px">兩種來源：<b>案場成本</b>（材料、機具等，只列兩邊同名的案場）與<b>品佑代支出帳戶</b>（公司負擔工資、代墊款報銷、手動記帳，統一掛在「${esc(PARK_SITE)}」底下）。已經走案場成本進來的報銷、以及分潤結算的公積金分配，都不會重複列出。「＋新增」帶入本帳的支出（帶入後可自行改刪）；「忽略」則這筆不再提醒。</p>
     <div class="scroll"><table><thead><tr><th>日期</th><th>案場</th><th>項目</th><th class="num">金額</th><th>出帳</th><th></th></tr></thead>
     <tbody>${prFound.map((f,i)=>`<tr>
-      <td>${esc(f.c.date||'')}</td><td>${esc(f.site)}</td><td>${esc(String(f.c.item||''))}</td>
+      <td>${esc(f.c.date||'')}</td><td>${esc(f.site)}${f.src==='park'?'<span class="tag" style="background:#eef6ff;color:#2563eb;margin-left:4px">代支出</span>':''}</td><td>${esc(String(f.c.item||''))}</td>
       <td class="num">${money(f.c.amount)}</td><td>${esc(f.account)}</td>
       <td class="num" style="white-space:nowrap"><button class="act on" data-pradd="${i}">＋新增</button> <button class="act" data-prskip="${i}">忽略</button></td>
     </tr>`).join('')}</tbody></table></div>
@@ -1107,7 +1107,7 @@ function bind(){
   on('pr-check','onclick',()=>{ checkPayrollCosts(true); render(); });
   document.querySelectorAll('[data-pradd]').forEach(b=>b.onclick=()=>{ const f=prFound&&prFound[+b.dataset.pradd]; if(!f) return; prAddExpense(f); prFound.splice(+b.dataset.pradd,1); save(); });
   document.querySelectorAll('[data-prskip]').forEach(b=>b.onclick=()=>{ const f=prFound&&prFound[+b.dataset.prskip]; if(!f) return; state.deletedIds=[...new Set([...(state.deletedIds||[]),f.eid])]; prFound.splice(+b.dataset.prskip,1); save(); });
-  on('pr-addall','onclick',()=>{ if(!prFound||!prFound.length) return; if(!confirm(`把 ${prFound.length} 筆 PAYROLL 成本全部帶入支出？`)) return; prFound.forEach(prAddExpense); prFound=[]; save(); });
+  on('pr-addall','onclick',()=>{ if(!prFound||!prFound.length) return; if(!confirm(`把 ${prFound.length} 筆 PAYROLL 支出全部帶入？`)) return; prFound.forEach(prAddExpense); prFound=[]; save(); });
   on('pr-skipall','onclick',()=>{ if(!prFound||!prFound.length) return; if(!confirm(`全部忽略這 ${prFound.length} 筆？之後不會再提醒。`)) return; state.deletedIds=[...new Set([...(state.deletedIds||[]),...prFound.map(f=>f.eid)])]; prFound=[]; save(); });
   document.querySelectorAll('[data-exedit]').forEach(b=>b.onclick=()=>{ expEditId=b.dataset.exedit; render(); });
   document.querySelectorAll('[data-exeditcancel]').forEach(b=>b.onclick=()=>{ expEditId=null; render(); });
@@ -1208,6 +1208,8 @@ function doImport(text,merge){
 // ---- 🔗 PAYROLL 互抓：讀 PAYROLL 雲端的案場手動成本，抓到這邊沒有的就通知逐筆確認 ----
 const PAYROLL_FS_URL='https://firestore.googleapis.com/v1/projects/payroll-d1abe/databases/(default)/documents/payroll/main?key=AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
 let prFound=null, prChecking=false, prSkippedNoMatch=0; // null=尚未檢查；[]=已檢查無新項目
+// 品佑代支出帳戶的項目沒有案場欄位，統一掛在這個名稱底下，才不會變成看不到的無案場雜支
+const PARK_SITE='幫東澤建龍支出';
 async function checkPayrollCosts(showFail){
   if(prChecking) return; prChecking=true;
   try{
@@ -1226,6 +1228,7 @@ async function checkPayrollCosts(showFail){
     const del=new Set(state.deletedIds||[]);
     const accName={dz:'東澤工程行',gx:'廣昕工程行',py:'品佑工程有限公司'};
     const myProjects=new Set((state.projects||[]).map(p=>String(p&&p.name||'').trim()).filter(Boolean));
+    const haveLed=new Set(state.expenses.map(x=>x&&x.payrollLedgerId).filter(Boolean));
     prFound=[]; prSkippedNoMatch=0;
     (dd.costs||[]).forEach(c=>{
       if(!c||c.id==null) return;
@@ -1234,16 +1237,32 @@ async function checkPayrollCosts(showFail){
       if(have.has(eid)||haveSrc.has(c.id)||del.has(eid)) return; // 已帶入或已忽略
       const site=topName(c.siteId); if(!site) return;
       if(!myProjects.has(site)){ prSkippedNoMatch++; return; } // 只抓「兩邊同名」的案場，其他直接略過不打擾
-      prFound.push({c, eid, site, account:accName[c.payer]||'品佑工程有限公司'});
+      prFound.push({c, eid, site, account:accName[c.payer]||'品佑工程有限公司', src:'cost'});
+    });
+    // 品佑代支出帳戶（PAYROLL 的「品佑帳戶結算」）：品佑實際掏錢、但本帳完全看不到的項目
+    // 只抓沒有其他管道進來的：公司負擔工資、代墊款報銷、手動記帳
+    //   · reimbCostId＝報銷案場成本 → 已經走上面 costs 那條，再抓會重複記帳
+    //   · fromDeal＝分潤結算的公積金內部分配 → 不是真的對外支出
+    const parkAcc=dd.parkAccId||'';
+    if(parkAcc) (dd.ledger||[]).forEach(t=>{
+      if(!t||t.id==null) return;
+      if(t.accId!==parkAcc || t.kind!=='out') return;
+      if(t.reimbCostId || t.fromDeal) return;
+      const eid='pk-'+t.id;
+      if(have.has(eid)||haveLed.has(t.id)||del.has(eid)) return;
+      prFound.push({c:{id:t.id, date:t.date, item:String(t.note||'品佑代支出'), amount:t.amount},
+        eid, site:PARK_SITE, account:'品佑工程有限公司', src:'park'});
     });
   }catch(e){ if(showFail) alert('讀取 PAYROLL 失敗：'+String(e&&e.message||e).slice(0,60)); prChecking=false; return; }
   prChecking=false;
   safeRender();
 }
 function prAddExpense(f){
-  const c=f.c;
+  const c=f.c, isPark=f.src==='park';
   state.deletedIds=(state.deletedIds||[]).filter(x=>x!==f.eid);
-  state.expenses.push({id:f.eid, date:c.date||'', site:f.site, item:String(c.item||'PAYROLL成本'), amount:Number(c.amount)||0, account:f.account, method:'', note:'', payrollId:c.id});
+  const row={id:f.eid, date:c.date||'', site:f.site, item:String(c.item||(isPark?'品佑代支出':'PAYROLL成本')), amount:Number(c.amount)||0, account:f.account, method:'', note:isPark?'PAYROLL 品佑代支出帳戶':''};
+  if(isPark) row.payrollLedgerId=c.id; else row.payrollId=c.id;
+  state.expenses.push(row);
 }
 
 
