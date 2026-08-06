@@ -112,7 +112,7 @@
 <nav id="nav"></nav>
 <main id="app"></main>
 <script>
-const APP_VERSION = 'vP2026.08.05m-multi'; // 版本號顯示在頁首，方便確認拿到新版
+const APP_VERSION = 'vP2026.08.05n-tag'; // 版本號顯示在頁首，方便確認拿到新版
 const LS='pinyou_data_v1';
 // ── 雲端端對端加密（與 payroll／簡化版共用同一組密碼與鑰匙；同網域共用 localStorage，解鎖一次三系統都通）──
 const E2E_SALT='PMENC1|dz-gx-py|2026';
@@ -700,7 +700,7 @@ function viewExp(){
       </tr>`;
     }
     return `<tr>
-      <td>${esc(x.date)}</td><td>${esc(x.site)}</td><td>${esc(x.item)}${x.payrollId?'<span class="tag" style="background:#dbeafe;color:#2563eb;margin-left:4px">PAYROLL</span>':''}${isPartnerTx(x)?'<span class="tag" style="background:#fef3c7;color:#92400e;margin-left:4px">往來</span>':''}</td>
+      <td>${esc(x.date)}</td><td>${esc(x.site)}</td><td>${esc(x.item)}${x.payrollId?'<span class="tag" style="background:#dbeafe;color:#2563eb;margin-left:4px">PAYROLL</span>':''}${isPartnerTx(x)?`<span class="tag" style="background:#fef3c7;color:#92400e;margin-left:4px">代支出·${esc(partnerOf(x))}</span>`:''}${isPartnerEarned(x)?`<span class="tag" style="background:#fde68a;color:#92400e;margin-left:4px">發包款·${esc(partnerOf(x))}</span>`:''}</td>
       <td class="num" style="color:var(--danger)">${money(x.amount)}</td>
       <td>${esc(x.account||'')}</td>
       <td>${esc(x.method||'')}</td><td>${esc(x.note||'')}</td>
