@@ -377,10 +377,12 @@
     #print-overlay .pbar { display: none !important; }
     /* 頁邊距設 0：瀏覽器的頁首（日期/標題）頁尾（網址/頁碼）印在邊距區，
        沒有邊距就不會出現；文件邊距改由 .pdoc 自己內建 */
-    @page { size: A4; margin: 0; }
     #print-overlay .pdoc { padding: 14mm 14mm 12mm; }
     #print-overlay.landscape .pdoc { max-width: none; page: landscapePage; }
   }
+  /* @page 放最外層：巢狀在 @media print 裡時，部分瀏覽器（Safari/Firefox）會忽略，
+     頁首頁尾（網頁標題／網址／頁碼）就又跑出來 */
+  @page { size: A4; margin: 0; }
   @page landscapePage { size: A4 landscape; margin: 0; }
 </style>
 </head>

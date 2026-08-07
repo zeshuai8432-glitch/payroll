@@ -101,7 +101,9 @@
     #print-overlay .pdoc .bankblk{width:100%;min-width:0;box-sizing:border-box}
   }
   /* 頁邊距設 0：瀏覽器的頁首（日期/標題）頁尾（網址/頁碼）印在邊距區，沒有邊距就不會出現；文件邊距改由 .pdoc 自己內建 */
-  @media print{ html,body{background:#fff!important} body>*:not(#print-overlay){display:none!important} #print-overlay{position:static;padding:0;overflow:visible;background:#fff} #print-overlay .pbar{display:none!important} #print-overlay .pdoc{max-width:none;width:auto;box-shadow:none;padding:14mm 14mm 12mm;border-radius:0;zoom:1} #print-overlay .pdoc .itemsc{overflow:visible;border:none} #print-overlay .pdoc table.items{min-width:0} @page{size:A4;margin:0} }
+  @media print{ html,body{background:#fff!important} body>*:not(#print-overlay){display:none!important} #print-overlay{position:static;padding:0;overflow:visible;background:#fff} #print-overlay .pbar{display:none!important} #print-overlay .pdoc{max-width:none;width:auto;box-shadow:none;padding:14mm 14mm 12mm;border-radius:0;zoom:1} #print-overlay .pdoc .itemsc{overflow:visible;border:none} #print-overlay .pdoc table.items{min-width:0} }
+  /* @page 放最外層：巢狀在 @media print 裡部分瀏覽器會忽略，頁首頁尾就又跑出來 */
+  @page{size:A4;margin:0}
 </style>
 <div class="top">
   <h1>品佑帳本</h1>
@@ -112,7 +114,7 @@
 <nav id="nav"></nav>
 <main id="app"></main>
 <script>
-const APP_VERSION = 'vP2026.08.06c-partnertab'; // 版本號顯示在頁首，方便確認拿到新版
+const APP_VERSION = 'vP2026.08.06d-print'; // 版本號顯示在頁首，方便確認拿到新版
 const LS='pinyou_data_v1';
 // ── 雲端端對端加密（與 payroll／簡化版共用同一組密碼與鑰匙；同網域共用 localStorage，解鎖一次三系統都通）──
 const E2E_SALT='PMENC1|dz-gx-py|2026';

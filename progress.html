@@ -54,8 +54,9 @@ details.blk .inner{padding:0 14px 12px;overflow-x:auto}
 /* ── 列印 ── */
 #print-overlay{display:none}
 .pbar{position:sticky;top:0;background:var(--card);border-bottom:1px solid var(--line);padding:10px 16px;display:flex;gap:12px;align-items:center;flex-wrap:wrap;z-index:5}
+/* @page 放最外層：巢狀在 @media print 裡部分瀏覽器會忽略，頁首(網頁標題)/頁尾(網址)就又跑出來 */
+@page{size:A4;margin:0}
 @media print{
-  @page{margin:0}                       /* 邊界 0 → 瀏覽器不再加頁首(網頁標題)/頁尾(網址) */
   body{background:#fff}
   body.printing>*{display:none!important}
   body.printing #print-overlay{display:block!important;position:static!important;background:#fff!important;min-height:0!important}
@@ -108,7 +109,7 @@ body.printing #print-overlay{display:block;position:absolute;inset:0;background:
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.07.31z-printcolor';
+const APP_VERSION='vG2026.08.06a-print';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
