@@ -461,11 +461,13 @@
     #sig-section { display: none !important; }
     /* 頁邊距設 0：瀏覽器的頁首（日期/網頁標題）與頁尾（網址/頁碼）印在邊距區，
        沒有邊距就不會出現；文件邊距改由下方 padding 自己畫 */
-    @page { size: A4; margin: 0; }
     #print-overlay .bluedoc, #print-overlay .paydoc { padding: 14mm 14mm 12mm; }
     /* 寬表報表（如薪資總表）改橫向列印，避免右側欄位被截掉 */
     #print-overlay.landscape .pdoc { max-width: none; page: landscapePage; }
   }
+  /* @page 放最外層：巢狀在 @media print 裡時，部分瀏覽器（Safari/Firefox）會忽略，
+     頁首頁尾（網頁標題／網址／頁碼）就又跑出來 */
+  @page { size: A4; margin: 0; }
   @page landscapePage { size: A4 landscape; margin: 0; }
 </style>
 </head>
@@ -509,7 +511,7 @@ const FS_ROOT = 'https://firestore.googleapis.com/v1/projects/'+FS_PROJECT+'/dat
 const FS_DOC_BASE = FS_ROOT+'payroll/';
 const FS_SIG_BASE = FS_ROOT+'payrollSignatures/';
 const FS_REST_URL = FS_DOC_BASE+'main?key='+FS_KEY;
-const APP_VERSION = 'v2026.08.05f-incomename';
+const APP_VERSION = 'v2026.08.06a-print';
 let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], tools:[], locations:[], assets:[], advances:[], accounts:[], ledger:[], deals:[], billings:[], measurements:[], contracts:{}, costs:[], textMemory:{clients:[],companies:[]}, parkAccId:'', oweBonus:{}, minFund:'', shareholderTx:[], myCompanies:[], payrollSnapshots:[], yearIncomeAdj:[], deletedIds:[], resurrected:{ids:[],at:0}, tab:'dash' };
 let cloudStatus='連線中…';
 let localDirty=false, lastCloudTs=0;
