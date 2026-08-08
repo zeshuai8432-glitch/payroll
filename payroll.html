@@ -511,7 +511,7 @@ const FS_ROOT = 'https://firestore.googleapis.com/v1/projects/'+FS_PROJECT+'/dat
 const FS_DOC_BASE = FS_ROOT+'payroll/';
 const FS_SIG_BASE = FS_ROOT+'payrollSignatures/';
 const FS_REST_URL = FS_DOC_BASE+'main?key='+FS_KEY;
-const APP_VERSION = 'v2026.08.06a-print';
+const APP_VERSION = 'v2026.08.06c-raise';
 let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], tools:[], locations:[], assets:[], advances:[], accounts:[], ledger:[], deals:[], billings:[], measurements:[], contracts:{}, costs:[], textMemory:{clients:[],companies:[]}, parkAccId:'', oweBonus:{}, minFund:'', shareholderTx:[], myCompanies:[], payrollSnapshots:[], yearIncomeAdj:[], deletedIds:[], resurrected:{ids:[],at:0}, tab:'dash' };
 let cloudStatus='連線中…';
 let localDirty=false, lastCloudTs=0;
@@ -728,6 +728,27 @@ const detailAttrs = (key, defaultOpen=false) => {
   return `data-detailkey="${esc(key)}" ${open?'open':''}`;
 };
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2,7);
+const RATE_BASE_DATE='1900-01-01'; // 第一次調薪時補一筆起始基準，否則查詢調薪前的日期會拿到現在的日薪
+// 調薪：依出工日期取當時日薪（生效日當天起算新薪）。沒有調薪紀錄時就是目前日薪。
+function effectiveDaily(emp, date){
+  if(emp&&emp.rateHistory&&emp.rateHistory.length){
+    const hit=emp.rateHistory.filter(h=>h&&h.date<=date).sort((a,b)=>b.date.localeCompare(a.date));
+    if(hit.length) return Number(hit[0].daily)||0;
+  }
+  return Number(emp&&emp.daily)||0;
+}
+// 出工的日薪是「登記當下」凍結的，事後調薪不會自己回頭改。
+// 找出生效日之後、日薪跟現在算出來不一樣的出工，讓使用者決定要不要一併更新。
+function staleRateRecords(emp, fromDate){
+  return (state.attendance||[]).filter(r=>{
+    if(!r||r.empId!==emp.id) return false;
+    if(!(String(r.date||'')>=fromDate)) return false;
+    const cur=Number(r.dailyRate)||0;
+    if(cur<=0) return false;                       // 請假／休假沒有日薪，不動
+    return cur!==effectiveDaily(emp, r.date);
+  });
+}
+function applyStaleRates(emp, list){ list.forEach(r=>{ r.dailyRate=effectiveDaily(emp, r.date); }); return list.length; }
 const empName = id => { const e=state.employees.find(x=>x.id===id); return e?e.name:'（已移除）'; };
 const parentSiteOf = s => s&&s.parentSiteId?state.sites.find(x=>x.id===s.parentSiteId):null;
 const siteDisplayName = s => {
@@ -3139,7 +3160,7 @@ function bind(){
     if(dupSites.length>0){
       if(!confirm(`${emp.name} 在 ${date} 已經登記過：${dupSites.join('、')}。\n\n確定要再記一次（會變成多筆）嗎？`)) return;
     }
-    valid.forEach(v=>state.attendance.push({id:uid(),date,empId,siteId:v.siteId,hours:v.hours,overtime:v.overtime,night:v.night,dailyRate:emp.daily,kind:'work'}));
+    valid.forEach(v=>state.attendance.push({id:uid(),date,empId,siteId:v.siteId,hours:v.hours,overtime:v.overtime,night:v.night,dailyRate:effectiveDaily(emp,date),kind:'work'}));
     entryDate=date; entryEmp=empId;
     // 送出後保留案場明細輸入值（登記下一個人常常是同案場同工時），不清空
     resyncAllSiteDeals();
@@ -3175,7 +3196,7 @@ function bind(){
     if(dupEmps.length>0){
       if(!confirm(`${dupEmps.join('、')} 在 ${date} 已登記過「${siteName(siteId)}」。\n\n確定要再記一次（會變成多筆）嗎？`)) return;
     }
-    picked.forEach(eid=>{ const emp=state.employees.find(e=>e.id===eid); if(emp) state.attendance.push({id:uid(),date,empId:eid,siteId,hours,overtime,night,dailyRate:emp.daily,kind:'work'}); });
+    picked.forEach(eid=>{ const emp=state.employees.find(e=>e.id===eid); if(emp) state.attendance.push({id:uid(),date,empId:eid,siteId,hours,overtime,night,dailyRate:effectiveDaily(emp,date),kind:'work'}); });
     entryDate=date;
     entrySitePick=siteId; entrySiteHours=String(hours); entrySiteOt=String(overtime); entrySiteNight=night;
     entryEmpPick={}; // 送出後清空員工勾選，案場/工時保留方便下一批
@@ -3227,9 +3248,34 @@ function bind(){
   document.querySelectorAll('[data-raise]').forEach(b=>b.onclick=()=>{
     const e=state.employees.find(x=>x.id===b.dataset.raise); if(!e)return;
     const cell=b.closest('td');
-    cell.innerHTML=`<span class="inline"><input type="number" min="0" step="100" value="${e.daily}" id="raise-in"><button class="act" id="raise-ok">✓</button><button class="act muted" id="raise-cancel" style="cursor:pointer">✕</button></span>`;
+    const today=localISODate();
+    const hist=[...(e.rateHistory||[])].filter(h=>h.date!==RATE_BASE_DATE).sort((a,b2)=>a.date.localeCompare(b2.date));
+    cell.innerHTML=`<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+      <span style="font-size:12px;color:var(--muted)">生效日</span><input type="date" id="raise-date" value="${today}" style="width:150px">
+      <span style="font-size:12px;color:var(--muted)">新日薪</span><input type="number" id="raise-in" min="0" step="100" value="${e.daily}" style="width:100px">
+      <button class="act on" id="raise-ok">確認</button><button class="act muted" id="raise-cancel" style="cursor:pointer">取消</button>
+      ${hist.length?`<div style="flex-basis:100%;font-size:11.5px;color:var(--muted)">調薪紀錄：${hist.map(h=>`${esc(h.date)} ${money(h.daily)}`).join(' → ')}</div>`:''}
+    </div>`;
     const inp=cell.querySelector('#raise-in'); inp.focus();
-    cell.querySelector('#raise-ok').onclick=()=>{ const v=parseFloat(inp.value); if(!isNaN(v)){ e.daily=v; saveData(); } render(); };
+    cell.querySelector('#raise-ok').onclick=()=>{
+      const v=parseFloat(inp.value); const d=cell.querySelector('#raise-date').value;
+      if(isNaN(v)||!d){ alert('請填生效日與新日薪'); return; }
+      if(!e.rateHistory) e.rateHistory=[];
+      // 第一次調薪先補起始基準，之後查調薪前的日期才拿得到舊薪
+      if(!e.rateHistory.length && Number(e.daily)>0) e.rateHistory.push({date:RATE_BASE_DATE,daily:Number(e.daily)});
+      e.rateHistory=e.rateHistory.filter(h=>h.date!==d);
+      e.rateHistory.push({date:d,daily:v});
+      e.rateHistory.sort((a,b2)=>a.date.localeCompare(b2.date));
+      e.daily=effectiveDaily(e, localISODate());
+      const stale=staleRateRecords(e,d);
+      if(stale.length){
+        const diff=stale.reduce((s2,r)=>s2+(effectiveDaily(e,r.date)-(Number(r.dailyRate)||0)),0);
+        if(confirm(`${e.name} 的調薪已設定（${d} 起 ${money(v)}）。\n\n生效日之後已經有 ${stale.length} 筆出工是用舊日薪登記的，日薪差額合計 ${diff>=0?'+':''}${money(diff)}。\n\n要一併更新這些出工的日薪嗎？\n（選「取消」則舊紀錄維持原日薪，只有之後新登記的才用新薪）`)){
+          applyStaleRates(e,stale);
+        }
+      }
+      saveData(); render();
+    };
     cell.querySelector('#raise-cancel').onclick=()=>render();
   });
   document.querySelectorAll('[data-toggle]').forEach(b=>b.onclick=()=>{ const e=state.employees.find(x=>x.id===b.dataset.toggle); if(e){ e.active=!e.active; saveData(); render(); } });
