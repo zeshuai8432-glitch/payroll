@@ -114,7 +114,7 @@
 <nav id="nav"></nav>
 <main id="app"></main>
 <script>
-const APP_VERSION = 'vP2026.08.06d-print'; // 版本號顯示在頁首，方便確認拿到新版
+const APP_VERSION = 'vP2026.08.06e-bridge'; // 版本號顯示在頁首，方便確認拿到新版
 const LS='pinyou_data_v1';
 // ── 雲端端對端加密（與 payroll／簡化版共用同一組密碼與鑰匙；同網域共用 localStorage，解鎖一次三系統都通）──
 const E2E_SALT='PMENC1|dz-gx-py|2026';
@@ -759,12 +759,12 @@ function viewExp(){
   const itemOpts=`<option value="">全部項目</option>`+items.map(s=>`<option ${expItemFilter===s?'selected':''}>${esc(s)}</option>`).join('');
   const prCard=(typeof prFound!=='undefined'&&prFound&&prFound.length)?`<div class="card" style="border-left:3px solid #2563eb">
     <h2>📥 PAYROLL 有 ${prFound.length} 筆支出還沒帶入</h2>
-    <p class="sub" style="margin:0 0 8px">來源有東澤建龍與進凱兩套 PAYROLL，各列右邊會標對象。三種類型：<b>案場成本</b>（材料、機具等）、<b>代支出</b>（品佑幫他們付的工資等，不算品佑成本）、<b>發包款</b>（發包給東澤建龍、他們賺走的，<b>是品佑的成本</b>）。已走案場成本進來的報銷與分潤結算不會重複列出。發包款請先選「算到哪個案場」再新增（PAYROLL 是母子案場、名字常跟這邊不同，選過一次就會記住）；如果那筆是<b>他們做外面公司的</b>，下拉選「他們做外面的（記代收）」，會記成代收、不進品佑損益。</p>
+    <p class="sub" style="margin:0 0 8px">來源有東澤建龍與進凱兩套 PAYROLL，各列右邊會標對象。三種類型：<b>案場成本</b>（材料、機具等）、<b>代支出</b>（品佑幫他們付的工資等，不算品佑成本）、<b>發包款</b>（發包給東澤建龍、他們賺走的，<b>是品佑的成本</b>）。已走案場成本進來的報銷與分潤結算不會重複列出。<b>案場名對不上</b>的（案場成本與發包款都可能）請先在該列選「算到哪個案場」再新增（PAYROLL 是母子案場、名字常跟這邊不同，選過一次就會記住）；如果那筆是<b>他們做外面公司的</b>，下拉選「他們做外面的（記代收）」，會記成代收、不進品佑損益。</p>
     <div class="scroll"><table><thead><tr><th>日期</th><th>案場</th><th>項目</th><th class="num">金額</th><th>出帳</th><th></th></tr></thead>
     <tbody>${prFound.map((f,i)=>`<tr>
       <td>${esc(f.c.date||'')}</td>
-      <td>${f.src==='earned'
-        ? `<select data-prsite="${i}" style="max-width:190px"><option value="">選案場…</option>${(state.projects||[]).map(pj=>`<option value="${esc(pj.name)}" ${f.site===pj.name?'selected':''}>${esc(pj.name)}</option>`).join('')}<option value="__held__" ${f.site==='__held__'?'selected':''}>— 他們做外面的（記代收）</option></select>${f.payrollSite?`<div class="sub" style="margin:2px 0 0">PAYROLL：${esc(f.payrollSite)}</div>`:''}`
+      <td>${(f.src==='earned'||f.src==='cost')
+        ? `<select data-prsite="${i}" style="max-width:190px"><option value="">選案場…</option>${(state.projects||[]).map(pj=>`<option value="${esc(pj.name)}" ${f.site===pj.name?'selected':''}>${esc(pj.name)}</option>`).join('')}${f.src==='earned'?`<option value="__held__" ${f.site==='__held__'?'selected':''}>— 他們做外面的（記代收）</option>`:''}</select>${f.payrollSite?`<div class="sub" style="margin:2px 0 0">PAYROLL：${esc(f.payrollSite)}</div>`:''}`
         : esc(f.site)}${f.src==='park'?'<span class="tag" style="background:#eef6ff;color:#2563eb;margin-left:4px">代支出</span>':''}${f.src==='earned'?'<span class="tag" style="background:#fef3c7;color:#92400e;margin-left:4px">發包款</span>':''}${f.partner?`<span class="tag" style="background:#f1f5f9;color:#475569;margin-left:4px">${esc(f.partner)}</span>`:''}${(()=>{
         const dup=[...state.expenses,...state.incomes].some(x=>x&&num(x.amount)===num(f.c.amount)&&String(x.date||'')===String(f.c.date||'')&&(partnerOf(x)===f.partner));
         return dup?'<span class="tag" style="background:#fee2e2;color:#b91c1c;margin-left:4px" title="本帳已經有同日期同金額的紀錄，確認一下是不是已經帶過">疑似已帶入</span>':'';
@@ -775,7 +775,9 @@ function viewExp(){
     <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;align-items:center">
       <button class="act on" id="pr-addall">全部新增</button>
       <button class="act" id="pr-skipall">全部忽略</button>
-      ${(typeof prSkippedNoMatch!=='undefined'&&prSkippedNoMatch)?`<span class="sub" style="margin:0">另有 ${prSkippedNoMatch} 筆案場名對不上，已自動略過。</span>`:''}
+      ${(typeof prSkippedNoMatch!=='undefined'&&prSkippedNoMatch)?`<span class="sub" style="margin:0;color:#b45309">其中 ${prSkippedNoMatch} 筆的案場名兩邊對不上，請在該列自己選案場。</span>`:''}
+      ${(()=>{ const bad=(typeof prSrcStatus!=='undefined'&&prSrcStatus||[]).filter(x=>!x.ok); if(!bad.length) return '';
+        return `<span class="sub" style="margin:0;color:#b91c1c">⚠ ${bad.map(x=>`${esc(x.label)} 讀取失敗（${esc(x.err||'')}）`).join('、')} —— 這個來源的項目這次沒列出，不是沒有新資料。</span>`; })()}
     </div>
   </div>`:'';
   return `${prCard}<div class="card">
@@ -1362,7 +1364,7 @@ function bind(){
   on('pr-check','onclick',()=>{ checkPayrollCosts(true); render(); });
   document.querySelectorAll('[data-prsite]').forEach(sel=>sel.onchange=()=>{ const f=prFound&&prFound[+sel.dataset.prsite]; if(f) f.site=sel.value; });
   document.querySelectorAll('[data-pradd]').forEach(b=>b.onclick=()=>{ const f=prFound&&prFound[+b.dataset.pradd]; if(!f) return;
-    if(f.src==='earned'&&!f.site){ alert('這筆是發包款，請先選「算到哪個案場」再新增。'); return; }
+    if((f.src==='earned'||f.src==='cost')&&!f.site){ alert('這筆的案場名兩邊對不上，請先選「算到哪個案場」再新增。'); return; }
     prAddExpense(f); prFound.splice(+b.dataset.pradd,1); save(); });
   document.querySelectorAll('[data-prskip]').forEach(b=>b.onclick=()=>{ const f=prFound&&prFound[+b.dataset.prskip]; if(!f) return; state.deletedIds=[...new Set([...(state.deletedIds||[]),f.eid])]; prFound.splice(+b.dataset.prskip,1); save(); });
   on('pr-addall','onclick',()=>{ if(!prFound||!prFound.length) return;
@@ -1471,7 +1473,7 @@ function doImport(text,merge){
 
 // ---- 🔗 PAYROLL 互抓：讀 PAYROLL 雲端的案場手動成本，抓到這邊沒有的就通知逐筆確認 ----
 const PAYROLL_FS_URL='https://firestore.googleapis.com/v1/projects/payroll-d1abe/databases/(default)/documents/payroll/main?key=AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
-let prFound=null, prChecking=false, prSkippedNoMatch=0, prRecon=null; // prRecon＝對帳用的來源端統計 // null=尚未檢查；[]=已檢查無新項目
+let prFound=null, prChecking=false, prSkippedNoMatch=0, prRecon=null, prSrcStatus=null; // prRecon＝對帳用的來源端統計 // null=尚未檢查；[]=已檢查無新項目
 // 品佑代支出帳戶的項目沒有案場欄位，統一掛在這個名稱底下，才不會變成看不到的無案場雜支
 const PAYROLLNEW_FS_URL='https://firestore.googleapis.com/v1/projects/payroll-d1abe/databases/(default)/documents/payrollNew/main?key=AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
 // 往來對象：各自一套 PAYROLL、各自一個代支出案場名，結餘分開算
@@ -1504,16 +1506,18 @@ async function checkPayrollCosts(showFail){
   if(prChecking) return; prChecking=true;
   const have=new Set(state.expenses.map(x=>x&&x.id));
   const haveInc=new Set(state.incomes.map(x=>x&&x.id));
-  const haveSrc=new Set(state.expenses.map(x=>x&&x.payrollId).filter(Boolean));
+  const haveSrc=new Set(state.expenses.map(x=>x&&x.payrollId).filter(Boolean).map(String));
   const haveLed=new Set([...state.expenses,...state.incomes].map(x=>x&&x.payrollLedgerId).filter(Boolean).map(String));
   const del=new Set(state.deletedIds||[]);
   const accName={dz:'東澤工程行',gx:'廣昕工程行',py:'品佑工程有限公司'};
   const myProjects=new Set((state.projects||[]).map(p=>String(p&&p.name||'').trim()).filter(Boolean));
   const found=[]; const recon=[]; let skipped=0; let anyOK=false, lastErr=null;
+  const srcStatus=[];   // 每個來源分別記錄，讀失敗不能靜默吃掉
   for(const pt of PARTNERS){
     let dd=null;
-    try{ dd=await fetchPayrollDoc(pt.url); }catch(e){ lastErr=e; continue; }
-    if(!dd) continue;
+    try{ dd=await fetchPayrollDoc(pt.url); }catch(e){ lastErr=e; srcStatus.push({label:pt.label,ok:false,err:String((e&&e.message)||e).slice(0,40)}); continue; }
+    if(!dd){ srcStatus.push({label:pt.label,ok:false,err:'雲端無資料或未解鎖'}); continue; }
+    srcStatus.push({label:pt.label,ok:true});
     anyOK=true;
     const byId={}; (dd.sites||[]).forEach(x=>{ if(x&&x.id) byId[x.id]=x; });
     const topName=sid=>{ let x=byId[sid],hops=0; while(x&&x.parentSiteId&&byId[x.parentSiteId]&&hops++<5) x=byId[x.parentSiteId]; return x?x.name:''; };
@@ -1523,10 +1527,13 @@ async function checkPayrollCosts(showFail){
       if(!c||c.id==null) return;
       if(String(c.id).startsWith('py-')) return; // 本來就是品佑帶過去的，不要再帶回來
       const eid='pr-'+P+c.id;
-      if(have.has(eid)||haveSrc.has(c.id)||del.has(eid)) return;
-      const site=topName(c.siteId); if(!site) return;
-      if(!myProjects.has(site)){ skipped++; return; }
-      found.push({c, eid, site, account:accName[c.payer]||'品佑工程有限公司', src:'cost', partner:pt.label});
+      if(have.has(eid)||haveSrc.has(String(c.id))||del.has(eid)) return;
+      // 案場名兩邊常常不同（PAYROLL 有母子案場），比照發包款：對不上就列出來讓使用者選，
+      // 並共用同一份 siteMap。原本是靜默丟掉，使用者無從得知是哪幾筆。
+      const payrollSite=topName(c.siteId);
+      const site=(state.siteMap&&state.siteMap[payrollSite])||(myProjects.has(payrollSite)?payrollSite:'');
+      if(!site) skipped++;
+      found.push({c, eid, site, payrollSite, account:accName[c.payer]||'品佑工程有限公司', src:'cost', partner:pt.label});
     });
     const entries=parkEntriesOf(dd);
     const dealById={}; (dd.deals||[]).forEach(x=>{ if(x&&x.id) dealById[x.id]=x; });
@@ -1567,13 +1574,13 @@ async function checkPayrollCosts(showFail){
     });
   }
   if(!anyOK){ if(showFail) alert('讀取 PAYROLL 失敗：'+String((lastErr&&lastErr.message)||lastErr||'雲端無資料').slice(0,60)); prChecking=false; return; }
-  prFound=found; prSkippedNoMatch=skipped; prRecon=recon;
+  prFound=found; prSkippedNoMatch=skipped; prRecon=recon; prSrcStatus=srcStatus;
   prChecking=false;
   safeRender();
 }
 function prAddExpense(f){
-  const c=f.c, isPark=f.src==='park', isEarned=f.src==='earned';
-  if(isEarned && !f.site) return false; // 沒指定要算到哪個案場就先不帶
+  const c=f.c, isPark=f.src==='park', isEarned=f.src==='earned', isCost=f.src==='cost';
+  if((isEarned||isCost) && !f.site) return false; // 沒指定要算到哪個案場就先不帶
   // 他們做外面公司的：品佑沒收入也沒成本，只是幫忙收著 → 記成代收（收入、不進損益）
   if(isEarned && f.site==='__held__'){
     state.deletedIds=(state.deletedIds||[]).filter(x=>x!==f.eid);
@@ -1589,7 +1596,8 @@ function prAddExpense(f){
   if(isPark){ row.payrollLedgerId=c.id; row.partnerAcct=true; }
   else if(isEarned){ row.payrollLedgerId=c.id; row.partnerEarned=true;
     if(f.payrollSite){ state.siteMap=state.siteMap||{}; state.siteMap[f.payrollSite]=f.site; } } // 記住對應，下次自動帶
-  else row.payrollId=c.id;
+  else { row.payrollId=c.id;
+    if(f.payrollSite&&f.payrollSite!==f.site){ state.siteMap=state.siteMap||{}; state.siteMap[f.payrollSite]=f.site; } }
   state.expenses.push(row);
   return true;
 }
