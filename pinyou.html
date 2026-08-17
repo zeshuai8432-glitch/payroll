@@ -114,7 +114,7 @@
 <nav id="nav"></nav>
 <main id="app"></main>
 <script>
-const APP_VERSION = 'vP2026.08.06g-srckey'; // 版本號顯示在頁首，方便確認拿到新版
+const APP_VERSION = 'vP2026.08.06h-legacykey'; // 版本號顯示在頁首，方便確認拿到新版
 const LS='pinyou_data_v1';
 // ── 雲端端對端加密（與 payroll／簡化版共用同一組密碼與鑰匙；同網域共用 localStorage，解鎖一次三系統都通）──
 const E2E_SALT='PMENC1|dz-gx-py|2026';
@@ -1530,7 +1530,10 @@ async function checkPayrollCosts(showFail){
       // 不加前綴的話 A 帶入過的 X1 會讓 B 的 X1 被誤判成「已帶入」而消失
       const srcKey=P+String(c.id);
       const eid='pr-'+srcKey;
-      if(have.has(eid)||haveSrc.has(srcKey)||del.has(eid)) return;
+      // 舊版存的是沒前綴的鍵；只有「無前綴來源」能這樣相容，
+      // 有前綴的來源若也接受無前綴鍵，會跟另一套撞號、把別人的誤判成已帶入
+      const legacyHit=(P==='')&&(have.has('pr-'+c.id)||haveSrc.has(String(c.id)));
+      if(have.has(eid)||haveSrc.has(srcKey)||legacyHit||del.has(eid)) return;
       // 案場名兩邊常常不同（PAYROLL 有母子案場），比照發包款：對不上就列出來讓使用者選，
       // 並共用同一份 siteMap。原本是靜默丟掉，使用者無從得知是哪幾筆。
       const payrollSite=topName(c.siteId);
@@ -1561,13 +1564,15 @@ async function checkPayrollCosts(showFail){
         // 品佑代他們付掉的：不是品佑的成本
         if(t.reimbCostId || t.autoDealId) return; // 報銷已走案場成本；分潤進帳為負時也會記成支出
         const eid='pk-'+key;
-        if(have.has(eid)||haveLed.has(String(key))||del.has(eid)) return;
+        const legacyHit=(P==='')&&(have.has('pk-'+t.id)||haveLed.has(String(t.id)));
+        if(have.has(eid)||haveLed.has(String(key))||legacyHit||del.has(eid)) return;
         found.push({c:{id:key, date:t.date, item:String(t.note||'品佑代支出'), amount:t.amount},
           eid, site:pt.site, account:'品佑工程有限公司', src:'park', partner:pt.label});
       } else {
         // 進來的錢：可能是品佑發包給他們（品佑的成本），也可能是他們做外面的（代收）
         const eid='pe-'+key;
-        if(have.has(eid)||haveInc.has(eid)||haveLed.has(String(key))||del.has(eid)) return;
+        const legacyHit=(P==='')&&(have.has('pe-'+t.id)||haveInc.has('pe-'+t.id)||haveLed.has(String(t.id)));
+        if(have.has(eid)||haveInc.has(eid)||haveLed.has(String(key))||legacyHit||del.has(eid)) return;
         const dl=t.autoDealId?dealById[t.autoDealId]:null;
         const payrollSite=(dl&&dl.autoSiteId?topName(dl.autoSiteId):'')||String((dl&&dl.name)||'').trim();
         const mapped=(state.siteMap&&state.siteMap[payrollSite])||(myProjects.has(payrollSite)?payrollSite:'');
