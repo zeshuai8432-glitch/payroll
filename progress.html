@@ -109,7 +109,7 @@ body.printing #print-overlay{display:block;position:absolute;inset:0;background:
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.08.06b-count';
+const APP_VERSION='vG2026.08.06c-progexpr';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -828,14 +828,14 @@ function viewProg(proj){
         if(open){
           for(const s of g){
             const si=s.it, sz=s.v===0, stq=itemTotalQty(si,b), spr=progOf(period,si.id);
-            const srVal=spr.p?+(spr.p*b.count).toFixed(2):'';
+            const srVal=(spr.exprKind==='r'&&spr.expr)?spr.expr:(spr.p?+(spr.p*b.count).toFixed(2):'');
             h+=`<tr class="${sz?'zero':''}"><td></td>
               <td style="padding-left:26px;color:var(--muted)">↳ ${stageHtml(si.name,it.groupName)}</td>
               <td>${esc(si.unit)}</td><td class="num">${qfmt(si.qty)}</td><td class="num">${si.price?qfmt(si.price):''}</td>
               <td class="num muted">${pfmt(s.pp)}</td>
               <td class="num">${hasR
                 ?(editable&&!sz?`<input class="pin pct" data-r="${b.id}::${si.id}" inputmode="decimal" value="${srVal}" placeholder="0">`:(srVal||'—'))
-                :(editable&&!sz?`<input class="pin" data-q="${b.id}::${si.id}" inputmode="decimal" value="${spr.p?qfmt(spr.q||stq*spr.p):''}" placeholder="0">`:qfmt(spr.q||stq*spr.p))}</td>
+                :(editable&&!sz?`<input class="pin" data-q="${b.id}::${si.id}" inputmode="decimal" value="${(spr.exprKind==='q'&&spr.expr)?esc(spr.expr):(spr.p?qfmt(spr.q||stq*spr.p):'')}" placeholder="0">`:qfmt(spr.q||stq*spr.p))}</td>
               <td class="num">${editable&&!sz?`<input class="pin pct" data-p="${b.id}::${si.id}" inputmode="decimal" value="${spr.p?+(spr.p*100).toFixed(1):''}" placeholder="0">`:pfmt(s.p)}</td>
               <td class="num" data-c="ti-${si.id}">${s.thisAmt?money(s.thisAmt):'—'}</td></tr>`;
           }
@@ -845,13 +845,13 @@ function viewProg(proj){
       const zero=ci.v===0;
       const tq=itemTotalQty(it,b);
       const pr=progOf(period,it.id);
-      const rVal=pr.p?+(pr.p*b.count).toFixed(2):'';
+      const rVal=(pr.exprKind==='r'&&pr.expr)?pr.expr:(pr.p?+(pr.p*b.count).toFixed(2):'');
       h+=`<tr class="${zero?'zero':''}"><td>${esc(it.no)}</td><td>${esc(it.name)}</td><td>${esc(it.unit)}</td>
         <td class="num">${qfmt(it.qty)}</td><td class="num">${it.price?qfmt(it.price):''}</td>
         <td class="num muted">${pfmt(ci.pp)}</td>
         <td class="num">${hasR
           ?(editable&&!zero?`<input class="pin pct" data-r="${b.id}::${it.id}" inputmode="decimal" value="${rVal}" placeholder="0">`:(rVal||'—'))
-          :(editable&&!zero?`<input class="pin" data-q="${b.id}::${it.id}" inputmode="decimal" value="${pr.p?qfmt(pr.q||tq*pr.p):''}" placeholder="0">`:qfmt(pr.q||tq*pr.p))}</td>
+          :(editable&&!zero?`<input class="pin" data-q="${b.id}::${it.id}" inputmode="decimal" value="${(pr.exprKind==='q'&&pr.expr)?esc(pr.expr):(pr.p?qfmt(pr.q||tq*pr.p):'')}" placeholder="0">`:qfmt(pr.q||tq*pr.p))}</td>
         <td class="num">${editable&&!zero?`<input class="pin pct" data-p="${b.id}::${it.id}" inputmode="decimal" value="${pr.p?+(pr.p*100).toFixed(1):''}" placeholder="0">`:pfmt(ci.p)}</td>
         <td class="num" data-c="ti-${it.id}">${ci.thisAmt?money(ci.thisAmt):'—'}</td></tr>`;
     }
@@ -1277,12 +1277,18 @@ function setProgInput(proj,blkId,itemId,kind,val){
   const period=proj.periods[perIdx];
   const b=proj.blocks.find(x=>x.id===blkId);const it=b.items.find(x=>x.id===itemId);
   const tq=itemTotalQty(it,b);
+  const v=evalExpr(val);            // 可打算式：第二期填 12+4 就是累計 16
   let p,q;
-  if(kind==='q'){ q=Math.max(0,Math.min(num(val),tq)); p=tq?q/tq:0; }
-  else if(kind==='r'){ const n=Math.max(0,Math.min(num(val),b.count)); p=b.count?n/b.count:0; q=tq*p; }
-  else{ p=Math.max(0,Math.min(num(val),100))/100; q=tq*p; }
+  if(kind==='q'){ q=Math.max(0,Math.min(v,tq)); p=tq?q/tq:0; }
+  else if(kind==='r'){ const n=Math.max(0,Math.min(v,b.count)); p=b.count?n/b.count:0; q=tq*p; }
+  else{ p=Math.max(0,Math.min(v,100))/100; q=tq*p; }
   period.prog||(period.prog={});
-  if(p>0)period.prog[itemId]={p,q:+q.toFixed(2)};else delete period.prog[itemId];
+  if(p>0){
+    const rec={p,q:+q.toFixed(2)};
+    // 留著原式，下次打開還看得到是怎麼加出來的（換別種輸入方式就不留）
+    if(hasExpr(val)){ rec.expr=String(val).trim(); rec.exprKind=kind; }
+    period.prog[itemId]=rec;
+  } else delete period.prog[itemId];
   save();
   // 更新畫面數字（不重畫，保留輸入焦點）
   const c=calc(proj,perIdx);
