@@ -109,7 +109,7 @@ body.printing #print-overlay{display:block;position:absolute;inset:0;background:
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.08.06a-print';
+const APP_VERSION='vG2026.08.06b-count';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -318,6 +318,26 @@ function analyzeSheet(sheet){
 
 /* ═══════════ 計算 ═══════════ */
 const itemTotalQty=(it,blk)=>it.qty*blk.count;
+// 改「間數」時保住歷史：各期進度存的是百分比 p（總量的幾成），總量＝單間數量×間數。
+// 間數一變，同一個 p 換算出來的數量與金額就跟著變，已經請過款的舊期會被追溯改掉。
+// 這裡改用各期存下來的絕對數量 q 回推新的 p，讓舊期的完成量原封不動。
+function rescaleBlockProgress(proj,blk,newCount){
+  if(!proj||!blk||!Array.isArray(proj.periods)) return 0;
+  let n=0;
+  for(const per of proj.periods){
+    if(!per||!per.prog) continue;
+    for(const it of (blk.items||[])){
+      const pr=per.prog[it.id]; if(!pr) continue;
+      const oldTotal=(Number(it.qty)||0)*(Number(blk.count)||0);
+      const newTotal=(Number(it.qty)||0)*newCount;
+      const doneQty=(pr.q!==undefined&&pr.q!==null)?Number(pr.q):(Number(pr.p)||0)*oldTotal; // 舊資料沒存 q 就用 p 回推
+      if(newTotal>0){ pr.p=Math.min(doneQty/newTotal,1); pr.q=+doneQty.toFixed(2); }
+      else { pr.p=0; pr.q=0; }
+      n++;
+    }
+  }
+  return n;
+}
 const itemValue=(it,blk)=>it.amount*blk.count;
 // 該期保留款：period.rtAmt 有填就直接用（湊整數用），否則照專案的％算
 const retainOf=(proj,period,base)=>{
@@ -550,7 +570,7 @@ function viewItems(proj){
       h+=`<div class="rowline" style="flex-wrap:wrap;gap:8px;align-items:flex-end;margin-bottom:8px;padding:8px;background:var(--bg,#f8fafc);border-radius:8px">
         ${fld('區塊名稱',`<input id="bf-name" value="${esc(b.name)}" style="${ist};min-width:180px">`)}
         ${fld('單位',`<input id="bf-unit" value="${esc(b.unit)}" style="${ist};width:70px">`)}
-        ${fld('合約數量',`<input id="bf-count" type="number" inputmode="decimal" min="0" value="${b.count}" title="可填 0＝這個大項不施作，金額不計入但保留明細" style="${ist};width:90px">`)}
+        ${fld('合約數量',`<input id="bf-count" inputmode="decimal" value="${esc(String(b.countExpr||b.count))}" title="可填算式，例如追加發包打 12+4；填 0＝這個大項不施作，金額不計入但保留明細" style="${ist};width:110px">`)}
         <button class="btn sm" data-blkok="${b.id}">儲存</button><button class="btn sub sm" data-blkcancel="1">取消</button></div>`;
     }
     if(b.items.length&&!batchAll){
@@ -1302,7 +1322,14 @@ document.addEventListener('click',async e=>{
   if(t.dataset.editblk){ blkEdit=t.dataset.editblk; itemEdit=itemAdd=null; blkAdd=false; render(); return; }
   if(t.dataset.blkok){
     const b=proj.blocks.find(x=>x.id===t.dataset.blkok);if(!b)return;
-    b.name=(g('bf-name').value.trim())||b.name; b.unit=g('bf-unit').value.trim()||b.unit; b.count=Math.max(num(g('bf-count').value),0);   // 允許 0＝這個大項不做（不計金額、保留結構）
+    b.name=(g('bf-name').value.trim())||b.name; b.unit=g('bf-unit').value.trim()||b.unit;
+    (()=>{ // 間數可打算式（追加發包打 12+4）；改間數時要保住過去各期已完成的「數量」
+      const raw=g('bf-count').value.trim();
+      const nv=Math.max(evalExpr(raw)||0,0);
+      const old=Number(b.count)||0;
+      if(nv!==old) rescaleBlockProgress(proj,b,nv);   // 進度存的是百分比，不換算的話舊期會被連帶改掉
+      b.count=nv; b.countExpr=hasExpr(raw)?raw:'';
+    })();   // 允許 0＝這個大項不做（不計金額、保留結構）
     b.items.forEach(it=>it.amount=it.qty*it.price); blkEdit=null; save(); render(); return;
   }
   if(t.dataset.blkcancel){ blkEdit=null; blkAdd=false; render(); return; }
