@@ -114,7 +114,7 @@
 <nav id="nav"></nav>
 <main id="app"></main>
 <script>
-const APP_VERSION = 'vP2026.08.06h-legacykey'; // 版本號顯示在頁首，方便確認拿到新版
+const APP_VERSION = 'vP2026.08.06i-partnerview'; // 版本號顯示在頁首，方便確認拿到新版
 const LS='pinyou_data_v1';
 // ── 雲端端對端加密（與 payroll／簡化版共用同一組密碼與鑰匙；同網域共用 localStorage，解鎖一次三系統都通）──
 const E2E_SALT='PMENC1|dz-gx-py|2026';
@@ -191,7 +191,8 @@ const TABS=[['dash','儀表板'],['proj','案場'],['exp','支出'],['inc','請�
 let state=blank();
 let tab='dash';
 let expFilter='', expItemFilter='', incFilter='', expEditId=null, expFrom='', expTo='';
-let partnerPick='', partnerFrom='', partnerTo=''; // 往來分頁的篩選
+let partnerPick='', partnerFrom='', partnerTo='';
+let expShowPartner=false; // 支出清單預設不顯示代支出往來（那不是品佑的支出，混在一起看很怪） // 往來分頁的篩選
 let docDraft=null; // 編輯中的報價單/請款單草稿
 let showHidden=false; try{ showHidden=localStorage.getItem('pinyou_showhidden')==='1'; }catch(e){} // 暗帳預設收合
 let pEditId=null; // 正在就地編輯的案場
@@ -729,9 +730,35 @@ function viewProj(){
 }
 
 function acctOptions(sel){ return '<option value="">（未指定）</option>'+state.accounts.map(a=>`<option ${sel===a?'selected':''}>${esc(a)}</option>`).join(''); }
+// 待帶入卡片：支出頁與往來頁共用（內容不依賴 viewExp 的區域變數）
+function prPendingCardHtml(){
+  return (typeof prFound!=='undefined'&&prFound&&prFound.length)?`<div class="card" style="border-left:3px solid #2563eb">
+    <h2>📥 PAYROLL 有 ${prFound.length} 筆支出還沒帶入</h2>
+    <p class="sub" style="margin:0 0 8px">來源有東澤建龍與進凱兩套 PAYROLL，各列右邊會標對象。三種類型：<b>案場成本</b>（材料、機具等）、<b>代支出</b>（品佑幫他們付的工資等，不算品佑成本）、<b>發包款</b>（品佑發包給對方、他們賺走的，<b>是品佑的成本</b>）。已走案場成本進來的報銷與分潤結算不會重複列出。<b>案場名對不上</b>的（案場成本與發包款都可能）請先在該列選「算到哪個案場」再新增（PAYROLL 是母子案場、名字常跟這邊不同，選過一次就會記住）；如果那筆是<b>他們做外面公司的</b>，下拉選「他們做外面的（記代收）」，會記成代收、不進品佑損益。</p>
+    <div class="scroll"><table><thead><tr><th>日期</th><th>案場</th><th>項目</th><th class="num">金額</th><th>出帳</th><th></th></tr></thead>
+    <tbody>${prFound.map((f,i)=>`<tr>
+      <td>${esc(f.c.date||'')}</td>
+      <td>${(f.src==='earned'||f.src==='cost')
+        ? `<select data-prsite="${i}" style="max-width:190px"><option value="">選案場…</option>${(state.projects||[]).map(pj=>`<option value="${esc(pj.name)}" ${f.site===pj.name?'selected':''}>${esc(pj.name)}</option>`).join('')}${f.src==='earned'?`<option value="__held__" ${f.site==='__held__'?'selected':''}>— 他們做外面的（記代收）</option>`:''}</select>${f.payrollSite?`<div class="sub" style="margin:2px 0 0">PAYROLL：${esc(f.payrollSite)}</div>`:''}`
+        : esc(f.site)}${f.src==='park'?'<span class="tag" style="background:#eef6ff;color:#2563eb;margin-left:4px">代支出</span>':''}${f.src==='earned'?'<span class="tag" style="background:#fef3c7;color:#92400e;margin-left:4px">發包款</span>':''}${f.partner?`<span class="tag" style="background:#f1f5f9;color:#475569;margin-left:4px">${esc(f.partner)}</span>`:''}${(()=>{
+        const dup=[...state.expenses,...state.incomes].some(x=>x&&num(x.amount)===num(f.c.amount)&&String(x.date||'')===String(f.c.date||'')&&(partnerOf(x)===f.partner));
+        return dup?'<span class="tag" style="background:#fee2e2;color:#b91c1c;margin-left:4px" title="本帳已經有同日期同金額的紀錄，確認一下是不是已經帶過">疑似已帶入</span>':'';
+      })()}</td><td>${esc(String(f.c.item||''))}</td>
+      <td class="num">${money(f.c.amount)}</td><td>${esc(f.account)}</td>
+      <td class="num" style="white-space:nowrap"><button class="act on" data-pradd="${i}">＋新增</button> <button class="act" data-prskip="${i}">忽略</button></td>
+    </tr>`).join('')}</tbody></table></div>
+    <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;align-items:center">
+      <button class="act on" id="pr-addall">全部新增</button>
+      <button class="act" id="pr-skipall">全部忽略</button>
+      ${(typeof prSkippedNoMatch!=='undefined'&&prSkippedNoMatch)?`<span class="sub" style="margin:0;color:#b45309">其中 ${prSkippedNoMatch} 筆的案場名兩邊對不上，請在該列自己選案場。</span>`:''}
+      ${(()=>{ const bad=(typeof prSrcStatus!=='undefined'&&prSrcStatus||[]).filter(x=>!x.ok); if(!bad.length) return '';
+        return `<span class="sub" style="margin:0;color:#b91c1c">⚠ ${bad.map(x=>`${esc(x.label)} 讀取失敗（${esc(x.err||'')}）`).join('、')} —— 這個來源的項目這次沒列出，不是沒有新資料。</span>`; })()}
+    </div>
+  </div>`:'';
+}
 function viewExp(){
   const sites=allSiteNames(), items=itemNames();
-  const filtered=state.expenses.filter(x=>(!expFilter||x.site===expFilter)&&(!expItemFilter||x.item===expItemFilter)&&inDateRange(x.date,expFrom,expTo)).sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+  const filtered=state.expenses.filter(x=>(!expFilter||x.site===expFilter)&&(!expItemFilter||x.item===expItemFilter)&&inDateRange(x.date,expFrom,expTo)&&(expShowPartner||!isPartnerTx(x))).sort((a,b)=>(b.date||'').localeCompare(a.date||''));
   const tot=filtered.reduce((s,x)=>s+num(x.amount),0);
   const rows=filtered.map(x=>{
     if(expEditId===x.id){
@@ -757,29 +784,7 @@ function viewExp(){
   }).join('');
   const siteOpts=`<option value="">全部案場</option>`+sites.map(s=>`<option ${expFilter===s?'selected':''}>${esc(s)}</option>`).join('');
   const itemOpts=`<option value="">全部項目</option>`+items.map(s=>`<option ${expItemFilter===s?'selected':''}>${esc(s)}</option>`).join('');
-  const prCard=(typeof prFound!=='undefined'&&prFound&&prFound.length)?`<div class="card" style="border-left:3px solid #2563eb">
-    <h2>📥 PAYROLL 有 ${prFound.length} 筆支出還沒帶入</h2>
-    <p class="sub" style="margin:0 0 8px">來源有東澤建龍與進凱兩套 PAYROLL，各列右邊會標對象。三種類型：<b>案場成本</b>（材料、機具等）、<b>代支出</b>（品佑幫他們付的工資等，不算品佑成本）、<b>發包款</b>（品佑發包給對方、他們賺走的，<b>是品佑的成本</b>）。已走案場成本進來的報銷與分潤結算不會重複列出。<b>案場名對不上</b>的（案場成本與發包款都可能）請先在該列選「算到哪個案場」再新增（PAYROLL 是母子案場、名字常跟這邊不同，選過一次就會記住）；如果那筆是<b>他們做外面公司的</b>，下拉選「他們做外面的（記代收）」，會記成代收、不進品佑損益。</p>
-    <div class="scroll"><table><thead><tr><th>日期</th><th>案場</th><th>項目</th><th class="num">金額</th><th>出帳</th><th></th></tr></thead>
-    <tbody>${prFound.map((f,i)=>`<tr>
-      <td>${esc(f.c.date||'')}</td>
-      <td>${(f.src==='earned'||f.src==='cost')
-        ? `<select data-prsite="${i}" style="max-width:190px"><option value="">選案場…</option>${(state.projects||[]).map(pj=>`<option value="${esc(pj.name)}" ${f.site===pj.name?'selected':''}>${esc(pj.name)}</option>`).join('')}${f.src==='earned'?`<option value="__held__" ${f.site==='__held__'?'selected':''}>— 他們做外面的（記代收）</option>`:''}</select>${f.payrollSite?`<div class="sub" style="margin:2px 0 0">PAYROLL：${esc(f.payrollSite)}</div>`:''}`
-        : esc(f.site)}${f.src==='park'?'<span class="tag" style="background:#eef6ff;color:#2563eb;margin-left:4px">代支出</span>':''}${f.src==='earned'?'<span class="tag" style="background:#fef3c7;color:#92400e;margin-left:4px">發包款</span>':''}${f.partner?`<span class="tag" style="background:#f1f5f9;color:#475569;margin-left:4px">${esc(f.partner)}</span>`:''}${(()=>{
-        const dup=[...state.expenses,...state.incomes].some(x=>x&&num(x.amount)===num(f.c.amount)&&String(x.date||'')===String(f.c.date||'')&&(partnerOf(x)===f.partner));
-        return dup?'<span class="tag" style="background:#fee2e2;color:#b91c1c;margin-left:4px" title="本帳已經有同日期同金額的紀錄，確認一下是不是已經帶過">疑似已帶入</span>':'';
-      })()}</td><td>${esc(String(f.c.item||''))}</td>
-      <td class="num">${money(f.c.amount)}</td><td>${esc(f.account)}</td>
-      <td class="num" style="white-space:nowrap"><button class="act on" data-pradd="${i}">＋新增</button> <button class="act" data-prskip="${i}">忽略</button></td>
-    </tr>`).join('')}</tbody></table></div>
-    <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;align-items:center">
-      <button class="act on" id="pr-addall">全部新增</button>
-      <button class="act" id="pr-skipall">全部忽略</button>
-      ${(typeof prSkippedNoMatch!=='undefined'&&prSkippedNoMatch)?`<span class="sub" style="margin:0;color:#b45309">其中 ${prSkippedNoMatch} 筆的案場名兩邊對不上，請在該列自己選案場。</span>`:''}
-      ${(()=>{ const bad=(typeof prSrcStatus!=='undefined'&&prSrcStatus||[]).filter(x=>!x.ok); if(!bad.length) return '';
-        return `<span class="sub" style="margin:0;color:#b91c1c">⚠ ${bad.map(x=>`${esc(x.label)} 讀取失敗（${esc(x.err||'')}）`).join('、')} —— 這個來源的項目這次沒列出，不是沒有新資料。</span>`; })()}
-    </div>
-  </div>`:'';
+  const prCard=prPendingCardHtml();
   return `${prCard}<div class="card">
     <h2>新增支出</h2>
     <div class="row">
@@ -803,6 +808,7 @@ function viewExp(){
       <select id="e-item-filter" style="width:auto;height:34px">${itemOpts}</select>
       <input type="date" id="e-from" value="${esc(expFrom)}" title="起" style="width:auto;height:34px">
       <input type="date" id="e-to" value="${esc(expTo)}" title="迄" style="width:auto;height:34px">
+      <button class="act${expShowPartner?' on':''}" id="e-showpartner" title="代支出是品佑幫東澤建龍／進凱付掉的錢，不是品佑的成本，預設不列在這裡">${expShowPartner?'✓ 含代支出往來':'代支出往來（另在「往來」頁）'}</button>
       <button class="act on" id="e-print">🖨 匯出明細 PDF</button>
       ${(expFilter||expItemFilter||expFrom||expTo)?'<button class="act" id="e-clearfilter">清除篩選</button>':''}
       <button class="act" id="e-rename" title="把某個項目名稱一次全部改掉，用來整理混亂的名稱">項目批次改名</button>
@@ -1160,7 +1166,7 @@ function viewPartner(){
         <td class="num"><button class="act danger" data-ptdel="${opt.kind}::${esc(x.id)}">刪</button></td></tr>`).join('')}
     </tbody></table></div>`:'<div class="empty">目前沒有紀錄。</div>'}
   </div>`;
-  return `<div class="card">
+  return `${prPendingCardHtml()}<div class="card">
     <div class="row" style="align-items:center">
       <div class="field" style="min-width:150px"><label>往來對象</label><select id="pt-pick">${names.map(n=>`<option ${n===cur?'selected':''}>${esc(n)}</option>`).join('')}</select></div>
       <div class="field"><label>起</label><input type="date" id="pt-from" value="${esc(partnerFrom)}"></div>
@@ -1342,10 +1348,11 @@ function bind(){
   on('e-filter','onchange',e=>{ expFilter=e.target.value; render(); });
   on('e-item-filter','onchange',e=>{ expItemFilter=e.target.value; render(); });
   on('e-clearfilter','onclick',()=>{ expFilter=''; expItemFilter=''; expFrom=''; expTo=''; render(); });
+  on('e-showpartner','onclick',()=>{ expShowPartner=!expShowPartner; render(); });
   on('e-from','onchange',e=>{ expFrom=e.target.value; render(); });
   on('e-to','onchange',e=>{ expTo=e.target.value; render(); });
   on('e-print','onclick',()=>{
-    const list=state.expenses.filter(x=>(!expFilter||x.site===expFilter)&&(!expItemFilter||x.item===expItemFilter)&&inDateRange(x.date,expFrom,expTo))
+    const list=state.expenses.filter(x=>(!expFilter||x.site===expFilter)&&(!expItemFilter||x.item===expItemFilter)&&inDateRange(x.date,expFrom,expTo)&&(expShowPartner||!isPartnerTx(x)))
       .sort((a,b)=>String(a.date||'').localeCompare(String(b.date||'')));
     printExpenses(list, expFrom, expTo);
   });
