@@ -114,7 +114,7 @@
 <nav id="nav"></nav>
 <main id="app"></main>
 <script>
-const APP_VERSION = 'vP2026.08.06f-partnername'; // 版本號顯示在頁首，方便確認拿到新版
+const APP_VERSION = 'vP2026.08.06g-srckey'; // 版本號顯示在頁首，方便確認拿到新版
 const LS='pinyou_data_v1';
 // ── 雲端端對端加密（與 payroll／簡化版共用同一組密碼與鑰匙；同網域共用 localStorage，解鎖一次三系統都通）──
 const E2E_SALT='PMENC1|dz-gx-py|2026';
@@ -1526,14 +1526,17 @@ async function checkPayrollCosts(showFail){
     (dd.costs||[]).forEach(c=>{
       if(!c||c.id==null) return;
       if(String(c.id).startsWith('py-')) return; // 本來就是品佑帶過去的，不要再帶回來
-      const eid='pr-'+P+c.id;
-      if(have.has(eid)||haveSrc.has(String(c.id))||del.has(eid)) return;
+      // 溯源鍵要帶來源前綴：兩套 PAYROLL 各自 uid() 有機會撞號，
+      // 不加前綴的話 A 帶入過的 X1 會讓 B 的 X1 被誤判成「已帶入」而消失
+      const srcKey=P+String(c.id);
+      const eid='pr-'+srcKey;
+      if(have.has(eid)||haveSrc.has(srcKey)||del.has(eid)) return;
       // 案場名兩邊常常不同（PAYROLL 有母子案場），比照發包款：對不上就列出來讓使用者選，
       // 並共用同一份 siteMap。原本是靜默丟掉，使用者無從得知是哪幾筆。
       const payrollSite=topName(c.siteId);
       const site=(state.siteMap&&state.siteMap[payrollSite])||(myProjects.has(payrollSite)?payrollSite:'');
       if(!site) skipped++;
-      found.push({c, eid, site, payrollSite, account:accName[c.payer]||'品佑工程有限公司', src:'cost', partner:pt.label});
+      found.push({c, eid, site, payrollSite, srcKey, account:accName[c.payer]||'品佑工程有限公司', src:'cost', partner:pt.label});
     });
     const entries=parkEntriesOf(dd);
     const dealById={}; (dd.deals||[]).forEach(x=>{ if(x&&x.id) dealById[x.id]=x; });
@@ -1596,7 +1599,7 @@ function prAddExpense(f){
   if(isPark){ row.payrollLedgerId=c.id; row.partnerAcct=true; }
   else if(isEarned){ row.payrollLedgerId=c.id; row.partnerEarned=true;
     if(f.payrollSite){ state.siteMap=state.siteMap||{}; state.siteMap[f.payrollSite]=f.site; } } // 記住對應，下次自動帶
-  else { row.payrollId=c.id;
+  else { row.payrollId=f.srcKey||String(c.id);
     if(f.payrollSite&&f.payrollSite!==f.site){ state.siteMap=state.siteMap||{}; state.siteMap[f.payrollSite]=f.site; } }
   state.expenses.push(row);
   return true;
