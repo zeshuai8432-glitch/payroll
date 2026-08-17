@@ -511,7 +511,7 @@ const FS_ROOT = 'https://firestore.googleapis.com/v1/projects/'+FS_PROJECT+'/dat
 const FS_DOC_BASE = FS_ROOT+'payroll/';
 const FS_SIG_BASE = FS_ROOT+'payrollSignatures/';
 const FS_REST_URL = FS_DOC_BASE+'main?key='+FS_KEY;
-const APP_VERSION = 'v2026.08.06c-raise';
+const APP_VERSION = 'v2026.08.06d-leavemulti';
 let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], tools:[], locations:[], assets:[], advances:[], accounts:[], ledger:[], deals:[], billings:[], measurements:[], contracts:{}, costs:[], textMemory:{clients:[],companies:[]}, parkAccId:'', oweBonus:{}, minFund:'', shareholderTx:[], myCompanies:[], payrollSnapshots:[], yearIncomeAdj:[], deletedIds:[], resurrected:{ids:[],at:0}, tab:'dash' };
 let cloudStatus='連線中…';
 let localDirty=false, lastCloudTs=0;
@@ -2038,6 +2038,15 @@ function viewEntry(){
       <div class="field f-leave-only" style="display:${entryKind==='leave'?'':'none'}"><label>請假長度</label><select id="f-half"><option value="full">整天</option><option value="half">半天</option></select></div>
       <button class="btn f-leave-only" id="f-add-leave" style="display:${entryKind!=='work'?'':'none'}">＋ 登記</button>
     </div>
+    <div class="f-leave-only" style="display:${entryKind!=='work'?'':'none'}">
+      <div style="margin:8px 0 4px;font-size:13px;font-weight:600;color:var(--muted)">一次登記多人就勾這裡（都不勾＝只登記上面選的那一位）</div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px">
+        ${activeEmps.map(e=>`<label style="display:flex;align-items:center;gap:5px;padding:6px 12px;border:1.5px solid var(--line2);border-radius:10px;cursor:pointer;font-size:13px"><input type="checkbox" data-empick="${e.id}" ${entryEmpPick[e.id]?'checked':''} style="width:16px;height:16px">${esc(e.name)}</label>`).join('')}
+      </div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:10px">
+        <button class="act" id="lv-selall" style="border:1px solid var(--accent);border-radius:8px;padding:0 14px;height:34px;color:var(--accent)">全選員工</button>
+      </div>
+    </div>
     <div class="f-work-only" style="display:${entryKind==='work'?'':'none'}">
       <div style="display:flex;gap:6px;margin:2px 0 12px;flex-wrap:wrap">
         <button class="act" id="emode-emp" style="font-size:13px;padding:0 14px;height:34px;${entryByMode==='emp'?'background:#ede9fe;color:#4338ca;font-weight:700':''}">依員工·多案場</button>
@@ -3118,17 +3127,30 @@ function bind(){
   const addLeave=document.getElementById('f-add-leave');
   if(addLeave) addLeave.onclick=()=>{
     const date=document.getElementById('f-date').value;
-    const empId=document.getElementById('f-emp').value;
     const kind=document.getElementById('f-kind').value;
-    const emp=state.employees.find(e=>e.id===empId);
-    if(!date||!empId||!emp||kind==='work') return;
+    if(!date||kind==='work') return;
+    // 有勾選就一次登記多人；都沒勾就用上面下拉選的那一位
+    let ids=Object.keys(entryEmpPick).filter(id=>entryEmpPick[id]&&state.employees.some(e=>e.id===id&&e.active));
+    if(!ids.length){ const one=(document.getElementById('f-emp')||{}).value; if(one) ids=[one]; }
+    if(!ids.length){ alert('請先選擇員工'); return; }
     const label=kind==='leave'?'請假':'休假';
     const half=(kind==='leave' && document.getElementById('f-half') && document.getElementById('f-half').value==='half');
-    const dup=state.attendance.find(r=>r.empId===empId&&r.date===date&&r.kind===kind);
-    if(dup){ alert(`${emp.name} 在 ${date} 已經登記過${label}了。`); return; }
-    state.attendance.push({id:uid(),date,empId,kind,half:half||false});
-    entryDate=date; entryEmp=empId;
+    const isDup=id=>state.attendance.some(r=>r.empId===id&&r.date===date&&r.kind===kind);
+    const dupNames=ids.filter(isDup).map(id=>empName(id));
+    const toAdd=ids.filter(id=>!isDup(id));
+    if(!toAdd.length){ alert(`${dupNames.join('、')} 在 ${date} 已經登記過${label}了。`); return; }
+    if(dupNames.length && !confirm(`${dupNames.join('、')} 在 ${date} 已經登記過${label}，會跳過。\n\n其餘 ${toAdd.length} 人要繼續登記嗎？`)) return;
+    toAdd.forEach(id=>state.attendance.push({id:uid(),date,empId:id,kind,half:half||false}));
+    entryDate=date; if(toAdd.length===1) entryEmp=toAdd[0];
+    entryEmpPick={}; // 送出後清空勾選，免得下一批誤登
     saveData(); render();
+  };
+  const lvSelAll=document.getElementById('lv-selall');
+  if(lvSelAll) lvSelAll.onclick=()=>{
+    const boxes=[...document.querySelectorAll('.f-leave-only [data-empick]')];
+    const allOn=boxes.length>0&&boxes.every(cb=>cb.checked);
+    boxes.forEach(cb=>{ cb.checked=!allOn; if(cb.checked) entryEmpPick[cb.dataset.empick]=true; else delete entryEmpPick[cb.dataset.empick]; });
+    lvSelAll.textContent=allOn?'全選員工':'取消全選';
   };
 
   // 出工送出（多案場一次）
