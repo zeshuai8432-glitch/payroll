@@ -314,6 +314,20 @@
   .metric:nth-child(6n+4) .v { background: var(--metric-4); -webkit-background-clip: text; background-clip: text; }
   .metric:nth-child(6n+5) .v { background: var(--metric-5); -webkit-background-clip: text; background-clip: text; }
   .metric:nth-child(6n+6) .v { background: var(--metric-6); -webkit-background-clip: text; background-clip: text; }
+  /* 深色底的統計卡：.v 預設是「漸層裁切文字」（text-fill 透明、顏色來自 background 漸層），
+     所以父層寫 color:#fff 根本進不去。而 --metric-1 的起點正是 --accent(#4f46e5)，
+     等於紫字印在紫底上，數字整個看不見。這裡把裁切關掉、改回實心白字。
+     ⚠ 這組規則必須排在上面 nth-child 那幾條後面：特異度相同，靠順序決勝。 */
+  .metric.inverse { background: var(--accent); border-color: rgba(255,255,255,.35); }
+  .metric.inverse .l { color: #fff; opacity: .85; }
+  .metric.inverse .v {
+    background: none;
+    -webkit-background-clip: border-box;
+    background-clip: border-box;
+    -webkit-text-fill-color: #fff;
+    color: #fff;
+  }
+  .metric.inverse::before { background: rgba(255,255,255,.55); }
 
   /* ── 表格 ── */
   table { width: 100%; border-collapse: collapse; font-size: 13px; }
@@ -514,7 +528,7 @@ const FS_ROOT = 'https://firestore.googleapis.com/v1/projects/'+FS_PROJECT+'/dat
 const FS_DOC_BASE = FS_ROOT+'payroll/';
 const FS_SIG_BASE = FS_ROOT+'payrollSignatures/';
 const FS_REST_URL = FS_DOC_BASE+'main?key='+FS_KEY;
-const APP_VERSION = 'v2026.08.06g-hoverfix';
+const APP_VERSION = 'v2026.08.06h-metricfix';
 let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], tools:[], locations:[], assets:[], advances:[], accounts:[], ledger:[], deals:[], billings:[], measurements:[], contracts:{}, costs:[], textMemory:{clients:[],companies:[]}, parkAccId:'', oweBonus:{}, minFund:'', shareholderTx:[], myCompanies:[], payrollSnapshots:[], yearIncomeAdj:[], deletedIds:[], resurrected:{ids:[],at:0}, tab:'dash' };
 let cloudStatus='連線中…';
 let localDirty=false, lastCloudTs=0;
@@ -2553,7 +2567,7 @@ function viewPayroll(){
     <div class="metric"><div class="l">員工數</div><div class="v">${empIds.length}${partnerIds.length?`<span style="font-size:12px;color:var(--muted)"> +${partnerIds.length}股東</span>`:''}</div></div>
     <div class="metric"><div class="l">基本工資</div><div class="v" style="font-size:20px">${money(grossSum)}</div></div>
     <div class="metric"><div class="l">實發總額</div><div class="v">${money(netSum)}</div></div>
-    <div class="metric" style="background:var(--accent);color:#fff"><div class="l" style="color:#fff;opacity:.85">公司負擔工資（品佑結算基準）</div><div class="v" style="font-size:20px">${money(companySum)}${otherDedSum>0?`<span style="font-size:11px;opacity:.85"> 已扣賠付 ${money(otherDedSum)}</span>`:''}</div></div>
+    <div class="metric inverse"><div class="l">公司負擔工資（品佑結算基準）</div><div class="v" style="font-size:20px">${money(companySum)}${otherDedSum>0?`<span style="font-size:11px;opacity:.85"> 已扣賠付 ${money(otherDedSum)}</span>`:''}</div></div>
   </div>
   <div class="card">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;gap:8px;flex-wrap:wrap">
@@ -5988,7 +6002,7 @@ function viewAccounts(){
   return `
   <div class="metrics">
     ${accMetrics}
-    <div class="metric" style="background:var(--accent);color:#fff"><div class="l" style="color:#fff;opacity:.85">總餘額</div><div class="v">${money(totalBal)}</div></div>
+    <div class="metric inverse"><div class="l">總餘額</div><div class="v">${money(totalBal)}</div></div>
   </div>
   ${coopWarn}
 
@@ -6380,7 +6394,7 @@ function viewDeals(){
 
   return `
   <div class="metrics">
-    <div class="metric" style="background:var(--accent);color:#fff"><div class="l" style="color:#fff;opacity:.85">帳面公積金累計</div><div class="v">${money(totFund)}</div></div>
+    <div class="metric inverse"><div class="l">帳面公積金累計</div><div class="v">${money(totFund)}</div></div>
     ${bonusCards}
   </div>
   ${coopSites.length?`<details ${detailAttrs('deals-coop-sites',true)} class="card" style="background:#fdf6ee"><summary style="cursor:pointer;font-size:14px;font-weight:600">合作案場（自動匯總）・${activeCoop.length} 進行中</summary><p class="sub" style="margin:6px 0 8px">每個合作案場一筆，金額=該案場已收款請款、成本=該案場總成本；未收款不進分潤。管理人那半可「帶去公司分潤」再算30/70。</p>${coopActiveHtml}${coopPausedHtml}${coopClosedHtml}</details>`:''}
