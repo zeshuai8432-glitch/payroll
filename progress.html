@@ -109,7 +109,7 @@ body.printing #print-overlay{display:block;position:absolute;inset:0;background:
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.08.06e-daylabor';
+const APP_VERSION='vG2026.08.06f-subwiz';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -571,6 +571,7 @@ function render(){
   else if(state.tab==='alloc')h+=viewAlloc(proj);
   else h+=viewSet(proj);
   app.innerHTML=h;
+  if(subPanel&&!proj.parentId) bindSubPanel();
 }
 
 // 「工班分派」面板：依工序一次標（骨架給 A、塞棉給 B、封板給 C），
@@ -606,6 +607,185 @@ function crewPanelHtml(proj){
   return h;
 }
 
+/* ── 發包精靈：（房型 × 工序 × 間數）──
+   實務上不是「二次封板全部給某一家」，而是「TYPE-SK 挑 4 間、TYPE-DD 挑 1 間的二次封板給他」。
+   所以分派單位是三個維度的交集，不是單一工序。這裡一次選完，直接生出／併進該工班的子專案，
+   免得複製全部細項再刪三百條、還要一個個改區塊間數。 */
+let subPanel=false;
+let _subInfo={};   // {blkId:{stage:{rooms(母間數), used(已發包間數), perRoom(每間金額), n(條數)}}}
+const SUB_ALL='*';  // 「整條發包」的虛擬工序代碼
+function buildSubInfo(proj){
+  const al=allocationOf(proj);
+  const byId={}; al.rows.forEach(r=>{ byId[r.it.id]=r; });
+  _subInfo={};
+  proj.blocks.forEach(b=>{
+    const m={}; _subInfo[b.id]=m;
+    const add=(key,it)=>{
+      const e=m[key]||(m[key]={rooms:Number(b.count)||0,used:0,perRoom:0,n:0});
+      e.perRoom+=Number(it.amount)||0; e.n++;
+      const r=byId[it.id], q=Number(it.qty)||0;
+      if(r&&q) e.used=Math.max(e.used, +(r.aQty/q).toFixed(2));   // 已發包量換算回間數
+    };
+    b.items.forEach(it=>{
+      if(!(Number(it.amount)>0)) return;
+      add(SUB_ALL,it);
+      if(it.groupId&&it.groupName) add(stageOf(it.name,it.groupName),it);
+    });
+  });
+}
+function subcontractPanelHtml(proj){
+  buildSubInfo(proj);
+  const kids=childProjects(proj.id);
+  const buckets=stageBuckets(proj);
+  const blks=proj.blocks.filter(b=>(Number(b.count)||0)>0&&b.items.some(it=>Number(it.amount)>0));
+  let h=`<div class="card" style="border-color:rgba(96,165,250,.5);background:rgba(59,130,246,.07);margin-bottom:10px">
+    <div class="rowline" style="align-items:center;margin-bottom:6px"><b>🏗 發包給工班</b><span style="flex:1"></span>
+      <button class="btn sub sm" id="sub-close">收起</button></div>
+    <div class="muted" style="font-size:12.5px;margin-bottom:10px">挑<b>工序</b>，再填<b>每個房型各發包幾間</b>，就生出（或併進）那個工班的子專案 —— 只帶選到的細項、間數也設好，不用複製全部再刪。<br>例：13F 請人上來做二次封板，SK 封 4 間、DD 封 1 間 → 勾「二次封板」，TYPE-SK 填 4、TYPE-DD 填 1。</div>`;
+
+  h+=`<div class="rowline" style="gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px">
+    <span style="font-size:13px">發包對象</span>
+    <select id="sub-kid" style="height:32px;min-width:200px">
+      <option value="">＋ 新建子專案</option>
+      ${kids.map(k=>`<option value="${k.id}">併進「${esc(k.name)}」${k.vendor?`（${esc(k.vendor)}）`:''}</option>`).join('')}
+    </select>
+    <input id="sub-vendor" list="crewlist" placeholder="工班名稱" style="height:32px;min-width:150px">
+    <span class="muted" style="font-size:12px">同一家再發包時選「併進」，不會多開一個專案</span></div>`;
+
+  h+=`<div style="font-size:13px;font-weight:600;margin:8px 0 4px">① 發包哪些工序</div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:8px">
+      ${buckets.map(s=>`<label style="cursor:pointer;font-size:13px;display:flex;gap:4px;align-items:center">
+        <input type="checkbox" data-substage="${esc(s.name)}"> <b style="color:${stageColor(s.name)}">${esc(s.name)}</b>
+        <span class="muted" style="font-size:11px">${s.n} 條</span></label>`).join('')}
+      <label style="cursor:pointer;font-size:13px;display:flex;gap:4px;align-items:center;padding-left:10px;border-left:1px solid var(--line,rgba(148,163,184,.3))">
+        <input type="checkbox" id="sub-whole"> <b>整條發包</b><span class="muted" style="font-size:11px">（不分工序，含該房型所有細項）</span></label>
+    </div>`;
+
+  h+=`<div style="font-size:13px;font-weight:600;margin:10px 0 4px">② 各房型發包幾間</div>
+    <table style="font-size:13px"><tr><th>房型／區塊</th><th class="num">合約</th><th class="num">已發包</th><th class="num">這次發包</th><th class="num">金額</th></tr>
+    ${blks.map(b=>`<tr data-subrow="${b.id}">
+      <td>${esc(b.name)}</td>
+      <td class="num">${qfmt(b.count)} ${esc(b.unit)}</td>
+      <td class="num muted" data-subused="${b.id}">—</td>
+      <td class="num"><input class="pin" data-subroom="${b.id}" inputmode="decimal" placeholder="0" style="width:64px;text-align:right"> <span class="muted" style="font-size:11px">${esc(b.unit)}</span></td>
+      <td class="num" data-subamt="${b.id}">—</td></tr>`).join('')}
+    <tr class="chapter"><td colspan="3" style="text-align:right">預估發包金額</td><td></td><td class="num"><b data-subtotal>$0</b></td></tr>
+    </table>
+    <div style="margin-top:6px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <button class="btn sub sm" id="sub-fillall">全部填滿（每個房型都發包全部間數）</button>
+      <button class="btn sub sm" id="sub-clear">清空</button></div>`;
+
+  h+=`<div style="font-size:13px;font-weight:600;margin:12px 0 4px">③ 議定單價</div>
+    <div class="rowline" style="gap:6px;align-items:center;font-size:13px;flex-wrap:wrap">
+      母單價的 <input id="sub-pct" inputmode="decimal" value="100" style="width:70px;height:30px;text-align:right"> %
+      <span class="muted" style="font-size:12px">100＝照母專案單價。填 80 就是八折。之後仍可進子專案一條條改。</span></div>
+    <div class="rowline" style="gap:6px;align-items:center;margin-top:6px;font-size:13px">
+      備註 <input id="sub-note" placeholder="例：13F" style="height:30px;min-width:160px">
+      <span class="muted" style="font-size:12px">會寫進細項備註與區塊名稱，方便日後認出是哪一批。</span></div>`;
+
+  h+=`<div style="margin-top:12px"><button class="btn" id="sub-go">🏗 建立／併入子專案</button></div>
+    <div class="muted" style="font-size:11.5px;margin-top:6px">建好之後到「發包分配」分頁，可以看到每一條發了幾間、還剩多少沒發。剩下自己做的部分在那裡填「自辦」。</div></div>`;
+  return h;
+}
+// 面板是動態算的（勾選工序會改變已發包間數與預估金額），render 後綁一次
+function bindSubPanel(){
+  const upd=()=>{
+    const stages=[...document.querySelectorAll('[data-substage]:checked')].map(x=>x.dataset.substage);
+    const whole=(document.getElementById('sub-whole')||{}).checked;
+    const keys=whole?[SUB_ALL]:stages;
+    const pct=(evalExpr((document.getElementById('sub-pct')||{}).value)||100)/100;
+    let tot=0;
+    document.querySelectorAll('[data-subroom]').forEach(inp=>{
+      const bid=inp.dataset.subroom, info=_subInfo[bid]||{};
+      let perRoom=0, used=0, any=false;
+      keys.forEach(k=>{ const e=info[k]; if(!e) return; any=true; perRoom+=e.perRoom; used=Math.max(used,e.used); });
+      const n=Math.max(0, evalExpr(inp.value)||0);
+      const amt=Math.round(perRoom*n*pct);
+      tot+=amt;
+      const uEl=document.querySelector(`[data-subused="${bid}"]`);
+      if(uEl) uEl.textContent=!keys.length?'—':(any?(used?qfmt(used)+' 間':'0'):'無此工序');
+      const aEl=document.querySelector(`[data-subamt="${bid}"]`);
+      if(aEl) aEl.textContent=amt?money(amt):'—';
+      const row=document.querySelector(`[data-subrow="${bid}"]`);
+      if(row){ const cap=(_subInfo[bid]&&_subInfo[bid][SUB_ALL]||{}).rooms||0;
+        row.style.background=(n>cap-used+0.001&&n>0)?'rgba(248,113,113,.12)':''; }
+    });
+    const tEl=document.querySelector('[data-subtotal]');
+    if(tEl) tEl.textContent=money(tot);
+  };
+  document.querySelectorAll('[data-substage],#sub-whole').forEach(el=>el.onchange=upd);
+  document.querySelectorAll('[data-subroom],#sub-pct').forEach(el=>el.oninput=upd);
+  const ff=document.getElementById('sub-fillall');
+  if(ff) ff.onclick=()=>{ document.querySelectorAll('[data-subroom]').forEach(inp=>{
+      const info=_subInfo[inp.dataset.subroom]||{}; inp.value=(info[SUB_ALL]||{}).rooms||''; }); upd(); };
+  const cl=document.getElementById('sub-clear');
+  if(cl) cl.onclick=()=>{ document.querySelectorAll('[data-subroom]').forEach(inp=>inp.value=''); upd(); };
+  upd();
+}
+function doSubcontract(proj){
+  const stages=[...document.querySelectorAll('[data-substage]:checked')].map(x=>x.dataset.substage);
+  const whole=(document.getElementById('sub-whole')||{}).checked;
+  if(!whole&&!stages.length){ alert('請至少勾一道工序，或勾「整條發包」。'); return; }
+  const rooms={};
+  document.querySelectorAll('[data-subroom]').forEach(inp=>{ const n=Math.max(0,evalExpr(inp.value)||0); if(n>0) rooms[inp.dataset.subroom]=n; });
+  if(!Object.keys(rooms).length){ alert('請至少在一個房型填「這次發包幾間」。'); return; }
+  const pct=(evalExpr(document.getElementById('sub-pct').value)||100)/100;
+  const note=document.getElementById('sub-note').value.trim();
+  const kidId=document.getElementById('sub-kid').value;
+  let kid=kidId?state.projects.find(p=>p.id===kidId):null;
+  const vendor=document.getElementById('sub-vendor').value.trim()||(kid&&kid.vendor)||'';
+  if(!kid&&!vendor){ alert('請填工班名稱。'); return; }
+
+  const match = it => Number(it.amount)>0 && (whole || (it.groupId&&it.groupName&&stages.includes(stageOf(it.name,it.groupName))));
+  const parts=[];
+  proj.blocks.forEach(b=>{ const n=rooms[b.id]; if(!n) return;
+    const its=b.items.filter(match); if(its.length) parts.push({b,n,its}); });
+  if(!parts.length){ alert('填了間數的房型裡，沒有符合所選工序的細項。\n\n請確認勾的工序在那些房型底下確實存在。'); return; }
+
+  const amt=parts.reduce((s,x)=>s+x.its.reduce((y,it)=>y+(Number(it.amount)||0),0)*x.n*pct,0);
+  const label=whole?'整條（所有細項）':stages.join('、');
+  const summary=parts.map(x=>`・${x.b.name}　${qfmt(x.n)} ${x.b.unit}　${x.its.length} 條`).join('\n');
+  if(!confirm(`${kid?`併進子專案「${kid.name}」`:`建立子專案（工班：${vendor}）`}？\n\n工序：${label}\n${summary}\n\n議定單價＝母單價 × ${Math.round(pct*100)}%\n預估發包金額：${money(Math.round(amt))}`)) return;
+
+  const isNew=!kid;
+  if(isNew){
+    kid={ id:uid(), name:(proj.name+'-'+(vendor||'發包')+(note?'（'+note+'）':'')), owner:proj.owner||'', vendor,
+          taxMode:proj.taxMode||'excl', signedTotal:0, blocks:[], periods:[], curPeriod:0,
+          createdAt:Date.now(), parentId:proj.id };
+    state.projects.push(kid);
+  }else if(vendor&&!kid.vendor) kid.vendor=vendor;
+
+  let added=0, skipped=0;
+  parts.forEach(({b,n,its})=>{
+    // 間數是區塊層級的，所以同一房型不同批（4 間 / 6 間）必須分開成不同區塊
+    let tb=kid.blocks.find(x=>(x.srcBlk===b.id||x.name===b.name)&&Number(x.count)===n&&(x.subNote||'')===note);
+    if(!tb){
+      let nm=b.name+(note?`（${note}）`:'');
+      if(kid.blocks.some(x=>x.name===nm)) nm+=`·${qfmt(n)}${b.unit}`;
+      let k=2; while(kid.blocks.some(x=>x.name===nm)){ nm=b.name+(note?`（${note}）`:'')+`·${qfmt(n)}${b.unit}(${k++})`; }
+      tb={id:uid(),name:nm,unit:b.unit,count:n,srcBlk:b.id,subNote:note,items:[]};
+      kid.blocks.push(tb);
+    }
+    const gmap={};
+    its.forEach(it=>{
+      if(tb.items.some(x=>x.srcId===it.id)){ skipped++; return; }   // 這批已經帶過了
+      const price=+((Number(it.price)||0)*pct).toFixed(4);
+      tb.items.push({ id:uid(), no:it.no, tag:'', chapter:it.chapter||'', name:it.name, unit:it.unit,
+        qty:it.qty, qtyExpr:'', price, priceExpr:'', amount:(Number(it.qty)||0)*price,
+        remark:note||it.remark||'', srcId:it.id,
+        ...(it.groupId?{groupId:(gmap[it.groupId]||(gmap[it.groupId]=uid())),groupName:it.groupName||''}:{}) });
+      added++;
+    });
+  });
+  // 只剩一道的工序群組沒有分組意義，還原成一般細項
+  kid.blocks.forEach(b=>{ const c={}; b.items.forEach(it=>{ if(it.groupId) c[it.groupId]=(c[it.groupId]||0)+1; });
+    b.items.forEach(it=>{ if(it.groupId&&c[it.groupId]<2){ delete it.groupId; delete it.groupName; } }); });
+  kid.blocks=kid.blocks.filter(b=>b.items.length);
+
+  state.cur=kid.id; state.tab='items'; subPanel=false; save(); render();
+  alert(`${isNew?'已建立':'已併入'}子專案「${kid.name}」，已切換過去。\n\n帶入 ${added} 條${skipped?`（${skipped} 條之前已帶過，略過）`:''}。\n\n單價已按 ${Math.round(pct*100)}% 帶好，要再調就直接改。\n回母專案的「發包分配」可以看每條發了幾間、還剩多少。`);
+}
+
 function viewItems(proj){
   const V=proj.blocks.reduce((s,b)=>s+b.items.reduce((x,i)=>x+itemValue(i,b),0),0);
   const nItems=proj.blocks.reduce((s,b)=>s+b.items.length,0);
@@ -620,8 +800,9 @@ function viewItems(proj){
   if(nItems){
     h+=batchAll
       ?`<div class="rowline" style="gap:8px;flex-wrap:wrap;align-items:center;margin:6px 0;padding:8px 10px;background:rgba(59,130,246,.14);border:1px solid rgba(96,165,250,.45);border-radius:10px;position:sticky;top:0;z-index:5"><b style="font-size:13px">整批改中：每條的數量／單價都可改（支援算式），改完按儲存</b><span style="flex:1"></span><button class="btn sm" data-batchallok="1">💾 全部儲存</button><button class="btn sub sm" data-batchallcancel="1">取消</button></div>`
-      :`<div class="rowline" style="margin:6px 0;gap:8px;flex-wrap:wrap"><button class="btn sub sm" data-batchalledit="1" title="所有區塊的每一條細項，數量與單價一次改">✏️ 整批改數量／單價（全部區塊一起）</button>${proj.parentId?'':`<button class="btn sub sm" id="crew-toggle" style="border-color:#2dd4bf;color:#5eead4" title="先標好誰做哪一道，建廠商子專案時就能只帶那一家的細項">👷 工班分派${crews.length?`（${crews.length} 班）`:''}</button>`}</div>`;
+      :`<div class="rowline" style="margin:6px 0;gap:8px;flex-wrap:wrap"><button class="btn sub sm" data-batchalledit="1" title="所有區塊的每一條細項，數量與單價一次改">✏️ 整批改數量／單價（全部區塊一起）</button>${proj.parentId?'':`<button class="btn sub sm" id="sub-toggle" style="border-color:#60a5fa;color:#bfdbfe" title="挑工序＋填各房型幾間，直接生出那個工班的子專案">🏗 發包給工班</button><button class="btn sub sm" id="crew-toggle" style="border-color:#2dd4bf;color:#5eead4" title="整道工序都同一家做時，用這個一次標記">👷 工班分派${crews.length?`（${crews.length} 班）`:''}</button>`}</div>`;
   }
+  if(subPanel&&!proj.parentId&&!batchAll) h+=subcontractPanelHtml(proj);
   if(crewPanel&&!proj.parentId&&!batchAll) h+=crewPanelHtml(proj);
   const ist='height:32px;padding:0 8px';
   const fld=(lbl,inner)=>`<div class="field" style="display:flex;flex-direction:column;gap:2px"><label style="font-size:11px;color:var(--muted)">${lbl}</label>${inner}</div>`;
@@ -1461,7 +1642,7 @@ function setProgInput(proj,blkId,itemId,kind,val){
 }
 
 document.addEventListener('click',async e=>{
-  const t=e.target.closest('[data-tab],[data-editblk],[data-delblk],[data-edititem],[data-delitem],[data-additem],[data-splititem],[data-sortitems],[data-grouptoggle],[data-groupmerge],[data-groupdetect],[data-whtoggle],[data-rttoggle],[data-whtax],[data-rtamt],[data-selfone],[data-selfrooms],[data-selfrest],[data-selfclear],[data-delmode],[data-delcancel],[data-delall],[data-delnone],[data-delinv],[data-delzero],[data-deldo],[data-crewpick],#crew-toggle,#crew-close,#crew-apply,[data-copyinto],[data-copyok],[data-copycancel],[data-batchedit],[data-batchok],[data-batchcancel],[data-batchalledit],[data-batchallok],[data-batchallcancel],[data-itemok],[data-itemcancel],[data-blkok],[data-blkcancel],[data-bapply],[data-editextra],[data-delextra],#btn-import,#btn-import2,#btn-newproj,#btn-newproj2,#btn-addblk,#btn-addblk-ok,#btn-addperiod,#btn-delperiod,#btn-addextra,#btn-roundup,[data-gotoproj],#btn-print,#btn-setretain,#orphan-fix,#orphan-detach,#proj-groupall,#set-save,#proj-dup,#proj-detach,#backup-export,#backup-import-btn,#proj-del,#cloud-push,#cloud-pull');
+  const t=e.target.closest('[data-tab],[data-editblk],[data-delblk],[data-edititem],[data-delitem],[data-additem],[data-splititem],[data-sortitems],[data-grouptoggle],[data-groupmerge],[data-groupdetect],[data-whtoggle],[data-rttoggle],[data-whtax],[data-rtamt],[data-selfone],[data-selfrooms],[data-selfrest],[data-selfclear],[data-delmode],[data-delcancel],[data-delall],[data-delnone],[data-delinv],[data-delzero],[data-deldo],[data-crewpick],#crew-toggle,#crew-close,#crew-apply,#sub-toggle,#sub-close,#sub-go,[data-copyinto],[data-copyok],[data-copycancel],[data-batchedit],[data-batchok],[data-batchcancel],[data-batchalledit],[data-batchallok],[data-batchallcancel],[data-itemok],[data-itemcancel],[data-blkok],[data-blkcancel],[data-bapply],[data-editextra],[data-delextra],#btn-import,#btn-import2,#btn-newproj,#btn-newproj2,#btn-addblk,#btn-addblk-ok,#btn-addperiod,#btn-delperiod,#btn-addextra,#btn-roundup,[data-gotoproj],#btn-print,#btn-setretain,#orphan-fix,#orphan-detach,#proj-groupall,#set-save,#proj-dup,#proj-detach,#backup-export,#backup-import-btn,#proj-del,#cloud-push,#cloud-pull');
   if(!t)return;
   const proj=curProj();
   if(t.dataset.tab){state.tab=t.dataset.tab;save();render();return;}
@@ -1696,7 +1877,10 @@ document.addEventListener('click',async e=>{
     alert(`已群組 ${runs.length} 組。點項目左邊的 ▸ 可展開看各道工序。`);
     return;
   }
-  if(t.id==='crew-toggle'){ crewPanel=!crewPanel; render(); return; }
+  if(t.id==='sub-toggle'){ subPanel=!subPanel; crewPanel=false; render(); return; }
+  if(t.id==='sub-close'){ subPanel=false; render(); return; }
+  if(t.id==='sub-go'){ doSubcontract(proj); return; }
+  if(t.id==='crew-toggle'){ crewPanel=!crewPanel; subPanel=false; render(); return; }
   if(t.id==='crew-close'){ crewPanel=false; render(); return; }
   if(t.id==='crew-apply'){
     // 依工序批次標：骨架→A、塞棉→B、封板→C。空白＝不動，「－」＝清掉標記。
