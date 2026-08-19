@@ -109,7 +109,7 @@ body.printing #print-overlay{display:block;position:absolute;inset:0;background:
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.08.06g-grow';
+const APP_VERSION='vG2026.08.06h-submerge';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -620,6 +620,9 @@ function subcontractPanelHtml(proj){
       母單價的 <input id="sub-pct" inputmode="decimal" value="100" style="width:70px;height:30px;text-align:right"> %
       <span class="muted" style="font-size:12px">100＝照母專案單價。填 80 就是八折。之後仍可進子專案一條條改。</span></div>
     <div class="rowline" style="gap:6px;align-items:center;margin-top:6px;font-size:13px">
+      <label style="cursor:pointer"><input type="checkbox" id="sub-merge" checked> <b>同房型同工序已有區塊時，直接把間數加上去</b></label>
+      <span class="muted" style="font-size:12px">（例：A 已有 10 間封板，這次再給 4 間 → 變 14 間，<b>沿用原本跟他議定的單價</b>，上面的百分比不套用。不勾就另開一個區塊。舊期已請的金額不受影響。）</span></div>
+    <div class="rowline" style="gap:6px;align-items:center;margin-top:6px;font-size:13px">
       備註 <input id="sub-note" placeholder="例：13F" style="height:30px;min-width:160px">
       <span class="muted" style="font-size:12px">會寫進細項備註與區塊名稱，方便日後認出是哪一批。</span></div>`;
 
@@ -682,10 +685,31 @@ function doSubcontract(proj){
     const its=b.items.filter(match); if(its.length) parts.push({b,n,its}); });
   if(!parts.length){ alert('填了間數的房型裡，沒有符合所選工序的細項。\n\n請確認勾的工序在那些房型底下確實存在。'); return; }
 
-  const amt=parts.reduce((s,x)=>s+x.its.reduce((y,it)=>y+(Number(it.amount)||0),0)*x.n*pct,0);
+  // 先排好計畫：能併進現有區塊的就併（沿用原議定單價），不能的才新開一個區塊。
+  // 這樣「這期又發他幾間」不會每次都多長一個區塊，單價也不會被母單價蓋掉。
+  const wantMerge=(document.getElementById('sub-merge')||{}).checked;
+  const plan=parts.map(({b,n,its})=>{
+    let tb=null;
+    if(wantMerge&&kid){
+      const srcIds=new Set(its.map(x=>x.id));
+      // 同一母區塊、且細項組合完全一樣（同一批工序）才算「同一種發包」，可以直接加間數
+      tb=kid.blocks.find(x=>(x.srcBlk===b.id||x.name===b.name)
+        && x.items.length===srcIds.size && x.items.every(i=>i.srcId&&srcIds.has(i.srcId)));
+    }
+    return {b,n,its,tb};
+  });
   const label=whole?'整條（所有細項）':stages.join('、');
-  const summary=parts.map(x=>`・${x.b.name}　${qfmt(x.n)} ${x.b.unit}　${x.its.length} 條`).join('\n');
-  if(!confirm(`${kid?`併進子專案「${kid.name}」`:`建立子專案（工班：${vendor}）`}？\n\n工序：${label}\n${summary}\n\n議定單價＝母單價 × ${Math.round(pct*100)}%\n預估發包金額：${money(Math.round(amt))}`)) return;
+  const amt=plan.reduce((s,x)=>{
+    const unit=x.tb
+      ? x.tb.items.reduce((y,i)=>y+(Number(i.amount)||0),0)          // 併進去＝沿用原議定單價
+      : x.its.reduce((y,it)=>y+(Number(it.amount)||0),0)*pct;
+    return s+unit*x.n;
+  },0);
+  const summary=plan.map(x=>x.tb
+    ? `・${x.b.name}　併進現有區塊「${x.tb.name}」　${qfmt(x.tb.count)} → ${qfmt((Number(x.tb.count)||0)+x.n)} ${x.b.unit}（沿用原單價）`
+    : `・${x.b.name}　新開區塊　${qfmt(x.n)} ${x.b.unit}　${x.its.length} 條（母單價 × ${Math.round(pct*100)}%）`).join('\n');
+  const nMerge=plan.filter(x=>x.tb).length;
+  if(!confirm(`${kid?`併進子專案「${kid.name}」`:`建立子專案（工班：${vendor}）`}？\n\n工序：${label}\n${summary}\n${nMerge?'\n併進去的區塊沿用原本議定的單價，舊期已請的金額不會變。\n':''}\n預估增加發包金額：${money(Math.round(amt))}`)) return;
 
   const isNew=!kid;
   if(isNew){
@@ -695,9 +719,18 @@ function doSubcontract(proj){
     state.projects.push(kid);
   }else if(vendor&&!kid.vendor) kid.vendor=vendor;
 
-  let added=0, skipped=0;
-  parts.forEach(({b,n,its})=>{
-    // 間數是區塊層級的，所以同一房型不同批（4 間 / 6 間）必須分開成不同區塊
+  let added=0, skipped=0; const grown=[];
+  plan.forEach(({b,n,its,tb:hit})=>{
+    // ① 併進現有區塊：只加間數，細項與單價都不動。
+    //    rescaleBlockProgress 用各期存下來的絕對完成量回推百分比，舊期已請的金額不會被改到。
+    if(hit){
+      const old=Number(hit.count)||0, nv=+(old+n).toFixed(4);
+      rescaleBlockProgress(kid,hit,nv);
+      hit.count=nv; hit.countExpr='';
+      grown.push(`${hit.name} ${qfmt(old)} → ${qfmt(nv)} ${b.unit}`);
+      return;
+    }
+    // ② 新開區塊：間數是區塊層級的，同一房型不同批必須分開
     let tb=kid.blocks.find(x=>(x.srcBlk===b.id||x.name===b.name)&&Number(x.count)===n&&(x.subNote||'')===note);
     if(!tb){
       let nm=b.name+(note?`（${note}）`:'');
@@ -723,7 +756,11 @@ function doSubcontract(proj){
   kid.blocks=kid.blocks.filter(b=>b.items.length);
 
   state.cur=kid.id; state.tab='items'; subPanel=false; save(); render();
-  alert(`${isNew?'已建立':'已併入'}子專案「${kid.name}」，已切換過去。\n\n帶入 ${added} 條${skipped?`（${skipped} 條之前已帶過，略過）`:''}。\n\n單價已按 ${Math.round(pct*100)}% 帶好，要再調就直接改。\n回母專案的「發包分配」可以看每條發了幾間、還剩多少。`);
+  const lines=[];
+  if(grown.length) lines.push(`加間數（沿用原單價）：\n${grown.map(x=>'・'+x).join('\n')}`);
+  if(added) lines.push(`新帶入 ${added} 條，單價已按母單價 ${Math.round(pct*100)}% 帶好，要再調就直接改。`);
+  if(skipped) lines.push(`${skipped} 條之前已帶過，略過。`);
+  alert(`${isNew?'已建立':'已更新'}子專案「${kid.name}」，已切換過去。\n\n${lines.join('\n\n')}\n\n回母專案的「發包分配」可以看每條發了幾間、還剩多少。`);
 }
 
 function viewItems(proj){
