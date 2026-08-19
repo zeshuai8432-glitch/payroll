@@ -331,8 +331,11 @@
   }
   td { padding: 12px 12px; border-bottom: 1px solid var(--line); transition: background .15s, border-color .15s; }
   tr:hover td { background: rgba(79,70,229,.04); }
-  tr:hover td:first-child { border-left: 3px solid rgba(79,70,229,.3); padding-left: 9px; }
-  td:first-child { border-left: 3px solid transparent; transition: border-color .15s, padding .15s, background .15s; }
+  /* hover 只換 border 顏色，不動 padding：底線那 3px 邊框在非 hover 時就以 transparent 佔好位置了，
+     以前還多減 3px padding（是「沒有預留邊框」時才需要的補償），等於每次 hover 內容就左右滑 3px；
+     再加上 padding 有 .15s 過場，滑鼠停在列與列的交界時會來回觸發，看起來就是一直在抖。 */
+  tr:hover td:first-child { border-left-color: rgba(79,70,229,.3); }
+  td:first-child { border-left: 3px solid transparent; transition: border-color .15s, background .15s; }
   td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 
   /* ── 按鈕 ── */
@@ -511,7 +514,7 @@ const FS_ROOT = 'https://firestore.googleapis.com/v1/projects/'+FS_PROJECT+'/dat
 const FS_DOC_BASE = FS_ROOT+'payroll/';
 const FS_SIG_BASE = FS_ROOT+'payrollSignatures/';
 const FS_REST_URL = FS_DOC_BASE+'main?key='+FS_KEY;
-const APP_VERSION = 'v2026.08.06f-coopreimb';
+const APP_VERSION = 'v2026.08.06g-hoverfix';
 let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], tools:[], locations:[], assets:[], advances:[], accounts:[], ledger:[], deals:[], billings:[], measurements:[], contracts:{}, costs:[], textMemory:{clients:[],companies:[]}, parkAccId:'', oweBonus:{}, minFund:'', shareholderTx:[], myCompanies:[], payrollSnapshots:[], yearIncomeAdj:[], deletedIds:[], resurrected:{ids:[],at:0}, tab:'dash' };
 let cloudStatus='連線中…';
 let localDirty=false, lastCloudTs=0;
