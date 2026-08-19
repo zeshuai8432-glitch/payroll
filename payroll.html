@@ -511,7 +511,7 @@ const FS_ROOT = 'https://firestore.googleapis.com/v1/projects/'+FS_PROJECT+'/dat
 const FS_DOC_BASE = FS_ROOT+'payroll/';
 const FS_SIG_BASE = FS_ROOT+'payrollSignatures/';
 const FS_REST_URL = FS_DOC_BASE+'main?key='+FS_KEY;
-const APP_VERSION = 'v2026.08.06d-leavemulti';
+const APP_VERSION = 'v2026.08.06e-reimbtag';
 let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], tools:[], locations:[], assets:[], advances:[], accounts:[], ledger:[], deals:[], billings:[], measurements:[], contracts:{}, costs:[], textMemory:{clients:[],companies:[]}, parkAccId:'', oweBonus:{}, minFund:'', shareholderTx:[], myCompanies:[], payrollSnapshots:[], yearIncomeAdj:[], deletedIds:[], resurrected:{ids:[],at:0}, tab:'dash' };
 let cloudStatus='連線中…';
 let localDirty=false, lastCloudTs=0;
@@ -1843,14 +1843,14 @@ function normalizeBillingTab(){
   if(state.tab==='billingReq'){ state.tab='billing'; billingSub='req'; }
   else if(state.tab==='billingAdd'){ state.tab='billing'; billingSub='add'; }
 }
-// 結算四分頁（分潤／公積金帳戶／品佑帳戶結算／年度總結／對帳匯出）合併為一頁
+// 結算四分頁（分潤／帳戶收支／品佑帳戶結算／年度總結／對帳匯出）合併為一頁
 let settleSub='deals';  // 'deals' | 'accounts' | 'parkacc' | 'yearend' | 'recon'
 function normalizeSettleTab(){
   const m={accounts:'accounts',parkacc:'parkacc',yearend:'yearend',recon:'recon'};
   if(m[state.tab]){ settleSub=m[state.tab]; state.tab='deals'; }
 }
 function viewSettleHub(){
-  const subs=[['deals','分潤結算'],['accounts','公積金帳戶'],['parkacc','品佑帳戶結算'],['yearend','年度總結'],['recon','對帳匯出']];
+  const subs=[['deals','分潤結算'],['accounts','帳戶收支'],['parkacc','品佑帳戶結算'],['yearend','年度總結'],['recon','對帳匯出']];
   const bar=`<div class="card" style="padding:10px 12px;margin-bottom:12px">
     <div style="display:flex;gap:8px;flex-wrap:wrap">
       ${subs.map(([k,l])=>`<button class="act" data-settlesub="${k}" style="height:34px;padding:0 14px;border:1px solid ${settleSub===k?'var(--accent)':'var(--line2)'};border-radius:8px;font-weight:${settleSub===k?'700':'400'};${settleSub===k?'background:var(--accent);color:#fff':''}">${l}</button>`).join('')}
@@ -2339,7 +2339,7 @@ function viewDash(){
 
   <div style="font-size:13px;font-weight:600;color:var(--muted);margin:4px 0 8px">資產 · 累計</div>
   <div class="metrics">
-    ${card('accounts','帳戶總餘額', money(totalBal), state.accounts.length+' 個帳戶（含公積金）')}
+    ${card('accounts','帳戶總餘額', money(totalBal), state.accounts.length+' 個帳戶')}
     ${card('deals','案場毛利累計', money(totProfit))}
     ${card('deals','公積金累計', money(totFund))}
     ${card('billing','已收款累計', money(totBilled))}
@@ -2657,14 +2657,15 @@ function viewSites(){
           </div>
         </td></tr>`;
       }
-      const canReimb=(c.payer==='dz'||c.payer==='gx');
+      const wasAdv=(c.origPayer==='dz'||c.origPayer==='gx');           // 報銷後 payer 已改成 py，要靠原墊付人認
+      const canReimb=(c.payer==='dz'||c.payer==='gx')||(c.reimbursed&&wasAdv);
       const reimbCell=canReimb
         ? (c.reimbursed
             ? `<span class="tag" style="background:#e3efe9;color:var(--accent)">已報銷${c.reimbDate?' '+esc(c.reimbDate):''}</span><button class="act" data-unreimb="${c.id}">取消</button>`
             : `<button class="act" data-reimb="${c.id}" style="border:1px solid var(--danger);border-radius:6px;padding:0 10px;color:#fff;background:var(--danger)">待報銷·按此報銷</button>`)
         : '';
-      const payerTag=c.payer==='dz'||c.payer==='gx'
-        ? (c.reimbursed?'<span class="tag" style="background:#e3efe9;color:var(--accent)">已報銷</span>':'<span class="tag" style="background:var(--warn-bg);color:var(--warn-ink)">待報銷</span>')
+      const payerTag=canReimb
+        ? (c.reimbursed?`<span class="tag" style="background:#e3efe9;color:var(--accent)">已報銷${wasAdv?'·原'+esc(payerName(c.origPayer)):''}</span>`:'<span class="tag" style="background:var(--warn-bg);color:var(--warn-ink)">待報銷</span>')
         : '';
       return `<tr${(canReimb&&!c.reimbursed)?' style="background:#fff8f0"':''}><td>${esc(c.date||'')}</td><td>${c.subSite?subSiteTag(siteOptionValue(site.name,c.subSite)):''} ${esc(c.item||'')}${c.pinyouId?'<span class="tag" style="background:#e3efe9;color:var(--accent)">品佑帳本</span>':''}${c.note?`<div style="font-size:11.5px;color:var(--muted)">${esc(c.note)}</div>`:''}</td><td class="num">${money(c.amount)}</td><td>${esc(payerName(c.payer))}${payerTag}</td><td>${reimbCell} <button class="act" data-costedit="${c.id}">改</button> <button class="act danger" data-delcost="${c.id}">刪</button></td></tr>`;
     }).join('');
@@ -4853,7 +4854,7 @@ function postParkWage(){
   if(!dup && !confirm(`要把本期「公司負擔工資」記入品佑支出嗎？\n\n項目：${note}\n金額：${money(amount)}\n帳戶：${accountName(state.parkAccId)}（支出）\n日期：${date}`)) return;
   state.ledger.push({id:uid(),date,accId:state.parkAccId,kind:'out',amount,note,payrollWage:tag});
   saveData(); pushCloud(); render();
-  alert(`已記入品佑支出：${note} ${money(amount)}\n可到「公積金帳戶」查看或刪除。`);
+  alert(`已記入品佑支出：${note} ${money(amount)}\n可到「帳戶收支」查看或刪除。`);
 }
 
 function exportPayslipPDF(empId){
@@ -5829,7 +5830,7 @@ function viewAdvances(){
     const postBtn=due<=0?'':(posted
       ? `<span class="tag" style="background:#e3efe9;color:var(--accent)">已入帳 ${money(posted.amount)}（${esc(accountName(posted.accId))}）</span> <button class="act danger" data-unpost="${posted.id}">撤銷入帳</button>`
       : (state.accounts.length===0
-        ? '<span class="sub">（先到公積金帳戶建立帳戶才能入帳）</span>'
+        ? '<span class="sub">（先到「帳戶收支」建立帳戶才能入帳）</span>'
         : (advPosting===p.id
           ? `<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
               <span class="sub" style="margin:0">從哪個帳戶支出 ${money(due)}？</span>
@@ -5893,7 +5894,7 @@ document.getElementById('burger').onclick=()=>{
 };
 document.getElementById('scrim').onclick=closeSidebar;
 
-// ---- 公積金帳戶 ----
+// ---- 帳戶收支（所有帳戶的流水，含品佑帳戶）----
 function accountName(id){ const a=state.accounts.find(x=>x.id===id); return a?a.name:'（已移除）'; }
 function accountBalance(accId){
   const acc=state.accounts.find(a=>a.id===accId); if(!acc) return 0;
@@ -5902,6 +5903,17 @@ function accountBalance(accId){
   return opening+delta;
 }
 let ledgerAcc=null, ledgerFrom='', ledgerTo=''; // 帳戶檢視篩選
+// 「報銷」在品佑帳戶自動產生的支出：只存項目名，光看一行認不出是哪個案場、原本誰墊的，
+// 會以為帳戶莫名其妙多一筆。這裡把來源補回畫面上。
+function reimbTag(t){
+  if(!t||!t.reimbCostId) return '';
+  const c=state.costs.find(x=>x.id===t.reimbCostId);
+  const who=({dz:'東澤',gx:'廣昕',py:'品佑'})[c&&(c.origPayer||c.payer)]||'';
+  const site=c?siteName(c.siteId):'';
+  return `<span class="tag" style="background:var(--warn-bg);color:var(--warn-ink)" title="案場成本按「報銷」時，品佑撥款回補墊付人，自動記的支出。要移除請到該筆成本按「取消報銷」。">墊付報銷${who?'·'+esc(who):''}</span>`
+    + (site?`<span class="sub" style="display:block;font-size:11px">${esc(site)}</span>`:'')
+    + (c?'':'<span class="sub" style="display:block;font-size:11px;color:var(--danger)">來源成本已刪除</span>');
+}
 
 function viewAccounts(){
   const accs=state.accounts;
@@ -5915,7 +5927,7 @@ function viewAccounts(){
   const txs=state.ledger.filter(t=>(!ledgerAcc||t.accId===ledgerAcc)&&inLedRange(t.date)).sort((a,b)=>b.date.localeCompare(a.date)||b.id.localeCompare(a.id));
   const txRows=txs.slice(0,300).map(t=>`<tr>
     <td data-label="日期">${esc(t.date)}</td><td data-label="帳戶">${esc(accountName(t.accId))}</td>
-    <td data-label="項目">${esc(t.note||'')}${t.fromAdvance?'<span class="tag" style="background:#e3efe9;color:var(--accent)">代墊報銷</span>':''}</td>
+    <td data-label="項目">${esc(t.note||'')}${t.fromAdvance?'<span class="tag" style="background:#e3efe9;color:var(--accent)">代墊報銷</span>':''}${reimbTag(t)}</td>
     <td class="num" data-label="收入" style="color:var(--accent)">${t.kind==='in'?money(t.amount):'—'}</td>
     <td class="num" data-label="支出" style="color:var(--danger)">${t.kind==='out'?money(t.amount):'—'}</td>
     <td class="actions"><button class="act danger" data-delledger="${t.id}">刪</button></td>
@@ -5934,7 +5946,7 @@ function viewAccounts(){
 
   <div class="card">
     <div style="font-size:14px;font-weight:600;margin-bottom:4px">帳戶管理</div>
-    <p class="sub">建立帳戶並設定「期初餘額」（承接上期的金額）。餘額＝期初＋所有收入−所有支出，系統自動計算。</p>
+    <p class="sub">建立帳戶並設定「期初餘額」（承接上期的金額）。餘額＝期初＋所有收入−所有支出，系統自動計算。<br><b>這頁列的是所有帳戶的流水</b>，品佑帳戶（東澤／廣昕與品佑的往來）也在其中；只想看某一個帳戶，用下面交易明細的「帳戶」篩選。</p>
     <div class="row" style="margin-bottom:10px">
       <div class="field"><label>帳戶名稱</label><input id="acc-name" placeholder="例：東澤工程帳戶" style="width:180px"></div>
       <div class="field"><label>期初餘額</label><input type="number" id="acc-opening" min="0" step="1000" value="0" style="width:130px"></div>
