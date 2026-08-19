@@ -109,7 +109,7 @@ body.printing #print-overlay{display:block;position:absolute;inset:0;background:
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.08.06d-crew';
+const APP_VERSION='vG2026.08.06e-daylabor';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -395,6 +395,12 @@ function progOf(period,itemId){return (period&&period.prog&&period.prog[itemId])
 const extrasOf=period=>(period&&period.extras)||[]; // 額外款項（訂金／預付款等）
 const exVal=e=>(+((e&&e.amount)||0))*(e&&e.deduct?-1:1); // 加項為正、扣抵(預付款)為負
 const extrasSum=period=>extrasOf(period).reduce((s,e)=>s+exVal(e),0);
+// 一個專案所有期別的「加項」合計（點工、修繕這種不按量算的錢，不在合約明細裡）
+function projChargeTotal(p){
+  let sum=0, days=0;
+  (p&&p.periods||[]).forEach(pr=>extrasOf(pr).forEach(e=>{ if(e.deduct||e.auto) return; sum+=(+e.amount||0); days+=(+e.days||0); }));
+  return {sum,days};
+}
 function calc(proj,perIdx){
   const period=proj.periods[perIdx];
   const prev=perIdx>0?proj.periods[perIdx-1]:null;
@@ -434,7 +440,7 @@ function calc(proj,perIdx){
   const deposits=[]; for(let i=0;i<=perIdx;i++) for(const e of extrasOf(proj.periods[i])) if(e.deduct&&!e.recordOnly&&!e.auto) deposits.push({label:e.name||'訂金',date:e.date||'',amount:+e.amount||0});
   const receivedList=[...deposits,...priorBills];
   const noteList=[]; for(let i=0;i<=perIdx;i++) for(const e of extrasOf(proj.periods[i])) if(e.deduct&&e.recordOnly&&!e.auto) noteList.push({label:e.name||'訂金',date:e.date||'',amount:+e.amount||0}); // 已收但本次不扣，僅列紀錄
-  const chargeList=[]; for(let i=0;i<=perIdx;i++) for(const e of extrasOf(proj.periods[i])) if(!e.deduct&&!e.auto) chargeList.push({label:e.name||'追加',date:e.date||'',amount:+e.amount||0,periodNo:proj.periods[i].no});
+  const chargeList=[]; for(let i=0;i<=perIdx;i++) for(const e of extrasOf(proj.periods[i])) if(!e.deduct&&!e.auto) chargeList.push({label:e.name||'追加',date:e.date||'',amount:+e.amount||0,periodNo:proj.periods[i].no,days:+e.days||0,rate:+e.rate||0});
   const chgTotal=chargeList.reduce((s,e)=>s+e.amount,0);
   const cumRaw=itemCum+chgTotal;                       // 照明細（未折讓）的累計計價＋加項
   const cumDiscItem=Math.round(itemCum*factor);         // 折讓後的工程計價
@@ -805,7 +811,7 @@ function viewProg(proj){
     h+=`<table style="margin-bottom:8px"><tr><th>名目</th><th class="num">日期</th><th>性質</th><th class="num">金額</th>${editable?'<th></th>':''}</tr>`;
     for(const e of myExtras){
       const kindTag=!e.deduct?'<span class="tag" style="background:#dbeafe;color:#1e3a8a">加項</span>':e.recordOnly?'<span class="tag" style="background:#fef3c7;color:#92400e">已收·僅紀錄</span>':'<span class="tag" style="background:#dcfce7;color:#166534">已收·扣抵</span>';
-      h+=`<tr><td>${esc(e.name||'訂金')}</td><td class="num">${esc(e.date||period.date)}</td><td>${kindTag}</td><td class="num">${money(e.amount)}</td>${editable?`<td class="num"><button class="btn sub sm" data-editextra="${e.id}">改</button> <button class="btn bad sm" data-delextra="${e.id}">刪</button></td>`:''}</tr>`;
+      h+=`<tr><td>${esc(e.name||'訂金')}${e.days?`<span class="tag" title="點工計價" style="background:rgba(45,212,191,.18);border-color:rgba(45,212,191,.5);color:#5eead4">${qfmt(e.days)} 工 × ${money(e.rate)}</span>`:''}</td><td class="num">${esc(e.date||period.date)}</td><td>${kindTag}</td><td class="num">${money(e.amount)}</td>${editable?`<td class="num"><button class="btn sub sm" data-editextra="${e.id}">改</button> <button class="btn bad sm" data-delextra="${e.id}">刪</button></td>`:''}</tr>`;
     }
     h+=`</table>`;
   }else{ h+=`<div class="muted" style="font-size:13px;margin-bottom:8px">本期尚無登錄款項。</div>`; }
@@ -976,15 +982,24 @@ function viewAlloc(proj){
   // 差額就是議價賺到（或多付）的。標記漏標時也看得出來。
   const cr={};
   al.rows.forEach(r=>{ const c=crewOf(r.it); if(!c) return; const e=cr[c]||(cr[c]={name:c,mAmt:0,aAmt:0,n:0}); e.mAmt+=r.mAmt; e.aAmt+=r.aAmt; e.n++; });
+  // 點工／修繕這種不按量算的錢記在子專案的「加項」，不會出現在發包量裡，但一樣要付給這家。
+  // 用廠商名對應到工班名（建子專案時廠商名預設就是工班名）。
+  Object.values(cr).forEach(e=>{
+    const kid=al.kids.find(k=>String(k.vendor||'').trim()===e.name);
+    const ch=kid?projChargeTotal(kid):{sum:0,days:0};
+    e.chAmt=ch.sum; e.chDays=ch.days;
+  });
   const crList=Object.values(cr).sort((a,b)=>b.mAmt-a.mAmt);
   if(crList.length){
+    const anyCh=crList.some(e=>e.chAmt);
     h+=`<div class="card" style="margin-bottom:10px;border-color:rgba(45,212,191,.4)"><h3 style="margin-bottom:6px">👷 依工班對照</h3>
-      <div class="muted" style="font-size:12px;margin-bottom:8px">左邊是母專案上<b>標給這家</b>的合約金額，右邊是<b>實際發包</b>（該廠商子專案的金額）。差額＝議價空間。兩邊差很多通常是標記漏了，或子專案還沒建。</div>
-      <table style="font-size:13px"><tr><th>工班</th><th class="num">標了幾條</th><th class="num">合約金額</th><th class="num">實際發包</th><th class="num">差額</th></tr>
+      <div class="muted" style="font-size:12px;margin-bottom:8px"><b>合約金額</b>＝母專案上標給這家的；<b>實際發包</b>＝該廠商子專案照量算的金額，差額即議價空間。<b>加項</b>＝那個子專案登錄的點工／修繕（不按量算，不進發包量管控，但一樣要付）。兩邊差很多通常是標記漏了，或子專案還沒建。</div>
+      <table style="font-size:13px"><tr><th>工班</th><th class="num">標了幾條</th><th class="num">合約金額</th><th class="num">實際發包</th><th class="num">差額</th>${anyCh?'<th class="num">加項（點工等）</th><th class="num">應付合計</th>':''}</tr>
       ${crList.map(e=>{ const d=e.mAmt-e.aAmt;
         return `<tr><td><span class="tag" style="background:${crewColor(e.name)}22;border-color:${crewColor(e.name)}88;color:${crewColor(e.name)}">${esc(e.name)}</span></td>
           <td class="num">${e.n}</td><td class="num">${money(e.mAmt)}</td><td class="num">${e.aAmt?money(e.aAmt):'<span class="muted">尚未建子專案</span>'}</td>
-          <td class="num" style="color:${d<0?'#fca5a5':(d>0?'var(--ok)':'inherit')}">${e.aAmt?moneyS(d):'—'}</td></tr>`; }).join('')}
+          <td class="num" style="color:${d<0?'#fca5a5':(d>0?'var(--ok)':'inherit')}">${e.aAmt?moneyS(d):'—'}</td>
+          ${anyCh?`<td class="num">${e.chAmt?`${money(e.chAmt)}${e.chDays?`<div style="font-size:10.5px;color:var(--muted)">${qfmt(e.chDays)} 工</div>`:''}`:'<span class="muted">—</span>'}</td><td class="num"><b>${money(e.aAmt+e.chAmt)}</b></td>`:''}</tr>`; }).join('')}
       </table></div>`;
   }
   h+=`<div class="muted" style="font-size:12.5px;margin-bottom:8px">母專案設定<b>發包總量與單價</b>；每個廠商子專案認領的部分列在「已分配」。<b>自辦</b>欄填自己要做的部分：<b>上格填間數</b>（自己做 5 間就填 5），或<b>下格直接填量</b>（㎡、式…），兩格連動，<b>還沒決定</b>＝母總量−已發包−自辦。<b>已發包＋自辦不可超過母專案</b>，超了會標紅。</div>
@@ -1009,9 +1024,15 @@ function viewAlloc(proj){
       <td class="num"${r.over?' style="color:#fca5a5;font-weight:700"':(zero?' class="muted"':'')}>${zero?'—':money(r.aAmt)}</td></tr>`;
   }
   h+=`<tr class="chapter"><td>合計</td><td></td><td></td><td class="num"><b style="color:var(--accent2)">${money(al.totSelf)}</b></td><td class="num"><b>${money(al.totLeft)}</b></td><td></td><td class="num"><b>${money(al.totMother)}</b></td><td class="num"><b style="color:${al.totAlloc>al.totMother?'#fca5a5':'inherit'}">${money(al.totAlloc)}</b></td></tr></table>`;
-  h+=`<div class="card" style="margin-top:12px"><h3>各廠商子專案</h3><table><tr><th>廠商子專案</th><th>廠商</th><th class="num">發包金額</th><th></th></tr>
+  h+=`<div class="card" style="margin-top:12px"><h3>各廠商子專案</h3>
+    <div class="muted" style="font-size:12px;margin-bottom:6px">「加項」＝該子專案各期登錄的點工／修繕等不按量算的錢，不在合約明細裡，所以不算進上面的發包量管控，但一樣要付。</div>
+    <table><tr><th>廠商子專案</th><th>廠商</th><th class="num">發包金額</th><th class="num">加項（點工等）</th><th class="num">合計</th><th></th></tr>
     ${al.kids.map(k=>{ const v=k.blocks.reduce((s,b)=>s+b.items.reduce((x,i)=>x+itemValue(i,b),0),0);
-      return `<tr><td>${esc(k.name)}</td><td>${esc(k.vendor||'—')}</td><td class="num">${money(v)}</td><td><button class="btn sub sm" data-gotoproj="${k.id}">開啟</button></td></tr>`; }).join('')}
+      const ch=projChargeTotal(k);
+      return `<tr><td>${esc(k.name)}</td><td>${esc(k.vendor||'—')}</td><td class="num">${money(v)}</td>
+        <td class="num">${ch.sum?`${money(ch.sum)}${ch.days?`<div style="font-size:10.5px;color:var(--muted)">${qfmt(ch.days)} 工</div>`:''}`:'<span class="muted">—</span>'}</td>
+        <td class="num"><b>${money(v+ch.sum)}</b></td>
+        <td><button class="btn sub sm" data-gotoproj="${k.id}">開啟</button></td></tr>`; }).join('')}
     </table></div>`;
   return h;
 }
@@ -1112,8 +1133,15 @@ function openExtraModal(opts){
   const old=document.getElementById('modal');if(old)old.remove();
   const m=document.createElement('div');m.id='modal';
   m.innerHTML=`<div class="box"><h3 style="margin-bottom:12px">${opts.existing?'編輯':'新增'}款項</h3>
-    <div class="rowline">名目 <input id="ex-name" style="min-width:200px" value="${esc(ex.name||'')}" placeholder="訂金／預付款"></div>
-    <div class="rowline">金額 <input id="ex-amount" inputmode="decimal" value="${ex.amount||''}" placeholder="0"></div>
+    <div class="rowline">名目 <input id="ex-name" style="min-width:200px" value="${esc(ex.name||'')}" placeholder="訂金／預付款／修繕點工"></div>
+    <div class="rowline">金額 <input id="ex-amount" inputmode="decimal" value="${ex.amount||''}" placeholder="0（可算式，例 12*2800）"></div>
+    <div class="rowline" style="gap:6px;align-items:center;font-size:13px">
+      <label style="cursor:pointer"><input type="checkbox" id="ex-daily" ${ex.days?'checked':''}> <b>點工計價</b></label>
+      <span id="ex-daily-box" style="display:${ex.days?'flex':'none'};gap:6px;align-items:center">
+        <input id="ex-days" inputmode="decimal" value="${ex.days||''}" placeholder="工數" style="width:70px"> 工 ×
+        <input id="ex-rate" inputmode="decimal" value="${ex.rate||''}" placeholder="日薪" style="width:90px"> 元
+      </span></div>
+    <div class="muted" style="font-size:12px;margin:2px 0 6px">修繕、追加這種按天算的（不論是自己的師傅還是外面工班）勾「點工計價」，填工數與日薪，金額自動算，請款單上會印出「12 工 × $2,800」讓對方看得懂。</div>
     <div class="rowline">日期 <input id="ex-date" type="date" value="${esc(ex.date||opts.defaultDate||today())}"></div>
     <div style="margin:4px 0">性質：</div>
     <div class="rowline" style="flex-direction:column;align-items:flex-start;gap:4px;margin-bottom:6px">
@@ -1125,14 +1153,28 @@ function openExtraModal(opts){
     <div class="rowline"><button class="btn" id="ex-ok">儲存</button><button class="btn sub" id="ex-cancel">取消</button></div></div>`;
   document.body.appendChild(m);
   m.querySelector('#ex-cancel').onclick=()=>m.remove();
+  // 點工計價：工數 × 日薪 → 金額（金額欄變唯讀，免得兩邊對不起來）
+  const dChk=m.querySelector('#ex-daily'), dBox=m.querySelector('#ex-daily-box');
+  const amtEl=m.querySelector('#ex-amount'), dEl=m.querySelector('#ex-days'), rEl=m.querySelector('#ex-rate');
+  const syncDaily=()=>{
+    const on=dChk.checked;
+    dBox.style.display=on?'flex':'none';
+    amtEl.readOnly=on; amtEl.style.opacity=on?'.6':'';
+    if(on){ const v=(evalExpr(dEl.value)||0)*(evalExpr(rEl.value)||0); amtEl.value=v?Math.round(v):''; }
+  };
+  dChk.onchange=syncDaily; dEl.oninput=syncDaily; rEl.oninput=syncDaily;
+  syncDaily();
   m.querySelector('#ex-ok').onclick=()=>{
-    const amount=num(m.querySelector('#ex-amount').value);
-    if(!amount){alert('請輸入金額');return;}
+    const daily=dChk.checked;
+    const days=daily?(evalExpr(dEl.value)||0):0, rate=daily?(evalExpr(rEl.value)||0):0;
+    const amount=daily?Math.round(days*rate):(evalExpr(amtEl.value)||0);   // 金額可直接填算式（12*2800）
+    if(!amount){alert(daily?'請輸入工數與日薪':'請輸入金額');return;}
     const kind=m.querySelector('input[name=exk]:checked').value;
     opts.onSave({
-      name:m.querySelector('#ex-name').value.trim()||'訂金',
+      name:m.querySelector('#ex-name').value.trim()||(daily?'點工':'訂金'),
       amount, date:m.querySelector('#ex-date').value||opts.defaultDate||today(),
       deduct:kind!=='add', recordOnly:kind==='record',
+      ...(daily?{days,rate}:{days:0,rate:0}),
     });
     m.remove();
   };
@@ -1167,7 +1209,8 @@ function printDoc(proj){
       if(!showAll&&cb.cum===0){ hidBlk++; continue; }   // 整個大項都還沒進度 → 不印
       h+=`<tr><td>${esc(cb.blk.name)}（${qfmt(cb.blk.count)} ${esc(cb.blk.unit)}）</td><td class="num">${money(R(cb.V))}</td><td class="num">${money(R(cb.cum))}</td><td class="num">${pfmt(cb.pct)}</td></tr>`;
     }
-    for(const e of c.chargeList) h+=`<tr><td>${esc(e.label)}（加項${e.date?'，'+esc(e.date):''}）</td><td class="num">—</td><td class="num">${money(e.amount)}</td><td class="num">—</td></tr>`;
+    // 點工加項印出「12 工 × $2,800」，對方才看得懂這筆怎麼來的
+    for(const e of c.chargeList) h+=`<tr><td>${esc(e.label)}（加項${e.date?'，'+esc(e.date):''}）${e.days?`<span style="font-size:10px;color:#555">　${qfmt(e.days)} 工 × ${money(e.rate)}</span>`:''}</td><td class="num">${e.days?`${qfmt(e.days)} 工`:'—'}</td><td class="num">${money(e.amount)}</td><td class="num">—</td></tr>`;
     h+=`<tr class="tot"><td>累計完成計價 合計</td><td class="num">${money(c.signedTotal||c.V)}</td><td class="num">${money(c.cumApplied)}</td><td class="num">${pfmt(c.V?c.itemCum/c.V:0)}</td></tr></table>`;
     if(hidBlk) h+=`<div style="font-size:10px;color:#666;margin:-6px 0 8px">＊另有 ${hidBlk} 個大項尚未施作（完成 0%），本單未列；合計欄仍為全案合約金額。</div>`;
     // 二、已收款明細（有資料才顯示）
