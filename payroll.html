@@ -511,7 +511,7 @@ const FS_ROOT = 'https://firestore.googleapis.com/v1/projects/'+FS_PROJECT+'/dat
 const FS_DOC_BASE = FS_ROOT+'payroll/';
 const FS_SIG_BASE = FS_ROOT+'payrollSignatures/';
 const FS_REST_URL = FS_DOC_BASE+'main?key='+FS_KEY;
-const APP_VERSION = 'v2026.08.06e-reimbtag';
+const APP_VERSION = 'v2026.08.06f-coopreimb';
 let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], tools:[], locations:[], assets:[], advances:[], accounts:[], ledger:[], deals:[], billings:[], measurements:[], contracts:{}, costs:[], textMemory:{clients:[],companies:[]}, parkAccId:'', oweBonus:{}, minFund:'', shareholderTx:[], myCompanies:[], payrollSnapshots:[], yearIncomeAdj:[], deletedIds:[], resurrected:{ids:[],at:0}, tab:'dash' };
 let cloudStatus='連線中…';
 let localDirty=false, lastCloudTs=0;
@@ -3589,14 +3589,17 @@ function bind(){
     const c=state.costs.find(x=>x.id===b.dataset.reimb); if(!c) return;
     const pn=({dz:'東澤',gx:'廣昕',py:'品佑'})[c.payer]||c.payer||'—';
     const hasPark=!!state.parkAccId&&state.accounts.some(a=>a.id===state.parkAccId); // 帳戶要真的還在，才不會把報銷寫進幽靈帳戶
-    const extra=hasPark?`・品佑帳戶會記一筆支出 ${money(c.amount)}（摘要：${esc(c.item||'報銷')}）`:'・（尚未設定品佑帳戶，這次只標記報銷、不記品佑支出。可到「品佑帳戶結算」設定後再用）';
-    if(!confirm(`報銷這筆？\n\n・${siteName(c.siteId)||''}　${esc(c.item||'')}　${money(c.amount)}\n・原墊付人：${pn} → 改為品佑\n${extra}\n\n確定報銷？`)) return;
+    const coop=isCoopCost(c);
+    const extra=coop
+      ? '・<b>不</b>記品佑帳戶支出：合作案的請款不會進品佑帳戶，這筆成本已經在合作案分潤裡扣過了，再記一次會扣兩次'
+      : (hasPark?`・品佑帳戶會記一筆支出 ${money(c.amount)}（摘要：${esc(c.item||'報銷')}）`:'・（尚未設定品佑帳戶，這次只標記報銷、不記品佑支出。可到「品佑帳戶結算」設定後再用）');
+    if(!confirm(`報銷這筆？\n\n・${siteName(c.siteId)||''}${coop?'（合作案）':''}　${esc(c.item||'')}　${money(c.amount)}\n・原墊付人：${pn} → 改為品佑\n${extra}\n\n確定報銷？`)) return;
     c.origPayer=c.payer;
     siteCostDetailsOpen[c.siteId]=true;
     c.payer='py';
     c.reimbursed=true;
     c.reimbDate=localISODate();
-    if(hasPark){
+    if(hasPark&&!coop){
       state.ledger.push({id:uid(), date:c.reimbDate, accId:state.parkAccId, kind:'out', amount:Number(c.amount)||0, note:(c.item||'報銷'), reimbCostId:c.id});
     }
     saveData(); render();
@@ -3874,6 +3877,16 @@ function bind(){
   });
 
   // 公積金帳戶
+  const coopFix=document.getElementById('coop-reimb-fix');
+  if(coopFix) coopFix.onclick=()=>{
+    const bad=coopReimbTxs(); if(!bad.length) return;
+    const sum=bad.reduce((s2,t)=>s2+(Number(t.amount)||0),0);
+    if(!confirm(`移除 ${bad.length} 筆合作案報銷在品佑帳戶多記的支出？\n\n・品佑帳戶餘額會增加 ${money(sum)}（回到不重複扣的狀態）\n・案場成本本身、報銷記號都不動\n\n確定移除？`)) return;
+    const ids=new Set(bad.map(t=>t.id));
+    state.ledger=state.ledger.filter(t=>!ids.has(t.id));
+    saveData(); render();
+    alert(`已移除 ${bad.length} 筆，品佑帳戶餘額增加 ${money(sum)}。`);
+  };
   const accAdd=document.getElementById('acc-add');
   if(accAdd) accAdd.onclick=()=>{
     const name=document.getElementById('acc-name').value.trim();
@@ -5894,6 +5907,24 @@ document.getElementById('burger').onclick=()=>{
 };
 document.getElementById('scrim').onclick=closeSidebar;
 
+// 合作案的成本按「報銷」時，不可以在品佑帳戶再記一筆支出：
+//   ・一般案（代工／連工代料／業主分潤／舊制）：請款是「金額−稅」全額進品佑帳戶，
+//     成本就得從帳戶付出去，記支出才對得起來。
+//   ・合作案：syncDealIncome 明確跳過（d.type!=='合作案'），請款根本不進品佑帳戶；
+//     而 siteCostForDeal 已經把這筆手動成本算進 profit＝請款−成本−稅，管理人那半再帶去公司分潤。
+//     所以再記一次支出＝同一筆成本扣兩次。
+function isCoopCost(c){
+  const site=c&&state.sites.find(s=>s.id===c.siteId);
+  return !!site && site.type==='合作案';
+}
+// 已經記錯的：合作案成本的報銷支出（舊版會記，扣了兩次）
+function coopReimbTxs(){
+  return state.ledger.filter(t=>{
+    if(!t.reimbCostId) return false;
+    const c=state.costs.find(x=>x.id===t.reimbCostId);
+    return !!c && isCoopCost(c);
+  });
+}
 // ---- 帳戶收支（所有帳戶的流水，含品佑帳戶）----
 function accountName(id){ const a=state.accounts.find(x=>x.id===id); return a?a.name:'（已移除）'; }
 function accountBalance(accId){
@@ -5938,11 +5969,25 @@ function viewAccounts(){
   const accOpts=accs.map(a=>`<option value="${a.id}">${esc(a.name)}</option>`).join('');
   const filterOpts=`<option value="">全部帳戶</option>`+accs.map(a=>`<option value="${a.id}" ${ledgerAcc===a.id?'selected':''}>${esc(a.name)}</option>`).join('');
 
+  // 舊版把合作案成本的報銷也記成品佑帳戶支出，等於同一筆成本扣兩次。列出來讓你一鍵清掉。
+  const badCoop=coopReimbTxs();
+  const badSum=badCoop.reduce((s2,t)=>s2+(Number(t.amount)||0),0);
+  const coopWarn=badCoop.length?`<div class="card" style="border:1px solid var(--danger)">
+    <div style="font-size:14px;font-weight:600;margin-bottom:4px;color:var(--danger)">⚠ 有 ${badCoop.length} 筆合作案成本被重複扣了</div>
+    <p class="sub">合作案的請款不會進品佑帳戶，成本已經在合作案分潤裡扣過（請款−成本−稅，管理人那半再帶去公司分潤）。舊版按「報銷」時又在品佑帳戶記了一筆支出，等於同一筆扣兩次，品佑帳戶餘額會少 ${money(badSum)}。<b>成本本身留在案場成本不受影響，只是移除帳戶那筆多記的支出。</b></p>
+    <table class="cardtable"><thead><tr><th>日期</th><th>案場</th><th>項目</th><th class="num">金額</th></tr></thead><tbody>
+    ${badCoop.map(t=>{const c=state.costs.find(x=>x.id===t.reimbCostId);
+      return `<tr><td>${esc(t.date||'')}</td><td>${esc(c?siteName(c.siteId):'')}</td><td>${esc(t.note||'')}</td><td class="num">${money(t.amount)}</td></tr>`;}).join('')}
+    </tbody></table>
+    <button class="btn" id="coop-reimb-fix" style="margin-top:8px">移除這 ${badCoop.length} 筆多記的支出（${money(badSum)}）</button>
+  </div>`:'';
+
   return `
   <div class="metrics">
     ${accMetrics}
     <div class="metric" style="background:var(--accent);color:#fff"><div class="l" style="color:#fff;opacity:.85">總餘額</div><div class="v">${money(totalBal)}</div></div>
   </div>
+  ${coopWarn}
 
   <div class="card">
     <div style="font-size:14px;font-weight:600;margin-bottom:4px">帳戶管理</div>
