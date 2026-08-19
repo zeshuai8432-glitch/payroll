@@ -109,7 +109,7 @@ body.printing #print-overlay{display:block;position:absolute;inset:0;background:
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.08.06f-subwiz';
+const APP_VERSION='vG2026.08.06g-grow';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -470,39 +470,14 @@ function stageColor(n){ return STAGE_COLORS[_stageIdx(n)%STAGE_COLORS.length]; }
 function stageColorPrint(n){ return STAGE_COLORS_PRINT[_stageIdx(n)%STAGE_COLORS_PRINT.length]; }
 const stageHtml=(name,groupName)=>{ const st=stageOf(name,groupName); return `<b style="color:${stageColor(st)}">${esc(st)}</b>`; };
 
-/* ── 工班標記（it.crew）──
-   母專案上先標「這一道給誰做」，好處有兩個：
-   ① 合約明細／各期進度掃一眼就知道誰在哪一道，不用開三個子專案去回想
-   ② 建廠商子專案時可以「只帶這家的細項」，不用複製全部再一條條刪
-   標記純屬註記，錢還是各子專案自己算；發包分配頁會拿它跟實際發包金額對照。 */
-const crewOf = it => String((it&&it.crew)||'').trim();
-function crewNames(proj){
-  const s=new Set();
-  (proj&&proj.blocks||[]).forEach(b=>b.items.forEach(it=>{ const c=crewOf(it); if(c) s.add(c); }));
-  return [...s].sort((a,b)=>a.localeCompare(b,'zh-Hant'));
-}
-const CREW_COLORS=['#2dd4bf','#f472b6','#facc15','#818cf8','#fb7185','#4ade80','#38bdf8','#fdba74'];
-const CREW_COLORS_PRINT=['#0f766e','#be185d','#a16207','#4338ca','#be123c','#15803d','#0369a1','#c2410c'];
-let _crewMap={};
-function buildCrewMap(proj){ _crewMap={}; crewNames(proj).forEach((n,i)=>{ _crewMap[n]=i; }); }
-const _crewIdx=n=>{ const i=_crewMap[String(n||'')]; return i===undefined?0:i; };
-const crewColor=n=>CREW_COLORS[_crewIdx(n)%CREW_COLORS.length];
-const crewColorPrint=n=>CREW_COLORS_PRINT[_crewIdx(n)%CREW_COLORS_PRINT.length];
-function crewTag(it,small){
-  const c=crewOf(it); if(!c) return '';
-  const col=crewColor(c);
-  return `<span class="tag" title="工班：${esc(c)}" style="background:${col}22;border-color:${col}88;color:${col};${small?'font-size:10.5px;':''}margin-left:4px">👷${esc(c)}</span>`;
-}
-// 一組工序底下各道的工班（去重、保持順序），給群組摺疊列顯示
-function groupCrews(subs){ const out=[]; subs.forEach(x=>{ const c=crewOf(x.it||x); if(c&&!out.includes(c)) out.push(c); }); return out; }
 // 專案裡出現過的工序名（骨架／塞棉／封板…），依金額排序，給「依工序批次標工班」用
 function stageBuckets(proj){
   const m={};
   (proj.blocks||[]).forEach(b=>b.items.forEach(it=>{
     if(!it.groupId||!it.groupName) return;
     const st=stageOf(it.name,it.groupName); if(!st) return;
-    const e=m[st]||(m[st]={name:st,n:0,amount:0,crews:new Set()});
-    e.n++; e.amount+=itemValue(it,b); const c=crewOf(it); if(c) e.crews.add(c);
+    const e=m[st]||(m[st]={name:st,n:0,amount:0});
+    e.n++; e.amount+=itemValue(it,b);
   }));
   return Object.values(m).sort((a,b)=>b.amount-a.amount);
 }
@@ -523,7 +498,6 @@ function detectSplitRuns(b){
   return runs;
 }
 let itemEdit=null, itemAdd=null, blkEdit=null, blkAdd=false, copyInto=null, batchEdit=null, batchAll=false;
-let crewPanel=false;                      // 工班分派面板是否展開
 let delMode=null; const delSel=new Set(); // 批次選取：delMode＝正在選取的區塊 id（可批次刪除或批次標工班） // 就地編輯：細項/區塊；copyInto＝選來源區塊複製；batchEdit＝單一區塊整批改；batchAll＝全部區塊一起整批改
 function render(){
   const app=document.getElementById('app');
@@ -544,7 +518,6 @@ function render(){
     return;
   }
   buildStageMap(proj);   // 工序配色表（依本專案出現的工序名）
-  buildCrewMap(proj);    // 工班配色表（依本專案出現的工班名）
   const kids=childProjects(proj.id);
   const par=parentProject(proj);
   const tabs=[['items','合約明細'],['prog','進度請款']];
@@ -572,39 +545,6 @@ function render(){
   else h+=viewSet(proj);
   app.innerHTML=h;
   if(subPanel&&!proj.parentId) bindSubPanel();
-}
-
-// 「工班分派」面板：依工序一次標（骨架給 A、塞棉給 B、封板給 C），
-// 這是最常見的分法，一條條標會標到天亮。個別例外再用批次選取或「改」補。
-function crewPanelHtml(proj){
-  const buckets=stageBuckets(proj);
-  const crews=crewNames(proj);
-  const all=[]; proj.blocks.forEach(b=>b.items.forEach(it=>all.push({it,b})));
-  const unmarked=all.filter(x=>!crewOf(x.it)).length;
-  let h=`<div class="card" style="border-color:rgba(45,212,191,.45);background:rgba(45,212,191,.07);margin-bottom:10px">
-    <div class="rowline" style="align-items:center;margin-bottom:6px"><b>👷 工班分派</b><span style="flex:1"></span>
-      <button class="btn sub sm" id="crew-close">收起</button></div>
-    <div class="muted" style="font-size:12.5px;margin-bottom:10px">標好「這一道給誰做」之後：合約明細與進度請款都會顯示工班，<b>建廠商子專案時可以只帶那一家的細項</b>，不用複製全部再一條條刪。標記只是註記，錢仍由各子專案自己算。</div>`;
-  if(buckets.length){
-    h+=`<div style="font-size:13px;margin-bottom:4px"><b>依工序一次標</b>（最常見：骨架一家、塞棉一家、封板一家）</div>
-      <table style="font-size:13px"><tr><th>工序</th><th class="num">條數</th><th class="num">合約金額</th><th>目前工班</th><th>改成</th></tr>`;
-    buckets.forEach((s,i)=>{
-      const cur=[...s.crews];
-      h+=`<tr><td><b style="color:${stageColor(s.name)}">${esc(s.name)}</b></td>
-        <td class="num">${s.n}</td><td class="num">${money(s.amount)}</td>
-        <td>${cur.length?cur.map(c=>`<span class="tag" style="background:${crewColor(c)}22;border-color:${crewColor(c)}88;color:${crewColor(c)}">${esc(c)}</span>`).join(' '):'<span class="muted">未標</span>'}</td>
-        <td><input class="pin" id="cw-${i}" data-stage="${esc(s.name)}" list="crewlist" placeholder="留空＝不改" style="width:130px;height:28px"></td></tr>`;
-    });
-    h+=`</table><div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-      <button class="btn sm" id="crew-apply">💾 套用到這些工序</button>
-      <span class="muted" style="font-size:11.5px">填「－」可清掉該工序的工班標記。</span></div>`;
-  }else{
-    h+=`<div class="muted" style="font-size:13px">這個專案還沒有拆成多道工序。先用細項右邊的「✂ 拆」把一條拆成骨架／塞棉／封板，這裡就能一次分派。也可以直接用每條的「改」單獨標工班。</div>`;
-  }
-  h+=`<div style="margin-top:10px;padding-top:8px;border-top:1px solid var(--line,rgba(148,163,184,.25));font-size:12.5px" class="muted">
-    已標工班 <b style="color:#5eead4">${all.length-unmarked}</b> 條${crews.length?`（${crews.map(c=>`<span class="tag" style="background:${crewColor(c)}22;border-color:${crewColor(c)}88;color:${crewColor(c)}">${esc(c)}</span>`).join(' ')}）`:''}，未標 <b>${unmarked}</b> 條。
-    個別例外（同一道有幾間換別家）請用區塊上的「☑ 批次選取」勾起來標，或用每條的「改」。</div></div>`;
-  return h;
 }
 
 /* ── 發包精靈：（房型 × 工序 × 間數）──
@@ -789,21 +729,19 @@ function doSubcontract(proj){
 function viewItems(proj){
   const V=proj.blocks.reduce((s,b)=>s+b.items.reduce((x,i)=>x+itemValue(i,b),0),0);
   const nItems=proj.blocks.reduce((s,b)=>s+b.items.length,0);
-  const crews=crewNames(proj);
   let h=`<div class="grid" style="margin-bottom:12px">
     <div class="stat"><div class="l">合約總額（未稅）</div><div class="v">${money(V)}</div></div>
     <div class="stat"><div class="l">區塊</div><div class="v">${proj.blocks.length}</div></div>
     <div class="stat"><div class="l">細項</div><div class="v">${nItems}</div></div>
   </div>
   <div class="rowline"><label class="muted" style="font-size:13px;cursor:pointer"><input type="checkbox" id="hide-zero"${proj.hideZero?' checked':''}> 隱藏 0 元項目（非我方施作範圍）</label></div>
-  <datalist id="crewlist">${crews.map(c=>`<option value="${esc(c)}">`).join('')}</datalist>`;
+  <datalist id="crewlist">${[...new Set(childProjects(proj.id).map(k=>String(k.vendor||'').trim()).filter(Boolean))].map(c=>`<option value="${esc(c)}">`).join('')}</datalist>`;
   if(nItems){
     h+=batchAll
       ?`<div class="rowline" style="gap:8px;flex-wrap:wrap;align-items:center;margin:6px 0;padding:8px 10px;background:rgba(59,130,246,.14);border:1px solid rgba(96,165,250,.45);border-radius:10px;position:sticky;top:0;z-index:5"><b style="font-size:13px">整批改中：每條的數量／單價都可改（支援算式），改完按儲存</b><span style="flex:1"></span><button class="btn sm" data-batchallok="1">💾 全部儲存</button><button class="btn sub sm" data-batchallcancel="1">取消</button></div>`
-      :`<div class="rowline" style="margin:6px 0;gap:8px;flex-wrap:wrap"><button class="btn sub sm" data-batchalledit="1" title="所有區塊的每一條細項，數量與單價一次改">✏️ 整批改數量／單價（全部區塊一起）</button>${proj.parentId?'':`<button class="btn sub sm" id="sub-toggle" style="border-color:#60a5fa;color:#bfdbfe" title="挑工序＋填各房型幾間，直接生出那個工班的子專案">🏗 發包給工班</button><button class="btn sub sm" id="crew-toggle" style="border-color:#2dd4bf;color:#5eead4" title="整道工序都同一家做時，用這個一次標記">👷 工班分派${crews.length?`（${crews.length} 班）`:''}</button>`}</div>`;
+      :`<div class="rowline" style="margin:6px 0;gap:8px;flex-wrap:wrap"><button class="btn sub sm" data-batchalledit="1" title="所有區塊的每一條細項，數量與單價一次改">✏️ 整批改數量／單價（全部區塊一起）</button>${proj.parentId?'':`<button class="btn sub sm" id="sub-toggle" style="border-color:#60a5fa;color:#bfdbfe" title="挑工序＋填各房型幾間，直接生出那個工班的子專案">🏗 發包給工班</button>`}</div>`;
   }
   if(subPanel&&!proj.parentId&&!batchAll) h+=subcontractPanelHtml(proj);
-  if(crewPanel&&!proj.parentId&&!batchAll) h+=crewPanelHtml(proj);
   const ist='height:32px;padding:0 8px';
   const fld=(lbl,inner)=>`<div class="field" style="display:flex;flex-direction:column;gap:2px"><label style="font-size:11px;color:var(--muted)">${lbl}</label>${inner}</div>`;
   const itemForm=(b,it)=>`<tr><td colspan="8" style="padding:10px;background:var(--bg,#f8fafc)">
@@ -812,7 +750,6 @@ function viewItems(proj){
       ${fld('單位',`<input id="if-unit" value="${esc(it?it.unit:'式')}" style="${ist};width:70px">`)}
       ${fld(`單${esc(b.unit)}數量`,`<input id="if-qty" value="${it?esc(String(it.qtyExpr||it.qty)):'1'}" style="${ist};width:120px" placeholder="可算式 5.11*3.07">`)}
       ${fld('單價',`<input id="if-price" value="${it?esc(String(it.priceExpr||it.price||'')):''}" placeholder="可算式" style="${ist};width:110px">`)}
-      ${fld('工班',`<input id="if-crew" list="crewlist" value="${esc(it?it.crew||'':'')}" style="${ist};width:110px" placeholder="誰做的">`)}
       ${fld('備註',`<input id="if-remark" value="${esc(it?it.remark||'':'')}" style="${ist};width:120px" placeholder="選填">`)}
       <button class="btn sm" data-itemok="${b.id}${it?'::'+it.id:''}">儲存</button>
       <button class="btn sub sm" data-itemcancel="1">取消</button>
@@ -844,7 +781,7 @@ function viewItems(proj){
         const nZero=b.items.filter(x=>Number(x.amount)===0).length;
         h+=`<div style="margin-bottom:6px;padding:6px 8px;background:rgba(148,163,184,.12);border:1px solid rgba(148,163,184,.45);border-radius:8px;position:sticky;top:0;z-index:5">
           <div class="rowline" style="gap:8px;align-items:center">
-            <b style="font-size:13px">批次選取「${esc(b.name)}」</b>
+            <b style="font-size:13px">批次刪除「${esc(b.name)}」</b>
             <span class="muted" style="font-size:12px">已選 <b id="delcount-${b.id}" style="color:var(--accent)">${nSel}</b> 條</span>
             <button class="btn sub sm" data-delall="${b.id}">全選</button>
             <button class="btn sub sm" data-delnone="${b.id}">全不選</button>
@@ -854,14 +791,11 @@ function viewItems(proj){
             <button class="btn sub sm" data-delcancel="1">取消</button>
           </div>
           <div class="rowline" style="gap:8px;align-items:center;margin-top:6px">
-            ${proj.parentId?'':`<span class="muted" style="font-size:12px">標工班</span>
-            <input class="pin" id="crewpick-${b.id}" list="crewlist" placeholder="工班名（留空＝清除）" style="width:170px;height:28px">
-            <button class="btn sm" data-crewpick="${b.id}" style="background:#0d9488;border-color:#0d9488">👷 標給勾選的</button>`}
             <span style="flex:1"></span>
             <button class="btn bad sm" data-deldo="${b.id}">🗑 刪除勾選</button>
           </div></div>`;
       }else{
-        h+=`<div style="margin-bottom:6px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn sub sm" data-batchedit="${b.id}">✏️ 整批改本區數量／單價</button><button class="btn sub sm" data-delmode="${b.id}" title="勾起來可以批次刪除，或批次標工班">☑ 批次選取（刪除／標工班）</button></div>`;
+        h+=`<div style="margin-bottom:6px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn sub sm" data-batchedit="${b.id}">✏️ 整批改本區數量／單價</button><button class="btn sub sm" data-delmode="${b.id}" title="勾起來可以批次刪除，或批次標工班">☑ 批次刪除細項</button></div>`;
       }
     }
     const picking=delMode===b.id;
@@ -884,7 +818,7 @@ function viewItems(proj){
         h+=`<tr style="background:var(--card2)">
           ${picking?`<td><input type="checkbox" data-delpick-group="${it.groupId}" ${subs.every(x=>delSel.has(x.id))?'checked':''} style="width:16px;height:16px"></td>`:''}
           <td>${esc(it.no==='增'?'':it.no)}</td>
-          <td><button class="btn sub sm" data-grouptoggle="${it.groupId}" style="border:none;background:none;padding:0 6px 0 0;color:var(--accent)">${open?'▾':'▸'}</button><b>${esc(it.groupName||it.name)}</b>${subs.slice(0,4).map(x=>{const st=stageOf(x.name,it.groupName);const c=stageColor(st);return `<span class="tag" style="background:${c}22;border-color:${c}88;color:${c};margin-left:4px">${esc(st)}</span>`;}).join('')}${subs.length>4?`<span class="tag" title="共 ${subs.length} 道工序">+${subs.length-4}</span>`:''}<span class="tag" style="background:rgba(99,102,241,.22);border-color:rgba(129,140,248,.5);color:#c7d2fe">${subs.length} 道工序</span>${groupCrews(subs).map(c=>`<span class="tag" title="工班：${esc(c)}" style="background:${crewColor(c)}22;border-color:${crewColor(c)}88;color:${crewColor(c)};margin-left:4px">👷${esc(c)}</span>`).join('')}</td>
+          <td><button class="btn sub sm" data-grouptoggle="${it.groupId}" style="border:none;background:none;padding:0 6px 0 0;color:var(--accent)">${open?'▾':'▸'}</button><b>${esc(it.groupName||it.name)}</b>${subs.slice(0,4).map(x=>{const st=stageOf(x.name,it.groupName);const c=stageColor(st);return `<span class="tag" style="background:${c}22;border-color:${c}88;color:${c};margin-left:4px">${esc(st)}</span>`;}).join('')}${subs.length>4?`<span class="tag" title="共 ${subs.length} 道工序">+${subs.length-4}</span>`:''}<span class="tag" style="background:rgba(99,102,241,.22);border-color:rgba(129,140,248,.5);color:#c7d2fe">${subs.length} 道工序</span></td>
           <td>${esc(it.unit)}</td>
           <td class="num">${sameQty?qfmt(gQty):'<span class="muted" style="font-size:11px">各段不同</span>'}</td>
           <td class="num">${sameQty?qfmt(gPrice):'<span class="muted" style="font-size:11px">—</span>'}</td>
@@ -895,7 +829,7 @@ function viewItems(proj){
           for(const s of subs){
             if(itemEdit===b.id+'::'+s.id){ h+=itemForm(b,s); continue; }
             h+=`<tr>${picking?`<td><input type="checkbox" data-delpick="${s.id}" ${delSel.has(s.id)?'checked':''} style="width:16px;height:16px"></td>`:''}<td></td>
-              <td style="padding-left:26px;color:var(--muted)">↳ ${stageHtml(s.name,it.groupName)}${crewTag(s,1)}</td>
+              <td style="padding-left:26px;color:var(--muted)">↳ ${stageHtml(s.name,it.groupName)}</td>
               <td>${esc(s.unit)}</td>
               <td class="num">${qfmt(s.qty)}${s.qtyExpr?`<div style="font-size:11px;color:var(--muted)">=${esc(s.qtyExpr)}</div>`:''}</td>
               <td class="num">${s.price?qfmt(s.price):''}${s.priceExpr?`<div style="font-size:11px;color:var(--muted)">=${esc(s.priceExpr)}</div>`:''}</td>
@@ -914,7 +848,7 @@ function viewItems(proj){
         continue;
       }
       const zero=it.amount===0;
-      h+=`<tr class="${zero?'zero':''}">${picking?`<td><input type="checkbox" data-delpick="${it.id}" ${delSel.has(it.id)?'checked':''} style="width:16px;height:16px"></td>`:''}<td>${esc(it.no)}</td><td>${esc(it.name)}${it.tag?`<span class="tag">${esc(it.tag)}</span>`:''}${crewTag(it)}</td>
+      h+=`<tr class="${zero?'zero':''}">${picking?`<td><input type="checkbox" data-delpick="${it.id}" ${delSel.has(it.id)?'checked':''} style="width:16px;height:16px"></td>`:''}<td>${esc(it.no)}</td><td>${esc(it.name)}${it.tag?`<span class="tag">${esc(it.tag)}</span>`:''}</td>
         <td>${esc(it.unit)}</td><td class="num">${qfmt(it.qty)}${it.qtyExpr?`<div style="font-size:11px;color:var(--muted)">=${esc(it.qtyExpr)}</div>`:''}</td>
         <td class="num">${it.price?qfmt(it.price):''}${it.priceExpr?`<div style="font-size:11px;color:var(--muted)">=${esc(it.priceExpr)}</div>`:''}</td><td class="num">${qfmt(it.amount)}</td>
         <td class="muted" style="font-size:12px">${esc(it.remark)}</td>
@@ -1071,6 +1005,15 @@ function viewProg(proj){
         <button class="btn sub sm" data-bapply="${b.id}">套用到整個區塊</button>
         <span class="muted" style="font-size:12px">（會把區塊內每條細項的完成％都設成 完成${esc(b.unit)}數 ÷ ${qfmt(b.count)}，之後仍可逐條微調）</span></div>`;
     }
+    // 邊做邊發包的用法：這期工班又做好幾間才把量加進來，一個動作把「間數 +N」與
+    // 「本期做完」一起做掉，省得先去合約明細改間數、再回來填進度。
+    if(editable&&proj.parentId){
+      h+=`<div class="rowline" style="margin:4px 0 8px;padding:6px 8px;background:rgba(52,211,153,.10);border:1px solid rgba(52,211,153,.4);border-radius:8px">
+        <span style="font-size:13px"><b>本期又做好</b></span>
+        <input class="pin" data-gfill="${b.id}" inputmode="decimal" placeholder="0" style="width:70px"> <span class="muted">${esc(b.unit)}</span>
+        <button class="btn sm" data-gapply="${b.id}" style="background:#059669;border-color:#059669">＋ 加進來並記為完成</button>
+        <span class="muted" style="font-size:12px">合約${esc(b.unit)}數 ${qfmt(b.count)} → 加完變 <b data-gnew="${b.id}">${qfmt(b.count)}</b>，本期累計完成也一併補到滿。舊期已請的金額不動。</span></div>`;
+    }
     const hasR=b.count>1;const cols=hasR?9:9;
     h+=`<table><tr><th>項次</th><th>名稱及規格</th><th>單位</th><th class="num">數量</th><th class="num">單價</th><th class="num">前期%</th><th class="num">${hasR?`完成${esc(b.unit)}數`:'累計完成量'}</th><th class="num">累計%</th><th class="num">本期金額</th></tr>`;
     let ch='', gDone=new Set();
@@ -1088,7 +1031,7 @@ function viewProg(proj){
         const open=openGroup.has(it.groupId);
         h+=`<tr style="background:var(--card2)">
           <td>${esc(it.no==='增'?'':it.no)}</td>
-          <td><button class="btn sub sm" data-grouptoggle="${it.groupId}" style="border:none;background:none;padding:0 6px 0 0;color:var(--accent)">${open?'▾':'▸'}</button><b>${esc(it.groupName||it.name)}</b>${g.slice(0,4).map(x=>{const st=stageOf(x.it.name,it.groupName);const c=stageColor(st);const done=x.p>=0.999;return `<span class="tag" title="${done?'已完成':'完成 '+pfmt(x.p)}" style="background:${c}22;border-color:${c}88;color:${c};margin-left:4px">${esc(st)}${done?' ✓':''}</span>`;}).join('')}${g.length>4?`<span class="tag" title="共 ${g.length} 道工序">+${g.length-4}</span>`:''}<span class="tag" style="background:rgba(99,102,241,.22);border-color:rgba(129,140,248,.5);color:#c7d2fe">${g.length} 道工序</span>${groupCrews(g).map(c=>`<span class="tag" title="工班：${esc(c)}" style="background:${crewColor(c)}22;border-color:${crewColor(c)}88;color:${crewColor(c)};margin-left:4px">👷${esc(c)}</span>`).join('')}</td>
+          <td><button class="btn sub sm" data-grouptoggle="${it.groupId}" style="border:none;background:none;padding:0 6px 0 0;color:var(--accent)">${open?'▾':'▸'}</button><b>${esc(it.groupName||it.name)}</b>${g.slice(0,4).map(x=>{const st=stageOf(x.it.name,it.groupName);const c=stageColor(st);const done=x.p>=0.999;return `<span class="tag" title="${done?'已完成':'完成 '+pfmt(x.p)}" style="background:${c}22;border-color:${c}88;color:${c};margin-left:4px">${esc(st)}${done?' ✓':''}</span>`;}).join('')}${g.length>4?`<span class="tag" title="共 ${g.length} 道工序">+${g.length-4}</span>`:''}<span class="tag" style="background:rgba(99,102,241,.22);border-color:rgba(129,140,248,.5);color:#c7d2fe">${g.length} 道工序</span></td>
           <td>${esc(it.unit)}</td>
           <td class="num">${qfmt(it.qty)}</td>
           <td class="num">${qfmt(g.reduce((s,x)=>s+(Number(x.it.price)||0),0))}</td>
@@ -1101,7 +1044,7 @@ function viewProg(proj){
             const si=s.it, sz=s.v===0, stq=itemTotalQty(si,b), spr=progOf(period,si.id);
             const srVal=(spr.exprKind==='r'&&spr.expr)?spr.expr:(spr.p?+(spr.p*b.count).toFixed(2):'');
             h+=`<tr class="${sz?'zero':''}"><td></td>
-              <td style="padding-left:26px;color:var(--muted)">↳ ${stageHtml(si.name,it.groupName)}${crewTag(si,1)}</td>
+              <td style="padding-left:26px;color:var(--muted)">↳ ${stageHtml(si.name,it.groupName)}</td>
               <td>${esc(si.unit)}</td><td class="num">${qfmt(si.qty)}</td><td class="num">${si.price?qfmt(si.price):''}</td>
               <td class="num muted">${pfmt(s.pp)}</td>
               <td class="num">${hasR
@@ -1117,7 +1060,7 @@ function viewProg(proj){
       const tq=itemTotalQty(it,b);
       const pr=progOf(period,it.id);
       const rVal=(pr.exprKind==='r'&&pr.expr)?pr.expr:(pr.p?+(pr.p*b.count).toFixed(2):'');
-      h+=`<tr class="${zero?'zero':''}"><td>${esc(it.no)}</td><td>${esc(it.name)}${crewTag(it,1)}</td><td>${esc(it.unit)}</td>
+      h+=`<tr class="${zero?'zero':''}"><td>${esc(it.no)}</td><td>${esc(it.name)}</td><td>${esc(it.unit)}</td>
         <td class="num">${qfmt(it.qty)}</td><td class="num">${it.price?qfmt(it.price):''}</td>
         <td class="num muted">${pfmt(ci.pp)}</td>
         <td class="num">${hasR
@@ -1159,30 +1102,6 @@ function viewAlloc(proj){
         <span class="muted" style="font-size:11.5px">找不到同名時：可到母專案把那條加回來，或標為額外項目就不再提醒。</span>
       </div></div>`;
   }
-  // 依工班對照：母專案上標的「這幾道給 A 做」＝合約價的多少，跟實際發包給 A 的金額比對，
-  // 差額就是議價賺到（或多付）的。標記漏標時也看得出來。
-  const cr={};
-  al.rows.forEach(r=>{ const c=crewOf(r.it); if(!c) return; const e=cr[c]||(cr[c]={name:c,mAmt:0,aAmt:0,n:0}); e.mAmt+=r.mAmt; e.aAmt+=r.aAmt; e.n++; });
-  // 點工／修繕這種不按量算的錢記在子專案的「加項」，不會出現在發包量裡，但一樣要付給這家。
-  // 用廠商名對應到工班名（建子專案時廠商名預設就是工班名）。
-  Object.values(cr).forEach(e=>{
-    const kid=al.kids.find(k=>String(k.vendor||'').trim()===e.name);
-    const ch=kid?projChargeTotal(kid):{sum:0,days:0};
-    e.chAmt=ch.sum; e.chDays=ch.days;
-  });
-  const crList=Object.values(cr).sort((a,b)=>b.mAmt-a.mAmt);
-  if(crList.length){
-    const anyCh=crList.some(e=>e.chAmt);
-    h+=`<div class="card" style="margin-bottom:10px;border-color:rgba(45,212,191,.4)"><h3 style="margin-bottom:6px">👷 依工班對照</h3>
-      <div class="muted" style="font-size:12px;margin-bottom:8px"><b>合約金額</b>＝母專案上標給這家的；<b>實際發包</b>＝該廠商子專案照量算的金額，差額即議價空間。<b>加項</b>＝那個子專案登錄的點工／修繕（不按量算，不進發包量管控，但一樣要付）。兩邊差很多通常是標記漏了，或子專案還沒建。</div>
-      <table style="font-size:13px"><tr><th>工班</th><th class="num">標了幾條</th><th class="num">合約金額</th><th class="num">實際發包</th><th class="num">差額</th>${anyCh?'<th class="num">加項（點工等）</th><th class="num">應付合計</th>':''}</tr>
-      ${crList.map(e=>{ const d=e.mAmt-e.aAmt;
-        return `<tr><td><span class="tag" style="background:${crewColor(e.name)}22;border-color:${crewColor(e.name)}88;color:${crewColor(e.name)}">${esc(e.name)}</span></td>
-          <td class="num">${e.n}</td><td class="num">${money(e.mAmt)}</td><td class="num">${e.aAmt?money(e.aAmt):'<span class="muted">尚未建子專案</span>'}</td>
-          <td class="num" style="color:${d<0?'#fca5a5':(d>0?'var(--ok)':'inherit')}">${e.aAmt?moneyS(d):'—'}</td>
-          ${anyCh?`<td class="num">${e.chAmt?`${money(e.chAmt)}${e.chDays?`<div style="font-size:10.5px;color:var(--muted)">${qfmt(e.chDays)} 工</div>`:''}`:'<span class="muted">—</span>'}</td><td class="num"><b>${money(e.aAmt+e.chAmt)}</b></td>`:''}</tr>`; }).join('')}
-      </table></div>`;
-  }
   h+=`<div class="muted" style="font-size:12.5px;margin-bottom:8px">母專案設定<b>發包總量與單價</b>；每個廠商子專案認領的部分列在「已分配」。<b>自辦</b>欄填自己要做的部分：<b>上格填間數</b>（自己做 5 間就填 5），或<b>下格直接填量</b>（㎡、式…），兩格連動，<b>還沒決定</b>＝母總量−已發包−自辦。<b>已發包＋自辦不可超過母專案</b>，超了會標紅。</div>
     <div style="margin-bottom:8px"><button class="btn sub sm" data-selfrest="1" title="把每條「還沒決定」的量全部歸為自辦">🙋 把剩下的全部設為自辦</button> <button class="btn sub sm" data-selfclear="1">清除所有自辦</button></div>`;
   let curBlk=null;
@@ -1191,7 +1110,7 @@ function viewAlloc(proj){
     if(curBlk!==r.blk.id){ curBlk=r.blk.id; h+=`<tr class="chapter"><td colspan="8">${esc(r.blk.name)}（${qfmt(r.blk.count)} ${esc(r.blk.unit)}）</td></tr>`; }
     const zero=r.aQty===0;
     h+=`<tr${r.over?' style="background:rgba(248,113,113,.10)"':''}>
-      <td>${esc(r.it.name)}${crewTag(r.it,1)}${r.over?'<span class="tag" style="background:rgba(248,113,113,.22);border-color:rgba(248,113,113,.5);color:#fca5a5">超額</span>':''}</td>
+      <td>${esc(r.it.name)}${r.over?'<span class="tag" style="background:rgba(248,113,113,.22);border-color:rgba(248,113,113,.5);color:#fca5a5">超額</span>':''}</td>
       <td class="num">${qfmt(r.mQty)} ${esc(r.it.unit)}</td>
       <td class="num">${r.aQty?qfmt(r.aQty):'—'}</td>
       <td class="num">${(Number(r.blk.count)||0)>1
@@ -1239,17 +1158,9 @@ function viewSet(proj){
     <div class="muted" style="font-size:12px;margin-bottom:6px">議價後總價跟明細不同時填這裡（例：明細 ${money(proj.blocks.reduce((s,b)=>s+b.items.reduce((x,i)=>x+i.amount*b.count,0),0))}、簽約 25,500,000）。明細不用改，程式會自動照比例折讓每期請款。</div>
     <button class="btn" id="set-save">儲存</button></div>
   ${proj.parentId?'':`<div class="card"><h3>建立廠商子專案（發包）</h3>
-    <div class="muted" style="font-size:13px;margin-bottom:8px">把這份當<b>母專案（發包總表）</b>，在這裡設好你的<b>發包單價與總量</b>；然後每個廠商建一個<b>子專案</b>。<b>先在「合約明細 → 👷 工班分派」標好誰做哪一道</b>，這裡就能只帶那一家的細項，不用複製全部再一條條刪。<br><b>系統會盯著：所有子專案加起來不能超過母專案的量</b>，超了會在「發包分配」紅字警告。子專案的期別、進度、請款各自獨立，不會互相污染。</div>
+    <div class="muted" style="font-size:13px;margin-bottom:8px">把這份當<b>母專案（發包總表）</b>，在這裡設好你的<b>發包單價與總量</b>；然後每個廠商建一個<b>子專案</b>。這裡是<b>整份複製</b>（全部細項都帶），適合一家包全部。<b>只發其中幾道工序、幾間</b>的話，用「合約明細 → 🏗 發包給工班」比較快。<br><b>系統會盯著：所有子專案加起來不能超過母專案的量</b>，超了會在「發包分配」紅字警告。子專案的期別、進度、請款各自獨立，不會互相污染。</div>
     <div class="rowline">子專案名稱 <input id="dup-name" style="min-width:230px" placeholder="例：${esc(proj.name)}-骨架"></div>
-    <div class="rowline">廠商名稱 <input id="dup-vendor" list="crewlist2" style="min-width:200px" placeholder="例：金泰工程行"></div>
-    <datalist id="crewlist2">${crewNames(proj).map(c=>`<option value="${esc(c)}">`).join('')}</datalist>
-    <div class="rowline">帶哪些細項 <select id="dup-crew" style="height:32px;min-width:230px">
-      <option value="">全部帶過去（${proj.blocks.reduce((s,b)=>s+b.items.length,0)} 條）</option>
-      ${crewNames(proj).map(c=>{ const n=proj.blocks.reduce((s,b)=>s+b.items.filter(it=>crewOf(it)===c).length,0);
-        return `<option value="${esc(c)}">只帶工班「${esc(c)}」的（${n} 條）</option>`; }).join('')}
-      <option value=" none">只帶「還沒標工班」的（${proj.blocks.reduce((s,b)=>s+b.items.filter(it=>!crewOf(it)).length,0)} 條）</option>
-    </select></div>
-    ${crewNames(proj).length?'':'<div class="muted" style="font-size:12px;margin-bottom:6px">還沒標任何工班。到「合約明細」按「👷 工班分派」，依工序一次標（骨架給 A、塞棉給 B、封板給 C），這裡就會多出對應選項。</div>'}
+    <div class="rowline">廠商名稱 <input id="dup-vendor" style="min-width:200px" placeholder="例：金泰工程行"></div>
     <button class="btn sub" id="proj-dup">🏗 建立廠商子專案</button>
     <div class="muted" style="font-size:12px;margin-top:8px">若只是要一份完全無關的複本（不納入母子管控），把廠商欄留空並勾這個：<label style="cursor:pointer"><input type="checkbox" id="dup-standalone"> 建成獨立專案</label></div></div>`}
   ${proj.parentId?`<div class="card"><h3>發包資訊</h3>
@@ -1642,7 +1553,7 @@ function setProgInput(proj,blkId,itemId,kind,val){
 }
 
 document.addEventListener('click',async e=>{
-  const t=e.target.closest('[data-tab],[data-editblk],[data-delblk],[data-edititem],[data-delitem],[data-additem],[data-splititem],[data-sortitems],[data-grouptoggle],[data-groupmerge],[data-groupdetect],[data-whtoggle],[data-rttoggle],[data-whtax],[data-rtamt],[data-selfone],[data-selfrooms],[data-selfrest],[data-selfclear],[data-delmode],[data-delcancel],[data-delall],[data-delnone],[data-delinv],[data-delzero],[data-deldo],[data-crewpick],#crew-toggle,#crew-close,#crew-apply,#sub-toggle,#sub-close,#sub-go,[data-copyinto],[data-copyok],[data-copycancel],[data-batchedit],[data-batchok],[data-batchcancel],[data-batchalledit],[data-batchallok],[data-batchallcancel],[data-itemok],[data-itemcancel],[data-blkok],[data-blkcancel],[data-bapply],[data-editextra],[data-delextra],#btn-import,#btn-import2,#btn-newproj,#btn-newproj2,#btn-addblk,#btn-addblk-ok,#btn-addperiod,#btn-delperiod,#btn-addextra,#btn-roundup,[data-gotoproj],#btn-print,#btn-setretain,#orphan-fix,#orphan-detach,#proj-groupall,#set-save,#proj-dup,#proj-detach,#backup-export,#backup-import-btn,#proj-del,#cloud-push,#cloud-pull');
+  const t=e.target.closest('[data-tab],[data-editblk],[data-delblk],[data-edititem],[data-delitem],[data-additem],[data-splititem],[data-sortitems],[data-grouptoggle],[data-groupmerge],[data-groupdetect],[data-whtoggle],[data-rttoggle],[data-whtax],[data-rtamt],[data-selfone],[data-selfrooms],[data-selfrest],[data-selfclear],[data-delmode],[data-delcancel],[data-delall],[data-delnone],[data-delinv],[data-delzero],[data-deldo],#sub-toggle,#sub-close,#sub-go,[data-copyinto],[data-copyok],[data-copycancel],[data-batchedit],[data-batchok],[data-batchcancel],[data-batchalledit],[data-batchallok],[data-batchallcancel],[data-itemok],[data-itemcancel],[data-blkok],[data-blkcancel],[data-bapply],[data-gapply],[data-editextra],[data-delextra],#btn-import,#btn-import2,#btn-newproj,#btn-newproj2,#btn-addblk,#btn-addblk-ok,#btn-addperiod,#btn-delperiod,#btn-addextra,#btn-roundup,[data-gotoproj],#btn-print,#btn-setretain,#orphan-fix,#orphan-detach,#proj-groupall,#set-save,#proj-dup,#proj-detach,#backup-export,#backup-import-btn,#proj-del,#cloud-push,#cloud-pull');
   if(!t)return;
   const proj=curProj();
   if(t.dataset.tab){state.tab=t.dataset.tab;save();render();return;}
@@ -1686,9 +1597,8 @@ document.addEventListener('click',async e=>{
     const qtyRaw=g('if-qty').value.trim(), priceRaw=g('if-price').value.trim();
     const qty=evalExpr(qtyRaw)||0, price=evalExpr(priceRaw);
     const qtyExpr=hasExpr(qtyRaw)?qtyRaw:'', priceExpr=hasExpr(priceRaw)?priceRaw:'';
-    const crewEl=g('if-crew'), crew=crewEl?crewEl.value.trim():'';
-    if(parts[1]){ const it=b.items.find(x=>x.id===parts[1]); if(it){ it.name=name; it.unit=unit; it.qty=qty; it.qtyExpr=qtyExpr; it.price=price; it.priceExpr=priceExpr; it.amount=qty*price; it.remark=remark; if(crew) it.crew=crew; else delete it.crew; } itemEdit=null; }
-    else { b.items.push({id:uid(),no:'增',tag:'',chapter:'',name,unit,qty:qty||1,qtyExpr,price,priceExpr,amount:(qty||1)*price,remark,...(crew?{crew}:{})}); itemAdd=null; }
+    if(parts[1]){ const it=b.items.find(x=>x.id===parts[1]); if(it){ it.name=name; it.unit=unit; it.qty=qty; it.qtyExpr=qtyExpr; it.price=price; it.priceExpr=priceExpr; it.amount=qty*price; it.remark=remark; } itemEdit=null; }
+    else { b.items.push({id:uid(),no:'增',tag:'',chapter:'',name,unit,qty:qty||1,qtyExpr,price,priceExpr,amount:(qty||1)*price,remark}); itemAdd=null; }
     save(); render(); return;
   }
   if(t.dataset.delitem){
@@ -1877,43 +1787,10 @@ document.addEventListener('click',async e=>{
     alert(`已群組 ${runs.length} 組。點項目左邊的 ▸ 可展開看各道工序。`);
     return;
   }
-  if(t.id==='sub-toggle'){ subPanel=!subPanel; crewPanel=false; render(); return; }
+  if(t.id==='sub-toggle'){ subPanel=!subPanel; render(); return; }
   if(t.id==='sub-close'){ subPanel=false; render(); return; }
   if(t.id==='sub-go'){ doSubcontract(proj); return; }
-  if(t.id==='crew-toggle'){ crewPanel=!crewPanel; subPanel=false; render(); return; }
-  if(t.id==='crew-close'){ crewPanel=false; render(); return; }
-  if(t.id==='crew-apply'){
-    // 依工序批次標：骨架→A、塞棉→B、封板→C。空白＝不動，「－」＝清掉標記。
-    const done=[];
-    document.querySelectorAll('[id^="cw-"][data-stage]').forEach(inp=>{
-      const raw=inp.value.trim(); if(!raw) return;
-      const st=inp.dataset.stage, clear=(raw==='-'||raw==='－');
-      let n=0;
-      proj.blocks.forEach(b=>b.items.forEach(it=>{
-        if(!it.groupId||!it.groupName) return;
-        if(stageOf(it.name,it.groupName)!==st) return;
-        if(clear) delete it.crew; else it.crew=raw;
-        n++;
-      }));
-      if(n) done.push(`${st} → ${clear?'（清除）':raw}　${n} 條`);
-    });
-    if(!done.length){ alert('沒有填任何工班。在要分派的工序後面填工班名再按套用。'); return; }
-    save(); render();
-    alert('已分派：\n'+done.map(x=>'・'+x).join('\n')+'\n\n接下來到「設定／備份」建廠商子專案時，可以選「只帶這個工班的細項」，就不用複製全部再一條條刪。');
-    return;
-  }
-  if(t.dataset.crewpick){
-    const b=proj.blocks.find(x=>x.id===t.dataset.crewpick); if(!b) return;
-    const inp=document.getElementById('crewpick-'+b.id);
-    const name=inp?inp.value.trim():'';
-    const picked=b.items.filter(x=>delSel.has(x.id));
-    if(!picked.length){ alert('還沒勾選任何細項。'); return; }
-    if(!name&&!confirm(`工班欄留空＝把勾選的 ${picked.length} 條清除工班標記，確定？`)) return;
-    picked.forEach(it=>{ if(name) it.crew=name; else delete it.crew; });
-    delSel.clear(); delMode=null; save(); render();
-    alert(name?`已把 ${picked.length} 條標給「${name}」。`:`已清除 ${picked.length} 條的工班標記。`);
-    return;
-  }
+
   if(t.dataset.delmode){ delMode=t.dataset.delmode; delSel.clear(); itemEdit=itemAdd=blkEdit=copyInto=batchEdit=null; blkAdd=false; batchAll=false; render(); return; }
   if(t.dataset.delcancel){ delMode=null; delSel.clear(); render(); return; }
   if(t.dataset.delall||t.dataset.delnone||t.dataset.delinv||t.dataset.delzero){
@@ -2001,6 +1878,27 @@ document.addEventListener('click',async e=>{
     }
     save();render();return;
   }
+  if(t.dataset.gapply){
+    // 「本期又做好 N 間」：間數 +N，本期累計完成補到新的滿量。
+    // rescaleBlockProgress 用各期存下來的絕對完成量回推百分比，所以舊期請過的金額不會被改到。
+    const b=proj.blocks.find(x=>x.id===t.dataset.gapply); if(!b) return;
+    const inp=document.querySelector(`[data-gfill="${b.id}"]`);
+    const n=evalExpr(inp&&inp.value)||0;
+    if(!(n>0)){ alert(`請先填「本期又做好幾${b.unit}」。`); return; }
+    const old=Number(b.count)||0, nv=+(old+n).toFixed(4);
+    const paid=b.items.reduce((s2,it)=>s2+(Number(it.amount)||0),0)*n;
+    if(!confirm(`「${b.name}」本期又做好 ${qfmt(n)} ${b.unit}？\n\n・合約${b.unit}數 ${qfmt(old)} → ${qfmt(nv)}\n・本期累計完成一併補到 ${qfmt(nv)} ${b.unit}（100%）\n・舊期已請的金額不會變\n\n本期預計增加請款約 ${money(Math.round(paid))}`)) return;
+    rescaleBlockProgress(proj,b,nv);
+    b.count=nv; b.countExpr='';
+    const period=proj.periods[proj.periods.length-1]; period.prog||(period.prog={});
+    for(const it of b.items){
+      if(!(Number(it.amount)>0)) continue;
+      period.prog[it.id]={p:1,q:+itemTotalQty(it,b).toFixed(2)};
+    }
+    save(); render();
+    alert(`已加 ${qfmt(n)} ${b.unit}，本期累計完成 ${qfmt(nv)} ${b.unit}。\n\n如果其中有幾道工序還沒做完，直接在下面那條改就好。`);
+    return;
+  }
   if(t.id==='btn-addperiod'){
     const last=proj.periods[proj.periods.length-1];
     const prog=last?JSON.parse(JSON.stringify(last.prog||{})):{};
@@ -2045,36 +1943,25 @@ document.addEventListener('click',async e=>{
   if(t.id==='proj-dup'){
     const nmEl=document.getElementById('dup-name'), vdEl=document.getElementById('dup-vendor');
     const alone=(document.getElementById('dup-standalone')||{}).checked;
-    const crEl=document.getElementById('dup-crew');
-    const crewPick=(!alone&&crEl)?crEl.value:'';                 // ''＝全部；' none'＝只帶未標的；其餘＝該工班
-    const vendor=(vdEl?vdEl.value.trim():'')||(crewPick&&crewPick!==' none'?crewPick:'');
-    // 只帶這家做的：省掉「複製全部再一條條刪」。未標工班的另成一組，方便先發包已定案的部分。
-    const keep = it => !crewPick ? true : (crewPick===' none' ? !crewOf(it) : crewOf(it)===crewPick);
-    const nKeep=proj.blocks.reduce((s,b)=>s+b.items.filter(keep).length,0);
-    if(crewPick&&!nKeep){ alert(crewPick===' none'?'沒有「還沒標工班」的細項。':`沒有標給「${crewPick}」的細項。\n\n請先到「合約明細 → 👷 工班分派」標好再回來。`); return; }
+    const vendor=vdEl?vdEl.value.trim():'';
     const nm=(nmEl?nmEl.value.trim():'')||(proj.name+(alone?'（複製）':'-'+(vendor||'發包')));
     if(state.projects.some(p=>p.name===nm)&&!confirm(`已經有一個專案叫「${nm}」，還是要建立嗎？`))return;
     const nItems=proj.blocks.reduce((s,b)=>s+b.items.length,0);
-    const scope=crewPick
-      ? `・帶過去：${crewPick===' none'?'還沒標工班':'工班「'+crewPick+'」'}的細項 ${nKeep} 條（母專案共 ${nItems} 條，其餘不帶）`
-      : `・帶過去：區塊 ${proj.blocks.length} 個、細項 ${nItems} 條`;
+    const scope=`・帶過去：區塊 ${proj.blocks.length} 個、細項 ${nItems} 條`;
     const msg=alone
       ? `複製「${proj.name}」成獨立專案「${nm}」？\n\n・帶過去：區塊 ${proj.blocks.length} 個、細項 ${nItems} 條\n・不帶過去：期別、進度、已收款、簽名\n\n兩份完全無關，不納入發包量管控。`
-      : `建立「${proj.name}」的廠商子專案「${nm}」${vendor?`（廠商：${vendor}）`:''}？\n\n${scope}\n・不帶過去：期別、進度、已收款、簽名（各自獨立）\n\n建立後把數量與單價改成議定的${crewPick?'':'、刪掉不是這家做的細項'}。\n所有子專案加起來不可超過母專案的量，超了會警告。`;
+      : `建立「${proj.name}」的廠商子專案「${nm}」${vendor?`（廠商：${vendor}）`:''}？\n\n${scope}\n・不帶過去：期別、進度、已收款、簽名（各自獨立）\n\n建立後把數量與單價改成議定的、刪掉不是這家做的細項。\n所有子專案加起來不可超過母專案的量，超了會警告。`;
     if(!confirm(msg))return;
     const copy={
       id:uid(), name:nm, owner:proj.owner||'', vendor:alone?(proj.vendor||''):vendor,
       taxMode:proj.taxMode||'excl', signedTotal:0, hideZero:!!proj.hideZero,
       blocks:proj.blocks.map(b=>{ const gmap={};   // 分組標記一起帶過去（給新的 groupId，避免跨專案撞號）
-        const items=b.items.filter(alone?(()=>true):keep);
+        const items=b.items;
         return {id:uid(),name:b.name,unit:b.unit,count:b.count,
         items:items.map(it=>({id:uid(),no:it.no,tag:it.tag||'',chapter:it.chapter||'',name:it.name,unit:it.unit,
           qty:it.qty,qtyExpr:it.qtyExpr||'',price:it.price,priceExpr:it.priceExpr||'',amount:it.amount,remark:it.remark||'',
-          ...(it.crew?{crew:it.crew}:{}),
           ...(it.groupId?{groupId:(gmap[it.groupId]||(gmap[it.groupId]=uid())),groupName:it.groupName||''}:{}),
-          ...(alone?{}:{srcId:it.id})}))}; })
-        // 只帶一個工班時，整個區塊都不是他做的就不用留空殼
-        .filter(b=>b.items.length||!crewPick||alone),
+          ...(alone?{}:{srcId:it.id})}))}; }),
       periods:[], curPeriod:0, createdAt:Date.now(),
       ...(alone?{}:{parentId:proj.id})
     };
@@ -2084,7 +1971,7 @@ document.addEventListener('click',async e=>{
     state.projects.push(copy); state.cur=copy.id; state.tab='items'; save(); render();
     alert(alone
       ? `已複製成獨立專案「${nm}」。`
-      : `已建立子專案「${nm}」，已切換過去。\n\n接下來：${crewPick?'把數量與單價改成跟這家議定的':'刪掉不是這家做的細項、用「✂ 拆」把一條拆成骨架／封板，數量與單價改成議定的'}。\n${(Number((proj.blocks[0]||{}).count)||0)>1?'如果他只做其中幾間，把區塊的「合約數量（間數）」改成他做的間數就好。\n':''}回母專案的「發包分配」分頁可以看還剩多少可發包。`);
+      : `已建立子專案「${nm}」，已切換過去。\n\n接下來：刪掉不是這家做的細項、用「✂ 拆」把一條拆成骨架／封板，數量與單價改成議定的。\n${(Number((proj.blocks[0]||{}).count)||0)>1?'如果他只做其中幾間，把區塊的「合約數量（間數）」改成他做的間數就好。\n':''}回母專案的「發包分配」分頁可以看還剩多少可發包。`);
     return;
   }
   if(t.id==='set-save'){
@@ -2187,6 +2074,15 @@ document.getElementById('xlsx-file').addEventListener('change',async e=>{
   if(f)await importXlsx(f);
 });
 document.getElementById('backup-import')?.addEventListener('change',()=>{});
+// 「本期又做好 N 間」：邊打邊顯示加完會變幾間，按下去前就看得到
+document.addEventListener('input',e=>{
+  const t=e.target; if(!t||!t.dataset||!t.dataset.gfill) return;
+  const proj=curProj(); if(!proj) return;
+  const b=proj.blocks.find(x=>x.id===t.dataset.gfill); if(!b) return;
+  const el=document.querySelector(`[data-gnew="${b.id}"]`); if(!el) return;
+  const n=evalExpr(t.value)||0;
+  el.textContent=qfmt(+((Number(b.count)||0)+Math.max(0,n)).toFixed(4));
+});
 document.addEventListener('change',e=>{
   if(e.target.id!=='backup-import')return;
   const f=e.target.files[0];e.target.value='';if(!f)return;
