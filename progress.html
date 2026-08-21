@@ -109,7 +109,7 @@ body.printing #print-overlay{display:block;position:absolute;inset:0;background:
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.08.06k-delguard';
+const APP_VERSION='vG2026.08.06l-backfill';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -391,6 +391,16 @@ function allocationOf(parent){
   return {rows, kids, over, totMother, totAlloc, totSelf, totLeft:totMother-totAlloc-totSelf, orphans, orphanAmt};
 }
 function periodOf(p,idx){return p.periods[idx]||null;}
+// 子專案的某個區塊，對照母專案同一個區塊還少哪幾條。
+// 當初建約時刪掉、後來對方又說要做，就從這裡補回來——帶著 srcId 接回母專案，
+// 才不會變成發包分配上的「孤兒發包」（手動加細項就會）。
+function backfillCandidates(proj,blk){
+  const par=parentProject(proj); if(!par||!blk) return null;
+  const mb=par.blocks.find(x=>x.id===blk.srcBlk)||par.blocks.find(x=>x.name===blk.name);
+  if(!mb) return null;
+  const have=new Set(blk.items.map(x=>x.srcId).filter(Boolean));
+  return { mb, items:mb.items.filter(it=>Number(it.amount)>0&&!have.has(it.id)) };
+}
 // 前期扣起來的保留款／代扣稅，標記放款時會記在「哪一期還」（rtReleasedIn / whRefundedIn）。
 // 那一期的請款單就要把它加回本次實付——只改狀態不加錢的話，印出來會少付給廠商。
 function releasedInPeriod(proj,perIdx){
@@ -574,6 +584,7 @@ function render(){
    所以分派單位是三個維度的交集，不是單一工序。這裡一次選完，直接生出／併進該工班的子專案，
    免得複製全部細項再刪三百條、還要一個個改區塊間數。 */
 let subPanel=false;
+let backfill=null;   // 「從母專案補細項」展開中的區塊 id
 let _subInfo={};   // {blkId:{stage:{rooms(母間數), used(已發包間數), perRoom(每間金額), n(條數)}}}
 const SUB_ALL='*';  // 「整條發包」的虛擬工序代碼
 function buildSubInfo(proj){
@@ -926,7 +937,26 @@ function viewItems(proj){
     if(batchAll){
       h+=`<span class="muted" style="font-size:12px">數量／單價可直接填算式（例 5.11*3.07）。改完請按上方「💾 全部儲存」。</span>`;
     }else if(batchEdit!==b.id){
-      h+=`${runs.length?`<button class="btn sub sm" data-groupdetect="${b.id}" style="border-color:#818cf8;color:#c7d2fe" title="把以前拆開、還沒收在一起的工序群組起來，之後就能展開／合回">🔗 收合舊的拆分（${runs.length} 組）</button>`:''}${itemAdd===b.id?'':`<button class="btn sub sm" data-additem="${b.id}">＋ 手動加細項</button>`}${canSort?`<button class="btn sub sm" data-sortitems="${b.id}" title="依名稱/圖面編號自然排序（A、B…D-1、E…）${allManual?'':'／此區塊含匯入細項，按下會先確認'}">🔤 智慧排序${allManual?'':'<span style="opacity:.6">·含匯入</span>'}</button>`:''}${srcBlks.length&&copyInto!==b.id?`<button class="btn sub sm" data-copyinto="${b.id}">📋 複製細項自其他區塊</button>`:''}${copyInto===b.id?`<span class="muted" style="font-size:12px">從哪個區塊複製：</span><select id="copy-src" style="height:30px">${srcBlks.map(x=>`<option value="${x.id}">${esc(x.name)}（${x.items.length} 條）</option>`).join('')}</select><button class="btn sm" data-copyok="${b.id}">複製過來</button><button class="btn sub sm" data-copycancel="1">取消</button>`:''}`;
+      h+=`${runs.length?`<button class="btn sub sm" data-groupdetect="${b.id}" style="border-color:#818cf8;color:#c7d2fe" title="把以前拆開、還沒收在一起的工序群組起來，之後就能展開／合回">🔗 收合舊的拆分（${runs.length} 組）</button>`:''}${itemAdd===b.id?'':`<button class="btn sub sm" data-additem="${b.id}">＋ 手動加細項</button>`}${(()=>{ if(!proj.parentId||backfill===b.id) return '';
+        const bf=backfillCandidates(proj,b);
+        return (bf&&bf.items.length)?`<button class="btn sub sm" data-backfill="${b.id}" style="border-color:#60a5fa;color:#bfdbfe" title="當初建約時刪掉、後來又要做的細項，從這裡補回來">↩ 從母專案補細項（${bf.items.length}）</button>`:''; })()}${canSort?`<button class="btn sub sm" data-sortitems="${b.id}" title="依名稱/圖面編號自然排序（A、B…D-1、E…）${allManual?'':'／此區塊含匯入細項，按下會先確認'}">🔤 智慧排序${allManual?'':'<span style="opacity:.6">·含匯入</span>'}</button>`:''}${srcBlks.length&&copyInto!==b.id?`<button class="btn sub sm" data-copyinto="${b.id}">📋 複製細項自其他區塊</button>`:''}${copyInto===b.id?`<span class="muted" style="font-size:12px">從哪個區塊複製：</span><select id="copy-src" style="height:30px">${srcBlks.map(x=>`<option value="${x.id}">${esc(x.name)}（${x.items.length} 條）</option>`).join('')}</select><button class="btn sm" data-copyok="${b.id}">複製過來</button><button class="btn sub sm" data-copycancel="1">取消</button>`:''}`;
+    }
+    if(backfill===b.id){
+      const bf=backfillCandidates(proj,b);
+      if(bf&&bf.items.length){
+        h+=`<div class="card" style="margin-top:8px;border-color:rgba(96,165,250,.5);background:rgba(59,130,246,.07)">
+          <div class="rowline" style="align-items:center;margin-bottom:4px"><b style="font-size:13.5px">↩ 從母專案補細項到「${esc(b.name)}」</b><span style="flex:1"></span><button class="btn sub sm" data-backfillcancel="1">取消</button></div>
+          <div class="muted" style="font-size:12px;margin-bottom:8px">這幾條是母專案有、這個區塊沒有的。勾起來補進來會<b>自動接回母專案</b>（發包分配算得到，不會變成孤兒發包）；<b>數量沿用母專案</b>，間數照這個區塊現有的 ${qfmt(b.count)} ${esc(b.unit)}。單價留空＝照母單價。</div>
+          <table style="font-size:13px"><tr><th style="width:34px"></th><th>細項</th><th class="num">母·單價</th><th class="num">這家議定單價</th><th class="num">補進來的金額</th></tr>
+          ${bf.items.map(it=>`<tr>
+            <td><input type="checkbox" data-bfpick="${it.id}" style="width:16px;height:16px"></td>
+            <td>${it.groupId&&it.groupName?`${esc(it.groupName)}-${stageHtml(it.name,it.groupName)}`:esc(it.name)}</td>
+            <td class="num">${qfmt(it.price)}</td>
+            <td class="num"><input class="pin" data-bfprice="${it.id}" inputmode="decimal" placeholder="${qfmt(it.price)}" style="width:88px;text-align:right"></td>
+            <td class="num muted" style="font-size:11.5px">${money(itemValue(it,b))}<div>（${qfmt(it.qty)} × ${qfmt(b.count)} ${esc(b.unit)}）</div></td></tr>`).join('')}
+          </table>
+          <div style="margin-top:8px"><button class="btn sm" data-backfillok="${b.id}">↩ 補進來</button></div></div>`;
+      }
     }
     h+=`</div></div></details>`;
   }
@@ -1727,7 +1757,7 @@ function setProgInput(proj,blkId,itemId,kind,val){
 }
 
 document.addEventListener('click',async e=>{
-  const t=e.target.closest('[data-tab],[data-editblk],[data-delblk],[data-edititem],[data-delitem],[data-additem],[data-splititem],[data-sortitems],[data-grouptoggle],[data-groupmerge],[data-groupdetect],[data-whtoggle],[data-rttoggle],[data-whtax],[data-rtamt],[data-selfone],[data-selfrooms],[data-selfrest],[data-selfclear],[data-delmode],[data-delcancel],[data-delall],[data-delnone],[data-delinv],[data-delzero],[data-deldo],#sub-toggle,#sub-close,#sub-go,[data-copyinto],[data-copyok],[data-copycancel],[data-batchedit],[data-batchok],[data-batchcancel],[data-batchalledit],[data-batchallok],[data-batchallcancel],[data-itemok],[data-itemcancel],[data-blkok],[data-blkcancel],[data-bapply],[data-gapply],#btn-invrecon,[data-editextra],[data-delextra],#btn-import,#btn-import2,#btn-newproj,#btn-newproj2,#btn-addblk,#btn-addblk-ok,#btn-addperiod,#btn-delperiod,#btn-addextra,#btn-roundup,[data-gotoproj],#btn-print,#btn-setretain,#orphan-fix,#orphan-detach,#proj-groupall,#set-save,#proj-dup,#proj-detach,#backup-export,#backup-import-btn,#proj-del,#cloud-push,#cloud-pull');
+  const t=e.target.closest('[data-tab],[data-editblk],[data-delblk],[data-edititem],[data-delitem],[data-additem],[data-splititem],[data-sortitems],[data-grouptoggle],[data-groupmerge],[data-groupdetect],[data-whtoggle],[data-rttoggle],[data-whtax],[data-rtamt],[data-selfone],[data-selfrooms],[data-selfrest],[data-selfclear],[data-delmode],[data-delcancel],[data-delall],[data-delnone],[data-delinv],[data-delzero],[data-deldo],#sub-toggle,#sub-close,#sub-go,[data-backfill],[data-backfillcancel],[data-backfillok],[data-copyinto],[data-copyok],[data-copycancel],[data-batchedit],[data-batchok],[data-batchcancel],[data-batchalledit],[data-batchallok],[data-batchallcancel],[data-itemok],[data-itemcancel],[data-blkok],[data-blkcancel],[data-bapply],[data-gapply],#btn-invrecon,[data-editextra],[data-delextra],#btn-import,#btn-import2,#btn-newproj,#btn-newproj2,#btn-addblk,#btn-addblk-ok,#btn-addperiod,#btn-delperiod,#btn-addextra,#btn-roundup,[data-gotoproj],#btn-print,#btn-setretain,#orphan-fix,#orphan-detach,#proj-groupall,#set-save,#proj-dup,#proj-detach,#backup-export,#backup-import-btn,#proj-del,#cloud-push,#cloud-pull');
   if(!t)return;
   const proj=curProj();
   if(t.dataset.tab){state.tab=t.dataset.tab;save();render();return;}
@@ -1798,6 +1828,38 @@ document.addEventListener('click',async e=>{
       if(left.length<=1) left.forEach(x=>{ delete x.groupId; delete x.groupName; });
     }
     save();render();return;
+  }
+  if(t.dataset.backfill){ backfill=t.dataset.backfill; itemEdit=itemAdd=blkEdit=copyInto=batchEdit=null; blkAdd=false; batchAll=false; openBlk.add(backfill); render(); return; }
+  if(t.dataset.backfillcancel){ backfill=null; render(); return; }
+  if(t.dataset.backfillok){
+    const b=proj.blocks.find(x=>x.id===t.dataset.backfillok); if(!b) return;
+    const bf=backfillCandidates(proj,b); if(!bf) return;
+    const picked=[...document.querySelectorAll('[data-bfpick]:checked')].map(x=>x.dataset.bfpick);
+    if(!picked.length){ alert('請先勾要補回來的細項。'); return; }
+    const plan=picked.map(id=>{
+      const it=bf.items.find(x=>x.id===id); if(!it) return null;
+      const inp=document.querySelector(`[data-bfprice="${id}"]`);
+      const raw=inp?inp.value.trim():'';
+      const price=raw?(evalExpr(raw)||0):(Number(it.price)||0);
+      return { it, price, amount:(Number(it.qty)||0)*price };
+    }).filter(Boolean);
+    const tot=plan.reduce((s2,x)=>s2+x.amount*(Number(b.count)||0),0);
+    if(!confirm(`補 ${plan.length} 條進「${b.name}」？\n\n${plan.map(x=>`・${x.it.name}　${qfmt(x.it.qty)} × ${qfmt(x.price)}${(Number(x.it.price)||0)!==x.price?`（母單價 ${qfmt(x.it.price)}）`:''}`).join('\n')}\n\n間數 ${qfmt(b.count)} ${b.unit}，發包金額增加 ${money(Math.round(tot))}\n\n會自動接回母專案，發包分配算得到。`)) return;
+    // 同名工序群組要併進這個區塊「已經有的那一組」，不要各自為政
+    const gmap={};
+    b.items.forEach(x=>{ if(x.groupId&&x.groupName) gmap[x.groupName]=x.groupId; });
+    plan.forEach(({it,price,amount})=>{
+      b.items.push({ id:uid(), no:it.no, tag:'', chapter:it.chapter||'', name:it.name, unit:it.unit,
+        qty:it.qty, qtyExpr:'', price, priceExpr:'', amount,
+        remark:it.remark||'', srcId:it.id,
+        ...(it.groupId&&it.groupName?{groupId:(gmap[it.groupName]||(gmap[it.groupName]=uid())),groupName:it.groupName}:{}) });
+    });
+    // 母專案的順序才是圖面順序，照著排回去
+    const order=new Map(bf.mb.items.map((x,i)=>[x.id,i]));
+    b.items.sort((x,y)=>(order.has(x.srcId)?order.get(x.srcId):9999)-(order.has(y.srcId)?order.get(y.srcId):9999));
+    backfill=null; save(); render();
+    alert(`已補 ${plan.length} 條進「${b.name}」。\n\n數量與間數都照原本的，單價可以再進去改。`);
+    return;
   }
   if(t.dataset.batchalledit){ batchAll=true; batchEdit=itemEdit=itemAdd=blkEdit=copyInto=null; blkAdd=false; render(); return; }
   if(t.dataset.batchallcancel){ batchAll=false; render(); return; }
