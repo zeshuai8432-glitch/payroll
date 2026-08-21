@@ -109,7 +109,7 @@ body.printing #print-overlay{display:block;position:absolute;inset:0;background:
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.08.06j-invrecon';
+const APP_VERSION='vG2026.08.06k-delguard';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -1778,7 +1778,18 @@ document.addEventListener('click',async e=>{
   if(t.dataset.delitem){
     const [blkId,itemId]=t.dataset.delitem.split('::'); const b=proj.blocks.find(x=>x.id===blkId);if(!b)return;
     const it=b.items.find(x=>x.id===itemId);if(!it)return;
-    if(!confirm(`刪除細項「${it.name}」？`))return;
+    // 有沒有已經請過款的期別用到這條？刪掉＝那幾期的金額被追溯改小
+    const hit=proj.periods.map((pp,k)=>({pp,k,pr:(pp.prog||{})[it.id]}))
+      .filter(x=>x.pr&&(Number(x.pr.p)||0)>0);
+    if(hit.length){
+      const before=hit.map(x=>calc(proj,x.k).thisAmt);
+      const bak=hit.map(x=>x.pp.prog[it.id]);
+      hit.forEach(x=>{ delete x.pp.prog[it.id]; });          // 試算
+      const after=hit.map(x=>calc(proj,x.k).thisAmt);
+      hit.forEach((x,i)=>{ x.pp.prog[it.id]=bak[i]; });      // 還原
+      const lines=hit.map((x,i)=>`・第 ${x.pp.no} 期　${money(before[i])} → ${money(after[i])}（少 ${money(before[i]-after[i])}）`);
+      if(!confirm(`⚠ 「${it.name}」已經有 ${hit.length} 期填過進度，刪掉會把那幾期的請款金額一起改掉：\n\n${lines.join('\n')}\n\n那些期別如果已經請過款、對方也付了，這樣帳就對不起來。\n\n【改派給別人做的話】不要刪：把這條的完成度停在他做到的量就好，之後不再往上加；別人做的部分記在別人的子專案。日後換回來繼續做，再把完成度往上加即可。\n\n還是要刪除？`)) return;
+    } else if(!confirm(`刪除細項「${it.name}」？`)) return;
     for(const p of proj.periods)if(p.prog)delete p.prog[it.id];
     b.items=b.items.filter(x=>x!==it);
     // 一組工序只剩一道時就沒有分組的意義，自動還原成一般細項
