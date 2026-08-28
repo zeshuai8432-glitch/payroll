@@ -109,7 +109,7 @@ body.printing #print-overlay{display:block;position:absolute;inset:0;background:
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.08.06l-backfill';
+const APP_VERSION='vG2026.08.06m-addwork';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -433,6 +433,11 @@ function projChargeTotal(p){
   (p&&p.periods||[]).forEach(pr=>extrasOf(pr).forEach(e=>{ if(e.deduct||e.auto) return; sum+=(+e.amount||0); days+=(+e.days||0); }));
   return {sum,days};
 }
+// 追加工程的細項：不受「簽約總價」折讓。
+// 折讓＝簽約總價÷明細總額，是當初議價那份合約的事；事後追加的另計，
+// 若把它算進分母，折數會被稀釋、連already 請過的舊期金額都會縮水。
+// 舊資料相容：手動加的細項項次固定是「增」，沿用當標記。
+const isExtraItem = it => (it && it.extra!==undefined) ? !!it.extra : String(it&&it.no||'')==='增';
 function calc(proj,perIdx){
   const period=proj.periods[perIdx];
   const prev=perIdx>0?proj.periods[perIdx-1]:null;
@@ -450,17 +455,27 @@ function calc(proj,perIdx){
   });
   const V=blocks.reduce((s,b)=>s+b.V,0);
   const itemCum=blocks.reduce((s,b)=>s+b.cum,0), itemPre=blocks.reduce((s,b)=>s+b.pre,0);
-  // 議價折數：簽約總價 ÷ 明細總額（明細不動、整體照比例折讓）；未填＝1（照明細）
-  const factor=(proj.signedTotal>0&&V>0)?proj.signedTotal/V:1;
+  // 折讓基準只算「原合約」的細項；追加的另計，不進分母也不打折
+  let Vbase=0, Vext=0;
+  proj.blocks.forEach(blk=>blk.items.forEach(it=>{ (isExtraItem(it)?  (Vext+=itemValue(it,blk)) : (Vbase+=itemValue(it,blk))); }));
+  // 議價折數：簽約總價 ÷ 原合約明細總額（明細不動、整體照比例折讓）；未填＝1（照明細）
+  const factor=(proj.signedTotal>0&&Vbase>0)?proj.signedTotal/Vbase:1;
   const discount=factor!==1;
   // ── 現金制請款：折讓後累計計價 −（訂金＋前期各期實請）＝ 本次應請 ──
-  const itemCumOf=idx=>{ if(idx<0)return 0; const per=proj.periods[idx]; let s=0; for(const blk of proj.blocks) for(const it of blk.items) s+=Math.round(itemValue(it,blk)*progOf(per,it.id).p); return s; };
+  // 拆成「原合約」與「追加」兩份：前者要乘折數，後者原價計
+  const itemCumSplit=idx=>{ const r={base:0,ext:0}; if(idx<0)return r; const per=proj.periods[idx];
+    for(const blk of proj.blocks) for(const it of blk.items){
+      const v=Math.round(itemValue(it,blk)*progOf(per,it.id).p);
+      if(isExtraItem(it)) r.ext+=v; else r.base+=v;
+    } return r; };
+  const itemCumOf=idx=>{ const r=itemCumSplit(idx); return r.base+r.ext; };
   const sumDep=idx=>extrasOf(proj.periods[idx]).filter(e=>e.deduct&&!e.recordOnly&&!e.auto).reduce((s,e)=>s+(+e.amount||0),0); // 已收扣抵（減本次）
   const sumChg=idx=>extrasOf(proj.periods[idx]).filter(e=>!e.deduct&&!e.auto).reduce((s,e)=>s+(+e.amount||0),0); // 加項（追加，不折讓）
   let runningBilled=0, billPre=0, billComputed=0, billActual=0; const priorBills=[];
   for(let k=0;k<=perIdx;k++){
     let depLE=0,chgLE=0; for(let j=0;j<=k;j++){ depLE+=sumDep(j); chgLE+=sumChg(j); }
-    const applied=Math.round(itemCumOf(k)*factor)+chgLE;   // 折讓後累計計價 ＋ 加項
+    const sp=itemCumSplit(k);
+    const applied=Math.round(sp.base*factor)+sp.ext+chgLE;   // 原合約折讓後 ＋ 追加原價 ＋ 加項
     const received=depLE+runningBilled;    // 已收（訂金＋先前各期實請）
     const computed=applied-received;
     const tgt=proj.periods[k].roundTarget;
@@ -475,10 +490,12 @@ function calc(proj,perIdx){
   const chargeList=[]; for(let i=0;i<=perIdx;i++) for(const e of extrasOf(proj.periods[i])) if(!e.deduct&&!e.auto) chargeList.push({label:e.name||'追加',date:e.date||'',amount:+e.amount||0,periodNo:proj.periods[i].no,days:+e.days||0,rate:+e.rate||0});
   const chgTotal=chargeList.reduce((s,e)=>s+e.amount,0);
   const cumRaw=itemCum+chgTotal;                       // 照明細（未折讓）的累計計價＋加項
-  const cumDiscItem=Math.round(itemCum*factor);         // 折讓後的工程計價
+  const spNow=itemCumSplit(perIdx);
+  const itemCumExt=spNow.ext;                           // 追加細項的累計完成（不折讓）
+  const cumDiscItem=Math.round(spNow.base*factor)+spNow.ext;  // 原合約折讓後 ＋ 追加原價
   const cumApplied=cumDiscItem+chgTotal;                // 折讓後累計應請（供本次計算）
   const billRound=billActual-billComputed;
-  return {blocks,V,itemCum,itemPre,cumRaw,cumDiscItem,cumApplied,factor,discount,signedTotal:proj.signedTotal||0,chgTotal,
+  return {blocks,V,Vbase,Vext,itemCumExt,itemCum,itemPre,cumRaw,cumDiscItem,cumApplied,factor,discount,signedTotal:proj.signedTotal||0,chgTotal,
           receivedList,noteList,chargeList,billPre,billComputed,billRound,billActual,cum:billPre+billActual,period,prev,
           thisAmt:billActual,pre:billPre};
 }
@@ -821,6 +838,7 @@ function viewItems(proj){
       ${fld(`單${esc(b.unit)}數量`,`<input id="if-qty" value="${it?esc(String(it.qtyExpr||it.qty)):'1'}" style="${ist};width:120px" placeholder="可算式 5.11*3.07">`)}
       ${fld('單價',`<input id="if-price" value="${it?esc(String(it.priceExpr||it.price||'')):''}" placeholder="可算式" style="${ist};width:110px">`)}
       ${fld('備註',`<input id="if-remark" value="${esc(it?it.remark||'':'')}" style="${ist};width:120px" placeholder="選填">`)}
+      ${fld('　',`<label style="height:32px;display:flex;align-items:center;gap:4px;font-size:12.5px;cursor:pointer;white-space:nowrap"><input type="checkbox" id="if-extra" ${(it?isExtraItem(it):true)?'checked':''}> 追加工程<span class="muted" style="font-size:11px">（不受簽約總價折讓）</span></label>`)}
       <button class="btn sm" data-itemok="${b.id}${it?'::'+it.id:''}">儲存</button>
       <button class="btn sub sm" data-itemcancel="1">取消</button>
     </div></td></tr>`;
@@ -918,7 +936,7 @@ function viewItems(proj){
         continue;
       }
       const zero=it.amount===0;
-      h+=`<tr class="${zero?'zero':''}">${picking?`<td><input type="checkbox" data-delpick="${it.id}" ${delSel.has(it.id)?'checked':''} style="width:16px;height:16px"></td>`:''}<td>${esc(it.no)}</td><td>${esc(it.name)}${it.tag?`<span class="tag">${esc(it.tag)}</span>`:''}</td>
+      h+=`<tr class="${zero?'zero':''}">${picking?`<td><input type="checkbox" data-delpick="${it.id}" ${delSel.has(it.id)?'checked':''} style="width:16px;height:16px"></td>`:''}<td>${esc(it.no)}</td><td>${esc(it.name)}${it.tag?`<span class="tag">${esc(it.tag)}</span>`:''}${isExtraItem(it)?'<span class="tag" style="background:rgba(251,191,36,.2);border-color:rgba(251,191,36,.5);color:#fcd34d" title="追加工程：不受簽約總價折讓，照明細單價計">追加</span>':''}</td>
         <td>${esc(it.unit)}</td><td class="num">${qfmt(it.qty)}${it.qtyExpr?`<div style="font-size:11px;color:var(--muted)">=${esc(it.qtyExpr)}</div>`:''}</td>
         <td class="num">${it.price?qfmt(it.price):''}${it.priceExpr?`<div style="font-size:11px;color:var(--muted)">=${esc(it.priceExpr)}</div>`:''}</td><td class="num">${qfmt(it.amount)}</td>
         <td class="muted" style="font-size:12px">${esc(it.remark)}</td>
@@ -1023,7 +1041,7 @@ function viewProg(proj){
   // 本次請款計算
   h+=`<div style="margin-top:12px;padding-top:10px;border-top:1px dashed var(--line);font-size:14px">
     <div style="display:flex;justify-content:space-between"><span>累計完成計價${c.discount?'（依簽約總價分攤）':''}</span><b>${money(c.cumApplied)}</b></div>
-    ${c.discount?`<div class="muted" style="font-size:11px;margin-top:2px">＊已按簽約總價 ${money(c.signedTotal)} 比例分攤（明細總額 ${money(c.V)}）</div>`:''}
+    ${c.discount?`<div class="muted" style="font-size:11px;margin-top:2px">＊原合約已按簽約總價 ${money(c.signedTotal)} 比例分攤（原合約明細 ${money(c.Vbase)}）${c.Vext?`；<b style="color:var(--warn)">追加工程 ${money(c.Vext)} 另計不折讓</b>`:''}</div>`:''}
     ${c.billPre?`<div style="display:flex;justify-content:space-between;color:var(--muted)"><span>減 前期累計已收</span><span>−${money(c.billPre).slice(1)}</span></div>
     <div style="display:flex;justify-content:space-between"><span>本次應請（計算）</span><b>${money(c.billComputed)}</b></div>`:''}
     ${c.billRound?`<div style="display:flex;justify-content:space-between;color:var(--muted)"><span>尾差調整（湊整）</span><span>${moneyS(c.billRound)}</span></div>`:''}
@@ -1167,7 +1185,7 @@ function viewProg(proj){
       const tq=itemTotalQty(it,b);
       const pr=progOf(period,it.id);
       const rVal=(pr.exprKind==='r'&&pr.expr)?pr.expr:(pr.p?+(pr.p*b.count).toFixed(2):'');
-      h+=`<tr class="${zero?'zero':''}"><td>${esc(it.no)}</td><td>${esc(it.name)}</td><td>${esc(it.unit)}</td>
+      h+=`<tr class="${zero?'zero':''}"><td>${esc(it.no)}</td><td>${esc(it.name)}${isExtraItem(it)?'<span class="tag" style="background:rgba(251,191,36,.2);border-color:rgba(251,191,36,.5);color:#fcd34d" title="追加工程：不受簽約總價折讓，照明細單價計">追加</span>':''}</td><td>${esc(it.unit)}</td>
         <td class="num">${qfmt(it.qty)}</td><td class="num">${it.price?qfmt(it.price):''}</td>
         <td class="num muted">${pfmt(ci.pp)}</td>
         <td class="num">${hasR
@@ -1495,7 +1513,8 @@ function printDoc(proj){
       <table><tr><td style="width:14%;background:#e8f0fb;color:#1e3a8a;font-weight:600">工程名稱</td><td>${esc(proj.name)}</td></tr>
       ${proj.owner?`<tr><td style="background:#e8f0fb;color:#1e3a8a;font-weight:600">業主（甲方）</td><td>${esc(proj.owner)}</td></tr>`:''}
       ${proj.vendor?`<tr><td style="background:#e8f0fb;color:#1e3a8a;font-weight:600">承攬（乙方）</td><td>${esc(proj.vendor)}</td></tr>`:''}
-      ${c.discount?`<tr><td style="background:#e8f0fb;color:#1e3a8a;font-weight:600">簽約總價</td><td><b>${money(c.signedTotal)}</b>　<span style="font-size:10px;color:#555">（議價後總價；本單各項金額已按此比例分攤）</span></td></tr>`:''}</table>
+      ${c.discount?`<tr><td style="background:#e8f0fb;color:#1e3a8a;font-weight:600">簽約總價</td><td><b>${money(c.signedTotal)}</b>　<span style="font-size:10px;color:#555">（議價後總價；本單原合約各項金額已按此比例分攤${c.Vext?'，追加工程另計不折讓':''}）</span></td></tr>`:''}
+      ${c.Vext?`<tr><td style="background:#fff7e6;color:#92400e;font-weight:600">追加工程</td><td><b>${money(c.Vext)}</b>　<span style="font-size:10px;color:#555">（合約外追加，照明細單價計，不受議價折讓）</span></td></tr>`:''}</table>
       <div style="font-weight:700;font-size:12.5px;margin:8px 0 3px">一、各大項完成計價${showAll?'':'（僅列有進度之大項）'}</div>
       <table><tr><th>大項</th><th class="num">合約金額</th><th class="num">累計完成計價</th><th class="num">完成%</th></tr>`;
     let hidBlk=0;
@@ -1505,7 +1524,7 @@ function printDoc(proj){
     }
     // 點工加項印出「12 工 × $2,800」，對方才看得懂這筆怎麼來的
     for(const e of c.chargeList) h+=`<tr><td>${esc(e.label)}（加項${e.date?'，'+esc(e.date):''}）${e.days?`<span style="font-size:10px;color:#555">　${qfmt(e.days)} 工 × ${money(e.rate)}</span>`:''}</td><td class="num">${e.days?`${qfmt(e.days)} 工`:'—'}</td><td class="num">${money(e.amount)}</td><td class="num">—</td></tr>`;
-    h+=`<tr class="tot"><td>累計完成計價 合計</td><td class="num">${money(c.signedTotal||c.V)}</td><td class="num">${money(c.cumApplied)}</td><td class="num">${pfmt(c.V?c.itemCum/c.V:0)}</td></tr></table>`;
+    h+=`<tr class="tot"><td>累計完成計價 合計</td><td class="num">${money((c.signedTotal||c.Vbase)+c.Vext)}</td><td class="num">${money(c.cumApplied)}</td><td class="num">${pfmt(c.V?c.itemCum/c.V:0)}</td></tr></table>`;
     if(hidBlk) h+=`<div style="font-size:10px;color:#666;margin:-6px 0 8px">＊另有 ${hidBlk} 個大項尚未施作（完成 0%），本單未列；合計欄仍為全案合約金額。</div>`;
     // 二、已收款明細（有資料才顯示）
     if(c.receivedList.length||c.noteList.length){
@@ -1798,11 +1817,12 @@ document.addEventListener('click',async e=>{
     const parts=t.dataset.itemok.split('::'); const b=proj.blocks.find(x=>x.id===parts[0]);if(!b)return;
     const name=g('if-name').value.trim(); if(!name){ alert('請填名稱'); return; }
     const unit=g('if-unit').value.trim()||'式', remark=g('if-remark').value.trim();
+    const exEl=g('if-extra'), isExt=exEl?exEl.checked:false;
     const qtyRaw=g('if-qty').value.trim(), priceRaw=g('if-price').value.trim();
     const qty=evalExpr(qtyRaw)||0, price=evalExpr(priceRaw);
     const qtyExpr=hasExpr(qtyRaw)?qtyRaw:'', priceExpr=hasExpr(priceRaw)?priceRaw:'';
-    if(parts[1]){ const it=b.items.find(x=>x.id===parts[1]); if(it){ it.name=name; it.unit=unit; it.qty=qty; it.qtyExpr=qtyExpr; it.price=price; it.priceExpr=priceExpr; it.amount=qty*price; it.remark=remark; } itemEdit=null; }
-    else { b.items.push({id:uid(),no:'增',tag:'',chapter:'',name,unit,qty:qty||1,qtyExpr,price,priceExpr,amount:(qty||1)*price,remark}); itemAdd=null; }
+    if(parts[1]){ const it=b.items.find(x=>x.id===parts[1]); if(it){ it.name=name; it.unit=unit; it.qty=qty; it.qtyExpr=qtyExpr; it.price=price; it.priceExpr=priceExpr; it.amount=qty*price; it.remark=remark; it.extra=isExt; } itemEdit=null; }
+    else { b.items.push({id:uid(),no:isExt?'增':'',tag:'',chapter:'',name,unit,qty:qty||1,qtyExpr,price,priceExpr,amount:(qty||1)*price,remark,extra:isExt}); itemAdd=null; }
     save(); render(); return;
   }
   if(t.dataset.delitem){
