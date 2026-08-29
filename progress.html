@@ -109,7 +109,7 @@ body.printing #print-overlay{display:block;position:absolute;inset:0;background:
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.08.06m-addwork';
+const APP_VERSION='vG2026.08.06n-addwork2';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -1507,6 +1507,11 @@ function printDoc(proj){
     const rt=retainOf(proj,c.period,payBase);
     const rel=releasedInPeriod(proj,perIdx);   // 本期要退還／回補的前期扣款
     const f=c.factor, R=x=>Math.round((x||0)*f); // 依簽約總價比例分攤
+    const fOf=it=>isExtraItem(it)?1:f;             // 追加工程不折讓
+    const Ri=(x,it)=>Math.round((x||0)*fOf(it));
+    // 大項的合約金額／完成計價也要逐條分開算，不能整包乘 f
+    const blkAmt=cb=>cb.items.reduce((s2,x)=>s2+Math.round(x.v*fOf(x.it)),0);
+    const blkCum=cb=>cb.items.reduce((s2,x)=>s2+Math.round(x.cumAmt*fOf(x.it)),0);
     let h=`<div class="pdoc">
       <h2>工程估驗請款單</h2>
       <div class="sub">${esc(c.period.date)}</div>
@@ -1520,7 +1525,7 @@ function printDoc(proj){
     let hidBlk=0;
     for(const cb of c.blocks){
       if(!showAll&&cb.cum===0){ hidBlk++; continue; }   // 整個大項都還沒進度 → 不印
-      h+=`<tr><td>${esc(cb.blk.name)}（${qfmt(cb.blk.count)} ${esc(cb.blk.unit)}）</td><td class="num">${money(R(cb.V))}</td><td class="num">${money(R(cb.cum))}</td><td class="num">${pfmt(cb.pct)}</td></tr>`;
+      h+=`<tr><td>${esc(cb.blk.name)}（${qfmt(cb.blk.count)} ${esc(cb.blk.unit)}）</td><td class="num">${money(blkAmt(cb))}</td><td class="num">${money(blkCum(cb))}</td><td class="num">${pfmt(cb.pct)}</td></tr>`;
     }
     // 點工加項印出「12 工 × $2,800」，對方才看得懂這筆怎麼來的
     for(const e of c.chargeList) h+=`<tr><td>${esc(e.label)}（加項${e.date?'，'+esc(e.date):''}）${e.days?`<span style="font-size:10px;color:#555">　${qfmt(e.days)} 工 × ${money(e.rate)}</span>`:''}</td><td class="num">${e.days?`${qfmt(e.days)} 工`:'—'}</td><td class="num">${money(e.amount)}</td><td class="num">—</td></tr>`;
@@ -1611,11 +1616,11 @@ function printDoc(proj){
               return `${esc(it.groupName)}-<b style="color:${stageColorPrint(st)}">${esc(st)}</b>`; })()
           : esc(it.name);
         h+=`<tr><td>${esc(it.no)}</td><td>${nm}</td><td>${esc(it.unit)}</td>
-          <td class="num">${qfmt(it.qty)}</td><td class="num">${it.price?qfmt(+(it.price*f).toFixed(2)):''}</td><td class="num">${qfmt(R(it.amount))}</td>
+          <td class="num">${qfmt(it.qty)}</td><td class="num">${it.price?qfmt(+(it.price*fOf(it)).toFixed(2)):''}</td><td class="num">${qfmt(Ri(it.amount,it))}</td>
           <td class="num">${hasR?qfmt(+(ci.p*cb.blk.count).toFixed(2)):qfmt(pr.q||tq*ci.p)}</td><td class="num">${pfmt(ci.p)}</td>
-          <td class="num">${money(R(ci.cumAmt))}</td></tr>`;
+          <td class="num">${money(Ri(ci.cumAmt,it))}</td></tr>`;
       }
-      h+=`<tr class="tot"><td colspan="8">小計</td><td class="num">${money(R(cb.cum))}</td></tr></table>`;
+      h+=`<tr class="tot"><td colspan="8">小計</td><td class="num">${money(blkCum(cb))}</td></tr></table>`;
     }
     const sigs=c.period.sigs||{};
     const roles=[['owner','業主（甲方）簽認'],['eng','現場工程師'],['vendor','承攬（乙方）']];
