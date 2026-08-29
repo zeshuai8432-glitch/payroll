@@ -109,7 +109,7 @@ body.printing #print-overlay{display:block;position:absolute;inset:0;background:
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.08.06n-addwork2';
+const APP_VERSION='vG2026.08.06o-emptychild';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -1286,6 +1286,8 @@ function viewSet(proj){
     <div class="muted" style="font-size:13px;margin-bottom:8px">把這份當<b>母專案（發包總表）</b>，在這裡設好你的<b>發包單價與總量</b>；然後每個廠商建一個<b>子專案</b>。這裡是<b>整份複製</b>（全部細項都帶），適合一家包全部。<b>只發其中幾道工序、幾間</b>的話，用「合約明細 → 🏗 發包給工班」比較快。<br><b>系統會盯著：所有子專案加起來不能超過母專案的量</b>，超了會在「發包分配」紅字警告。子專案的期別、進度、請款各自獨立，不會互相污染。</div>
     <div class="rowline">子專案名稱 <input id="dup-name" style="min-width:230px" placeholder="例：${esc(proj.name)}-骨架"></div>
     <div class="rowline">廠商名稱 <input id="dup-vendor" style="min-width:200px" placeholder="例：金泰工程行"></div>
+    <div class="rowline" style="margin-bottom:6px"><label style="cursor:pointer;font-size:13px"><input type="checkbox" id="dup-empty"> <b>先建空的（只帶區塊架構，細項之後自己從母專案挑）</b></label></div>
+    <div class="muted" style="font-size:12px;margin-bottom:8px">只要發其中<b>特定幾條</b>（例如追加工程裡只有 9F、10F 給工班，其他自辦）就勾這個 —— 建好後進去按每個區塊的「<b>↩ 從母專案補細項</b>」逐條勾，還能各自填議定單價。比複製全部再刪快很多。</div>
     <button class="btn sub" id="proj-dup">🏗 建立廠商子專案</button>
     <div class="muted" style="font-size:12px;margin-top:8px">若只是要一份完全無關的複本（不納入母子管控），把廠商欄留空並勾這個：<label style="cursor:pointer"><input type="checkbox" id="dup-standalone"> 建成獨立專案</label></div></div>`}
   ${proj.parentId?`<div class="card"><h3>發包資訊</h3>
@@ -2222,21 +2224,24 @@ document.addEventListener('click',async e=>{
   if(t.id==='proj-dup'){
     const nmEl=document.getElementById('dup-name'), vdEl=document.getElementById('dup-vendor');
     const alone=(document.getElementById('dup-standalone')||{}).checked;
+    const empty=!alone&&(document.getElementById('dup-empty')||{}).checked;   // 只帶區塊架構
     const vendor=vdEl?vdEl.value.trim():'';
     const nm=(nmEl?nmEl.value.trim():'')||(proj.name+(alone?'（複製）':'-'+(vendor||'發包')));
     if(state.projects.some(p=>p.name===nm)&&!confirm(`已經有一個專案叫「${nm}」，還是要建立嗎？`))return;
     const nItems=proj.blocks.reduce((s,b)=>s+b.items.length,0);
-    const scope=`・帶過去：區塊 ${proj.blocks.length} 個、細項 ${nItems} 條`;
+    const scope=empty
+      ? `・帶過去：區塊 ${proj.blocks.length} 個（含間數），<b>細項一條都不帶</b>\n・建好後進去按每個區塊的「↩ 從母專案補細項」逐條挑，可各自填議定單價`
+      : `・帶過去：區塊 ${proj.blocks.length} 個、細項 ${nItems} 條`;
     const msg=alone
       ? `複製「${proj.name}」成獨立專案「${nm}」？\n\n・帶過去：區塊 ${proj.blocks.length} 個、細項 ${nItems} 條\n・不帶過去：期別、進度、已收款、簽名\n\n兩份完全無關，不納入發包量管控。`
-      : `建立「${proj.name}」的廠商子專案「${nm}」${vendor?`（廠商：${vendor}）`:''}？\n\n${scope}\n・不帶過去：期別、進度、已收款、簽名（各自獨立）\n\n建立後把數量與單價改成議定的、刪掉不是這家做的細項。\n所有子專案加起來不可超過母專案的量，超了會警告。`;
+      : `建立「${proj.name}」的廠商子專案「${nm}」${vendor?`（廠商：${vendor}）`:''}？\n\n${scope}\n・不帶過去：期別、進度、已收款、簽名（各自獨立）\n\n${empty?'':'建立後把數量與單價改成議定的、刪掉不是這家做的細項。\n'}\n所有子專案加起來不可超過母專案的量，超了會警告。`;
     if(!confirm(msg))return;
     const copy={
       id:uid(), name:nm, owner:proj.owner||'', vendor:alone?(proj.vendor||''):vendor,
       taxMode:proj.taxMode||'excl', signedTotal:0, hideZero:!!proj.hideZero,
       blocks:proj.blocks.map(b=>{ const gmap={};   // 分組標記一起帶過去（給新的 groupId，避免跨專案撞號）
-        const items=b.items;
-        return {id:uid(),name:b.name,unit:b.unit,count:b.count,
+        const items=empty?[]:b.items;
+        return {id:uid(),name:b.name,unit:b.unit,count:b.count,srcBlk:b.id,
         items:items.map(it=>({id:uid(),no:it.no,tag:it.tag||'',chapter:it.chapter||'',name:it.name,unit:it.unit,
           qty:it.qty,qtyExpr:it.qtyExpr||'',price:it.price,priceExpr:it.priceExpr||'',amount:it.amount,remark:it.remark||'',
           ...(it.groupId?{groupId:(gmap[it.groupId]||(gmap[it.groupId]=uid())),groupName:it.groupName||''}:{}),
@@ -2250,7 +2255,9 @@ document.addEventListener('click',async e=>{
     state.projects.push(copy); state.cur=copy.id; state.tab='items'; save(); render();
     alert(alone
       ? `已複製成獨立專案「${nm}」。`
-      : `已建立子專案「${nm}」，已切換過去。\n\n接下來：刪掉不是這家做的細項、用「✂ 拆」把一條拆成骨架／封板，數量與單價改成議定的。\n${(Number((proj.blocks[0]||{}).count)||0)>1?'如果他只做其中幾間，把區塊的「合約數量（間數）」改成他做的間數就好。\n':''}回母專案的「發包分配」分頁可以看還剩多少可發包。`);
+      : `已建立子專案「${nm}」，已切換過去。\n\n${empty
+          ?'接下來：展開每個區塊，按「↩ 從母專案補細項」把要發給這家的那幾條勾進來，順便填議定單價。'
+          :'接下來：刪掉不是這家做的細項、用「✂ 拆」把一條拆成骨架／封板，數量與單價改成議定的。'}\n${(Number((proj.blocks[0]||{}).count)||0)>1?'如果他只做其中幾間，把區塊的「合約數量（間數）」改成他做的間數就好。\n':''}回母專案的「發包分配」分頁可以看還剩多少可發包。`);
     return;
   }
   if(t.id==='set-save'){
