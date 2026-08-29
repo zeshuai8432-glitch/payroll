@@ -109,7 +109,7 @@ body.printing #print-overlay{display:block;position:absolute;inset:0;background:
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.08.06t-taxheal';
+const APP_VERSION='vG2026.08.06u-recon2tbl';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -1478,16 +1478,22 @@ function printInvoiceRecon(proj){
   const ov=document.getElementById('print-overlay');
   if(!d.rows.length){ alert('還沒有可對帳的期別。'); return; }
   const paidMode=d.base==='paid';
-  const rowsHtml=d.rows.map(x=>`<tr>
+  // 一列一條算式：表一從請款額算到發票金額，表二從開票基礎算到本次應付。
+  // 以前兩條算式擠在同一列、在「開票基礎」那格分岔出去，看起來像一路減下來，很容易誤讀。
+  const rowsA=d.rows.map(x=>`<tr>
     <td>第 ${x.no} 期</td><td>${esc(x.date)}</td>
-    ${paidMode?`<td class="num">${money(x.bill)}</td><td class="num">${x.rtOpen?'−'+money(x.rtOpen).slice(1):(x.relRt?'+'+money(x.relRt).slice(1):'—')}</td>`:''}
+    ${paidMode?`<td class="num">${money(x.bill)}</td><td class="num">${x.rtOpen?money(x.rtOpen):(x.relRt?'（還）'+money(x.relRt):'—')}</td>`:''}
     <td class="num">${money(x.net)}</td>
     <td class="num">${x.bizTax?money(x.bizTax):'—'}</td>
-    <td class="num"><b>${money(x.gross)}</b></td>
+    <td class="num"><b>${money(x.gross)}</b></td></tr>`).join('');
+  const rowsB=d.rows.map(x=>`<tr>
+    <td>第 ${x.no} 期</td>
+    <td class="num">${money(x.net)}</td>
     <td class="num">${x.wh?money(x.wh):'—'}</td>
-    <td class="num">${x.rt?money(x.rt):'—'}</td>
-    <td class="num">${money(x.paid)}</td>
-    <td class="num">${x.done?'<span style="color:#15803d">已結</span>':money(x.refundWh+x.addTax)}</td></tr>`).join('');
+    <td class="num"><b>${money(x.paid)}</b></td>
+    <td class="num">${x.done?'<span style="color:#15803d">已退</span>':(x.refundWh?money(x.refundWh):'—')}</td>
+    <td class="num">${x.done?'<span style="color:#15803d">已付</span>':(x.addTax?money(x.addTax):'—')}</td>
+    <td class="num"><b>${x.done?'<span style="color:#15803d">已結</span>':money(x.refundWh+x.addTax)}</b></td></tr>`).join('');
   const inner=`<div class="pdoc">
     <h2>補開發票對帳單</h2>
     <div class="sub">製表日 ${esc(today())}</div>
@@ -1506,14 +1512,23 @@ function printInvoiceRecon(proj){
       <div style="font-size:10px;color:#555;margin-top:3px">＊請按此金額開立統一發票；如分期開立，請照下表逐期金額開立。${paidMode&&d.tRtOpen?`<br>＊尚未放款的保留款 ${money(d.tRtOpen)} <b>不含在本次開票金額內</b>，俟完工驗收放款時再行開立。`:''}</div>
     </div>
 
-    <div style="font-weight:700;font-size:12.5px;margin:10px 0 3px">一、逐期明細</div>
+    <div style="font-weight:700;font-size:12.5px;margin:10px 0 3px">一、各期發票應開金額</div>
     <table style="font-size:11px">
-      <tr><th>期別</th><th>日期</th>${paidMode?'<th class="num">請款額<br>（未稅）</th><th class="num">保留款<br>扣／還</th>':''}<th class="num">${paidMode?'開票基礎<br>（實付未稅）':'請款額<br>（未稅）'}</th><th class="num">營業稅<br>${d.inclMode?'5%':d.itPct+'%'}</th><th class="num">發票金額<br>（含稅）</th><th class="num">當初<br>暫扣 ${d.whPct}%</th><th class="num">當初扣<br>保留款</th><th class="num">當初<br>實付</th><th class="num">本次<br>應付</th></tr>
-      ${rowsHtml}
-      <tr class="tot"><td colspan="2">合計</td>${paidMode?`<td class="num">${money(d.tBill)}</td><td class="num">${d.tRtOpen?'−'+money(d.tRtOpen).slice(1):'—'}</td>`:''}<td class="num">${money(d.tNet)}</td><td class="num">${money(d.tBizTax)}</td><td class="num"><b>${money(d.tGross)}</b></td><td class="num">${money(d.tWh)}</td><td class="num">${money(d.tRt)}</td><td class="num">${money(d.tPaid)}</td><td class="num"><b>${money(d.pendWh+d.pendTax)}</b></td></tr>
+      <tr><th>期別</th><th>日期</th>${paidMode?`<th class="num">請款額<br>（未稅）</th><th class="num"><span style="color:#b91c1c">−</span> 未放款<br>保留款</th>`:''}<th class="num"><span style="color:#1e3a8a">${paidMode?'=':''}</span> ${paidMode?'開票基礎':'請款額<br>（未稅）'}</th><th class="num"><span style="color:#15803d">+</span> 營業稅<br>${d.inclMode?'5%':d.itPct+'%'}</th><th class="num"><span style="color:#1e3a8a">=</span> 發票金額<br>（含稅）</th></tr>
+      ${rowsA}
+      <tr class="tot"><td colspan="2">合計</td>${paidMode?`<td class="num">${money(d.tBill)}</td><td class="num">${d.tRtOpen?money(d.tRtOpen):'—'}</td>`:''}<td class="num">${money(d.tNet)}</td><td class="num">${money(d.tBizTax)}</td><td class="num"><b>${money(d.tGross)}</b></td></tr>
     </table>
+    <div style="font-size:10px;color:#555;margin:2px 0 0">＊本表由左至右為一條算式，算到「發票金額」為止。</div>
 
-    <div style="font-weight:700;font-size:12.5px;margin:10px 0 3px">二、補開發票後應付貴公司</div>
+    <div style="font-weight:700;font-size:12.5px;margin:10px 0 3px">二、款項結算</div>
+    <table style="font-size:11px">
+      <tr><th>期別</th><th class="num">開票基礎</th><th class="num"><span style="color:#b91c1c">−</span> 當初<br>暫扣 ${d.whPct}%</th><th class="num"><span style="color:#1e3a8a">=</span> 當初<br>已付</th><th class="num"><span style="color:#15803d">+</span> 退還<br>暫扣款</th><th class="num"><span style="color:#15803d">+</span> 補付<br>營業稅</th><th class="num"><span style="color:#1e3a8a">=</span> 本次<br>應付</th></tr>
+      ${rowsB}
+      <tr class="tot"><td>合計</td><td class="num">${money(d.tNet)}</td><td class="num">${money(d.tWh)}</td><td class="num"><b>${money(d.tPaid)}</b></td><td class="num">${money(d.pendWh)}</td><td class="num">${money(d.pendTax)}</td><td class="num"><b>${money(d.pendWh+d.pendTax)}</b></td></tr>
+    </table>
+    <div style="font-size:10px;color:#555;margin:2px 0 0">＊「當初已付」為各期實際匯付金額，可與貴公司入帳紀錄核對。暫扣款當初扣下、本次全數退還，故左右各出現一次。</div>
+
+    <div style="font-weight:700;font-size:12.5px;margin:10px 0 3px">三、本次應付總額</div>
     <table>
       ${d.pendWh?`<tr><td>退還暫扣款（當初因貴公司尚無公司行號、無法開立發票而暫扣，今補開發票全數退還）</td><td class="num">${money(d.pendWh)}</td></tr>`:''}
       ${d.pendTax?`<tr><td>補付營業稅 ${d.itPct}%（當初以未稅價結算，今補開發票由本公司補付）</td><td class="num">${money(d.pendTax)}</td></tr>`:''}
@@ -1526,7 +1541,7 @@ function printInvoiceRecon(proj){
       １. 雙方原以<b>未稅價</b>議定，各期請款額即為銷售額。<br>
       ２. 貴公司當時尚無公司行號、無法開立統一發票，故雙方約定按 <b>${d.whPct}%</b> <b>暫扣</b>，該款由本公司代為保管。<b>此為暫扣款，非扣繳稅款，不另開立扣繳憑單。</b><br>
       ３. 貴公司取得公司行號並將各期發票補開回本公司後：發票金額為<b>未稅價＋營業稅 ${d.itPct||5}%</b>，本公司<b>全數退還</b>上開暫扣款，並<b>另行補付</b>該筆營業稅。<br>
-      ４. 上表「當初實付」為各期實際匯付金額（已扣暫扣款與保留款）；「本次應付」為補開發票後應再支付之金額。<br>
+      ４. 表一算的是<b>發票要開多少</b>，表二算的是<b>錢要怎麼結</b>，兩表以「開票基礎」相接；各表由左至右自成一條算式，不可跨表連減。<br>
       ５. ${paidMode
         ?'本單發票金額<b>按實際付款金額</b>認列，尚未放款之保留款不列入，俟放款時另行開立。'
         :'本單發票金額<b>按每期應收價款（請款額）</b>認列，保留款與暫扣款屬付款時之扣項，不減少銷售額。'}
