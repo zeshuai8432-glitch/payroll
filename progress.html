@@ -109,7 +109,7 @@ body.printing #print-overlay{display:block;position:absolute;inset:0;background:
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.08.06q-livesync';
+const APP_VERSION='vG2026.08.06r-invbase';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -1131,7 +1131,8 @@ function viewProg(proj){
         ${rows.map(x=>`<tr><td>第 ${x.pp.no} 期</td><td>${esc(x.pp.date||'')}</td><td class="num">${money(x.base)}</td>
           ${(wp&&itPct)?`<td class="num"><b>${money(x.base+x.it)}</b></td>`:''}
           ${wp?`<td class="num">${money(x.wh)}</td>`:''}
-          ${(wp&&itPct)?`<td class="num"><input class="pin" data-whtax="${x.i}" inputmode="decimal" value="${x.it}" style="width:84px;text-align:right"></td>`:''}
+          ${(wp&&itPct)?(()=>{ const auto=Math.round(x.base*itPct/100), man=(x.pp.whTaxAdd!==undefined)&&x.it!==auto;
+            return `<td class="num"><input class="pin" data-whtax="${x.i}" inputmode="decimal" value="${x.it}" style="width:84px;text-align:right${man?';border-color:var(--warn)':''}" title="${man?'手動指定（自動算應為 '+money(auto)+'）':'自動：該期實請 × '+itPct+'%'}">${man?`<div style="font-size:10.5px;color:var(--warn)">手動 <button class="btn sub sm" data-whtaxauto="${x.i}" style="font-size:10px;padding:0 5px;height:18px">改回自動</button></div>`:''}</td>`; })():''}
           ${wp?`<td>${x.pp.whRefunded
             ? `<span class="tag" style="background:rgba(52,211,153,.18);border-color:rgba(52,211,153,.5);color:#6ee7b7">已回補 ${esc(x.pp.whRefundDate||'')}${x.pp.whRefundedIn?`（併在第 ${x.pp.whRefundedIn} 期付）`:''}</span> <button class="btn sub sm" data-whtoggle="${x.i}">取消</button>`
             : `<button class="btn sm" data-whtoggle="${x.i}">標記已回補</button>`}</td>`:''}
@@ -1435,20 +1436,29 @@ function invoiceRows(proj){
   const whPct=Math.max(0,Number(proj.withholdPct)||0);
   const inclMode=(proj.taxMode==='incl');
   const itPct=inclMode?0:Math.max(0,proj.invoiceTaxPct!==undefined?Number(proj.invoiceTaxPct):5);
+  // 發票基礎：'bill'＝按每期應收（請款額，含保留款；營建業的法定開立時點就是應收價款）
+  //           'paid'＝按實際付出去的（未放款的保留款先不開，等放款那期再開）
+  const base=(proj.invoiceBase==='paid')?'paid':'bill';
   const rows=(proj.periods||[]).map((pp,i)=>{
     const cc=calc(proj,i);
-    const net=cc.billActual;                                   // 未稅請款額
+    const bill=cc.billActual;
+    const payBase0=inclMode?bill+Math.round(bill*0.05):bill;
+    const rt=retainOf(proj,pp,payBase0);                        // 當初扣的保留款
+    const rel=releasedInPeriod(proj,i);                         // 本期退還的前期保留款
+    const rtOpen=pp.rtReleased?0:rt;                            // 還沒放款的（供註記用）
+    // 實付制：保留款一律從「扣它的那一期」減掉（那期本來就沒開這筆），
+    // 放款時再加在「放款的那一期」。若原期恢復全額、放款期又加一次，就會重複算。
+    const net=(base==='paid')?Math.max(0,bill-rt+rel.rt):bill;
     const bizTax=inclMode?Math.round(net*0.05)                 // 已是外加 5%，當初就付過了
                         :(pp.whTaxAdd!==undefined?Math.round(Number(pp.whTaxAdd)||0):Math.round(net*itPct/100));
-    const payBase=inclMode?net+bizTax:net;
+    const payBase=inclMode?bill+Math.round(bill*0.05):bill;
     const wh=whPct>0?Math.round(payBase*whPct/100):0;           // 當初代扣的所得稅
-    const rt=retainOf(proj,pp,payBase);                         // 當初扣的保留款
-    return { i, pp, no:pp.no, date:pp.date||'', net, bizTax, gross:net+bizTax,
-             wh, rt, paid:payBase-wh-rt,                        // 當初實際付出去的
+    return { i, pp, no:pp.no, date:pp.date||'', bill, net, bizTax, gross:net+bizTax,
+             wh, rt, rtOpen, relRt:rel.rt, paid:payBase-wh-rt+rel.rt,   // 當初實際付出去的
              refundWh:wh, addTax:inclMode?0:bizTax, done:!!pp.whRefunded };
-  }).filter(x=>x.net>0);
+  }).filter(x=>x.bill>0);
   const sum=k=>rows.reduce((a,x)=>a+x[k],0);
-  return { rows, whPct, itPct, inclMode,
+  return { rows, whPct, itPct, inclMode, base, tBill:sum('bill'), tRtOpen:sum('rtOpen'),
            tNet:sum('net'), tBizTax:sum('bizTax'), tGross:sum('gross'),
            tWh:sum('wh'), tRt:sum('rt'), tPaid:sum('paid'),
            pendWh:rows.filter(x=>!x.done).reduce((a,x)=>a+x.refundWh,0),
@@ -1459,8 +1469,10 @@ function printInvoiceRecon(proj){
   const d=invoiceRows(proj);
   const ov=document.getElementById('print-overlay');
   if(!d.rows.length){ alert('還沒有可對帳的期別。'); return; }
+  const paidMode=d.base==='paid';
   const rowsHtml=d.rows.map(x=>`<tr>
     <td>第 ${x.no} 期</td><td>${esc(x.date)}</td>
+    ${paidMode?`<td class="num">${money(x.bill)}</td><td class="num">${x.rtOpen?'−'+money(x.rtOpen).slice(1):(x.relRt?'+'+money(x.relRt).slice(1):'—')}</td>`:''}
     <td class="num">${money(x.net)}</td>
     <td class="num">${x.bizTax?money(x.bizTax):'—'}</td>
     <td class="num"><b>${money(x.gross)}</b></td>
@@ -1479,18 +1491,18 @@ function printInvoiceRecon(proj){
     <div style="margin:8px 0;padding:8px 10px;border:1.5px solid #1e3a8a;border-radius:6px;background:#eef4fd">
       <div style="font-weight:700;font-size:12px;color:#1e3a8a;margin-bottom:4px">發票應開立金額</div>
       <table style="margin:0">
-        <tr><td>銷售額（未稅，＝各期請款額合計）</td><td class="num">${money(d.tNet)}</td></tr>
+        <tr><td>銷售額（未稅，${paidMode?'＝各期已付款金額':'＝各期請款額合計'}）</td><td class="num">${money(d.tNet)}</td></tr>
         ${d.tBizTax?`<tr><td>營業稅 ${d.inclMode?5:d.itPct}%</td><td class="num">${money(d.tBizTax)}</td></tr>`:''}
         <tr class="tot"><td><b>發票總金額（含稅）</b></td><td class="num"><b>${money(d.tGross)}</b></td></tr>
       </table>
-      <div style="font-size:10px;color:#555;margin-top:3px">＊請按此金額開立統一發票；如分期開立，請照下表逐期金額開立。</div>
+      <div style="font-size:10px;color:#555;margin-top:3px">＊請按此金額開立統一發票；如分期開立，請照下表逐期金額開立。${paidMode&&d.tRtOpen?`<br>＊尚未放款的保留款 ${money(d.tRtOpen)} <b>不含在本次開票金額內</b>，俟完工驗收放款時再行開立。`:''}</div>
     </div>
 
     <div style="font-weight:700;font-size:12.5px;margin:10px 0 3px">一、逐期明細</div>
     <table style="font-size:11px">
-      <tr><th>期別</th><th>日期</th><th class="num">請款額<br>（未稅）</th><th class="num">營業稅<br>${d.inclMode?'5%':d.itPct+'%'}</th><th class="num">發票金額<br>（含稅）</th><th class="num">當初代扣<br>所得稅 ${d.whPct}%</th><th class="num">當初扣<br>保留款</th><th class="num">當初<br>實付</th><th class="num">本次<br>應付</th></tr>
+      <tr><th>期別</th><th>日期</th>${paidMode?'<th class="num">請款額<br>（未稅）</th><th class="num">保留款<br>扣／還</th>':''}<th class="num">${paidMode?'開票基礎<br>（實付未稅）':'請款額<br>（未稅）'}</th><th class="num">營業稅<br>${d.inclMode?'5%':d.itPct+'%'}</th><th class="num">發票金額<br>（含稅）</th><th class="num">當初代扣<br>所得稅 ${d.whPct}%</th><th class="num">當初扣<br>保留款</th><th class="num">當初<br>實付</th><th class="num">本次<br>應付</th></tr>
       ${rowsHtml}
-      <tr class="tot"><td colspan="2">合計</td><td class="num">${money(d.tNet)}</td><td class="num">${money(d.tBizTax)}</td><td class="num"><b>${money(d.tGross)}</b></td><td class="num">${money(d.tWh)}</td><td class="num">${money(d.tRt)}</td><td class="num">${money(d.tPaid)}</td><td class="num"><b>${money(d.pendWh+d.pendTax)}</b></td></tr>
+      <tr class="tot"><td colspan="2">合計</td>${paidMode?`<td class="num">${money(d.tBill)}</td><td class="num">${d.tRtOpen?'−'+money(d.tRtOpen).slice(1):'—'}</td>`:''}<td class="num">${money(d.tNet)}</td><td class="num">${money(d.tBizTax)}</td><td class="num"><b>${money(d.tGross)}</b></td><td class="num">${money(d.tWh)}</td><td class="num">${money(d.tRt)}</td><td class="num">${money(d.tPaid)}</td><td class="num"><b>${money(d.pendWh+d.pendTax)}</b></td></tr>
     </table>
 
     <div style="font-weight:700;font-size:12.5px;margin:10px 0 3px">二、補開發票後應付貴公司</div>
@@ -1506,7 +1518,10 @@ function printInvoiceRecon(proj){
       １. 雙方原以<b>未稅價</b>議定，各期請款額即為銷售額。<br>
       ２. 貴公司當時尚未取得公司登記、無法開立發票，故依規定按 <b>${d.whPct}%</b> 代扣所得稅，該款由本公司代為保管。<br>
       ３. 貴公司取得公司登記並補開統一發票後：發票金額為<b>未稅價＋營業稅 ${d.itPct||5}%</b>，本公司<b>全數退還</b>代扣稅款，並<b>另行補付</b>該筆營業稅。<br>
-      ４. 上表「當初實付」為各期實際匯付金額（已扣代扣稅與保留款）；「本次應付」為補開發票後應再支付之金額。
+      ４. 上表「當初實付」為各期實際匯付金額（已扣代扣稅與保留款）；「本次應付」為補開發票後應再支付之金額。<br>
+      ５. ${paidMode
+        ?'本單發票金額<b>按實際付款金額</b>認列，尚未放款之保留款不列入，俟放款時另行開立。'
+        :'本單發票金額<b>按每期應收價款（請款額）</b>認列，保留款與代扣稅屬付款時之扣項，不減少銷售額。'}
     </div>
 
     <table style="margin-top:14px"><tr>
@@ -1514,13 +1529,18 @@ function printInvoiceRecon(proj){
       <td style="height:62px;vertical-align:top"><div style="font-size:10.5px;color:#555">承攬（乙方）確認</div></td>
     </tr></table>
   </div>`;
-  ov.innerHTML=`<div class="pbar"><b style="color:var(--ink)">補開發票對帳單</b><span style="flex:1"></span>
+  ov.innerHTML=`<div class="pbar"><b style="color:var(--ink)">補開發票對帳單</b>
+    <label style="color:var(--ink);font-size:13px"><input type="radio" name="invbase" value="bill"${!paidMode?' checked':''}> 發票依<b>請款額</b>（含保留款．營建業法定開立時點）</label>
+    <label style="color:var(--ink);font-size:13px"><input type="radio" name="invbase" value="paid"${paidMode?' checked':''}> 發票依<b>實付額</b>（未放款的保留款先不開）</label>
+    <span class="muted" style="font-size:11.5px">＊此設定會記在這個專案；實際採哪一種請以貴公司記帳士的意見為準</span>
+    <span style="flex:1"></span>
     <button class="btn" id="do-print">🖨 列印 / 存 PDF</button>
     <button class="btn sub" id="close-print">關閉</button></div>
     <div class="pcontent" style="padding:14px 0 30px">${inner}</div>`;
   document.body.classList.add('printing');
   ov.querySelector('#do-print').onclick=()=>window.print();
   ov.querySelector('#close-print').onclick=()=>{document.body.classList.remove('printing');ov.innerHTML='';};
+  ov.querySelectorAll('[name=invbase]').forEach(r=>r.onchange=()=>{ proj.invoiceBase=r.value; save(); printInvoiceRecon(proj); });
 }
 function printDoc(proj){
   const perIdx=Math.min(proj.curPeriod??proj.periods.length-1,proj.periods.length-1);
@@ -1814,7 +1834,7 @@ function setProgInput(proj,blkId,itemId,kind,val){
 }
 
 document.addEventListener('click',async e=>{
-  const t=e.target.closest('[data-tab],[data-editblk],[data-delblk],[data-edititem],[data-delitem],[data-additem],[data-splititem],[data-sortitems],[data-grouptoggle],[data-groupmerge],[data-groupdetect],[data-whtoggle],[data-rttoggle],[data-whtax],[data-rtamt],[data-selfone],[data-selfrooms],[data-selfrest],[data-selfclear],[data-delmode],[data-delcancel],[data-delall],[data-delnone],[data-delinv],[data-delzero],[data-deldo],#sub-toggle,#sub-close,#sub-go,[data-backfill],[data-backfillcancel],[data-backfillok],[data-addmissblk],[data-copyinto],[data-copyok],[data-copycancel],[data-batchedit],[data-batchok],[data-batchcancel],[data-batchalledit],[data-batchallok],[data-batchallcancel],[data-itemok],[data-itemcancel],[data-blkok],[data-blkcancel],[data-bapply],[data-gapply],#btn-invrecon,[data-editextra],[data-delextra],#btn-import,#btn-import2,#btn-newproj,#btn-newproj2,#btn-addblk,#btn-addblk-ok,#btn-addperiod,#btn-delperiod,#btn-addextra,#btn-roundup,[data-gotoproj],#btn-print,#btn-setretain,#orphan-fix,#orphan-detach,#proj-groupall,#set-save,#proj-dup,#proj-detach,#backup-export,#backup-import-btn,#proj-del,#cloud-push,#cloud-pull');
+  const t=e.target.closest('[data-tab],[data-editblk],[data-delblk],[data-edititem],[data-delitem],[data-additem],[data-splititem],[data-sortitems],[data-grouptoggle],[data-groupmerge],[data-groupdetect],[data-whtoggle],[data-rttoggle],[data-whtax],[data-whtaxauto],[data-rtamt],[data-selfone],[data-selfrooms],[data-selfrest],[data-selfclear],[data-delmode],[data-delcancel],[data-delall],[data-delnone],[data-delinv],[data-delzero],[data-deldo],#sub-toggle,#sub-close,#sub-go,[data-backfill],[data-backfillcancel],[data-backfillok],[data-addmissblk],[data-copyinto],[data-copyok],[data-copycancel],[data-batchedit],[data-batchok],[data-batchcancel],[data-batchalledit],[data-batchallok],[data-batchallcancel],[data-itemok],[data-itemcancel],[data-blkok],[data-blkcancel],[data-bapply],[data-gapply],#btn-invrecon,[data-editextra],[data-delextra],#btn-import,#btn-import2,#btn-newproj,#btn-newproj2,#btn-addblk,#btn-addblk-ok,#btn-addperiod,#btn-delperiod,#btn-addextra,#btn-roundup,[data-gotoproj],#btn-print,#btn-setretain,#orphan-fix,#orphan-detach,#proj-groupall,#set-save,#proj-dup,#proj-detach,#backup-export,#backup-import-btn,#proj-del,#cloud-push,#cloud-pull');
   if(!t)return;
   const proj=curProj();
   if(t.dataset.tab){state.tab=t.dataset.tab;save();render();return;}
@@ -2068,6 +2088,8 @@ document.addEventListener('click',async e=>{
     if(it) pp.whTaxAdd=it;
     save(); render(); return;
   }
+  if(t.dataset.whtaxauto){ const pp=proj.periods[+t.dataset.whtaxauto]; if(!pp) return;
+    delete pp.whTaxAdd; save(); render(); return; }
   if(t.dataset.rttoggle){
     const i=+t.dataset.rttoggle, pp=proj.periods[i]; if(!pp) return;
     if(pp.rtReleased){ delete pp.rtReleased; delete pp.rtReleaseDate; delete pp.rtReleasedIn; save(); render(); return; }
@@ -2359,8 +2381,14 @@ document.addEventListener('change',e=>{
     save(); render(); return;
   }
   if(t.dataset.whtax){
-    const pp=proj.periods[+t.dataset.whtax]; if(!pp) return;
-    const v=Math.max(0,num(t.value)); pp.whTaxAdd=v; save(); render(); return;
+    const i=+t.dataset.whtax, pp=proj.periods[i]; if(!pp) return;
+    // 只有「跟自動算出來的不一樣」才存成手動指定；一樣就刪掉回自動。
+    // 否則只要碰過一次輸入框就凍結，之後該期請款額變大、稅額卻不會跟著走。
+    const itPct=(proj.taxMode==='incl')?0:Math.max(0,proj.invoiceTaxPct!==undefined?Number(proj.invoiceTaxPct):5);
+    const auto=Math.round(calc(proj,i).billActual*itPct/100);
+    const v=Math.max(0,num(t.value));
+    if(v===auto) delete pp.whTaxAdd; else pp.whTaxAdd=v;
+    save(); render(); return;
   }
   if(t.dataset.selfrooms){
     const [blkId,itemId]=t.dataset.selfrooms.split('::');
