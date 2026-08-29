@@ -109,7 +109,7 @@ body.printing #print-overlay{display:block;position:absolute;inset:0;background:
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.08.06o-emptychild';
+const APP_VERSION='vG2026.08.06p-missblk';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -394,6 +394,13 @@ function periodOf(p,idx){return p.periods[idx]||null;}
 // 子專案的某個區塊，對照母專案同一個區塊還少哪幾條。
 // 當初建約時刪掉、後來對方又說要做，就從這裡補回來——帶著 srcId 接回母專案，
 // 才不會變成發包分配上的「孤兒發包」（手動加細項就會）。
+// 母專案有、但子專案根本還沒有那個「區塊」的（例如追加工程是後來才加到母總表的，
+// 當初建子專案時它還不存在）。沒有區塊就沒地方補細項，所以要能先把區塊補進來。
+function missingBlocks(proj){
+  const par=parentProject(proj); if(!par) return [];
+  const have=new Set(); proj.blocks.forEach(b=>{ if(b.srcBlk) have.add(b.srcBlk); have.add(b.name); });
+  return par.blocks.filter(mb=>!have.has(mb.id)&&!have.has(mb.name)&&mb.items.some(it=>Number(it.amount)>0));
+}
 function backfillCandidates(proj,blk){
   const par=parentProject(proj); if(!par||!blk) return null;
   const mb=par.blocks.find(x=>x.id===blk.srcBlk)||par.blocks.find(x=>x.name===blk.name);
@@ -985,6 +992,18 @@ function viewItems(proj){
       ${fld('合約數量',`<input id="ba-count" type="number" inputmode="decimal" value="1" style="${ist};width:90px">`)}
       <button class="btn sm" id="btn-addblk-ok">建立區塊</button><button class="btn sub sm" data-blkcancel="1">取消</button></div>`
     :`<button class="btn sub" id="btn-addblk">＋ 手動加區塊</button>`;
+  if(proj.parentId&&!batchAll){
+    const miss=missingBlocks(proj);
+    if(miss.length) h+=`<div class="card" style="margin-top:10px;border-color:rgba(96,165,250,.5);background:rgba(59,130,246,.07)">
+      <div style="font-size:13.5px;font-weight:600;margin-bottom:4px">↩ 母專案還有 ${miss.length} 個區塊這裡沒有</div>
+      <div class="muted" style="font-size:12px;margin-bottom:8px">多半是這些區塊<b>比這個子專案晚建立</b>（例如後來才加的追加工程）。要發給這家的話，先把區塊補進來，再逐條挑細項 —— <b>不用另外開一個新的子專案</b>。</div>
+      <table style="font-size:13px"><tr><th>母專案的區塊</th><th class="num">數量</th><th class="num">細項</th><th class="num">金額</th><th></th></tr>
+      ${miss.map(mb=>`<tr><td>${esc(mb.name)}</td><td class="num">${qfmt(mb.count)} ${esc(mb.unit)}</td>
+        <td class="num">${mb.items.filter(it=>Number(it.amount)>0).length} 條</td>
+        <td class="num">${money(mb.items.reduce((s2,it)=>s2+itemValue(it,mb),0))}</td>
+        <td><button class="btn sm" data-addmissblk="${mb.id}">↩ 補這個區塊進來</button></td></tr>`).join('')}
+      </table></div>`;
+  }
   return h;
 }
 
@@ -1783,7 +1802,7 @@ function setProgInput(proj,blkId,itemId,kind,val){
 }
 
 document.addEventListener('click',async e=>{
-  const t=e.target.closest('[data-tab],[data-editblk],[data-delblk],[data-edititem],[data-delitem],[data-additem],[data-splititem],[data-sortitems],[data-grouptoggle],[data-groupmerge],[data-groupdetect],[data-whtoggle],[data-rttoggle],[data-whtax],[data-rtamt],[data-selfone],[data-selfrooms],[data-selfrest],[data-selfclear],[data-delmode],[data-delcancel],[data-delall],[data-delnone],[data-delinv],[data-delzero],[data-deldo],#sub-toggle,#sub-close,#sub-go,[data-backfill],[data-backfillcancel],[data-backfillok],[data-copyinto],[data-copyok],[data-copycancel],[data-batchedit],[data-batchok],[data-batchcancel],[data-batchalledit],[data-batchallok],[data-batchallcancel],[data-itemok],[data-itemcancel],[data-blkok],[data-blkcancel],[data-bapply],[data-gapply],#btn-invrecon,[data-editextra],[data-delextra],#btn-import,#btn-import2,#btn-newproj,#btn-newproj2,#btn-addblk,#btn-addblk-ok,#btn-addperiod,#btn-delperiod,#btn-addextra,#btn-roundup,[data-gotoproj],#btn-print,#btn-setretain,#orphan-fix,#orphan-detach,#proj-groupall,#set-save,#proj-dup,#proj-detach,#backup-export,#backup-import-btn,#proj-del,#cloud-push,#cloud-pull');
+  const t=e.target.closest('[data-tab],[data-editblk],[data-delblk],[data-edititem],[data-delitem],[data-additem],[data-splititem],[data-sortitems],[data-grouptoggle],[data-groupmerge],[data-groupdetect],[data-whtoggle],[data-rttoggle],[data-whtax],[data-rtamt],[data-selfone],[data-selfrooms],[data-selfrest],[data-selfclear],[data-delmode],[data-delcancel],[data-delall],[data-delnone],[data-delinv],[data-delzero],[data-deldo],#sub-toggle,#sub-close,#sub-go,[data-backfill],[data-backfillcancel],[data-backfillok],[data-addmissblk],[data-copyinto],[data-copyok],[data-copycancel],[data-batchedit],[data-batchok],[data-batchcancel],[data-batchalledit],[data-batchallok],[data-batchallcancel],[data-itemok],[data-itemcancel],[data-blkok],[data-blkcancel],[data-bapply],[data-gapply],#btn-invrecon,[data-editextra],[data-delextra],#btn-import,#btn-import2,#btn-newproj,#btn-newproj2,#btn-addblk,#btn-addblk-ok,#btn-addperiod,#btn-delperiod,#btn-addextra,#btn-roundup,[data-gotoproj],#btn-print,#btn-setretain,#orphan-fix,#orphan-detach,#proj-groupall,#set-save,#proj-dup,#proj-detach,#backup-export,#backup-import-btn,#proj-del,#cloud-push,#cloud-pull');
   if(!t)return;
   const proj=curProj();
   if(t.dataset.tab){state.tab=t.dataset.tab;save();render();return;}
@@ -1858,6 +1877,17 @@ document.addEventListener('click',async e=>{
   }
   if(t.dataset.backfill){ backfill=t.dataset.backfill; itemEdit=itemAdd=blkEdit=copyInto=batchEdit=null; blkAdd=false; batchAll=false; openBlk.add(backfill); render(); return; }
   if(t.dataset.backfillcancel){ backfill=null; render(); return; }
+  if(t.dataset.addmissblk){
+    const par=parentProject(proj); if(!par) return;
+    const mb=par.blocks.find(x=>x.id===t.dataset.addmissblk); if(!mb) return;
+    const n=mb.items.filter(it=>Number(it.amount)>0).length;
+    if(!confirm(`把母專案的「${mb.name}」補進「${proj.name}」？\n\n・帶區塊架構與數量（${qfmt(mb.count)} ${mb.unit}），細項先不帶\n・補進來之後會直接打開挑選清單，${n} 條讓你逐條勾、各自填議定單價\n\n確定？`)) return;
+    let nm=mb.name; let k=2; while(proj.blocks.some(x=>x.name===nm)) nm=mb.name+'('+(k++)+')';
+    const nb={id:uid(),name:nm,unit:mb.unit,count:mb.count,srcBlk:mb.id,items:[]};
+    proj.blocks.push(nb);
+    openBlk.add(nb.id); backfill=nb.id;      // 補完直接打開挑選清單，不用再找一次
+    save(); render(); return;
+  }
   if(t.dataset.backfillok){
     const b=proj.blocks.find(x=>x.id===t.dataset.backfillok); if(!b) return;
     const bf=backfillCandidates(proj,b); if(!bf) return;
