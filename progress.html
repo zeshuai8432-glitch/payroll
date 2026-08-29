@@ -109,7 +109,7 @@ body.printing #print-overlay{display:block;position:absolute;inset:0;background:
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.08.06p-missblk';
+const APP_VERSION='vG2026.08.06q-livesync';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -1007,6 +1007,32 @@ function viewItems(proj){
   return h;
 }
 
+// 「本次請款計算」整塊抽出來：打字時只更新其中幾個數字，會讓累計、代扣、實付
+// 停在舊值，跟本次實請對不起來（也跟匯出的請款單對不起來）。整塊一起重畫最保險。
+function billSummaryHtml(proj,period,c,perIdx,editable){
+  return `
+    <div style="display:flex;justify-content:space-between"><span>累計完成計價${c.discount?'（依簽約總價分攤）':''}</span><b>${money(c.cumApplied)}</b></div>
+    ${c.discount?`<div class="muted" style="font-size:11px;margin-top:2px">＊原合約已按簽約總價 ${money(c.signedTotal)} 比例分攤（原合約明細 ${money(c.Vbase)}）${c.Vext?`；<b style="color:var(--warn)">追加工程 ${money(c.Vext)} 另計不折讓</b>`:''}</div>`:''}
+    ${c.billPre?`<div style="display:flex;justify-content:space-between;color:var(--muted)"><span>減 前期累計已收</span><span>−${money(c.billPre).slice(1)}</span></div>
+    <div style="display:flex;justify-content:space-between"><span>本次應請（計算）</span><b>${money(c.billComputed)}</b></div>`:''}
+    ${c.billRound?`<div style="display:flex;justify-content:space-between;color:var(--muted)"><span>尾差調整（湊整）</span><span>${moneyS(c.billRound)}</span></div>`:''}
+    <div style="display:flex;justify-content:space-between;font-size:16px;margin-top:4px;color:var(--accent2)"><span><b>本次實請金額</b></span><b data-c="g-actual">${money(c.billActual)}</b></div>
+    ${(()=>{ const wp=Math.max(0,Number(proj.withholdPct)||0), rp=Math.max(0,Number(proj.retainPct)||0);
+      const wh=Math.round(c.billActual*wp/100), rt=retainOf(proj,period,c.billActual);
+      const fixed=(period.rtAmt!==undefined&&period.rtAmt!=='');
+      if(!wp&&!rp&&!fixed) return editable?`<div style="margin-top:6px"><button class="btn sub sm" id="btn-setretain">＋ 設定本期保留款金額</button></div>`:'';
+      return (wp?`<div style="display:flex;justify-content:space-between;color:#fca5a5"><span>代扣所得稅 ${wp}%</span><span>−${money(wh).slice(1)}</span></div>`:'')
+        +((rt>0||fixed)
+          ?`<div style="display:flex;justify-content:space-between;color:#fbbf24"><span>保留款${fixed?'（直接指定）':` ${rp}%`}${editable?` <button class="btn sub sm" id="btn-setretain" style="font-size:10px;padding:0 6px;height:20px">改金額</button>`:''}</span><span>−${money(rt).slice(1)}</span></div>`
+          :(editable?`<div style="text-align:right;margin:2px 0"><button class="btn sub sm" id="btn-setretain" style="font-size:10px;padding:0 8px;height:22px">＋ 設保留款金額</button></div>`:''))
+        +(()=>{ const rel=releasedInPeriod(proj,perIdx); return (rel.rt>0?`<div style="display:flex;justify-content:space-between;color:#6ee7b7"><span>＋ 退還保留款（第 ${rel.rtFrom.join('、')} 期）</span><span>+${money(rel.rt).slice(1)}</span></div>`:'')
+          +(rel.wh>0?`<div style="display:flex;justify-content:space-between;color:#6ee7b7"><span>＋ 回補代扣稅（第 ${rel.whFrom.join('、')} 期）</span><span>+${money(rel.wh).slice(1)}</span></div>`:''); })()
+        +`<div style="display:flex;justify-content:space-between;font-size:15px"><span><b>本次實付</b></span><b>${(()=>{const rel=releasedInPeriod(proj,perIdx);return money(c.billActual-wh-rt+rel.rt+rel.wh);})()}</b></div>`
+        +(editable&&!fixed&&rp>0?`<div class="muted" style="font-size:11px;text-align:right">想湊整數就按「改金額」直接填保留款</div>`:''); })()}
+
+  `;
+}
+
 function viewProg(proj){
   if(!proj.periods.length){
     return `<div class="card" style="text-align:center;padding:34px">
@@ -1057,27 +1083,9 @@ function viewProg(proj){
     h+=`</table>`;
   }else{ h+=`<div class="muted" style="font-size:13px;margin-bottom:8px">本期尚無登錄款項。</div>`; }
   if(editable)h+=`<button class="btn sub sm" id="btn-addextra">＋ 新增訂金／加項</button> <button class="btn sub sm" id="btn-roundup">🎯 湊整本次到整數</button>`;
-  // 本次請款計算
-  h+=`<div style="margin-top:12px;padding-top:10px;border-top:1px dashed var(--line);font-size:14px">
-    <div style="display:flex;justify-content:space-between"><span>累計完成計價${c.discount?'（依簽約總價分攤）':''}</span><b>${money(c.cumApplied)}</b></div>
-    ${c.discount?`<div class="muted" style="font-size:11px;margin-top:2px">＊原合約已按簽約總價 ${money(c.signedTotal)} 比例分攤（原合約明細 ${money(c.Vbase)}）${c.Vext?`；<b style="color:var(--warn)">追加工程 ${money(c.Vext)} 另計不折讓</b>`:''}</div>`:''}
-    ${c.billPre?`<div style="display:flex;justify-content:space-between;color:var(--muted)"><span>減 前期累計已收</span><span>−${money(c.billPre).slice(1)}</span></div>
-    <div style="display:flex;justify-content:space-between"><span>本次應請（計算）</span><b>${money(c.billComputed)}</b></div>`:''}
-    ${c.billRound?`<div style="display:flex;justify-content:space-between;color:var(--muted)"><span>尾差調整（湊整）</span><span>${moneyS(c.billRound)}</span></div>`:''}
-    <div style="display:flex;justify-content:space-between;font-size:16px;margin-top:4px;color:var(--accent2)"><span><b>本次實請金額</b></span><b data-c="g-actual">${money(c.billActual)}</b></div>
-    ${(()=>{ const wp=Math.max(0,Number(proj.withholdPct)||0), rp=Math.max(0,Number(proj.retainPct)||0);
-      const wh=Math.round(c.billActual*wp/100), rt=retainOf(proj,period,c.billActual);
-      const fixed=(period.rtAmt!==undefined&&period.rtAmt!=='');
-      if(!wp&&!rp&&!fixed) return editable?`<div style="margin-top:6px"><button class="btn sub sm" id="btn-setretain">＋ 設定本期保留款金額</button></div>`:'';
-      return (wp?`<div style="display:flex;justify-content:space-between;color:#fca5a5"><span>代扣所得稅 ${wp}%</span><span>−${money(wh).slice(1)}</span></div>`:'')
-        +((rt>0||fixed)
-          ?`<div style="display:flex;justify-content:space-between;color:#fbbf24"><span>保留款${fixed?'（直接指定）':` ${rp}%`}${editable?` <button class="btn sub sm" id="btn-setretain" style="font-size:10px;padding:0 6px;height:20px">改金額</button>`:''}</span><span>−${money(rt).slice(1)}</span></div>`
-          :(editable?`<div style="text-align:right;margin:2px 0"><button class="btn sub sm" id="btn-setretain" style="font-size:10px;padding:0 8px;height:22px">＋ 設保留款金額</button></div>`:''))
-        +(()=>{ const rel=releasedInPeriod(proj,perIdx); return (rel.rt>0?`<div style="display:flex;justify-content:space-between;color:#6ee7b7"><span>＋ 退還保留款（第 ${rel.rtFrom.join('、')} 期）</span><span>+${money(rel.rt).slice(1)}</span></div>`:'')
-          +(rel.wh>0?`<div style="display:flex;justify-content:space-between;color:#6ee7b7"><span>＋ 回補代扣稅（第 ${rel.whFrom.join('、')} 期）</span><span>+${money(rel.wh).slice(1)}</span></div>`:''); })()
-        +`<div style="display:flex;justify-content:space-between;font-size:15px"><span><b>本次實付</b></span><b>${(()=>{const rel=releasedInPeriod(proj,perIdx);return money(c.billActual-wh-rt+rel.rt+rel.wh);})()}</b></div>`
-        +(editable&&!fixed&&rp>0?`<div class="muted" style="font-size:11px;text-align:right">想湊整數就按「改金額」直接填保留款</div>`:''); })()}
-  </div>`;
+  // 本次請款計算（整塊由 billSummaryHtml 產生，打字時原地換掉）
+  h+=`<div id="bill-summary" style="margin-top:12px;padding-top:10px;border-top:1px dashed var(--line);font-size:14px">${billSummaryHtml(proj,period,c,perIdx,editable)}</div>`;
+  h+=`<div style="display:none">  </div>`;
   h+=`</div>`;
   // ── 代扣稅款追蹤（廠商還沒公司登記時暫扣，補開發票後回補）──
   {
@@ -1794,7 +1802,11 @@ function setProgInput(proj,blkId,itemId,kind,val){
     setc('bt-'+blkId,money(cb.thisAmt));setc('bc-'+blkId,money(cb.cum));setc('bp-'+blkId,pfmt(cb.V?cb.cum/cb.V:0));
   }
   setc('g-applied',money(c.cumApplied));setc('g-pre',money(c.billPre));setc('g-this',money(c.billActual));
-  setc('g-actual',money(c.billActual));setc('g-round',moneyS(c.billRound));setc('g-pct',pfmt(c.V?c.itemCum/c.V:0));
+  setc('g-round',moneyS(c.billRound));setc('g-pct',pfmt(c.V?c.itemCum/c.V:0));
+  // 「本次請款計算」整塊重畫：累計、本次應請、代扣、保留款、實付要一起更新，
+  // 只更新其中一兩個會讓畫面自相矛盾，跟匯出的請款單也對不起來。
+  const bs=document.getElementById('bill-summary');
+  if(bs) bs.innerHTML=billSummaryHtml(proj,period,c,perIdx,perIdx===proj.periods.length-1);
   const qEl=document.querySelector(`[data-q="${blkId}::${itemId}"]`),pEl=document.querySelector(`[data-p="${blkId}::${itemId}"]`),rEl=document.querySelector(`[data-r="${blkId}::${itemId}"]`);
   if(kind!=='q'&&qEl)qEl.value=p?qfmt(q):'';
   if(kind!=='p'&&pEl)pEl.value=p?+(p*100).toFixed(1):'';
