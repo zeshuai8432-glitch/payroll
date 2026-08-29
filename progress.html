@@ -109,7 +109,7 @@ body.printing #print-overlay{display:block;position:absolute;inset:0;background:
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.08.06s-holdback';
+const APP_VERSION='vG2026.08.06t-taxheal';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -1096,7 +1096,9 @@ function viewProg(proj){
       const itPct=(proj.taxMode==='incl')?0:Math.max(0,proj.invoiceTaxPct!==undefined?Number(proj.invoiceTaxPct):5);
       const rows=proj.periods.map((pp,i)=>{
         const cc=calc(proj,i);
-        const it=(wp>0&&itPct>0)?(pp.whTaxAdd!==undefined?Math.round(Number(pp.whTaxAdd)||0):Math.round(cc.billActual*itPct/100)):0;
+        const auto0=Math.round(cc.billActual*itPct/100);
+        const st0=(pp.whTaxAdd!==undefined)?Math.round(Number(pp.whTaxAdd)||0):null;
+        const it=(wp>0&&itPct>0)?((st0!==null&&st0!==auto0)?st0:auto0):0;
         return {i,pp,base:cc.billActual,wh:Math.round(cc.billActual*wp/100),rt:retainOf(proj,pp,cc.billActual),it};
       }).filter(x=>x.wh>0||x.rt>0);
       const whPend=rows.filter(x=>!x.pp.whRefunded).reduce((s,x)=>s+x.wh,0);
@@ -1131,7 +1133,7 @@ function viewProg(proj){
         ${rows.map(x=>`<tr><td>第 ${x.pp.no} 期</td><td>${esc(x.pp.date||'')}</td><td class="num">${money(x.base)}</td>
           ${(wp&&itPct)?`<td class="num"><b>${money(x.base+x.it)}</b></td>`:''}
           ${wp?`<td class="num">${money(x.wh)}</td>`:''}
-          ${(wp&&itPct)?(()=>{ const auto=Math.round(x.base*itPct/100), man=(x.pp.whTaxAdd!==undefined)&&x.it!==auto;
+          ${(wp&&itPct)?(()=>{ const auto=Math.round(x.base*itPct/100), man=x.it!==auto;
             return `<td class="num"><input class="pin" data-whtax="${x.i}" inputmode="decimal" value="${x.it}" style="width:84px;text-align:right${man?';border-color:var(--warn)':''}" title="${man?'手動指定（自動算應為 '+money(auto)+'）':'自動：該期實請 × '+itPct+'%'}">${man?`<div style="font-size:10.5px;color:var(--warn)">手動 <button class="btn sub sm" data-whtaxauto="${x.i}" style="font-size:10px;padding:0 5px;height:18px">改回自動</button></div>`:''}</td>`; })():''}
           ${wp?`<td>${x.pp.whRefunded
             ? `<span class="tag" style="background:rgba(52,211,153,.18);border-color:rgba(52,211,153,.5);color:#6ee7b7">已回補 ${esc(x.pp.whRefundDate||'')}${x.pp.whRefundedIn?`（併在第 ${x.pp.whRefundedIn} 期付）`:''}</span> <button class="btn sub sm" data-whtoggle="${x.i}">取消</button>`
@@ -1449,11 +1451,17 @@ function invoiceRows(proj){
     // 實付制：保留款一律從「扣它的那一期」減掉（那期本來就沒開這筆），
     // 放款時再加在「放款的那一期」。若原期恢復全額、放款期又加一次，就會重複算。
     const net=(base==='paid')?Math.max(0,bill-rt+rel.rt):bill;
+    // 存下來的 whTaxAdd 只有在「跟自動算的不一樣」時才算真的手動指定；
+    // 跟自動一樣的多半是舊版碰一下就被凍住的殘留，當成自動處理才會自我修復。
+    // 而且它是照「請款額」存的，實付制的基礎是開票基礎，套上去會算錯。
+    const billAuto=Math.round(bill*itPct/100);
+    const stored=(pp.whTaxAdd!==undefined)?Math.round(Number(pp.whTaxAdd)||0):null;
+    const taxManual=(stored!==null)&&(stored!==billAuto);
     const bizTax=inclMode?Math.round(net*0.05)                 // 已是外加 5%，當初就付過了
-                        :(pp.whTaxAdd!==undefined?Math.round(Number(pp.whTaxAdd)||0):Math.round(net*itPct/100));
+                        :(taxManual?stored:Math.round(net*itPct/100));
     const payBase=inclMode?bill+Math.round(bill*0.05):bill;
     const wh=whPct>0?Math.round(payBase*whPct/100):0;           // 當初押住的暫扣款
-    return { i, pp, no:pp.no, date:pp.date||'', bill, net, bizTax, gross:net+bizTax,
+    return { i, pp, no:pp.no, date:pp.date||'', bill, net, bizTax, taxManual, gross:net+bizTax,
              wh, rt, rtOpen, relRt:rel.rt, paid:payBase-wh-rt+rel.rt,   // 當初實際付出去的
              refundWh:wh, addTax:inclMode?0:bizTax, done:!!pp.whRefunded };
   }).filter(x=>x.bill>0);
