@@ -109,7 +109,7 @@ body.printing #print-overlay{display:block;position:absolute;inset:0;background:
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.08.06w-sync2';
+const APP_VERSION='vG2026.08.06x-pricesync';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -400,6 +400,7 @@ function periodOf(p,idx){return p.periods[idx]||null;}
 // 單價絕對不同步（那是跟各家議定的價，正是子專案存在的理由）；
 // 間數也不同步（子專案的間數是那家做幾間）。
 const SYNC_KEYS=[['name','名稱及規格'],['unit','單位'],['qty','單間數量']];
+const priceEq=(a,b)=>Math.abs((Number(a)||0)-(Number(b)||0))<0.0001;
 // 子專案裡對應到某個母區塊的區塊（舊資料沒有 srcBlk，退而用名稱比對）
 function childBlockRefsOf(proj,mb,oldName){
   const out=[];
@@ -423,15 +424,17 @@ function driftedItems(proj){
   proj.blocks.forEach(b=>b.items.forEach(it=>{
     const src=it.srcId&&m[it.srcId]; if(!src) return;
     const diff=SYNC_KEYS.filter(([k])=>String(src[k]??'')!==String(it[k]??''));
-    if(diff.length) out.push({blk:b,it,src,diff});
+    const priceDiff=!priceEq(src.price,it.price);
+    if(diff.length||priceDiff) out.push({blk:b,it,src,diff,priceDiff});
   }));
   return out;
 }
 function applyDrift(list){
-  list.forEach(({it,src})=>{
+  list.forEach(({it,src,syncPrice})=>{
     SYNC_KEYS.forEach(([k])=>{ it[k]=src[k]; });
     it.qtyExpr=src.qtyExpr||'';
-    it.amount=(Number(it.qty)||0)*(Number(it.price)||0);   // 單價維持不動，金額跟著數量重算
+    if(syncPrice){ it.price=src.price; it.priceExpr=src.priceExpr||''; }  // 只有沒另外議價的才跟著改
+    it.amount=(Number(it.qty)||0)*(Number(it.price)||0);
   });
 }
 function missingBlocks(proj){
@@ -1032,14 +1035,21 @@ function viewItems(proj){
     :`<button class="btn sub" id="btn-addblk">＋ 手動加區塊</button>`;
   if(proj.parentId&&!batchAll){
     const drift=driftedItems(proj);
+    const nField=drift.filter(d=>d.diff.length).length, nPrice=drift.filter(d=>d.priceDiff).length;
     if(drift.length) h+=`<div class="card" style="margin-top:10px;border-color:rgba(251,191,36,.55);background:rgba(251,191,36,.08)">
-      <div style="font-size:13.5px;font-weight:600;margin-bottom:4px">⚠ 有 ${drift.length} 條跟母專案對不起來</div>
-      <div class="muted" style="font-size:12px;margin-bottom:8px">母專案後來改過名稱／單位／數量，但這邊還是舊的。<b>單價不會被蓋掉</b>（那是跟這家議定的價）；數量若同步，金額會照這邊的單價重算。<b>間數也不動。</b></div>
-      <table style="font-size:12.5px"><tr><th>細項</th><th>差在哪</th><th>這邊（舊）</th><th>母專案（新）</th></tr>
-      ${drift.map(d=>d.diff.map(([k,lbl],i)=>`<tr>${i===0?`<td rowspan="${d.diff.length}">${esc(d.it.name)}</td>`:''}
-        <td>${lbl}</td><td class="num">${esc(String(d.it[k]??''))}</td><td class="num"><b>${esc(String(d.src[k]??''))}</b></td></tr>`).join('')).join('')}
+      <div style="font-size:13.5px;font-weight:600;margin-bottom:4px">⚠ 有 ${drift.length} 條跟母專案不一樣</div>
+      <div class="muted" style="font-size:12px;margin-bottom:8px">名稱／單位／數量不一樣，多半是母專案後來改過、這邊沒跟上。<b>單價不一樣則不一定是問題</b>——可能是跟這家議定的價，也可能是母專案改了沒跟上，所以分成兩顆按鈕，你自己決定。<b>間數一律不動。</b></div>
+      <table style="font-size:12.5px"><tr><th>細項</th><th>差在哪</th><th class="num">這邊</th><th class="num">母專案</th></tr>
+      ${drift.map(d=>{ const rows=[...d.diff.map(([k,lbl])=>[lbl,d.it[k],d.src[k],false]),
+                                  ...(d.priceDiff?[['單價',qfmt(d.it.price),qfmt(d.src.price),true]]:[])];
+        return rows.map(([lbl,a,bb,isP],i)=>`<tr>${i===0?`<td rowspan="${rows.length}">${esc(d.it.name)}</td>`:''}
+          <td${isP?' style="color:var(--warn)"':''}>${lbl}</td><td class="num">${esc(String(a??''))}</td><td class="num"><b>${esc(String(bb??''))}</b></td></tr>`).join(''); }).join('')}
       </table>
-      <div style="margin-top:8px"><button class="btn sm" id="drift-sync">↻ 跟母專案同步（${drift.length} 條）</button></div></div>`;
+      <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">
+        ${nField?`<button class="btn sm" id="drift-sync">↻ 同步名稱／單位／數量（${nField} 條）</button>`:''}
+        ${nPrice?`<button class="btn sub sm" id="drift-sync-price" style="border-color:var(--warn);color:var(--warn)">↻ 連單價一起同步（${nPrice} 條）</button>`:''}
+      </div>
+      ${nPrice?`<div class="muted" style="font-size:11.5px;margin-top:6px">＊按第二顆會把單價改成母專案的。如果那些是你跟這家議定的價，<b>不要按</b>。</div>`:''}</div>`;
     const miss=missingBlocks(proj);
     if(miss.length) h+=`<div class="card" style="margin-top:10px;border-color:rgba(96,165,250,.5);background:rgba(59,130,246,.07)">
       <div style="font-size:13.5px;font-weight:600;margin-bottom:4px">↩ 母專案還有 ${miss.length} 個區塊這裡沒有</div>
@@ -1915,7 +1925,7 @@ function setProgInput(proj,blkId,itemId,kind,val){
 }
 
 document.addEventListener('click',async e=>{
-  const t=e.target.closest('[data-tab],[data-editblk],[data-delblk],[data-edititem],[data-delitem],[data-additem],[data-splititem],[data-sortitems],[data-grouptoggle],[data-groupmerge],[data-groupdetect],[data-whtoggle],[data-rttoggle],[data-whtax],[data-whtaxauto],[data-rtamt],[data-selfone],[data-selfrooms],[data-selfrest],[data-selfclear],[data-delmode],[data-delcancel],[data-delall],[data-delnone],[data-delinv],[data-delzero],[data-deldo],#sub-toggle,#sub-close,#sub-go,[data-backfill],[data-backfillcancel],[data-backfillok],[data-addmissblk],#drift-sync,[data-copyinto],[data-copyok],[data-copycancel],[data-batchedit],[data-batchok],[data-batchcancel],[data-batchalledit],[data-batchallok],[data-batchallcancel],[data-itemok],[data-itemcancel],[data-blkok],[data-blkcancel],[data-bapply],[data-gapply],#btn-invrecon,[data-editextra],[data-delextra],#btn-import,#btn-import2,#btn-newproj,#btn-newproj2,#btn-addblk,#btn-addblk-ok,#btn-addperiod,#btn-delperiod,#btn-addextra,#btn-roundup,[data-gotoproj],#btn-print,#btn-setretain,#orphan-fix,#orphan-detach,#proj-groupall,#set-save,#proj-dup,#proj-detach,#backup-export,#backup-import-btn,#proj-del,#cloud-push,#cloud-pull');
+  const t=e.target.closest('[data-tab],[data-editblk],[data-delblk],[data-edititem],[data-delitem],[data-additem],[data-splititem],[data-sortitems],[data-grouptoggle],[data-groupmerge],[data-groupdetect],[data-whtoggle],[data-rttoggle],[data-whtax],[data-whtaxauto],[data-rtamt],[data-selfone],[data-selfrooms],[data-selfrest],[data-selfclear],[data-delmode],[data-delcancel],[data-delall],[data-delnone],[data-delinv],[data-delzero],[data-deldo],#sub-toggle,#sub-close,#sub-go,[data-backfill],[data-backfillcancel],[data-backfillok],[data-addmissblk],#drift-sync,#drift-sync-price,[data-copyinto],[data-copyok],[data-copycancel],[data-batchedit],[data-batchok],[data-batchcancel],[data-batchalledit],[data-batchallok],[data-batchallcancel],[data-itemok],[data-itemcancel],[data-blkok],[data-blkcancel],[data-bapply],[data-gapply],#btn-invrecon,[data-editextra],[data-delextra],#btn-import,#btn-import2,#btn-newproj,#btn-newproj2,#btn-addblk,#btn-addblk-ok,#btn-addperiod,#btn-delperiod,#btn-addextra,#btn-roundup,[data-gotoproj],#btn-print,#btn-setretain,#orphan-fix,#orphan-detach,#proj-groupall,#set-save,#proj-dup,#proj-detach,#backup-export,#backup-import-btn,#proj-del,#cloud-push,#cloud-pull');
   if(!t)return;
   const proj=curProj();
   if(t.dataset.tab){state.tab=t.dataset.tab;save();render();return;}
@@ -1977,15 +1987,24 @@ document.addEventListener('click',async e=>{
     if(parts[1]){ const it=b.items.find(x=>x.id===parts[1]);
       if(it){
         // 先記下會影響子專案的欄位有沒有變
-        const before={name:it.name,unit:it.unit,qty:it.qty};
+        const before={name:it.name,unit:it.unit,qty:it.qty,price:it.price};
         it.name=name; it.unit=unit; it.qty=qty; it.qtyExpr=qtyExpr; it.price=price; it.priceExpr=priceExpr; it.amount=qty*price; it.remark=remark; it.extra=isExt;
         const changed=SYNC_KEYS.filter(([k])=>String(before[k]??'')!==String(it[k]??''));
-        const refs=(!proj.parentId&&changed.length)?childRefsOf(proj,it.id):[];
+        const priceChanged=!priceEq(before.price,it.price);
+        const refs=(!proj.parentId&&(changed.length||priceChanged))?childRefsOf(proj,it.id):[];
         if(refs.length){
           const who=[...new Set(refs.map(r=>r.kid.name))].join('、');
-          const what=changed.map(([k,lbl])=>`・${lbl}：${before[k]} → ${it[k]}`).join('\n');
-          if(confirm(`這條已經發包給：${who}\n\n要一起更新過去嗎？\n\n${what}\n\n・「單價不會動」——那是跟各家議定的價\n・間數也不動（各家做幾間是各自的）\n・數量改變時，子專案的金額會照它自己的單價重算\n\n【確定】一起更新　【取消】只改母專案（之後可在子專案按「跟母專案同步」補）`)) {
-            applyDrift(refs.map(r=>({it:r.it,src:it})));
+          // 單價：只跟改之前的母單價相同的（＝沒另外議過價）才跟著改
+          const same=priceChanged?refs.filter(r=>priceEq(r.it.price,before.price)):[];
+          const kept=priceChanged?refs.filter(r=>!priceEq(r.it.price,before.price)):[];
+          const lines=changed.map(([k,lbl])=>`・${lbl}：${before[k]} → ${it[k]}`);
+          if(priceChanged){
+            lines.push(`・單價：${qfmt(before.price)} → ${qfmt(it.price)}`);
+            if(same.length) lines.push(`　└ 會一起改：${same.map(r=>r.kid.name+'（原本也是 '+qfmt(before.price)+'）').join('、')}`);
+            if(kept.length) lines.push(`　└ 不會動：${kept.map(r=>r.kid.name+'（另外議定 '+qfmt(r.it.price)+'）').join('、')}`);
+          }
+          if(confirm(`這條已經發包給：${who}\n\n要一起更新過去嗎？\n\n${lines.join('\n')}\n\n・間數不會動（各家做幾間是各自的）\n・另外議過價的子專案，單價不會被蓋掉\n\n【確定】一起更新　【取消】只改母專案（之後可在子專案按「跟母專案同步」補）`)) {
+            applyDrift(refs.map(r=>({it:r.it,src:it,syncPrice:priceChanged&&priceEq(r.it.price,before.price)})));
           }
         }
       }
@@ -2040,13 +2059,20 @@ document.addEventListener('click',async e=>{
   }
   if(t.dataset.backfill){ backfill=t.dataset.backfill; itemEdit=itemAdd=blkEdit=copyInto=batchEdit=null; blkAdd=false; batchAll=false; openBlk.add(backfill); render(); return; }
   if(t.dataset.backfillcancel){ backfill=null; render(); return; }
-  if(t.id==='drift-sync'){
-    const drift=driftedItems(proj); if(!drift.length) return;
-    const lines=drift.slice(0,12).map(d=>`・${d.it.name}：${d.diff.map(([k,lbl])=>`${lbl} ${d.it[k]} → ${d.src[k]}`).join('、')}`);
-    if(!confirm(`把 ${drift.length} 條同步成母專案的內容？\n\n${lines.join('\n')}${drift.length>12?`\n…等共 ${drift.length} 條`:''}\n\n・單價不會動（跟這家議定的價保留）\n・間數不會動\n・數量有變的，金額會照這邊的單價重算\n\n確定同步？`)) return;
-    applyDrift(drift);
+  if(t.id==='drift-sync'||t.id==='drift-sync-price'){
+    const withPrice=(t.id==='drift-sync-price');
+    const all=driftedItems(proj);
+    const drift=withPrice?all.filter(d=>d.priceDiff):all.filter(d=>d.diff.length);
+    if(!drift.length) return;
+    const lines=drift.slice(0,12).map(d=>{
+      const parts=d.diff.map(([k,lbl])=>`${lbl} ${d.it[k]} → ${d.src[k]}`);
+      if(withPrice&&d.priceDiff) parts.push(`單價 ${qfmt(d.it.price)} → ${qfmt(d.src.price)}`);
+      return `・${d.it.name}：${parts.join('、')}`;
+    });
+    if(!confirm(`把 ${drift.length} 條同步成母專案的內容？\n\n${lines.join('\n')}${drift.length>12?`\n…等共 ${drift.length} 條`:''}\n\n${withPrice?'・「單價會被改成母專案的」——如果那是你跟這家議定的價，請按取消\n':'・單價不會動（跟這家議定的價保留）\n'}・間數不會動\n・金額會照同步後的數量×單價重算\n\n確定同步？`)) return;
+    applyDrift(drift.map(d=>({it:d.it,src:d.src,syncPrice:withPrice&&d.priceDiff})));
     save(); render();
-    alert(`已同步 ${drift.length} 條。單價與間數維持原樣。`);
+    alert(`已同步 ${drift.length} 條。${withPrice?'單價已改成母專案的；':'單價維持原樣；'}間數不動。`);
     return;
   }
   if(t.dataset.addmissblk){
