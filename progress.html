@@ -109,7 +109,7 @@ body.printing #print-overlay{display:block;position:absolute;inset:0;background:
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.08.06u-recon2tbl';
+const APP_VERSION='vG2026.08.06v-sync';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -396,6 +396,36 @@ function periodOf(p,idx){return p.periods[idx]||null;}
 // 才不會變成發包分配上的「孤兒發包」（手動加細項就會）。
 // 母專案有、但子專案根本還沒有那個「區塊」的（例如追加工程是後來才加到母總表的，
 // 當初建子專案時它還不存在）。沒有區塊就沒地方補細項，所以要能先把區塊補進來。
+// 母細項改了名稱／單位／單間數量時，已經發包出去的子專案不會自己跟上。
+// 單價絕對不同步（那是跟各家議定的價，正是子專案存在的理由）；
+// 間數也不同步（子專案的間數是那家做幾間）。
+const SYNC_KEYS=[['name','名稱及規格'],['unit','單位'],['qty','單間數量']];
+function childRefsOf(proj,itemId){
+  const out=[];
+  childProjects(proj.id).forEach(k=>k.blocks.forEach(b=>b.items.forEach(it=>{
+    if(it.srcId===itemId) out.push({kid:k,blk:b,it});
+  })));
+  return out;
+}
+// 子專案裡跟母專案對不起來的細項（只看該同步的欄位）
+function driftedItems(proj){
+  const par=parentProject(proj); if(!par) return [];
+  const m={}; par.blocks.forEach(b=>b.items.forEach(it=>{ m[it.id]=it; }));
+  const out=[];
+  proj.blocks.forEach(b=>b.items.forEach(it=>{
+    const src=it.srcId&&m[it.srcId]; if(!src) return;
+    const diff=SYNC_KEYS.filter(([k])=>String(src[k]??'')!==String(it[k]??''));
+    if(diff.length) out.push({blk:b,it,src,diff});
+  }));
+  return out;
+}
+function applyDrift(list){
+  list.forEach(({it,src})=>{
+    SYNC_KEYS.forEach(([k])=>{ it[k]=src[k]; });
+    it.qtyExpr=src.qtyExpr||'';
+    it.amount=(Number(it.qty)||0)*(Number(it.price)||0);   // 單價維持不動，金額跟著數量重算
+  });
+}
 function missingBlocks(proj){
   const par=parentProject(proj); if(!par) return [];
   const have=new Set(); proj.blocks.forEach(b=>{ if(b.srcBlk) have.add(b.srcBlk); have.add(b.name); });
@@ -993,6 +1023,15 @@ function viewItems(proj){
       <button class="btn sm" id="btn-addblk-ok">建立區塊</button><button class="btn sub sm" data-blkcancel="1">取消</button></div>`
     :`<button class="btn sub" id="btn-addblk">＋ 手動加區塊</button>`;
   if(proj.parentId&&!batchAll){
+    const drift=driftedItems(proj);
+    if(drift.length) h+=`<div class="card" style="margin-top:10px;border-color:rgba(251,191,36,.55);background:rgba(251,191,36,.08)">
+      <div style="font-size:13.5px;font-weight:600;margin-bottom:4px">⚠ 有 ${drift.length} 條跟母專案對不起來</div>
+      <div class="muted" style="font-size:12px;margin-bottom:8px">母專案後來改過名稱／單位／數量，但這邊還是舊的。<b>單價不會被蓋掉</b>（那是跟這家議定的價）；數量若同步，金額會照這邊的單價重算。<b>間數也不動。</b></div>
+      <table style="font-size:12.5px"><tr><th>細項</th><th>差在哪</th><th>這邊（舊）</th><th>母專案（新）</th></tr>
+      ${drift.map(d=>d.diff.map(([k,lbl],i)=>`<tr>${i===0?`<td rowspan="${d.diff.length}">${esc(d.it.name)}</td>`:''}
+        <td>${lbl}</td><td class="num">${esc(String(d.it[k]??''))}</td><td class="num"><b>${esc(String(d.src[k]??''))}</b></td></tr>`).join('')).join('')}
+      </table>
+      <div style="margin-top:8px"><button class="btn sm" id="drift-sync">↻ 跟母專案同步（${drift.length} 條）</button></div></div>`;
     const miss=missingBlocks(proj);
     if(miss.length) h+=`<div class="card" style="margin-top:10px;border-color:rgba(96,165,250,.5);background:rgba(59,130,246,.07)">
       <div style="font-size:13.5px;font-weight:600;margin-bottom:4px">↩ 母專案還有 ${miss.length} 個區塊這裡沒有</div>
@@ -1153,6 +1192,9 @@ function viewProg(proj){
       <span style="flex:1"></span>
       <span class="muted" style="font-size:12.5px">本期 <b class="ok" data-c="bt-${b.id}">${money(cb.thisAmt)}</b>｜累計 <span data-c="bc-${b.id}">${money(cb.cum)}</span> / ${money(cb.V)}（<span data-c="bp-${b.id}">${pfmt(cb.V?cb.cum/cb.V:0)}</span>）</span></summary>
     <div class="inner">`;
+    if(editable&&b.count<=1){
+      h+=`<div class="muted" style="font-size:12px;margin:4px 0 6px">這個區塊只有 1 ${esc(b.unit)}，沒有「幾${esc(b.unit)}做完」可填，所以中間那欄是<b>直接填累計完成的量</b>（照各條自己的單位）；也可以只填右邊的累計％。</div>`;
+    }
     if(editable&&b.count>1){
       h+=`<div class="rowline" style="margin:4px 0 8px">
         <span class="muted" style="font-size:13px">整批填：完成</span>
@@ -1170,7 +1212,7 @@ function viewProg(proj){
         <span class="muted" style="font-size:12px">合約${esc(b.unit)}數 ${qfmt(b.count)} → 加完變 <b data-gnew="${b.id}">${qfmt(b.count)}</b>，本期累計完成也一併補到滿。舊期已請的金額不動。</span></div>`;
     }
     const hasR=b.count>1;const cols=hasR?9:9;
-    h+=`<table><tr><th>項次</th><th>名稱及規格</th><th>單位</th><th class="num">數量</th><th class="num">單價</th><th class="num">前期%</th><th class="num">${hasR?`完成${esc(b.unit)}數`:'累計完成量'}</th><th class="num">累計%</th><th class="num">本期金額</th></tr>`;
+    h+=`<table><tr><th>項次</th><th>名稱及規格</th><th>單位</th><th class="num">數量</th><th class="num">單價</th><th class="num">前期%</th><th class="num" title="${hasR?`這個區塊有 ${qfmt(b.count)} ${b.unit}，填「做完幾${b.unit}」比較快；系統換算成％`:`這個區塊只有 1 ${b.unit}，沒有間數可填，所以直接填累計完成的量（${esc(b.items[0]&&b.items[0].unit||'量')}）`}">${hasR?`完成${esc(b.unit)}數<br><span style="font-weight:400;text-transform:none;letter-spacing:0">（共 ${qfmt(b.count)} ${esc(b.unit)}）</span>`:`累計完成量<br><span style="font-weight:400;text-transform:none;letter-spacing:0">（照單位填）</span>`}</th><th class="num">累計%</th><th class="num">本期金額</th></tr>`;
     let ch='', gDone=new Set();
     for(const ci of cb.items){
       const it=ci.it;
@@ -1240,6 +1282,14 @@ function viewAlloc(proj){
   if(al.over){
     h+=`<div class="notice" style="border-color:rgba(248,113,113,.55);background:rgba(248,113,113,.12);color:#fca5a5;margin-bottom:10px">
       <b>⚠ 有 ${al.over} 條細項的發包量超過母專案</b>——通常是複製子專案後沒刪乾淨、同一條被發包給兩家。下面紅底的就是，請到該子專案把多的刪掉或改數量。</div>`;
+  }
+  {
+    // 母專案這邊也要看得到：哪些子專案的細項跟現在的母專案對不起來
+    const dr=al.kids.map(k=>({k,n:driftedItems(k).length})).filter(x=>x.n);
+    if(dr.length) h+=`<div class="notice" style="border-color:rgba(251,191,36,.5);background:rgba(251,191,36,.12);color:#fcd34d;margin-bottom:10px">
+      <b>⚠ 有子專案跟母專案對不起來</b>——母專案後來改過名稱／單位／數量，這些子專案還是舊的：
+      ${dr.map(x=>`<span class="tag" style="cursor:pointer" data-gotoproj="${x.k.id}">${esc(x.k.name)}　${x.n} 條</span>`).join(' ')}
+      <div style="font-size:11.5px;margin-top:4px">點進去按「↻ 跟母專案同步」即可。單價與間數不會被動到。</div></div>`;
   }
   if(al.orphans.length){
     const refs=al.orphans.flatMap(o=>o.refs||[]);
@@ -1676,7 +1726,7 @@ function printDoc(proj){
       if(!rows.length)continue;
       const hasR=cb.blk.count>1;
       h+=`<table><tr class="bhead"><td colspan="9">${esc(cb.blk.name)}（${qfmt(cb.blk.count)} ${esc(cb.blk.unit)}）</td></tr>
-      <tr><th>項次</th><th>名稱及規格</th><th>單位</th><th class="num">數量</th><th class="num">單價</th><th class="num">總價</th><th class="num">${hasR?`完成${esc(cb.blk.unit)}數`:'累計完成量'}</th><th class="num">完成%</th><th class="num">累計完成計價</th></tr>`;
+      <tr><th>項次</th><th>名稱及規格</th><th>單位</th><th class="num">數量</th><th class="num">單價</th><th class="num">總價</th><th class="num">${hasR?`完成${esc(cb.blk.unit)}數<br>（共 ${qfmt(cb.blk.count)}）`:'累計完成量'}</th><th class="num">完成%</th><th class="num">累計完成計價</th></tr>`;
       let ch='';
       for(const ci of rows){
         const it=ci.it;
@@ -1857,7 +1907,7 @@ function setProgInput(proj,blkId,itemId,kind,val){
 }
 
 document.addEventListener('click',async e=>{
-  const t=e.target.closest('[data-tab],[data-editblk],[data-delblk],[data-edititem],[data-delitem],[data-additem],[data-splititem],[data-sortitems],[data-grouptoggle],[data-groupmerge],[data-groupdetect],[data-whtoggle],[data-rttoggle],[data-whtax],[data-whtaxauto],[data-rtamt],[data-selfone],[data-selfrooms],[data-selfrest],[data-selfclear],[data-delmode],[data-delcancel],[data-delall],[data-delnone],[data-delinv],[data-delzero],[data-deldo],#sub-toggle,#sub-close,#sub-go,[data-backfill],[data-backfillcancel],[data-backfillok],[data-addmissblk],[data-copyinto],[data-copyok],[data-copycancel],[data-batchedit],[data-batchok],[data-batchcancel],[data-batchalledit],[data-batchallok],[data-batchallcancel],[data-itemok],[data-itemcancel],[data-blkok],[data-blkcancel],[data-bapply],[data-gapply],#btn-invrecon,[data-editextra],[data-delextra],#btn-import,#btn-import2,#btn-newproj,#btn-newproj2,#btn-addblk,#btn-addblk-ok,#btn-addperiod,#btn-delperiod,#btn-addextra,#btn-roundup,[data-gotoproj],#btn-print,#btn-setretain,#orphan-fix,#orphan-detach,#proj-groupall,#set-save,#proj-dup,#proj-detach,#backup-export,#backup-import-btn,#proj-del,#cloud-push,#cloud-pull');
+  const t=e.target.closest('[data-tab],[data-editblk],[data-delblk],[data-edititem],[data-delitem],[data-additem],[data-splititem],[data-sortitems],[data-grouptoggle],[data-groupmerge],[data-groupdetect],[data-whtoggle],[data-rttoggle],[data-whtax],[data-whtaxauto],[data-rtamt],[data-selfone],[data-selfrooms],[data-selfrest],[data-selfclear],[data-delmode],[data-delcancel],[data-delall],[data-delnone],[data-delinv],[data-delzero],[data-deldo],#sub-toggle,#sub-close,#sub-go,[data-backfill],[data-backfillcancel],[data-backfillok],[data-addmissblk],#drift-sync,[data-copyinto],[data-copyok],[data-copycancel],[data-batchedit],[data-batchok],[data-batchcancel],[data-batchalledit],[data-batchallok],[data-batchallcancel],[data-itemok],[data-itemcancel],[data-blkok],[data-blkcancel],[data-bapply],[data-gapply],#btn-invrecon,[data-editextra],[data-delextra],#btn-import,#btn-import2,#btn-newproj,#btn-newproj2,#btn-addblk,#btn-addblk-ok,#btn-addperiod,#btn-delperiod,#btn-addextra,#btn-roundup,[data-gotoproj],#btn-print,#btn-setretain,#orphan-fix,#orphan-detach,#proj-groupall,#set-save,#proj-dup,#proj-detach,#backup-export,#backup-import-btn,#proj-del,#cloud-push,#cloud-pull');
   if(!t)return;
   const proj=curProj();
   if(t.dataset.tab){state.tab=t.dataset.tab;save();render();return;}
@@ -1902,7 +1952,22 @@ document.addEventListener('click',async e=>{
     const qtyRaw=g('if-qty').value.trim(), priceRaw=g('if-price').value.trim();
     const qty=evalExpr(qtyRaw)||0, price=evalExpr(priceRaw);
     const qtyExpr=hasExpr(qtyRaw)?qtyRaw:'', priceExpr=hasExpr(priceRaw)?priceRaw:'';
-    if(parts[1]){ const it=b.items.find(x=>x.id===parts[1]); if(it){ it.name=name; it.unit=unit; it.qty=qty; it.qtyExpr=qtyExpr; it.price=price; it.priceExpr=priceExpr; it.amount=qty*price; it.remark=remark; it.extra=isExt; } itemEdit=null; }
+    if(parts[1]){ const it=b.items.find(x=>x.id===parts[1]);
+      if(it){
+        // 先記下會影響子專案的欄位有沒有變
+        const before={name:it.name,unit:it.unit,qty:it.qty};
+        it.name=name; it.unit=unit; it.qty=qty; it.qtyExpr=qtyExpr; it.price=price; it.priceExpr=priceExpr; it.amount=qty*price; it.remark=remark; it.extra=isExt;
+        const changed=SYNC_KEYS.filter(([k])=>String(before[k]??'')!==String(it[k]??''));
+        const refs=(!proj.parentId&&changed.length)?childRefsOf(proj,it.id):[];
+        if(refs.length){
+          const who=[...new Set(refs.map(r=>r.kid.name))].join('、');
+          const what=changed.map(([k,lbl])=>`・${lbl}：${before[k]} → ${it[k]}`).join('\n');
+          if(confirm(`這條已經發包給：${who}\n\n要一起更新過去嗎？\n\n${what}\n\n・<單價不會動>——那是跟各家議定的價\n・間數也不動（各家做幾間是各自的）\n・數量改變時，子專案的金額會照它自己的單價重算\n\n【確定】一起更新　【取消】只改母專案（之後可在子專案按「跟母專案同步」補）`.replace(/<|>/g,'「'))) {
+            applyDrift(refs.map(r=>({it:r.it,src:it})));
+          }
+        }
+      }
+      itemEdit=null; }
     else { b.items.push({id:uid(),no:isExt?'增':'',tag:'',chapter:'',name,unit,qty:qty||1,qtyExpr,price,priceExpr,amount:(qty||1)*price,remark,extra:isExt}); itemAdd=null; }
     save(); render(); return;
   }
@@ -1932,6 +1997,15 @@ document.addEventListener('click',async e=>{
   }
   if(t.dataset.backfill){ backfill=t.dataset.backfill; itemEdit=itemAdd=blkEdit=copyInto=batchEdit=null; blkAdd=false; batchAll=false; openBlk.add(backfill); render(); return; }
   if(t.dataset.backfillcancel){ backfill=null; render(); return; }
+  if(t.id==='drift-sync'){
+    const drift=driftedItems(proj); if(!drift.length) return;
+    const lines=drift.slice(0,12).map(d=>`・${d.it.name}：${d.diff.map(([k,lbl])=>`${lbl} ${d.it[k]} → ${d.src[k]}`).join('、')}`);
+    if(!confirm(`把 ${drift.length} 條同步成母專案的內容？\n\n${lines.join('\n')}${drift.length>12?`\n…等共 ${drift.length} 條`:''}\n\n・單價不會動（跟這家議定的價保留）\n・間數不會動\n・數量有變的，金額會照這邊的單價重算\n\n確定同步？`)) return;
+    applyDrift(drift);
+    save(); render();
+    alert(`已同步 ${drift.length} 條。單價與間數維持原樣。`);
+    return;
+  }
   if(t.dataset.addmissblk){
     const par=parentProject(proj); if(!par) return;
     const mb=par.blocks.find(x=>x.id===t.dataset.addmissblk); if(!mb) return;
