@@ -109,7 +109,7 @@ body.printing #print-overlay{display:block;position:absolute;inset:0;background:
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.08.06v-sync';
+const APP_VERSION='vG2026.08.06w-sync2';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -400,6 +400,14 @@ function periodOf(p,idx){return p.periods[idx]||null;}
 // 單價絕對不同步（那是跟各家議定的價，正是子專案存在的理由）；
 // 間數也不同步（子專案的間數是那家做幾間）。
 const SYNC_KEYS=[['name','名稱及規格'],['unit','單位'],['qty','單間數量']];
+// 子專案裡對應到某個母區塊的區塊（舊資料沒有 srcBlk，退而用名稱比對）
+function childBlockRefsOf(proj,mb,oldName){
+  const out=[];
+  childProjects(proj.id).forEach(k=>k.blocks.forEach(b=>{
+    if(b.srcBlk===mb.id||(!b.srcBlk&&b.name===(oldName??mb.name))) out.push({kid:k,blk:b});
+  }));
+  return out;
+}
 function childRefsOf(proj,itemId){
   const out=[];
   childProjects(proj.id).forEach(k=>k.blocks.forEach(b=>b.items.forEach(it=>{
@@ -1924,7 +1932,21 @@ document.addEventListener('click',async e=>{
   if(t.dataset.editblk){ blkEdit=t.dataset.editblk; itemEdit=itemAdd=null; blkAdd=false; render(); return; }
   if(t.dataset.blkok){
     const b=proj.blocks.find(x=>x.id===t.dataset.blkok);if(!b)return;
+    const bOld={name:b.name,unit:b.unit};
     b.name=(g('bf-name').value.trim())||b.name; b.unit=g('bf-unit').value.trim()||b.unit;
+    // 區塊名稱／單位改了，已經發包出去的子專案不會自己跟上，兩邊對照時會很難認。
+    // 間數不同步——那是各家做幾間，各自的事。
+    if(!proj.parentId&&(b.name!==bOld.name||b.unit!==bOld.unit)){
+      const refs=childBlockRefsOf(proj,b,bOld.name);
+      if(refs.length){
+        const chg=[b.name!==bOld.name?`・名稱：${bOld.name} → ${b.name}`:'',
+                   b.unit!==bOld.unit?`・單位：${bOld.unit} → ${b.unit}`:''].filter(Boolean).join('\n');
+        if(confirm(`這個區塊已經發包給：${[...new Set(refs.map(r=>r.kid.name))].join('、')}\n\n要一起更新過去嗎？\n\n${chg}\n\n・間數不會動（各家做幾間是各自的）\n\n【確定】一起更新　【取消】只改母專案`)){
+          refs.forEach(r=>{ if(!r.blk.srcBlk) r.blk.srcBlk=b.id;   // 順便補上溯源，之後好對
+            r.blk.name=b.name; r.blk.unit=b.unit; });
+        }
+      }
+    }
     (()=>{ // 間數可打算式（追加發包打 12+4）；改間數時要保住過去各期已完成的「數量」
       const raw=g('bf-count').value.trim();
       const nv=Math.max(evalExpr(raw)||0,0);
@@ -1962,7 +1984,7 @@ document.addEventListener('click',async e=>{
         if(refs.length){
           const who=[...new Set(refs.map(r=>r.kid.name))].join('、');
           const what=changed.map(([k,lbl])=>`・${lbl}：${before[k]} → ${it[k]}`).join('\n');
-          if(confirm(`這條已經發包給：${who}\n\n要一起更新過去嗎？\n\n${what}\n\n・<單價不會動>——那是跟各家議定的價\n・間數也不動（各家做幾間是各自的）\n・數量改變時，子專案的金額會照它自己的單價重算\n\n【確定】一起更新　【取消】只改母專案（之後可在子專案按「跟母專案同步」補）`.replace(/<|>/g,'「'))) {
+          if(confirm(`這條已經發包給：${who}\n\n要一起更新過去嗎？\n\n${what}\n\n・「單價不會動」——那是跟各家議定的價\n・間數也不動（各家做幾間是各自的）\n・數量改變時，子專案的金額會照它自己的單價重算\n\n【確定】一起更新　【取消】只改母專案（之後可在子專案按「跟母專案同步」補）`)) {
             applyDrift(refs.map(r=>({it:r.it,src:it})));
           }
         }
@@ -1986,8 +2008,29 @@ document.addEventListener('click',async e=>{
       const lines=hit.map((x,i)=>`・第 ${x.pp.no} 期　${money(before[i])} → ${money(after[i])}（少 ${money(before[i]-after[i])}）`);
       if(!confirm(`⚠ 「${it.name}」已經有 ${hit.length} 期填過進度，刪掉會把那幾期的請款金額一起改掉：\n\n${lines.join('\n')}\n\n那些期別如果已經請過款、對方也付了，這樣帳就對不起來。\n\n【改派給別人做的話】不要刪：把這條的完成度停在他做到的量就好，之後不再往上加；別人做的部分記在別人的子專案。日後換回來繼續做，再把完成度往上加即可。\n\n還是要刪除？`)) return;
     } else if(!confirm(`刪除細項「${it.name}」？`)) return;
+    // 已經發包出去的話，子專案那幾條會變成「對應不到母專案」的孤兒發包
+    const kidRefs=proj.parentId?[]:childRefsOf(proj,it.id);
+    let alsoDelKid=false;
+    if(kidRefs.length){
+      const withProg=kidRefs.filter(r=>(r.kid.periods||[]).some(pp=>((pp.prog||{})[r.it.id]||{}).p>0));
+      const who=kidRefs.map(r=>`・${r.kid.name}　${qfmt(r.blk.count)} ${r.blk.unit} × ${money(r.it.amount)}`).join('\n');
+      if(withProg.length){
+        alert(`提醒：這條已經發包給下列子專案，而且「已經填過進度」：\n\n${withProg.map(r=>'・'+r.kid.name).join('\n')}\n\n那邊「不會」一起刪（刪了會改到已請過款的金額）。\n母專案刪掉後，發包分配會把它們列為「對應不到母專案」的孤兒發包，記得去處理。`);
+      }else{
+        alsoDelKid=confirm(`這條已經發包給：\n\n${who}\n\n那幾條要一起刪掉嗎？\n\n【確定】一起刪（乾淨）\n【取消】只刪母專案——子專案那幾條會留著，並在發包分配被列為「對應不到母專案」的孤兒發包`);
+      }
+    }
     for(const p of proj.periods)if(p.prog)delete p.prog[it.id];
     b.items=b.items.filter(x=>x!==it);
+    if(alsoDelKid){
+      kidRefs.forEach(r=>{
+        for(const pp of (r.kid.periods||[])) if(pp.prog) delete pp.prog[r.it.id];
+        r.blk.items=r.blk.items.filter(x=>x!==r.it);
+        // 只剩一道的工序群組沒有分組意義
+        if(r.it.groupId){ const left=r.blk.items.filter(x=>x.groupId===r.it.groupId);
+          if(left.length<=1) left.forEach(x=>{ delete x.groupId; delete x.groupName; }); }
+      });
+    }
     // 一組工序只剩一道時就沒有分組的意義，自動還原成一般細項
     if(it.groupId){
       const left=b.items.filter(x=>x.groupId===it.groupId);
