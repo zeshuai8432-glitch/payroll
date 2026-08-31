@@ -109,7 +109,7 @@ body.printing #print-overlay{display:block;position:absolute;inset:0;background:
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.08.07b-itemno';
+const APP_VERSION='vG2026.08.07c-sortno';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -1031,7 +1031,8 @@ function viewItems(proj){
       h+=`<tr class="chapter">${picking?'<td></td>':''}<td colspan="5" style="text-align:right">小計${b.count>1?`（每${esc(b.unit)}）`:''}</td><td class="num"><b>${qfmt(subSum)}</b></td><td colspan="2">${b.count>1?`<span class="muted" style="font-size:11px">×${qfmt(b.count)} ${esc(b.unit)} ＝ ${money(subSum*b.count)}</span>`:''}</td></tr>`;
     }
     const canSort=b.items.length>1;                                  // 一律顯示；按下去若含匯入細項會先確認
-    const allManual=b.items.every(it=>it.no==='增');
+    // 「沒有項次」＝手動加的（no 空白或「增」）；整區都沒項次就只能照名稱排
+    const allManual=b.items.every(it=>{ const n=String(it.no||'').trim(); return n===''||n==='增'; });
     const srcBlks=proj.blocks.filter(x=>x.id!==b.id&&x.items.length);
     const runs=detectSplitRuns(b);   // 以前拆過但還沒群組的
     h+=`</table><div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">`;
@@ -1040,7 +1041,7 @@ function viewItems(proj){
     }else if(batchEdit!==b.id){
       h+=`${runs.length?`<button class="btn sub sm" data-groupdetect="${b.id}" style="border-color:#818cf8;color:#c7d2fe" title="把以前拆開、還沒收在一起的工序群組起來，之後就能展開／合回">🔗 收合舊的拆分（${runs.length} 組）</button>`:''}${itemAdd===b.id?'':`<button class="btn sub sm" data-additem="${b.id}">＋ 手動加細項</button>`}${(()=>{ if(!proj.parentId||backfill===b.id) return '';
         const bf=backfillCandidates(proj,b);
-        return (bf&&bf.items.length)?`<button class="btn sub sm" data-backfill="${b.id}" style="border-color:#60a5fa;color:#bfdbfe" title="當初建約時刪掉、後來又要做的細項，從這裡補回來">↩ 從母專案補細項（${bf.items.length}）</button>`:''; })()}${canSort?`<button class="btn sub sm" data-sortitems="${b.id}" title="依名稱/圖面編號自然排序（A、B…D-1、E…）${allManual?'':'／此區塊含匯入細項，按下會先確認'}">🔤 智慧排序${allManual?'':'<span style="opacity:.6">·含匯入</span>'}</button>`:''}${srcBlks.length&&copyInto!==b.id?`<button class="btn sub sm" data-copyinto="${b.id}">📋 複製細項自其他區塊</button>`:''}${(state.projects.length>1&&xcopy!==b.id)?`<button class="btn sub sm" data-xcopy="${b.id}" style="border-color:#a78bfa;color:#ddd6fe" title="從另一份標單（例如對業主那份、或代工那份）把細項抓過來，可逐條挑、各自改單價">📥 從別的專案抓細項</button>`:''}${copyInto===b.id?`<span class="muted" style="font-size:12px">從哪個區塊複製：</span><select id="copy-src" style="height:30px">${srcBlks.map(x=>`<option value="${x.id}">${esc(x.name)}（${x.items.length} 條）</option>`).join('')}</select><button class="btn sm" data-copyok="${b.id}">複製過來</button><button class="btn sub sm" data-copycancel="1">取消</button>`:''}`;
+        return (bf&&bf.items.length)?`<button class="btn sub sm" data-backfill="${b.id}" style="border-color:#60a5fa;color:#bfdbfe" title="當初建約時刪掉、後來又要做的細項，從這裡補回來">↩ 從母專案補細項（${bf.items.length}）</button>`:''; })()}${canSort?`<button class="btn sub sm" data-sortitems="${b.id}" title="照項次排回合約原本的順序（2.1 → 2.2 → 2.10 → 10.1）${allManual?'；這個區塊都沒有項次，會改照名稱排':'；手動加的沒項次，排最後'}">🔤 智慧排序${allManual?'<span style="opacity:.6">·照名稱</span>':'<span style="opacity:.6">·照項次</span>'}</button>`:''}${srcBlks.length&&copyInto!==b.id?`<button class="btn sub sm" data-copyinto="${b.id}">📋 複製細項自其他區塊</button>`:''}${(state.projects.length>1&&xcopy!==b.id)?`<button class="btn sub sm" data-xcopy="${b.id}" style="border-color:#a78bfa;color:#ddd6fe" title="從另一份標單（例如對業主那份、或代工那份）把細項抓過來，可逐條挑、各自改單價">📥 從別的專案抓細項</button>`:''}${copyInto===b.id?`<span class="muted" style="font-size:12px">從哪個區塊複製：</span><select id="copy-src" style="height:30px">${srcBlks.map(x=>`<option value="${x.id}">${esc(x.name)}（${x.items.length} 條）</option>`).join('')}</select><button class="btn sm" data-copyok="${b.id}">複製過來</button><button class="btn sub sm" data-copycancel="1">取消</button>`:''}`;
     }
     if(xcopy===b.id) h+=xcopyPanelHtml(proj,b);
     if(backfill===b.id){
@@ -1117,9 +1118,11 @@ const normName=s=>String(s||'').normalize('NFKC').toLowerCase()
   .replace(/[^0-9a-z㐀-䶿一-鿿]/g,'');
 // 一條細項的兩種比法：連工序群組的全名、以及光是名稱。
 // 拆過工序的那邊是「群組名＋工序名」，沒拆的那邊是一整條，只比其中一種會對不起來。
+// 拆過工序的細項，name 本來就是「群組名-工序名」，不能再把群組名接一次
+// （接了會變「輕隔間輕隔間骨架」，跟沒拆的那邊永遠對不上）。
 const nameKeys=it=>{
-  const full=normName((it.groupName?it.groupName:'')+(it.name||''));
-  const bare=normName(it.name);
+  const full=normName(it&&it.name);
+  const bare=normName(it&&it.groupName?stageOf(it.name,it.groupName):(it&&it.name));
   return {full,bare};
 };
 function xcopyPanelHtml(proj,b){
@@ -1152,13 +1155,22 @@ function xcopyPanelHtml(proj,b){
   });
   const nNew=rows.filter(r=>!r.dup).length;
   const nMaybe=rows.filter(r=>r.maybe).length;
-  // 對上的是這邊的第幾項，直接寫在標籤上，不用自己回頭翻
-  const mateNo=m=>{ const n=String(m&&m.no||'').trim(); return n?`（這邊的 ${esc(n)}）`:''; };
+  const nHid=rows.filter(r=>r.mate&&proj.hideZero&&Number(r.mate.amount)===0).length;
+  // 對上的是這邊的第幾項，直接寫在標籤上，不用自己回頭翻。
+  // 0 元的那條會被「隱藏 0 元項目」藏起來 —— 不講清楚，使用者翻遍合約明細
+  // 也找不到它，只會覺得系統亂認。
+  const mateHidden=m=>!!(proj.hideZero&&m&&Number(m.amount)===0);
+  const mateNo=m=>{
+    if(!m) return '';
+    const n=String(m.no||'').trim();
+    return `（這邊的 ${n?esc(n):'「'+esc(m.name||'')+'」'}${mateHidden(m)?'，0 元被隱藏了':''}）`;
+  };
+  const mateTip=m=>m?` title="對到這邊的：${esc((String(m.no||'').trim()?m.no+'　':'')+(m.name||''))}${mateHidden(m)?'（金額 0，被上面的「隱藏 0 元項目」藏起來，所以你在明細裡看不到）':''}"`:'';
   h+=`<table style="font-size:13px"><tr><th style="width:34px"></th><th style="width:64px">項次</th><th>細項</th><th class="num">來源單價</th><th class="num">這份要用的單價</th><th class="num">抓進來的金額</th></tr>
     ${rows.map(({it,dup,maybe,mate})=>`<tr${dup?' style="opacity:.5"':''}>
       <td>${dup?'':`<input type="checkbox" data-xcpick="${it.id}"${maybe?' data-xcmaybe="1"':''} style="width:16px;height:16px">`}</td>
       <td class="muted" style="font-size:12px;white-space:nowrap">${esc(it.no||'')}</td>
-      <td>${it.groupId&&it.groupName?`${esc(it.groupName)}-${esc(it.name)}`:esc(it.name)}${dup?`<span class="tag">已經有了${mateNo(mate)}</span>`:''}${maybe?`<span class="tag" style="background:rgba(251,191,36,.2);border-color:rgba(251,191,36,.5);color:#fcd34d" title="這邊有一條名稱對得上，但一邊有拆工序、一邊沒有，不確定是不是同一條。要抓還是可以勾，抓完自己看一下有沒有重複。">可能重複${mateNo(mate)}</span>`:''}
+      <td>${esc(it.name)}${dup?`<span class="tag"${mateTip(mate)}>已經有了${mateNo(mate)}</span>`:''}${maybe?`<span class="tag" style="background:rgba(251,191,36,.2);border-color:rgba(251,191,36,.5);color:#fcd34d"${mateTip(mate)}>可能重複${mateNo(mate)}</span>`:''}
         <div class="muted" style="font-size:11px">${qfmt(it.qty)} ${esc(it.unit)}</div></td>
       <td class="num">${qfmt(it.price)}</td>
       <td class="num">${dup?'':`<input class="pin" data-xcprice="${it.id}" inputmode="decimal" placeholder="${qfmt(it.price)}" style="width:88px;text-align:right">`}</td>
@@ -1168,7 +1180,8 @@ function xcopyPanelHtml(proj,b){
       ${nNew?`<button class="btn sm" data-xcopyall="${b.id}">全選${nMaybe?'（不含可能重複的）':''}</button><button class="btn sm" data-xcopyok="${b.id}">📥 抓進來</button>`:'<span class="muted" style="font-size:12px">這個區塊的細項，這邊都已經有了。</span>'}
       <span class="muted" style="font-size:11.5px">單價留空＝照來源單價</span>
     </div>
-    ${nMaybe?`<div class="muted" style="font-size:11.5px;margin-top:6px">＊標「可能重複」的 ${nMaybe} 條：這邊有名稱對得上的，但一邊拆過工序、一邊沒拆，不敢直接幫你擋。要抓還是可以勾。</div>`:''}</div>`;
+    ${nMaybe?`<div class="muted" style="font-size:11.5px;margin-top:6px">＊標「可能重複」的 ${nMaybe} 條：這邊有名稱對得上的，但一邊拆過工序、一邊沒拆，不敢直接幫你擋。要抓還是可以勾。</div>`:''}
+    ${nHid?`<div style="font-size:11.5px;margin-top:6px;padding:6px 8px;background:rgba(251,191,36,.12);border:1px solid rgba(251,191,36,.4);border-radius:8px">⚠ 其中 ${nHid} 條說「已經有了」，但你在合約明細裡<b>找不到</b>——因為那幾條金額是 0，被上面的「隱藏 0 元項目」藏起來了。把那個勾勾取消就看得到。</div>`:''}</div>`;
   return h;
 }
 
@@ -2581,10 +2594,20 @@ document.addEventListener('click',async e=>{
   }
   if(t.dataset.sortitems){
     const b=proj.blocks.find(x=>x.id===t.dataset.sortitems);if(!b)return;
-    const imported=b.items.filter(it=>it.no!=='增').length;
-    if(imported&&!confirm(`「${b.name}」裡有 ${imported} 條是從合約 Excel 匯入的細項。\n\n智慧排序會依名稱／圖面編號重排（A、B…D-1、E…），<b>會打亂合約原本的項次順序</b>。給業主的正式合約明細通常要維持原順序；發包用的子專案則沒差。\n\n確定要排序嗎？`.replace(/<\/?b>/g,'')))return;
     const nat=(a,c)=>String(a||'').localeCompare(String(c||''),'zh-Hant',{numeric:true,sensitivity:'base'});
-    b.items.sort((x,y)=>nat(x.chapter,y.chapter)||nat(x.name,y.name));
+    // 項次才是合約的真順序（2.1、2.2、2.10、10.1）；手動加的沒項次，排最後
+    const noOf=it=>{ const n=String(it&&it.no||'').trim(); return (n===''||n==='增')?'':n; };
+    const nNo=b.items.filter(it=>noOf(it)).length, nNoNo=b.items.length-nNo;
+    if(!nNo){
+      if(!confirm(`「${b.name}」裡沒有一條有項次（多半都是手動加的）。\n\n那就只能照名稱排（A、B…D-1、E…）。確定嗎？`)) return;
+    }else if(!confirm(`「${b.name}」照<b>項次</b>重排：2.1 → 2.2 → 2.10 → 10.1，也就是合約原本的順序。\n\n・有項次的 ${nNo} 條照項次排\n${nNoNo?`・手動加的 ${nNoNo} 條沒有項次，會排到最後（彼此照名稱排）\n`:''}・拆開的工序（同一個項次）維持你當初拆的先後，不會被打散\n\n確定要排序嗎？`.replace(/<\/?b>/g,''))) return;
+    b.items.sort((x,y)=>{
+      const nx=noOf(x), ny=noOf(y);
+      if(!!nx!==!!ny) return nx?-1:1;              // 有項次的排前面
+      if(!nx) return nat(x.name,y.name);           // 都沒項次：照名稱（原本的行為）
+      // 同一個項次（拆開的工序就是這種）維持原順序：sort 是穩定的，回 0 就好
+      return nat(nx,ny);
+    });
     save();render();return;
   }
   if(t.id==='btn-addblk'){ blkAdd=true; itemEdit=itemAdd=blkEdit=null; render(); return; }
