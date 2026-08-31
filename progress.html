@@ -109,7 +109,7 @@ body.printing #print-overlay{display:block;position:absolute;inset:0;background:
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.08.06y-trash';
+const APP_VERSION='vG2026.08.06z-xcopy';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -684,6 +684,7 @@ function render(){
 let subPanel=false;
 let backfill=null;   // 「從母專案補細項」展開中的區塊 id
 let trashOpen=false; // 「已刪除的細項」回收桶展開中
+let xcopy=null, xcopyProj='', xcopyBlk='';   // 「從別的專案抓細項」：展開中的區塊 id ＋ 選定的來源專案／區塊
 let _subInfo={};   // {blkId:{stage:{rooms(母間數), used(已發包間數), perRoom(每間金額), n(條數)}}}
 const SUB_ALL='*';  // 「整條發包」的虛擬工序代碼
 function buildSubInfo(proj){
@@ -1039,8 +1040,9 @@ function viewItems(proj){
     }else if(batchEdit!==b.id){
       h+=`${runs.length?`<button class="btn sub sm" data-groupdetect="${b.id}" style="border-color:#818cf8;color:#c7d2fe" title="把以前拆開、還沒收在一起的工序群組起來，之後就能展開／合回">🔗 收合舊的拆分（${runs.length} 組）</button>`:''}${itemAdd===b.id?'':`<button class="btn sub sm" data-additem="${b.id}">＋ 手動加細項</button>`}${(()=>{ if(!proj.parentId||backfill===b.id) return '';
         const bf=backfillCandidates(proj,b);
-        return (bf&&bf.items.length)?`<button class="btn sub sm" data-backfill="${b.id}" style="border-color:#60a5fa;color:#bfdbfe" title="當初建約時刪掉、後來又要做的細項，從這裡補回來">↩ 從母專案補細項（${bf.items.length}）</button>`:''; })()}${canSort?`<button class="btn sub sm" data-sortitems="${b.id}" title="依名稱/圖面編號自然排序（A、B…D-1、E…）${allManual?'':'／此區塊含匯入細項，按下會先確認'}">🔤 智慧排序${allManual?'':'<span style="opacity:.6">·含匯入</span>'}</button>`:''}${srcBlks.length&&copyInto!==b.id?`<button class="btn sub sm" data-copyinto="${b.id}">📋 複製細項自其他區塊</button>`:''}${copyInto===b.id?`<span class="muted" style="font-size:12px">從哪個區塊複製：</span><select id="copy-src" style="height:30px">${srcBlks.map(x=>`<option value="${x.id}">${esc(x.name)}（${x.items.length} 條）</option>`).join('')}</select><button class="btn sm" data-copyok="${b.id}">複製過來</button><button class="btn sub sm" data-copycancel="1">取消</button>`:''}`;
+        return (bf&&bf.items.length)?`<button class="btn sub sm" data-backfill="${b.id}" style="border-color:#60a5fa;color:#bfdbfe" title="當初建約時刪掉、後來又要做的細項，從這裡補回來">↩ 從母專案補細項（${bf.items.length}）</button>`:''; })()}${canSort?`<button class="btn sub sm" data-sortitems="${b.id}" title="依名稱/圖面編號自然排序（A、B…D-1、E…）${allManual?'':'／此區塊含匯入細項，按下會先確認'}">🔤 智慧排序${allManual?'':'<span style="opacity:.6">·含匯入</span>'}</button>`:''}${srcBlks.length&&copyInto!==b.id?`<button class="btn sub sm" data-copyinto="${b.id}">📋 複製細項自其他區塊</button>`:''}${(state.projects.length>1&&xcopy!==b.id)?`<button class="btn sub sm" data-xcopy="${b.id}" style="border-color:#a78bfa;color:#ddd6fe" title="從另一份標單（例如對業主那份、或代工那份）把細項抓過來，可逐條挑、各自改單價">📥 從別的專案抓細項</button>`:''}${copyInto===b.id?`<span class="muted" style="font-size:12px">從哪個區塊複製：</span><select id="copy-src" style="height:30px">${srcBlks.map(x=>`<option value="${x.id}">${esc(x.name)}（${x.items.length} 條）</option>`).join('')}</select><button class="btn sm" data-copyok="${b.id}">複製過來</button><button class="btn sub sm" data-copycancel="1">取消</button>`:''}`;
     }
+    if(xcopy===b.id) h+=xcopyPanelHtml(proj,b);
     if(backfill===b.id){
       const bf=backfillCandidates(proj,b);
       if(bf&&bf.items.length){
@@ -1096,6 +1098,49 @@ function viewItems(proj){
       </table></div>`;
   }
   h+=trashCardHtml(proj);
+  return h;
+}
+
+// 📥 從別的專案抓細項：同一個工地常常拆成好幾份標單（對業主一份、代工一份），
+// 一邊刪掉的，另一邊多半還留著 —— 直接從那邊挑回來，不用重打。
+function xcopySource(proj){
+  const others=state.projects.filter(p=>p.id!==proj.id);
+  if(!others.length) return null;
+  const sp=others.find(p=>p.id===xcopyProj)||others[0];
+  const sblks=sp.blocks.filter(x=>x.items.length);
+  return {others,sp,sblks,sb:sblks.find(x=>x.id===xcopyBlk)||null};
+}
+const normName=s=>String(s||'').replace(/\s/g,'').toLowerCase();
+function xcopyPanelHtml(proj,b){
+  const S=xcopySource(proj);
+  if(!S) return '';
+  const {others,sp,sblks,sb}=S;
+  const have=new Set(b.items.map(x=>normName((x.groupName?x.groupName+'-':'')+x.name)));
+  let h=`<div class="card" style="margin-top:8px;border-color:rgba(167,139,250,.55);background:rgba(139,92,246,.08)">
+    <div class="rowline" style="align-items:center;margin-bottom:6px"><b style="font-size:13.5px">📥 從別的專案抓細項到「${esc(b.name)}」</b><span style="flex:1"></span><button class="btn sub sm" data-xcopycancel="1">取消</button></div>
+    <div class="muted" style="font-size:12px;margin-bottom:8px">同一個工地拆成好幾份標單時（對業主一份、代工一份），這邊刪掉的通常那邊還在，挑回來就好。<b>抓過來是新的一條</b>（不會跟來源綁在一起，各改各的）；間數照這個區塊現有的 ${qfmt(b.count)} ${esc(b.unit)}。</div>
+    <div class="rowline" style="gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px">
+      <span class="muted" style="font-size:12px">從哪個專案：</span>
+      <select data-xcopyproj="1" style="height:30px;max-width:260px">${others.map(p=>`<option value="${p.id}"${p.id===sp.id?' selected':''}>${esc(p.name)}${p.parentId?'（子）':''}</option>`).join('')}</select>
+      <span class="muted" style="font-size:12px">哪個區塊：</span>
+      <select data-xcopyblk="1" style="height:30px;max-width:240px">${sblks.length?`<option value=""${sb?'':' selected'}>— 請選 —</option>`+sblks.map(x=>`<option value="${x.id}"${sb&&x.id===sb.id?' selected':''}>${esc(x.name)}（${x.items.length} 條）</option>`).join(''):'<option value="">（這個專案沒有細項）</option>'}</select>
+    </div>`;
+  if(!sb) return h+`<div class="muted" style="font-size:12px">選一個區塊，下面就會列出可以抓過來的細項。</div></div>`;
+  const rows=sb.items.map(it=>({it,dup:have.has(normName((it.groupName?it.groupName+'-':'')+it.name))}));
+  const nNew=rows.filter(r=>!r.dup).length;
+  h+=`<table style="font-size:13px"><tr><th style="width:34px"></th><th>細項</th><th class="num">來源單價</th><th class="num">這份要用的單價</th><th class="num">抓進來的金額</th></tr>
+    ${rows.map(({it,dup})=>`<tr${dup?' style="opacity:.5"':''}>
+      <td>${dup?'':`<input type="checkbox" data-xcpick="${it.id}" style="width:16px;height:16px">`}</td>
+      <td>${it.groupId&&it.groupName?`${esc(it.groupName)}-${esc(it.name)}`:esc(it.name)}${dup?'<span class="tag">已經有了</span>':''}
+        <div class="muted" style="font-size:11px">${qfmt(it.qty)} ${esc(it.unit)}</div></td>
+      <td class="num">${qfmt(it.price)}</td>
+      <td class="num">${dup?'':`<input class="pin" data-xcprice="${it.id}" inputmode="decimal" placeholder="${qfmt(it.price)}" style="width:88px;text-align:right">`}</td>
+      <td class="num muted" style="font-size:11.5px">${dup?'':`${money(itemValue(it,b))}<div>（${qfmt(it.qty)} × ${qfmt(b.count)} ${esc(b.unit)}）</div>`}</td></tr>`).join('')}
+    </table>
+    <div style="margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      ${nNew?`<button class="btn sm" data-xcopyall="${b.id}">全選</button><button class="btn sm" data-xcopyok="${b.id}">📥 抓進來</button>`:'<span class="muted" style="font-size:12px">這個區塊的細項，這邊都已經有了。</span>'}
+      <span class="muted" style="font-size:11.5px">單價留空＝照來源單價</span>
+    </div></div>`;
   return h;
 }
 
@@ -1995,7 +2040,7 @@ function setProgInput(proj,blkId,itemId,kind,val){
 }
 
 document.addEventListener('click',async e=>{
-  const t=e.target.closest('[data-tab],[data-editblk],[data-delblk],[data-edititem],[data-delitem],[data-additem],[data-splititem],[data-sortitems],[data-grouptoggle],[data-groupmerge],[data-groupdetect],[data-whtoggle],[data-rttoggle],[data-whtax],[data-whtaxauto],[data-rtamt],[data-selfone],[data-selfrooms],[data-selfrest],[data-selfclear],[data-delmode],[data-delcancel],[data-delall],[data-delnone],[data-delinv],[data-delzero],[data-deldo],#sub-toggle,#sub-close,#sub-go,[data-backfill],[data-backfillcancel],[data-backfillok],[data-addmissblk],#trash-toggle,#trash-clear,[data-trashrestore],[data-trashdrop],#drift-sync,#drift-sync-price,[data-copyinto],[data-copyok],[data-copycancel],[data-batchedit],[data-batchok],[data-batchcancel],[data-batchalledit],[data-batchallok],[data-batchallcancel],[data-itemok],[data-itemcancel],[data-blkok],[data-blkcancel],[data-bapply],[data-gapply],#btn-invrecon,[data-editextra],[data-delextra],#btn-import,#btn-import2,#btn-newproj,#btn-newproj2,#btn-addblk,#btn-addblk-ok,#btn-addperiod,#btn-delperiod,#btn-addextra,#btn-roundup,[data-gotoproj],#btn-print,#btn-setretain,#orphan-fix,#orphan-detach,#proj-groupall,#set-save,#proj-dup,#proj-detach,#backup-export,#backup-import-btn,#proj-del,#cloud-push,#cloud-pull');
+  const t=e.target.closest('[data-tab],[data-editblk],[data-delblk],[data-edititem],[data-delitem],[data-additem],[data-splititem],[data-sortitems],[data-grouptoggle],[data-groupmerge],[data-groupdetect],[data-whtoggle],[data-rttoggle],[data-whtax],[data-whtaxauto],[data-rtamt],[data-selfone],[data-selfrooms],[data-selfrest],[data-selfclear],[data-delmode],[data-delcancel],[data-delall],[data-delnone],[data-delinv],[data-delzero],[data-deldo],#sub-toggle,#sub-close,#sub-go,[data-backfill],[data-backfillcancel],[data-backfillok],[data-addmissblk],#trash-toggle,#trash-clear,[data-trashrestore],[data-trashdrop],#drift-sync,#drift-sync-price,[data-copyinto],[data-copyok],[data-copycancel],[data-xcopy],[data-xcopycancel],[data-xcopyall],[data-xcopyok],[data-batchedit],[data-batchok],[data-batchcancel],[data-batchalledit],[data-batchallok],[data-batchallcancel],[data-itemok],[data-itemcancel],[data-blkok],[data-blkcancel],[data-bapply],[data-gapply],#btn-invrecon,[data-editextra],[data-delextra],#btn-import,#btn-import2,#btn-newproj,#btn-newproj2,#btn-addblk,#btn-addblk-ok,#btn-addperiod,#btn-delperiod,#btn-addextra,#btn-roundup,[data-gotoproj],#btn-print,#btn-setretain,#orphan-fix,#orphan-detach,#proj-groupall,#set-save,#proj-dup,#proj-detach,#backup-export,#backup-import-btn,#proj-del,#cloud-push,#cloud-pull');
   if(!t)return;
   const proj=curProj();
   if(t.dataset.tab){state.tab=t.dataset.tab;save();render();return;}
@@ -2446,6 +2491,51 @@ document.addEventListener('click',async e=>{
     for(const per of proj.periods) if(per.prog) subs.forEach(s=>delete per.prog[s.id]);
     openGroup.delete(gid); save(); render(); return;
   }
+  if(t.dataset.xcopy){
+    xcopy=t.dataset.xcopy; copyInto=backfill=itemEdit=itemAdd=blkEdit=null; blkAdd=false;
+    const others=state.projects.filter(p=>p.id!==proj.id);
+    // 預設挑「另一份母標單」（不是子專案），區塊則對同名的那個
+    const sp=others.find(p=>!p.parentId&&p.id!==proj.parentId)||others[0];
+    xcopyProj=sp?sp.id:'';
+    const me=proj.blocks.find(x=>x.id===xcopy);
+    const sblks=sp?sp.blocks.filter(x=>x.items.length):[];
+    const same=me?sblks.find(x=>normName(x.name)===normName(me.name)):null;
+    xcopyBlk=same?same.id:'';
+    render(); return;
+  }
+  if(t.dataset.xcopycancel){ xcopy=null; xcopyBlk=''; render(); return; }
+  if(t.dataset.xcopyall){
+    document.querySelectorAll('[data-xcpick]').forEach(cb=>{cb.checked=true;});
+    return;
+  }
+  if(t.dataset.xcopyok){
+    const b=proj.blocks.find(x=>x.id===t.dataset.xcopyok); if(!b) return;
+    const S=xcopySource(proj); if(!S||!S.sb) return;
+    const picked=[...document.querySelectorAll('[data-xcpick]:checked')].map(x=>x.dataset.xcpick);
+    if(!picked.length){ alert('請先勾要抓過來的細項。'); return; }
+    const plan=picked.map(id=>{
+      const it=S.sb.items.find(x=>x.id===id); if(!it) return null;
+      const inp=document.querySelector(`[data-xcprice="${id}"]`);
+      const raw=inp?inp.value.trim():'';
+      const price=raw?(evalExpr(raw)||0):(Number(it.price)||0);
+      return { it, price, amount:(Number(it.qty)||0)*price };
+    }).filter(Boolean);
+    const tot=plan.reduce((s2,x)=>s2+x.amount*(Number(b.count)||0),0);
+    if(!confirm(`從「${S.sp.name}·${S.sb.name}」抓 ${plan.length} 條進「${b.name}」？\n\n${plan.map(x=>`・${x.it.name}　${qfmt(x.it.qty)} × ${qfmt(x.price)}${(Number(x.it.price)||0)!==x.price?`（來源單價 ${qfmt(x.it.price)}）`:''}`).join('\n')}\n\n間數 ${qfmt(b.count)} ${b.unit}，合約金額增加 ${money(Math.round(tot))}\n\n抓過來是新的一條，跟來源那份各改各的、不會互相影響。`)) return;
+    // 同名工序群組要併進這個區塊已經有的那一組，不要各自為政
+    const gmap={};
+    b.items.forEach(x=>{ if(x.groupId&&x.groupName) gmap[x.groupName]=x.groupId; });
+    plan.forEach(({it,price,amount})=>{
+      const ni={ id:uid(), no:'增', tag:'', chapter:it.chapter||'', name:it.name, unit:it.unit,
+        qty:it.qty, qtyExpr:it.qtyExpr||'', price, priceExpr:'', amount, remark:it.remark||'' };
+      if(it.extra!==undefined) ni.extra=it.extra;
+      if(it.groupName){ ni.groupName=it.groupName; ni.groupId=gmap[it.groupName]||(gmap[it.groupName]=uid()); }
+      b.items.push(ni);
+    });
+    xcopy=null; xcopyBlk=''; save(); render();
+    alert(`已抓 ${plan.length} 條進「${b.name}」。\n\n這幾條跟來源那份沒有綁在一起，之後各改各的。`);
+    return;
+  }
   if(t.dataset.copyinto){ copyInto=t.dataset.copyinto; itemEdit=itemAdd=blkEdit=null; blkAdd=false; render(); return; }
   if(t.dataset.copycancel){ copyInto=null; render(); return; }
   if(t.dataset.copyok){
@@ -2671,6 +2761,16 @@ document.addEventListener('change',e=>{
     if(v>0) it.selfQty=v; else delete it.selfQty;
     save(); render(); return;
   }
+  if(t.dataset.xcopyproj){
+    xcopyProj=t.value;
+    const sp=state.projects.find(p=>p.id===xcopyProj);
+    const me=proj.blocks.find(x=>x.id===xcopy);
+    const sblks=sp?sp.blocks.filter(x=>x.items.length):[];
+    const same=me?sblks.find(x=>normName(x.name)===normName(me.name)):null;
+    xcopyBlk=same?same.id:'';       // 換專案就重挑區塊，同名的自動對上
+    render(); return;
+  }
+  if(t.dataset.xcopyblk){ xcopyBlk=t.value; render(); return; }
   if(t.dataset.delpick){ t.checked?delSel.add(t.dataset.delpick):delSel.delete(t.dataset.delpick); updateDelCount(proj); return; }
   if(t.dataset.delpickGroup){
     const gid=t.dataset.delpickGroup;
