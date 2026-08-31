@@ -109,7 +109,7 @@ body.printing #print-overlay{display:block;position:absolute;inset:0;background:
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.08.07-namematch';
+const APP_VERSION='vG2026.08.07b-itemno';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -1049,9 +1049,10 @@ function viewItems(proj){
         h+=`<div class="card" style="margin-top:8px;border-color:rgba(96,165,250,.5);background:rgba(59,130,246,.07)">
           <div class="rowline" style="align-items:center;margin-bottom:4px"><b style="font-size:13.5px">↩ 從母專案補細項到「${esc(b.name)}」</b><span style="flex:1"></span><button class="btn sub sm" data-backfillcancel="1">取消</button></div>
           <div class="muted" style="font-size:12px;margin-bottom:8px">這幾條是母專案有、這個區塊沒有的。勾起來補進來會<b>自動接回母專案</b>（發包分配算得到，不會變成孤兒發包）；<b>數量沿用母專案</b>，間數照這個區塊現有的 ${qfmt(b.count)} ${esc(b.unit)}。單價留空＝照母單價。</div>
-          <table style="font-size:13px"><tr><th style="width:34px"></th><th>細項</th><th class="num">母·單價</th><th class="num">這家議定單價</th><th class="num">補進來的金額</th></tr>
+          <table style="font-size:13px"><tr><th style="width:34px"></th><th style="width:64px">項次</th><th>細項</th><th class="num">母·單價</th><th class="num">這家議定單價</th><th class="num">補進來的金額</th></tr>
           ${bf.items.map(it=>`<tr>
             <td><input type="checkbox" data-bfpick="${it.id}" style="width:16px;height:16px"></td>
+            <td class="muted" style="font-size:12px;white-space:nowrap">${esc(it.no||'')}</td>
             <td>${it.groupId&&it.groupName?`${esc(it.groupName)}-${stageHtml(it.name,it.groupName)}`:esc(it.name)}</td>
             <td class="num">${qfmt(it.price)}</td>
             <td class="num"><input class="pin" data-bfprice="${it.id}" inputmode="decimal" placeholder="${qfmt(it.price)}" style="width:88px;text-align:right"></td>
@@ -1125,8 +1126,11 @@ function xcopyPanelHtml(proj,b){
   const S=xcopySource(proj);
   if(!S) return '';
   const {others,sp,sblks,sb}=S;
-  const haveFull=new Set(), haveBare=new Set();
-  b.items.forEach(x=>{ const k=nameKeys(x); if(k.full)haveFull.add(k.full); if(k.bare)haveBare.add(k.bare); });
+  // 記到「對上的是這邊哪一條」，比對時才看得出來是跟誰重複
+  const haveFull=new Map(), haveBare=new Map();
+  b.items.forEach(x=>{ const k=nameKeys(x);
+    if(k.full&&!haveFull.has(k.full))haveFull.set(k.full,x);
+    if(k.bare&&!haveBare.has(k.bare))haveBare.set(k.bare,x); });
   let h=`<div class="card" style="margin-top:8px;border-color:rgba(167,139,250,.55);background:rgba(139,92,246,.08)">
     <div class="rowline" style="align-items:center;margin-bottom:6px"><b style="font-size:13.5px">📥 從別的專案抓細項到「${esc(b.name)}」</b><span style="flex:1"></span><button class="btn sub sm" data-xcopycancel="1">取消</button></div>
     <div class="muted" style="font-size:12px;margin-bottom:8px">同一個工地拆成好幾份標單時（對業主一份、代工一份），這邊刪掉的通常那邊還在，挑回來就好。<b>抓過來是新的一條</b>（不會跟來源綁在一起，各改各的）；間數照這個區塊現有的 ${qfmt(b.count)} ${esc(b.unit)}。</div>
@@ -1142,16 +1146,19 @@ function xcopyPanelHtml(proj,b){
   //        免得真的是不同的兩條卻被擋住、永遠抓不進來。
   const rows=sb.items.map(it=>{
     const k=nameKeys(it);
-    const dup=!!(k.full&&haveFull.has(k.full));
-    const maybe=!dup&&!!((k.bare&&(haveBare.has(k.bare)||haveFull.has(k.bare)))||(k.full&&haveBare.has(k.full)));
-    return {it,dup,maybe};
+    const hit=(k.full&&haveFull.get(k.full))||null;
+    const near=hit?null:((k.bare&&(haveBare.get(k.bare)||haveFull.get(k.bare)))||(k.full&&haveBare.get(k.full))||null);
+    return {it,dup:!!hit,maybe:!!near,mate:hit||near};
   });
   const nNew=rows.filter(r=>!r.dup).length;
   const nMaybe=rows.filter(r=>r.maybe).length;
-  h+=`<table style="font-size:13px"><tr><th style="width:34px"></th><th>細項</th><th class="num">來源單價</th><th class="num">這份要用的單價</th><th class="num">抓進來的金額</th></tr>
-    ${rows.map(({it,dup,maybe})=>`<tr${dup?' style="opacity:.5"':''}>
+  // 對上的是這邊的第幾項，直接寫在標籤上，不用自己回頭翻
+  const mateNo=m=>{ const n=String(m&&m.no||'').trim(); return n?`（這邊的 ${esc(n)}）`:''; };
+  h+=`<table style="font-size:13px"><tr><th style="width:34px"></th><th style="width:64px">項次</th><th>細項</th><th class="num">來源單價</th><th class="num">這份要用的單價</th><th class="num">抓進來的金額</th></tr>
+    ${rows.map(({it,dup,maybe,mate})=>`<tr${dup?' style="opacity:.5"':''}>
       <td>${dup?'':`<input type="checkbox" data-xcpick="${it.id}"${maybe?' data-xcmaybe="1"':''} style="width:16px;height:16px">`}</td>
-      <td>${it.groupId&&it.groupName?`${esc(it.groupName)}-${esc(it.name)}`:esc(it.name)}${dup?'<span class="tag">已經有了</span>':''}${maybe?'<span class="tag" style="background:rgba(251,191,36,.2);border-color:rgba(251,191,36,.5);color:#fcd34d" title="這邊有一條名稱對得上，但一邊有拆工序、一邊沒有，不確定是不是同一條。要抓還是可以勾，抓完自己看一下有沒有重複。">可能重複</span>':''}
+      <td class="muted" style="font-size:12px;white-space:nowrap">${esc(it.no||'')}</td>
+      <td>${it.groupId&&it.groupName?`${esc(it.groupName)}-${esc(it.name)}`:esc(it.name)}${dup?`<span class="tag">已經有了${mateNo(mate)}</span>`:''}${maybe?`<span class="tag" style="background:rgba(251,191,36,.2);border-color:rgba(251,191,36,.5);color:#fcd34d" title="這邊有一條名稱對得上，但一邊有拆工序、一邊沒有，不確定是不是同一條。要抓還是可以勾，抓完自己看一下有沒有重複。">可能重複${mateNo(mate)}</span>`:''}
         <div class="muted" style="font-size:11px">${qfmt(it.qty)} ${esc(it.unit)}</div></td>
       <td class="num">${qfmt(it.price)}</td>
       <td class="num">${dup?'':`<input class="pin" data-xcprice="${it.id}" inputmode="decimal" placeholder="${qfmt(it.price)}" style="width:88px;text-align:right">`}</td>
@@ -1180,7 +1187,7 @@ function trashCardHtml(proj){
     </div>`;
   if(!trashOpen) return h+'</div>';
   h+=`<div class="muted" style="font-size:12px;margin:6px 0 8px">當初刪掉、後來又要做的，按「復原」放回原本的區塊——<b>連原本的溯源一起還原</b>，子專案原本指著它的發包會自己接回去，不用重新發包。（只留最近 ${TRASH_MAX} 條）</div>
-    <table style="font-size:12.5px"><tr><th>刪除時間</th><th>原區塊</th><th>名稱及規格</th><th class="num">數量</th><th class="num">單價</th><th class="num">金額</th><th>怎麼刪的</th><th></th></tr>`;
+    <table style="font-size:12.5px"><tr><th>刪除時間</th><th>原區塊</th><th style="width:64px">項次</th><th>名稱及規格</th><th class="num">數量</th><th class="num">單價</th><th class="num">金額</th><th>怎麼刪的</th><th></th></tr>`;
   rows.forEach(e=>{
     const it=e.item||{};
     const d=new Date(e.at||0);
@@ -1190,6 +1197,7 @@ function trashCardHtml(proj){
     h+=`<tr>
       <td class="muted" style="font-size:11.5px;white-space:nowrap">${when}</td>
       <td>${esc(e.blkName||'')}${blkGone?'<span class="tag" style="background:rgba(251,191,36,.2);border-color:rgba(251,191,36,.5);color:#fcd34d" title="這個區塊已經不在了，復原時會照原樣把區塊一起建回來">區塊已刪</span>':''}</td>
+      <td class="muted" style="font-size:12px;white-space:nowrap">${esc(it.no||'')}</td>
       <td>${it.groupId&&it.groupName?`${esc(it.groupName)}-${esc(it.name||'')}`:esc(it.name||'')}${nOrphan?`<span class="tag" style="background:rgba(96,165,250,.2);border-color:rgba(96,165,250,.5);color:#bfdbfe" title="有 ${nOrphan} 條子專案的細項還指著它（現在是孤兒發包），復原後會自己接回去">孤兒 ${nOrphan}</span>`:''}</td>
       <td class="num">${qfmt(it.qty)} ${esc(it.unit||'')}</td>
       <td class="num">${it.price?qfmt(it.price):''}</td>
