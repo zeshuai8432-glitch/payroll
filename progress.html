@@ -109,7 +109,7 @@ body.printing #print-overlay{display:block;position:absolute;inset:0;background:
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.08.06x-pricesync';
+const APP_VERSION='vG2026.08.06y-trash';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -401,6 +401,39 @@ function periodOf(p,idx){return p.periods[idx]||null;}
 // 間數也不同步（子專案的間數是那家做幾間）。
 const SYNC_KEYS=[['name','名稱及規格'],['unit','單位'],['qty','單間數量']];
 const priceEq=(a,b)=>Math.abs((Number(a)||0)-(Number(b)||0))<0.0001;
+// 刪掉的細項留一份，之後又要做時可以原樣復原。
+// 關鍵是「連原本的 id 一起還原」——子專案的 srcId 還指著它，復原後孤兒發包會自己接回去。
+const TRASH_MAX=300;
+function trashPush(proj,blk,items,why){
+  if(!items.length) return;
+  proj.trash=proj.trash||[];
+  items.forEach(it=>proj.trash.push({
+    id:uid(), at:Date.now(), why:why||'刪除細項',
+    // 連區塊的單位／間數一起留著：整個區塊被刪掉時，復原才有地方放
+    blkId:blk.id, blkName:blk.name, blkUnit:blk.unit, blkCount:blk.count,
+    idx:blk.items.indexOf(it),
+    item:JSON.parse(JSON.stringify(it))
+  }));
+  if(proj.trash.length>TRASH_MAX) proj.trash=proj.trash.slice(-TRASH_MAX);
+}
+const trashList=proj=>(proj&&proj.trash)||[];
+// 復原：區塊不在就照原樣重建，細項連原本的 id 一起放回原位置。
+function trashRestore(proj,entry){
+  let b=proj.blocks.find(x=>x.id===entry.blkId)||proj.blocks.find(x=>x.name===entry.blkName);
+  if(!b){
+    b={id:entry.blkId||uid(),name:entry.blkName||'復原的區塊',unit:entry.blkUnit||'間',
+       count:(entry.blkCount===undefined?1:entry.blkCount),items:[]};
+    proj.blocks.push(b);
+  }
+  const it=JSON.parse(JSON.stringify(entry.item));
+  const dup=b.items.find(x=>x.id===it.id);
+  if(dup) return {blk:b,item:dup,dup:true};
+  const at=(entry.idx>=0&&entry.idx<=b.items.length)?entry.idx:b.items.length;
+  b.items.splice(at,0,it);
+  it.amount=(Number(it.qty)||0)*(Number(it.price)||0);
+  proj.trash=trashList(proj).filter(e=>e!==entry);
+  return {blk:b,item:it,dup:false};
+}
 // 子專案裡對應到某個母區塊的區塊（舊資料沒有 srcBlk，退而用名稱比對）
 function childBlockRefsOf(proj,mb,oldName){
   const out=[];
@@ -650,6 +683,7 @@ function render(){
    免得複製全部細項再刪三百條、還要一個個改區塊間數。 */
 let subPanel=false;
 let backfill=null;   // 「從母專案補細項」展開中的區塊 id
+let trashOpen=false; // 「已刪除的細項」回收桶展開中
 let _subInfo={};   // {blkId:{stage:{rooms(母間數), used(已發包間數), perRoom(每間金額), n(條數)}}}
 const SUB_ALL='*';  // 「整條發包」的虛擬工序代碼
 function buildSubInfo(proj){
@@ -1061,7 +1095,43 @@ function viewItems(proj){
         <td><button class="btn sm" data-addmissblk="${mb.id}">↩ 補這個區塊進來</button></td></tr>`).join('')}
       </table></div>`;
   }
+  h+=trashCardHtml(proj);
   return h;
+}
+
+// 🗑 已刪除的細項：刪掉之後又要做，從這裡原樣復原（連原本的 id）。
+function trashCardHtml(proj){
+  const tl=trashList(proj);
+  if(!tl.length) return '';
+  const kids=proj.parentId?[]:childProjects(proj.id);
+  const rows=[...tl].reverse();
+  let h=`<div class="card" style="margin-top:14px;border-color:rgba(148,163,184,.45);background:rgba(148,163,184,.07)">
+    <div class="rowline" style="align-items:center;cursor:pointer" id="trash-toggle">
+      <b style="font-size:13.5px">🗑 已刪除的細項（${tl.length}）</b>
+      <span class="muted" style="font-size:12px">${trashOpen?'▾ 收起':'▸ 展開'}</span>
+      <span style="flex:1"></span>
+      ${trashOpen?`<button class="btn sub sm" id="trash-clear" title="清空後就真的沒了">清空</button>`:''}
+    </div>`;
+  if(!trashOpen) return h+'</div>';
+  h+=`<div class="muted" style="font-size:12px;margin:6px 0 8px">當初刪掉、後來又要做的，按「復原」放回原本的區塊——<b>連原本的溯源一起還原</b>，子專案原本指著它的發包會自己接回去，不用重新發包。（只留最近 ${TRASH_MAX} 條）</div>
+    <table style="font-size:12.5px"><tr><th>刪除時間</th><th>原區塊</th><th>名稱及規格</th><th class="num">數量</th><th class="num">單價</th><th class="num">金額</th><th>怎麼刪的</th><th></th></tr>`;
+  rows.forEach(e=>{
+    const it=e.item||{};
+    const d=new Date(e.at||0);
+    const when=isNaN(d.getTime())?'—':`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+    const blkGone=!proj.blocks.some(x=>x.id===e.blkId||x.name===e.blkName);
+    const nOrphan=kids.reduce((s,k)=>s+k.blocks.reduce((s2,b)=>s2+b.items.filter(x=>x.srcId===it.id).length,0),0);
+    h+=`<tr>
+      <td class="muted" style="font-size:11.5px;white-space:nowrap">${when}</td>
+      <td>${esc(e.blkName||'')}${blkGone?'<span class="tag" style="background:rgba(251,191,36,.2);border-color:rgba(251,191,36,.5);color:#fcd34d" title="這個區塊已經不在了，復原時會照原樣把區塊一起建回來">區塊已刪</span>':''}</td>
+      <td>${it.groupId&&it.groupName?`${esc(it.groupName)}-${esc(it.name||'')}`:esc(it.name||'')}${nOrphan?`<span class="tag" style="background:rgba(96,165,250,.2);border-color:rgba(96,165,250,.5);color:#bfdbfe" title="有 ${nOrphan} 條子專案的細項還指著它（現在是孤兒發包），復原後會自己接回去">孤兒 ${nOrphan}</span>`:''}</td>
+      <td class="num">${qfmt(it.qty)} ${esc(it.unit||'')}</td>
+      <td class="num">${it.price?qfmt(it.price):''}</td>
+      <td class="num">${qfmt(it.amount)}</td>
+      <td class="muted" style="font-size:11.5px">${esc(e.why||'')}</td>
+      <td style="white-space:nowrap"><button class="btn sm" data-trashrestore="${e.id}">↩ 復原</button> <button class="btn sub sm" data-trashdrop="${e.id}" title="從回收桶移除，不再顯示">✕</button></td></tr>`;
+  });
+  return h+'</table></div>';
 }
 
 // 「本次請款計算」整塊抽出來：打字時只更新其中幾個數字，會讓累計、暫扣款、實付
@@ -1925,7 +1995,7 @@ function setProgInput(proj,blkId,itemId,kind,val){
 }
 
 document.addEventListener('click',async e=>{
-  const t=e.target.closest('[data-tab],[data-editblk],[data-delblk],[data-edititem],[data-delitem],[data-additem],[data-splititem],[data-sortitems],[data-grouptoggle],[data-groupmerge],[data-groupdetect],[data-whtoggle],[data-rttoggle],[data-whtax],[data-whtaxauto],[data-rtamt],[data-selfone],[data-selfrooms],[data-selfrest],[data-selfclear],[data-delmode],[data-delcancel],[data-delall],[data-delnone],[data-delinv],[data-delzero],[data-deldo],#sub-toggle,#sub-close,#sub-go,[data-backfill],[data-backfillcancel],[data-backfillok],[data-addmissblk],#drift-sync,#drift-sync-price,[data-copyinto],[data-copyok],[data-copycancel],[data-batchedit],[data-batchok],[data-batchcancel],[data-batchalledit],[data-batchallok],[data-batchallcancel],[data-itemok],[data-itemcancel],[data-blkok],[data-blkcancel],[data-bapply],[data-gapply],#btn-invrecon,[data-editextra],[data-delextra],#btn-import,#btn-import2,#btn-newproj,#btn-newproj2,#btn-addblk,#btn-addblk-ok,#btn-addperiod,#btn-delperiod,#btn-addextra,#btn-roundup,[data-gotoproj],#btn-print,#btn-setretain,#orphan-fix,#orphan-detach,#proj-groupall,#set-save,#proj-dup,#proj-detach,#backup-export,#backup-import-btn,#proj-del,#cloud-push,#cloud-pull');
+  const t=e.target.closest('[data-tab],[data-editblk],[data-delblk],[data-edititem],[data-delitem],[data-additem],[data-splititem],[data-sortitems],[data-grouptoggle],[data-groupmerge],[data-groupdetect],[data-whtoggle],[data-rttoggle],[data-whtax],[data-whtaxauto],[data-rtamt],[data-selfone],[data-selfrooms],[data-selfrest],[data-selfclear],[data-delmode],[data-delcancel],[data-delall],[data-delnone],[data-delinv],[data-delzero],[data-deldo],#sub-toggle,#sub-close,#sub-go,[data-backfill],[data-backfillcancel],[data-backfillok],[data-addmissblk],#trash-toggle,#trash-clear,[data-trashrestore],[data-trashdrop],#drift-sync,#drift-sync-price,[data-copyinto],[data-copyok],[data-copycancel],[data-batchedit],[data-batchok],[data-batchcancel],[data-batchalledit],[data-batchallok],[data-batchallcancel],[data-itemok],[data-itemcancel],[data-blkok],[data-blkcancel],[data-bapply],[data-gapply],#btn-invrecon,[data-editextra],[data-delextra],#btn-import,#btn-import2,#btn-newproj,#btn-newproj2,#btn-addblk,#btn-addblk-ok,#btn-addperiod,#btn-delperiod,#btn-addextra,#btn-roundup,[data-gotoproj],#btn-print,#btn-setretain,#orphan-fix,#orphan-detach,#proj-groupall,#set-save,#proj-dup,#proj-detach,#backup-export,#backup-import-btn,#proj-del,#cloud-push,#cloud-pull');
   if(!t)return;
   const proj=curProj();
   if(t.dataset.tab){state.tab=t.dataset.tab;save();render();return;}
@@ -1969,7 +2039,8 @@ document.addEventListener('click',async e=>{
   if(t.dataset.blkcancel){ blkEdit=null; blkAdd=false; render(); return; }
   if(t.dataset.delblk){
     const b=proj.blocks.find(x=>x.id===t.dataset.delblk);if(!b)return;
-    if(!confirm(`刪除「${b.name}」整個區塊（${b.items.length} 條細項）？進度紀錄也會一併移除。`))return;
+    if(!confirm(`刪除「${b.name}」整個區塊（${b.items.length} 條細項）？進度紀錄也會一併移除。\n\n細項會留在「🗑 已刪除的細項」裡，之後可以逐條復原。`))return;
+    trashPush(proj,b,b.items,'刪除區塊');
     for(const it of b.items)for(const p of proj.periods)if(p.prog)delete p.prog[it.id];
     proj.blocks=proj.blocks.filter(x=>x!==b);save();render();return;
   }
@@ -2039,6 +2110,7 @@ document.addEventListener('click',async e=>{
         alsoDelKid=confirm(`這條已經發包給：\n\n${who}\n\n那幾條要一起刪掉嗎？\n\n【確定】一起刪（乾淨）\n【取消】只刪母專案——子專案那幾條會留著，並在發包分配被列為「對應不到母專案」的孤兒發包`);
       }
     }
+    trashPush(proj,b,[it],'刪除細項');
     for(const p of proj.periods)if(p.prog)delete p.prog[it.id];
     b.items=b.items.filter(x=>x!==it);
     if(alsoDelKid){
@@ -2085,6 +2157,30 @@ document.addEventListener('click',async e=>{
     proj.blocks.push(nb);
     openBlk.add(nb.id); backfill=nb.id;      // 補完直接打開挑選清單，不用再找一次
     save(); render(); return;
+  }
+  if(t.id==='trash-toggle'){ trashOpen=!trashOpen; render(); return; }
+  if(t.id==='trash-clear'){
+    const n=trashList(proj).length;
+    if(!confirm(`清空回收桶的 ${n} 條？\n\n清掉之後就真的沒了，之後要做只能手動加回（而且接不回子專案的發包）。`)) return;
+    proj.trash=[]; save(); render(); return;
+  }
+  if(t.dataset.trashdrop){
+    const e2=trashList(proj).find(x=>x.id===t.dataset.trashdrop); if(!e2) return;
+    if(!confirm(`把「${(e2.item||{}).name||''}」從回收桶移除？之後就復原不了了。`)) return;
+    proj.trash=trashList(proj).filter(x=>x!==e2); save(); render(); return;
+  }
+  if(t.dataset.trashrestore){
+    const e2=trashList(proj).find(x=>x.id===t.dataset.trashrestore); if(!e2) return;
+    const it0=e2.item||{};
+    const blkGone=!proj.blocks.some(x=>x.id===e2.blkId||x.name===e2.blkName);
+    const kids=proj.parentId?[]:childProjects(proj.id);
+    const nOrphan=kids.reduce((s,k)=>s+k.blocks.reduce((s2,b)=>s2+b.items.filter(x=>x.srcId===it0.id).length,0),0);
+    if(!confirm(`把「${it0.name||''}」復原回「${e2.blkName||''}」？\n\n・合約金額會增加 ${money((Number(it0.amount)||0)*(Number(e2.blkCount)||1))}\n${blkGone?`・「${e2.blkName}」這個區塊已經不在了，會照原樣一起建回來（${qfmt(e2.blkCount)} ${e2.blkUnit||''}）\n`:''}${nOrphan?`・有 ${nOrphan} 條子專案的細項還指著它，復原後那些孤兒發包會自己接回去\n`:''}・進度紀錄不會回來，要重新填`)) return;
+    const r=trashRestore(proj,e2);
+    if(r.dup){ alert('這條已經在合約裡了（可能之前復原過）。'); return; }
+    openBlk.add(r.blk.id); save(); render();
+    alert(`已復原到「${r.blk.name}」。${nOrphan?`\n\n子專案原本指著它的 ${nOrphan} 條發包已經接回去了。`:''}`);
+    return;
   }
   if(t.dataset.backfillok){
     const b=proj.blocks.find(x=>x.id===t.dataset.backfillok); if(!b) return;
@@ -2319,7 +2415,8 @@ document.addEventListener('click',async e=>{
     if(!gone.length){ alert('還沒勾選任何細項。'); return; }
     const used=gone.filter(x=>proj.periods.some(pp=>pp.prog&&pp.prog[x.id])).length;
     const amt=gone.reduce((s,x)=>s+itemValue(x,b),0);
-    if(!confirm(`刪除「${b.name}」裡勾選的 ${gone.length} 條細項？\n\n・合約金額會減少 ${money(amt)}\n${used?`・其中 ${used} 條已填過進度，該進度會一併清除\n`:''}・此動作無法復原（可先到設定頁匯出備份）`))return;
+    if(!confirm(`刪除「${b.name}」裡勾選的 ${gone.length} 條細項？\n\n・合約金額會減少 ${money(amt)}\n${used?`・其中 ${used} 條已填過進度，該進度會一併清除\n`:''}・細項會留在「🗑 已刪除的細項」裡，之後可以逐條復原`))return;
+    trashPush(proj,b,gone,'批次刪除');
     const ids=new Set(gone.map(x=>x.id));
     b.items=b.items.filter(x=>!ids.has(x.id));
     for(const pp of proj.periods) if(pp.prog) ids.forEach(i=>delete pp.prog[i]);
@@ -2327,7 +2424,7 @@ document.addEventListener('click',async e=>{
     const left={}; b.items.forEach(x=>{ if(x.groupId) left[x.groupId]=(left[x.groupId]||0)+1; });
     b.items.forEach(x=>{ if(x.groupId&&left[x.groupId]<=1){ delete x.groupId; delete x.groupName; } });
     delSel.clear(); delMode=null; save(); render();
-    alert(`已刪除 ${gone.length} 條細項。`);
+    alert(`已刪除 ${gone.length} 條細項。之後又要做的話，到合約明細最下面的「🗑 已刪除的細項」復原。`);
     return;
   }
   if(t.dataset.grouptoggle){ const g=t.dataset.grouptoggle; openGroup.has(g)?openGroup.delete(g):openGroup.add(g); render(); return; }
