@@ -109,7 +109,7 @@ body.printing #print-overlay{display:block;position:absolute;inset:0;background:
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.08.06z-xcopy';
+const APP_VERSION='vG2026.08.06z2-xcopy';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -2526,9 +2526,11 @@ document.addEventListener('click',async e=>{
     const gmap={};
     b.items.forEach(x=>{ if(x.groupId&&x.groupName) gmap[x.groupName]=x.groupId; });
     plan.forEach(({it,price,amount})=>{
-      const ni={ id:uid(), no:'增', tag:'', chapter:it.chapter||'', name:it.name, unit:it.unit,
+      // 項次／追加旗標照來源帶：這是把原本就該有的細項抓回來，不是追加工程。
+      // 寫死 no:'增' 會被當成追加、跳出折讓的分母，簽約總價一設就算錯。
+      const ni={ id:uid(), no:it.no||'', tag:'', chapter:it.chapter||'', name:it.name, unit:it.unit,
         qty:it.qty, qtyExpr:it.qtyExpr||'', price, priceExpr:'', amount, remark:it.remark||'' };
-      if(it.extra!==undefined) ni.extra=it.extra;
+      if(it.extra!==undefined) ni.extra=it.extra; else if(String(it.no||'')==='增') ni.extra=true;
       if(it.groupName){ ni.groupName=it.groupName; ni.groupId=gmap[it.groupName]||(gmap[it.groupName]=uid()); }
       b.items.push(ni);
     });
