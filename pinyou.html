@@ -114,7 +114,7 @@
 <nav id="nav"></nav>
 <main id="app"></main>
 <script>
-const APP_VERSION = 'vP2026.08.06i-partnerview'; // 版本號顯示在頁首，方便確認拿到新版
+const APP_VERSION = 'vP2026.09.10-prsync'; // 版本號顯示在頁首，方便確認拿到新版
 const LS='pinyou_data_v1';
 // ── 雲端端對端加密（與 payroll／簡化版共用同一組密碼與鑰匙；同網域共用 localStorage，解鎖一次三系統都通）──
 const E2E_SALT='PMENC1|dz-gx-py|2026';
@@ -398,11 +398,13 @@ async function loadCloud(){
     if(got.ok){
       mergeCloudDoc(JSON.parse(got.data));
       persistMainLocal(JSON.stringify(packData()));
+      prCloudMerged=true; prAfterSync();   // 名單到齊了，這時候檢查才準
       safeRender();
       if(localDirty){ setStatus('已同步（回傳中…）'); pushCloud(); } else setStatus('已同步');
     } else {
       // 兩邊都沒有：本機有資料就上傳當底
       const hasLocal=MERGE.some(k=>(state[k]||[]).length>0);
+      prCloudMerged=true; prAfterSync();   // 雲端沒東西可合併＝本機就是全部，這時檢查也是準的
       if(hasLocal){ localDirty=true; setStatus('雲端無資料，正在上傳本機…'); pushCloud(); }
       else setStatus('雲端尚無資料（本機也是空的）');
     }
@@ -1368,16 +1370,22 @@ function bind(){
   });
   document.querySelectorAll('[data-exdel]').forEach(b=>b.onclick=()=>{ if(confirm('刪除這筆支出？')){ state.expenses=state.expenses.filter(x=>x.id!==b.dataset.exdel); save(); } });
   // PAYROLL 互抓：新增/忽略
-  on('pr-check','onclick',()=>{ checkPayrollCosts(true); render(); });
+  on('pr-check','onclick',()=>{
+    // 雲端還沒同步就比對，會把已經帶入／已經忽略的整批誤判成新的
+    if(!prSyncReady()&&!confirm('雲端還沒同步完成（目前狀態：'+(cloudStatus||'—')+'）。\n\n現在比對可能會把「已經帶入過」和「已經忽略過」的紀錄再列一次。\n\n建議等狀態變成「已同步」再按。還是要現在比對嗎？')) return;
+    checkPayrollCosts(true,true); render(); });
   document.querySelectorAll('[data-prsite]').forEach(sel=>sel.onchange=()=>{ const f=prFound&&prFound[+sel.dataset.prsite]; if(f) f.site=sel.value; });
   document.querySelectorAll('[data-pradd]').forEach(b=>b.onclick=()=>{ const f=prFound&&prFound[+b.dataset.pradd]; if(!f) return;
     if((f.src==='earned'||f.src==='cost')&&!f.site){ alert('這筆的案場名兩邊對不上，請先選「算到哪個案場」再新增。'); return; }
     prAddExpense(f); prFound.splice(+b.dataset.pradd,1); save(); });
   document.querySelectorAll('[data-prskip]').forEach(b=>b.onclick=()=>{ const f=prFound&&prFound[+b.dataset.prskip]; if(!f) return; state.deletedIds=[...new Set([...(state.deletedIds||[]),f.eid])]; prFound.splice(+b.dataset.prskip,1); save(); });
   on('pr-addall','onclick',()=>{ if(!prFound||!prFound.length) return;
-    const pending=prFound.filter(f=>f.src==='earned'&&!f.site).length;
-    if(!confirm(`把 ${prFound.length-pending} 筆 PAYROLL 支出全部帶入？`+(pending?`\n\n（另有 ${pending} 筆發包款還沒選案場，會先留著）`:''))) return;
-    const left=[]; prFound.forEach(f=>{ if(!prAddExpense(f)) left.push(f); }); prFound=left; save(); });
+    // 案場對不上的「發包款」與「案場成本」都帶不進去。原本只算了發包款，
+    // 成本那幾筆會靜靜留下來，使用者以為處理完了，下次開頁又看到。
+    const pending=prFound.filter(f=>(f.src==='earned'||f.src==='cost')&&!f.site).length;
+    if(!confirm(`把 ${prFound.length-pending} 筆 PAYROLL 支出全部帶入？`+(pending?`\n\n另有 ${pending} 筆還沒選「算到哪個案場」，這次不會帶入、會留在清單上等你逐筆選。`:''))) return;
+    const left=[]; prFound.forEach(f=>{ if(!prAddExpense(f)) left.push(f); }); prFound=left; save();
+    if(left.length) alert(`還有 ${left.length} 筆留在清單上：案場名兩邊對不上，請逐筆選「算到哪個案場」再新增。`); });
   on('pr-skipall','onclick',()=>{ if(!prFound||!prFound.length) return; if(!confirm(`全部忽略這 ${prFound.length} 筆？之後不會再提醒。`)) return; state.deletedIds=[...new Set([...(state.deletedIds||[]),...prFound.map(f=>f.eid)])]; prFound=[]; save(); });
   document.querySelectorAll('[data-exedit]').forEach(b=>b.onclick=()=>{ expEditId=b.dataset.exedit; render(); });
   document.querySelectorAll('[data-exeditcancel]').forEach(b=>b.onclick=()=>{ expEditId=null; render(); });
@@ -1481,6 +1489,7 @@ function doImport(text,merge){
 // ---- 🔗 PAYROLL 互抓：讀 PAYROLL 雲端的案場手動成本，抓到這邊沒有的就通知逐筆確認 ----
 const PAYROLL_FS_URL='https://firestore.googleapis.com/v1/projects/payroll-d1abe/databases/(default)/documents/payroll/main?key=AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
 let prFound=null, prChecking=false, prSkippedNoMatch=0, prRecon=null, prSrcStatus=null; // prRecon＝對帳用的來源端統計 // null=尚未檢查；[]=已檢查無新項目
+let prCloudMerged=false, prPendingCheck=false; // 雲端是否已合併進來／有沒有一次被擋下來的檢查在等
 // 品佑代支出帳戶的項目沒有案場欄位，統一掛在這個名稱底下，才不會變成看不到的無案場雜支
 const PAYROLLNEW_FS_URL='https://firestore.googleapis.com/v1/projects/payroll-d1abe/databases/(default)/documents/payrollNew/main?key=AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
 // 往來對象：各自一套 PAYROLL、各自一個代支出案場名，結餘分開算
@@ -1509,8 +1518,26 @@ async function fetchPayrollDoc(url){
   }
   return JSON.parse(rawJs);
 }
-async function checkPayrollCosts(showFail){
+// 這份檢查靠 state 裡「已經帶入的紀錄」與「按過忽略的記號」來判斷哪些是新的。
+// 雲端還沒合併進來就跑，那兩份名單是空的或殘缺的 —— 已經帶入過、已經忽略過的
+// 會被當成新的整批再列一次。所以雲端沒到齊之前一律不檢查。
+// 雲端合併完成後叫這個：這時候「已帶入」與「已忽略」的名單才是完整的。
+function prAfterSync(){
+  if(prFound!==null&&!prPendingCheck) return;   // 已經檢查過就不重跑
+  prPendingCheck=false;
+  setTimeout(()=>{ try{ checkPayrollCosts(false); }catch(e){} },0);
+}
+function prSyncReady(){
+  if(!CLOUD_ON) return true;              // 純本機模式：本機就是全部
+  if(prCloudMerged) return true;          // 這次開頁已經成功合併過雲端
+  return false;
+}
+async function checkPayrollCosts(showFail,force){
   if(prChecking) return; prChecking=true;
+  if(!force&&!prSyncReady()){
+    // 還沒同步就先不判斷，等 loadCloud 成功後會自己再跑一次
+    prChecking=false; prPendingCheck=true; return;
+  }
   const have=new Set(state.expenses.map(x=>x&&x.id));
   const haveInc=new Set(state.incomes.map(x=>x&&x.id));
   const haveSrc=new Set(state.expenses.map(x=>x&&x.payrollId).filter(Boolean).map(String));
@@ -1659,7 +1686,10 @@ load(); keepDailySnapshot();
 (function(){ const v=document.getElementById('app-version'); if(v) v.textContent=APP_VERSION; })();
 setStatus(CLOUD_ON?'連線中…':'本機模式');
 appLockGate(function(){ render(); if(CLOUD_ON) loadCloud(); });
-setTimeout(()=>{ try{ checkPayrollCosts(false); }catch(e){} }, 3000); // 開頁自動檢查 PAYROLL 有沒有新成本（背景、不打擾）
+// 開頁自動檢查 PAYROLL 有沒有新成本（背景、不打擾）。
+// 不再用固定秒數 —— 雲端合併完成時 loadCloud 會自己叫 prAfterSync()。
+// 這裡只留一個保險：純本機模式（沒有雲端可等）才自己跑。
+setTimeout(()=>{ try{ if(!CLOUD_ON) checkPayrollCosts(false); }catch(e){} }, 3000);
 // 離開頁面時「不」盲目覆蓋雲端（sendBeacon 無法先讀取合併，會把另一台裝置剛新增的紀錄洗掉）。
 // 未存變更已用 LS_DIRTY 記在本機，下次開啟或切回前景時 loadCloud→pushCloud 會安全合併回推。
 window.addEventListener('pagehide',()=>{ if(CLOUD_ON&&localDirty){ try{ localStorage.setItem(LS_DIRTY,'1'); localStorage.setItem(LS,JSON.stringify(packData())); }catch(e){} } });
