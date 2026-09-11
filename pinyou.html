@@ -114,7 +114,7 @@
 <nav id="nav"></nav>
 <main id="app"></main>
 <script>
-const APP_VERSION = 'vP2026.09.11b-wagekey'; // 版本號顯示在頁首，方便確認拿到新版
+const APP_VERSION = 'vP2026.09.11c-bridgeoff'; // 版本號顯示在頁首，方便確認拿到新版
 const LS='pinyou_data_v1';
 // ── 雲端端對端加密（與 payroll／簡化版共用同一組密碼與鑰匙；同網域共用 localStorage，解鎖一次三系統都通）──
 const E2E_SALT='PMENC1|dz-gx-py|2026';
@@ -251,7 +251,11 @@ function blank(){ return {projects:[],expenses:[],incomes:[],companies:[],accoun
   {id:'c-py',name:'品佑工程有限公司',taxId:'',addr:'',tel:'',bank:''},
   {id:'c-dz',name:'東澤工程行',taxId:'',addr:'',tel:'',bank:''},
   {id:'c-gx',name:'廣昕工程行',taxId:'',addr:'',tel:'',bank:''}
-],quotes:[],invoices:[],purchases:[],siteMap:{},deletedIds:[],resurrected:{ids:[],at:0}}; }
+],quotes:[],invoices:[],purchases:[],siteMap:{},deletedIds:[],resurrected:{ids:[],at:0},prBridge:false}; }
+// PAYROLL 自動抓取：預設關閉。重複提醒的問題修過幾輪仍未收斂，
+// 使用者決定改成單方面在 PAYROLL 記錄就好。功能保留、只是不啟用，
+// 已經帶入的支出與按過的忽略記錄都原封不動，隨時可以在設定頁開回來。
+const prBridgeOn=()=>!!(state&&state.prBridge);
 function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
 function money(n){ n=Math.round(Number(n)||0); return (n<0?'-':'')+'$'+Math.abs(n).toLocaleString('en-US'); }
 function pct(n){ return (Number(n)||0*1).toLocaleString('en-US',{style:'percent',maximumFractionDigits:1}); }
@@ -260,7 +264,7 @@ function escBr(s){ return esc(s).replace(/\n/g,'<br>'); }
 function today(){ const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; } // 本地時區；toISOString 是 UTC，台灣早上 8 點前會差一天
 function num(v){ const n=parseFloat(v); return isNaN(n)?0:n; }
 
-function packData(){ return {projects:state.projects,expenses:state.expenses,incomes:state.incomes,companies:state.companies,accounts:state.accounts,items:state.items||[],quotes:state.quotes||[],invoices:state.invoices||[],purchases:state.purchases||[],myCompanies:state.myCompanies||[],siteMap:state.siteMap||{},deletedIds:state.deletedIds||[],resurrected:state.resurrected||{ids:[],at:0},savedAt:Date.now()}; }
+function packData(){ return {projects:state.projects,expenses:state.expenses,incomes:state.incomes,companies:state.companies,accounts:state.accounts,items:state.items||[],quotes:state.quotes||[],invoices:state.invoices||[],purchases:state.purchases||[],myCompanies:state.myCompanies||[],siteMap:state.siteMap||{},deletedIds:state.deletedIds||[],resurrected:state.resurrected||{ids:[],at:0},prBridge:!!state.prBridge,savedAt:Date.now()}; }
 function load(){ try{ const r=localStorage.getItem(LS); if(r){ state=Object.assign(blank(),JSON.parse(r)); } }catch(e){} localDirty=!!localStorage.getItem(LS_DIRTY); _prevIds=collectIds(); refreshRecordBaseline(); }
 // 每日本機快照：每天第一次開啟/儲存時留一份當下資料，保留 7 天（雲端是單一檔案沒歷史，這是誤刪保險）
 function keepDailySnapshot(){
@@ -369,6 +373,7 @@ function mergeCloudDoc(cd){
     (cd.accounts||[]).forEach(a=>{ if(!state.accounts.includes(a)) state.accounts.push(a); });
   }
   state.resurrected=resEff;
+  if(cd.prBridge!==undefined && cloudTs>=localTs) state.prBridge=!!cd.prBridge; // 開關也跟著同步
   const del=new Set(state.deletedIds||[]);
   MERGE.forEach(k=>{ state[k]=(state[k]||[]).filter(r=>!(r&&del.has(r.id))); });
   // 自癒：本機有、但雲端沒有（且未被刪除）的紀錄 → 標記為待上傳，稍後回推雲端，避免本機獨有資料被留在單機
@@ -748,6 +753,7 @@ function prDiagHtml(){
 }
 // 待帶入卡片：支出頁與往來頁共用（內容不依賴 viewExp 的區域變數）
 function prPendingCardHtml(){
+  if(!prBridgeOn()) return '';
   return (typeof prFound!=='undefined'&&prFound&&prFound.length)?`<div class="card" style="border-left:3px solid #2563eb">
     <h2>📥 PAYROLL 有 ${prFound.length} 筆支出還沒帶入</h2>
     ${prDiagHtml()}
@@ -829,8 +835,8 @@ function viewExp(){
       <button class="act on" id="e-print">🖨 匯出明細 PDF</button>
       ${(expFilter||expItemFilter||expFrom||expTo)?'<button class="act" id="e-clearfilter">清除篩選</button>':''}
       <button class="act" id="e-rename" title="把某個項目名稱一次全部改掉，用來整理混亂的名稱">項目批次改名</button>
-      <button class="act" id="pr-check" title="讀 PAYROLL 雲端的案場成本，有這邊沒記的會列出來讓你確認">${(typeof prChecking!=='undefined'&&prChecking)?'檢查中…':'🔗 檢查PAYROLL'}</button>
-      ${(typeof prFound!=='undefined'&&prFound&&!prFound.length)?'<span class="sub" style="margin:0">PAYROLL 沒有新成本 ✓</span>':''}
+      ${prBridgeOn()?`<button class="act" id="pr-check" title="讀 PAYROLL 雲端的案場成本，有這邊沒記的會列出來讓你確認">${(typeof prChecking!=='undefined'&&prChecking)?'檢查中…':'🔗 檢查PAYROLL'}</button>
+      ${(typeof prFound!=='undefined'&&prFound&&!prFound.length)?'<span class="sub" style="margin:0">PAYROLL 沒有新成本 ✓</span>':''}`:''}
       <div style="margin-left:auto;font-weight:700">合計 <span style="color:var(--danger)">${money(tot)}</span></div>
     </div>
     ${filtered.length===0?'<div class="empty">尚無支出。</div>':`<div class="scroll"><table>
@@ -1235,6 +1241,13 @@ function viewSet(){
       <div style="margin-top:10px;font-size:13px"><label style="cursor:pointer"><input type="checkbox" id="app-lock-chk" ${appLockOn()?'checked':''}> <b>開頁鎖</b>：打開先要密碼（四個自己的系統共用）</label></div>
     </div>
     <div style="margin-top:12px;padding-top:10px;border-top:1px dashed var(--line)">
+      <div style="font-weight:700;font-size:13px;margin-bottom:4px">📥 自動抓 PAYROLL 支出${prBridgeOn()?'（已開啟）':'（<b style="color:var(--danger)">已關閉</b>）'}</div>
+      <p class="sub" style="margin:0 0 8px">開啟後會去讀 PAYROLL 雲端，把那邊有、這本帳沒有的支出列出來讓你確認帶入。
+      <b>目前預設關閉</b>——重複提醒的問題一直沒收斂，改成單方面在 PAYROLL 記錄就好。
+      關閉<b>不會刪掉任何東西</b>：已經帶入的支出、按過忽略的記錄都原封不動，只是不再檢查、不再提醒。</p>
+      <label style="font-size:13px;cursor:pointer"><input type="checkbox" id="pr-bridge-chk" ${prBridgeOn()?'checked':''}> 開啟「自動抓 PAYROLL 支出」</label>
+    </div>
+    <div style="margin-top:12px;padding-top:10px;border-top:1px dashed var(--line)">
       <div style="font-weight:700;font-size:13px;margin-bottom:4px">🚑 本機每日快照（誤刪救援）</div>
       <p class="sub" style="margin:0 0 8px">這台裝置每天第一次開啟時自動留一份資料快照，保留 7 天。誤刪資料時選一天按「合併救回」：只補回「快照有、現在沒有」的紀錄，不覆蓋現有資料，救回後同步到各裝置也不會被再刪。</p>
       <div style="display:flex;gap:6px;flex-wrap:wrap">${listDailySnapshots().map(d=>`<button class="act" data-snaprestore="${d}">${d} 合併救回</button>`).join('')||'<span class="sub" style="margin:0">尚無快照（每天第一次開啟自動留存）。</span>'}</div>
@@ -1290,7 +1303,7 @@ function viewSet(){
 // ================= render / bind =================
 function render(){
   const _sx=window.scrollX,_sy=window.scrollY; // 重繪後還原捲動位置，避免畫面跳動
-  document.getElementById('nav').innerHTML=TABS.map(([k,t])=>`<button class="${tab===k?'on':''}" data-tab="${k}">${(k==='exp'&&typeof prFound!=='undefined'&&prFound&&prFound.length)?t+' 🔺'+prFound.length:t}</button>`).join('');
+  document.getElementById('nav').innerHTML=TABS.map(([k,t])=>`<button class="${tab===k?'on':''}" data-tab="${k}">${(k==='exp'&&prBridgeOn()&&typeof prFound!=='undefined'&&prFound&&prFound.length)?t+' 🔺'+prFound.length:t}</button>`).join('');
   const v={dash:viewDash,proj:viewProj,exp:viewExp,inc:viewInc,partner:viewPartner,quote:()=>viewDoc('quote'),invoice:()=>viewDoc('invoice'),purchase:()=>viewDoc('purchase'),co:viewCo,set:viewSet}[tab];
   document.getElementById('app').innerHTML=v();
   setBalance();
@@ -1450,6 +1463,14 @@ function bind(){
   on('e2e-on','onclick',()=>e2eEnable().then(()=>render()));
   on('e2e-off','onclick',()=>{ e2eDisable(); render(); });
   on('app-lock-chk','onchange',()=>{ appLockToggle(); render(); });
+  on('pr-bridge-chk','onchange',e=>{
+    const want=!!(e&&e.target&&e.target.checked);
+    if(want&&!confirm('要開啟「自動抓 PAYROLL 支出」嗎？\n\n開啟後每次同步完成會去比對一次，把 PAYROLL 有、這本帳沒有的支出列出來。\n\n（之前一直重複提醒才關掉的，開了如果又開始煩，回來這裡關掉就好。）')) { e.target.checked=false; return; }
+    state.prBridge=want;
+    prFound=null; prPendingCheck=false;
+    save();
+    if(want) prAfterSync();
+  });
   // 公司資料
   on('myco-save','onclick',()=>{ state.myCompanies.forEach((c,i)=>{ const g=id=>document.getElementById(id+i); if(g('mc-name')) c.name=g('mc-name').value.trim(); if(g('mc-tax')) c.taxId=g('mc-tax').value.trim(); if(g('mc-addr')) c.addr=g('mc-addr').value.trim(); if(g('mc-tel')) c.tel=g('mc-tel').value.trim(); if(g('mc-bankname')) c.bankName=g('mc-bankname').value.trim(); if(g('mc-bankbranch')) c.bankBranch=g('mc-bankbranch').value.trim(); if(g('mc-bankacctname')) c.bankAcctName=g('mc-bankacctname').value.trim(); if(g('mc-bankacctno')) c.bankAcctNo=g('mc-bankacctno').value.trim(); }); save(); alert('公司資料已儲存'); });
   on('myco-add','onclick',()=>{ state.myCompanies.push({id:uid(),name:'新公司',taxId:'',addr:'',tel:'',bank:''}); save(); });
@@ -1538,6 +1559,7 @@ async function fetchPayrollDoc(url){
 // 會被當成新的整批再列一次。所以雲端沒到齊之前一律不檢查。
 // 雲端合併完成後叫這個：這時候「已帶入」與「已忽略」的名單才是完整的。
 function prAfterSync(){
+  if(!prBridgeOn()) return;
   if(prFound!==null&&!prPendingCheck) return;   // 已經檢查過就不重跑
   prPendingCheck=false;
   setTimeout(()=>{ try{ checkPayrollCosts(false); }catch(e){} },0);
@@ -1548,6 +1570,7 @@ function prSyncReady(){
   return false;
 }
 async function checkPayrollCosts(showFail,force){
+  if(!prBridgeOn()){ prFound=null; if(showFail) alert('「自動抓 PAYROLL 支出」目前是關閉的。\n\n要用的話到「設定」頁打開。'); return; }
   if(prChecking) return; prChecking=true;
   if(!force&&!prSyncReady()){
     // 還沒同步就先不判斷，等 loadCloud 成功後會自己再跑一次
