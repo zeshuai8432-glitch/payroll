@@ -114,7 +114,7 @@
 <nav id="nav"></nav>
 <main id="app"></main>
 <script>
-const APP_VERSION = 'vP2026.09.11-prdiag'; // 版本號顯示在頁首，方便確認拿到新版
+const APP_VERSION = 'vP2026.09.11b-wagekey'; // 版本號顯示在頁首，方便確認拿到新版
 const LS='pinyou_data_v1';
 // ── 雲端端對端加密（與 payroll／簡化版共用同一組密碼與鑰匙；同網域共用 localStorage，解鎖一次三系統都通）──
 const E2E_SALT='PMENC1|dz-gx-py|2026';
@@ -1558,6 +1558,12 @@ async function checkPayrollCosts(showFail,force){
   const haveSrc=new Set(state.expenses.map(x=>x&&x.payrollId).filter(Boolean).map(String));
   const haveLed=new Set([...state.expenses,...state.incomes].map(x=>x&&x.payrollLedgerId).filter(Boolean).map(String));
   const del=new Set(state.deletedIds||[]);
+  // 薪資那筆「公司負擔工資」在來源端每記一次就是一個新 id，光比 id 永遠抓不到重複。
+  // 它帶著計薪期間標籤 payrollWage，同一期的工資項目名稱固定（例 0711工資），
+  // 所以改用「對象＋項目名」這個穩定的業務鍵再擋一層，舊資料也適用。
+  const wageKey=(partner,note)=>String(partner||'')+'|'+String(note||'').replace(/\s/g,'');
+  const haveWage=new Set(state.expenses.filter(x=>x&&x.partnerAcct)
+    .map(x=>wageKey(partnerOf(x), x.item)));
   const accName={dz:'東澤工程行',gx:'廣昕工程行',py:'品佑工程有限公司'};
   const myProjects=new Set((state.projects||[]).map(p=>String(p&&p.name||'').trim()).filter(Boolean));
   const found=[]; const recon=[]; let skipped=0; let anyOK=false, lastErr=null;
@@ -1615,8 +1621,13 @@ async function checkPayrollCosts(showFail,force){
         const eid='pk-'+key;
         const legacyHit=(P==='')&&(have.has('pk-'+t.id)||haveLed.has(String(t.id)));
         if(have.has(eid)||haveLed.has(String(key))||legacyHit||del.has(eid)) return;
+        // 薪資工資那筆：來源端每重記一次就換新 id，改用「對象＋項目名」這個穩定鍵再擋一次
+        if(t.payrollWage && haveWage.has(wageKey(pt.label, t.note))) return;
+        // 來源端如果本來就留了好幾筆同一期的（舊資料），這次也只列一筆
+        if(t.payrollWage) haveWage.add(wageKey(pt.label, t.note));
         found.push({c:{id:key, date:t.date, item:String(t.note||'品佑代支出'), amount:t.amount},
-          eid, site:pt.site, account:'品佑工程有限公司', src:'park', partner:pt.label});
+          eid, site:pt.site, account:'品佑工程有限公司', src:'park', partner:pt.label,
+          wageTag:t.payrollWage||''});
       } else {
         // 進來的錢：可能是品佑發包給他們（品佑的成本），也可能是他們做外面的（代收）
         const eid='pe-'+key;
@@ -1650,7 +1661,7 @@ function prAddExpense(f){
   const row={id:f.eid, date:c.date||'', site:f.site, item:String(c.item||(isPark?'品佑代支出':'PAYROLL成本')), amount:Number(c.amount)||0, account:f.account, method:'',
     note:isPark?'PAYROLL 品佑代支出帳戶':(isEarned?`發包給${f.partner||'往來對象'}`+(f.payrollSite?'（PAYROLL：'+f.payrollSite+'）':''):'')};
   if(f.partner) row.partner=f.partner;
-  if(isPark){ row.payrollLedgerId=c.id; row.partnerAcct=true; }
+  if(isPark){ row.payrollLedgerId=c.id; row.partnerAcct=true; if(f.wageTag) row.payrollWage=f.wageTag; }
   else if(isEarned){ row.payrollLedgerId=c.id; row.partnerEarned=true;
     if(f.payrollSite){ state.siteMap=state.siteMap||{}; state.siteMap[f.payrollSite]=f.site; } } // 記住對應，下次自動帶
   else { row.payrollId=f.srcKey||String(c.id);
