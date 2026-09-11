@@ -528,7 +528,7 @@ const FS_ROOT = 'https://firestore.googleapis.com/v1/projects/'+FS_PROJECT+'/dat
 const FS_DOC_BASE = FS_ROOT+'payroll/';
 const FS_SIG_BASE = FS_ROOT+'payrollSignatures/';
 const FS_REST_URL = FS_DOC_BASE+'main?key='+FS_KEY;
-const APP_VERSION = 'v2026.08.06h-metricfix';
+const APP_VERSION = 'v2026.09.11-wageonce';
 let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], tools:[], locations:[], assets:[], advances:[], accounts:[], ledger:[], deals:[], billings:[], measurements:[], contracts:{}, costs:[], textMemory:{clients:[],companies:[]}, parkAccId:'', oweBonus:{}, minFund:'', shareholderTx:[], myCompanies:[], payrollSnapshots:[], yearIncomeAdj:[], deletedIds:[], resurrected:{ids:[],at:0}, tab:'dash' };
 let cloudStatus='連線中…';
 let localDirty=false, lastCloudTs=0;
@@ -4841,6 +4841,15 @@ function snapshotPayroll(){
   state.payrollSnapshots.push({ id:uid(), from, to, createdAt:Date.now(), rows, totals });
   saveData(); pushCloud(); render();
   alert(`已結算存檔並鎖定：${from} ～ ${to}\n實發合計 ${money(totals.net)}`);
+  // 結算存檔只凍結數字、不寫帳。以前得自己記得再按旁邊那顆「記入品佑支出」，
+  // 很容易漏掉（品佑帳本那邊就少一筆公司負擔工資）。這裡順手問一下，但不自作主張。
+  if(state.parkAccId && totals.company>0){
+    const tag=from+'~'+to;
+    const already=state.ledger.some(t=>t.payrollWage===tag && t.accId===state.parkAccId);
+    if(confirm(`要順便把本期「公司負擔工資」${money(totals.company)} 記入品佑支出嗎？\n\n帳戶：${accountName(state.parkAccId)}（支出）\n\n`
+      +(already?'這期已經記過，按確定會用現在的數字更新那一筆（不會變成兩筆）。':'還沒記過，按確定會新增一筆。')
+      +'\n\n（也可以之後自己按「記入品佑支出」，結果一樣）')) postParkWage(true);
+  }
 }
 function deleteSnapshot(id){
   const s=(state.payrollSnapshots||[]).find(x=>x.id===id); if(!s) return;
@@ -4865,7 +4874,7 @@ function printSnapshot(id){
 }
 
 // 一鍵：把本期「公司負擔工資」記成品佑帳戶的一筆支出（項目＝該期起算月日＋工資，例：0711工資）
-function postParkWage(){
+function postParkWage(fromSnapshot){
   if(!state.parkAccId){ alert('尚未指定品佑帳戶。\n請到「品佑帳戶結算」頁選「哪個帳戶是品佑代支出」後再試。'); return; }
   const byEmp=buildPayroll(state.payFrom,state.payTo);
   const isPartner=id=>{ const e=state.employees.find(x=>x.id===id); return e&&e.partner; };
@@ -4879,9 +4888,23 @@ function postParkWage(){
   const note=payday.slice(5,7)+payday.slice(8,10)+'工資'; // 例：0711工資
   const date=payday;
   const tag=(state.payFrom||'')+'~'+(state.payTo||'');
-  const dup=state.ledger.find(t=>t.payrollWage===tag && t.accId===state.parkAccId);
-  if(dup && !confirm(`這個計薪期間（${tag}）已經記過一筆「${dup.note}」${money(dup.amount)}。\n\n要再新增一筆嗎？`)) return;
-  if(!dup && !confirm(`要把本期「公司負擔工資」記入品佑支出嗎？\n\n項目：${note}\n金額：${money(amount)}\n帳戶：${accountName(state.parkAccId)}（支出）\n日期：${date}`)) return;
+  // 同一個計薪期間只留一筆。以前是每按一次就 push 一筆新 id，調整出工後再按就多一筆，
+  // 品佑帳本看到的是「兩筆不同來源紀錄」，忽略掉舊的也擋不住新的，於是一直重複跳出來。
+  const dups=state.ledger.filter(t=>t.payrollWage===tag && t.accId===state.parkAccId);
+  const dup=dups[0];
+  if(dup){
+    const same=(Number(dup.amount)||0)===amount && dup.date===date && dup.note===note;
+    if(same && dups.length===1){ alert(`這個計薪期間（${tag}）已經記過了，金額也一樣（${note} ${money(amount)}），不用再記一次。`); return; }
+    const extra=dups.length-1;
+    if(!confirm(`這個計薪期間（${tag}）已經記過了。\n\n${money(dup.amount)} → ${money(amount)}\n項目：${dup.note} → ${note}\n\n要用現在的數字「更新原本那一筆」嗎？（不會新增第二筆）`
+      +(extra?`\n\n另外發現 ${extra} 筆重複的，會一併刪除。`:''))) return;
+    dup.date=date; dup.amount=amount; dup.note=note;
+    if(extra){ const rm=new Set(dups.slice(1)); state.ledger=state.ledger.filter(t=>!rm.has(t)); }
+    saveData(); pushCloud(); render();
+    alert(`已更新品佑支出：${note} ${money(amount)}`+(extra?`\n並刪除 ${extra} 筆重複的。`:''));
+    return;
+  }
+  if(!fromSnapshot && !confirm(`要把本期「公司負擔工資」記入品佑支出嗎？\n\n項目：${note}\n金額：${money(amount)}\n帳戶：${accountName(state.parkAccId)}（支出）\n日期：${date}`)) return;
   state.ledger.push({id:uid(),date,accId:state.parkAccId,kind:'out',amount,note,payrollWage:tag});
   saveData(); pushCloud(); render();
   alert(`已記入品佑支出：${note} ${money(amount)}\n可到「帳戶收支」查看或刪除。`);
