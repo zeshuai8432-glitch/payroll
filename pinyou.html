@@ -114,7 +114,7 @@
 <nav id="nav"></nav>
 <main id="app"></main>
 <script>
-const APP_VERSION = 'vP2026.09.10-prsync'; // 版本號顯示在頁首，方便確認拿到新版
+const APP_VERSION = 'vP2026.09.11-prdiag'; // 版本號顯示在頁首，方便確認拿到新版
 const LS='pinyou_data_v1';
 // ── 雲端端對端加密（與 payroll／簡化版共用同一組密碼與鑰匙；同網域共用 localStorage，解鎖一次三系統都通）──
 const E2E_SALT='PMENC1|dz-gx-py|2026';
@@ -732,10 +732,25 @@ function viewProj(){
 }
 
 function acctOptions(sel){ return '<option value="">（未指定）</option>'+state.accounts.map(a=>`<option ${sel===a?'selected':''}>${esc(a)}</option>`).join(''); }
+// 判斷依據攤開來：一直重複跳出來的時候，要看得出來是「溯源鍵每次都不一樣」
+// 還是「忽略記號沒存住」。兩者的處理方式完全不同，用猜的會一直修錯地方。
+function prDiagHtml(){
+  const haveSrc=state.expenses.filter(x=>x&&x.payrollId).length;
+  const haveLed=[...state.expenses,...state.incomes].filter(x=>x&&x.payrollLedgerId).length;
+  const del=(state.deletedIds||[]).filter(x=>/^(pr|pk|pe)-/.test(String(x))).length;
+  return `<details style="margin:0 0 8px"><summary style="cursor:pointer;font-size:12px;color:#64748b">🔍 為什麼這些被當成新的？（比對依據）</summary>
+    <div class="sub" style="margin:6px 0 0;line-height:1.7">
+      雲端狀態：<b>${esc(cloudStatus||'—')}</b>　|　版本 <b>${esc(APP_VERSION)}</b><br>
+      這本帳裡：已帶入並記下溯源的支出 <b>${haveSrc}</b> 筆、帳戶往來 <b>${haveLed}</b> 筆、按過忽略的記號 <b>${del}</b> 筆<br>
+      下面每列末尾的灰色代號就是<b>溯源鍵</b>。同一筆帳如果每次出現的代號都<b>不一樣</b>，代表來源端的 id 會變，要改用日期＋金額比對；
+      如果代號<b>一樣</b>卻還是重複出現，那就是忽略記號沒有存住或沒同步上去。
+    </div></details>`;
+}
 // 待帶入卡片：支出頁與往來頁共用（內容不依賴 viewExp 的區域變數）
 function prPendingCardHtml(){
   return (typeof prFound!=='undefined'&&prFound&&prFound.length)?`<div class="card" style="border-left:3px solid #2563eb">
     <h2>📥 PAYROLL 有 ${prFound.length} 筆支出還沒帶入</h2>
+    ${prDiagHtml()}
     <p class="sub" style="margin:0 0 8px">來源有東澤建龍與進凱兩套 PAYROLL，各列右邊會標對象。三種類型：<b>案場成本</b>（材料、機具等）、<b>代支出</b>（品佑幫他們付的工資等，不算品佑成本）、<b>發包款</b>（品佑發包給對方、他們賺走的，<b>是品佑的成本</b>）。已走案場成本進來的報銷與分潤結算不會重複列出。<b>案場名對不上</b>的（案場成本與發包款都可能）請先在該列選「算到哪個案場」再新增（PAYROLL 是母子案場、名字常跟這邊不同，選過一次就會記住）；如果那筆是<b>他們做外面公司的</b>，下拉選「他們做外面的（記代收）」，會記成代收、不進品佑損益。</p>
     <div class="scroll"><table><thead><tr><th>日期</th><th>案場</th><th>項目</th><th class="num">金額</th><th>出帳</th><th></th></tr></thead>
     <tbody>${prFound.map((f,i)=>`<tr>
@@ -746,7 +761,7 @@ function prPendingCardHtml(){
         const dup=[...state.expenses,...state.incomes].some(x=>x&&num(x.amount)===num(f.c.amount)&&String(x.date||'')===String(f.c.date||'')&&(partnerOf(x)===f.partner));
         return dup?'<span class="tag" style="background:#fee2e2;color:#b91c1c;margin-left:4px" title="本帳已經有同日期同金額的紀錄，確認一下是不是已經帶過">疑似已帶入</span>':'';
       })()}</td><td>${esc(String(f.c.item||''))}</td>
-      <td class="num">${money(f.c.amount)}</td><td>${esc(f.account)}</td>
+      <td class="num">${money(f.c.amount)}</td><td>${esc(f.account)}<div class="sub" style="margin:2px 0 0;font-size:10px;opacity:.65;word-break:break-all" title="溯源鍵：判斷「這筆帶入過沒有」就是靠它">${esc(f.eid)}</div></td>
       <td class="num" style="white-space:nowrap"><button class="act on" data-pradd="${i}">＋新增</button> <button class="act" data-prskip="${i}">忽略</button></td>
     </tr>`).join('')}</tbody></table></div>
     <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;align-items:center">
