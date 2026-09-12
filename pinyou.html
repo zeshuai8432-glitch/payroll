@@ -114,7 +114,7 @@
 <nav id="nav"></nav>
 <main id="app"></main>
 <script>
-const APP_VERSION = 'vP2026.09.11c-bridgeoff'; // 版本號顯示在頁首，方便確認拿到新版
+const APP_VERSION = 'vP2026.09.12-prpurge'; // 版本號顯示在頁首，方便確認拿到新版
 const LS='pinyou_data_v1';
 // ── 雲端端對端加密（與 payroll／簡化版共用同一組密碼與鑰匙；同網域共用 localStorage，解鎖一次三系統都通）──
 const E2E_SALT='PMENC1|dz-gx-py|2026';
@@ -256,6 +256,20 @@ function blank(){ return {projects:[],expenses:[],incomes:[],companies:[],accoun
 // 使用者決定改成單方面在 PAYROLL 記錄就好。功能保留、只是不啟用，
 // 已經帶入的支出與按過的忽略記錄都原封不動，隨時可以在設定頁開回來。
 const prBridgeOn=()=>!!(state&&state.prBridge);
+// 由 PAYROLL 帶入的紀錄：帶入時一定會寫下溯源欄位，用它來認最準（比對 id 前綴會漏掉舊資料）。
+//   案場成本 → expenses.payrollId
+//   代支出／發包款 → expenses.payrollLedgerId（partnerAcct / partnerEarned）
+//   代收（他們做外面的）→ incomes.payrollLedgerId
+function prImportedRows(){
+  const exp=(state.expenses||[]).filter(x=>x&&(x.payrollId||x.payrollLedgerId));
+  const inc=(state.incomes||[]).filter(x=>x&&x.payrollLedgerId);
+  const kind=x=>x.payrollId?'案場成本':(x.partnerEarned?'發包款':'代支出');
+  const g={};
+  exp.forEach(x=>{ const k=kind(x); (g[k]=g[k]||{n:0,sum:0}); g[k].n++; g[k].sum+=Number(x.amount)||0; });
+  if(inc.length){ g['代收']={n:inc.length,sum:inc.reduce((s,x)=>s+(Number(x.amount)||0),0)}; }
+  return {exp,inc,groups:g,n:exp.length+inc.length,
+          sum:exp.reduce((s,x)=>s+(Number(x.amount)||0),0)+inc.reduce((s,x)=>s+(Number(x.amount)||0),0)};
+}
 function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
 function money(n){ n=Math.round(Number(n)||0); return (n<0?'-':'')+'$'+Math.abs(n).toLocaleString('en-US'); }
 function pct(n){ return (Number(n)||0*1).toLocaleString('en-US',{style:'percent',maximumFractionDigits:1}); }
@@ -1246,6 +1260,15 @@ function viewSet(){
       <b>目前預設關閉</b>——重複提醒的問題一直沒收斂，改成單方面在 PAYROLL 記錄就好。
       關閉<b>不會刪掉任何東西</b>：已經帶入的支出、按過忽略的記錄都原封不動，只是不再檢查、不再提醒。</p>
       <label style="font-size:13px;cursor:pointer"><input type="checkbox" id="pr-bridge-chk" ${prBridgeOn()?'checked':''}> 開啟「自動抓 PAYROLL 支出」</label>
+      ${(()=>{ const r=prImportedRows(); if(!r.n) return '<p class="sub" style="margin:8px 0 0">這本帳目前沒有由 PAYROLL 帶入的紀錄。</p>';
+        return `<div style="margin-top:10px;padding:8px 10px;background:rgba(239,68,68,.06);border:1px solid rgba(239,68,68,.35);border-radius:8px">
+          <div style="font-size:13px;font-weight:700;margin-bottom:4px">🧹 清除所有由 PAYROLL 帶入的紀錄</div>
+          <p class="sub" style="margin:0 0 6px">目前有 <b>${r.n}</b> 筆、合計 <b>${money(r.sum)}</b>：
+            ${Object.keys(r.groups).map(k=>`${k} ${r.groups[k].n} 筆（${money(r.groups[k].sum)}）`).join('、')}。</p>
+          <p class="sub" style="margin:0 0 8px"><b>只刪這些帶入的</b>，你自己手動記的完全不動。刪除前會先存一份備份快照，
+            之後可以在下面「本機每日快照」按當天那顆救回。刪掉後也會留下記號，就算之後又開啟這個功能，也不會再被抓回來。</p>
+          <button class="act danger" id="pr-purge">🧹 清除這 ${r.n} 筆…</button>
+        </div>`; })()}
     </div>
     <div style="margin-top:12px;padding-top:10px;border-top:1px dashed var(--line)">
       <div style="font-weight:700;font-size:13px;margin-bottom:4px">🚑 本機每日快照（誤刪救援）</div>
@@ -1463,6 +1486,20 @@ function bind(){
   on('e2e-on','onclick',()=>e2eEnable().then(()=>render()));
   on('e2e-off','onclick',()=>{ e2eDisable(); render(); });
   on('app-lock-chk','onchange',()=>{ appLockToggle(); render(); });
+  on('pr-purge','onclick',()=>{
+    const r=prImportedRows();
+    if(!r.n){ alert('沒有由 PAYROLL 帶入的紀錄。'); return; }
+    const lines=Object.keys(r.groups).map(k=>`・${k}　${r.groups[k].n} 筆　${money(r.groups[k].sum)}`).join('\n');
+    if(!confirm(`要清除所有由 PAYROLL 帶入的紀錄嗎？\n\n${lines}\n\n合計 ${r.n} 筆　${money(r.sum)}\n\n・你自己手動記的支出／收入完全不動\n・刪除前會先存一份今天的備份快照\n・各裝置同步後也會一起刪掉\n\n確定要刪嗎？`)) return;
+    if(!confirm(`再確認一次：真的要刪掉這 ${r.n} 筆（${money(r.sum)}）？\n\n刪掉後案場成本與損益都會跟著改變。\n如果反悔，到下面「本機每日快照」按今天那顆「合併救回」。`)) return;
+    // 先留一份備份再動手：今天已經有快照的話覆蓋掉才是「刪除前」的狀態
+    try{ localStorage.setItem('pinyou_snap_'+today(), JSON.stringify(packData())); }catch(e){}
+    const ex=new Set(r.exp.map(x=>x.id)), ic=new Set(r.inc.map(x=>x.id));
+    state.expenses=(state.expenses||[]).filter(x=>!ex.has(x.id));
+    state.incomes=(state.incomes||[]).filter(x=>!ic.has(x.id));
+    save();   // recordDeletions 會自動補上刪除記號，其他裝置同步後也會刪、之後也不會再被抓回來
+    alert(`已清除 ${r.n} 筆（${money(r.sum)}）。\n\n如果要救回：下面「本機每日快照」按今天那顆「合併救回」。`);
+  });
   on('pr-bridge-chk','onchange',e=>{
     const want=!!(e&&e.target&&e.target.checked);
     if(want&&!confirm('要開啟「自動抓 PAYROLL 支出」嗎？\n\n開啟後每次同步完成會去比對一次，把 PAYROLL 有、這本帳沒有的支出列出來。\n\n（之前一直重複提醒才關掉的，開了如果又開始煩，回來這裡關掉就好。）')) { e.target.checked=false; return; }
