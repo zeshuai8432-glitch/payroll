@@ -109,7 +109,7 @@ body.printing #print-overlay{display:block;position:absolute;inset:0;background:
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.09.17c-lonegroup';
+const APP_VERSION='vG2026.09.17d-overcap';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -2096,16 +2096,31 @@ function updateDelCount(proj){
   const el=document.getElementById('delcount-'+delMode);
   if(el) el.textContent=b.items.filter(x=>delSel.has(x.id)).length;
 }
+let _overWarned=false;   // 「超過合約量」的說明每次開頁只跳一次
 function setProgInput(proj,blkId,itemId,kind,val){
   const perIdx=proj.periods.length-1;
   const period=proj.periods[perIdx];
   const b=proj.blocks.find(x=>x.id===blkId);const it=b.items.find(x=>x.id===itemId);
   const tq=itemTotalQty(it,b);
   const v=evalExpr(val);            // 可打算式：第二期填 12+4 就是累計 16
-  let p,q;
-  if(kind==='q'){ q=Math.max(0,Math.min(v,tq)); p=tq?q/tq:0; }
-  else if(kind==='r'){ const n=Math.max(0,Math.min(v,b.count)); p=b.count?n/b.count:0; q=tq*p; }
-  else{ p=Math.max(0,Math.min(v,100))/100; q=tq*p; }
+  let p,q,over=0;
+  if(kind==='q'){ if(v>tq) over=v-tq; q=Math.max(0,Math.min(v,tq)); p=tq?q/tq:0; }
+  else if(kind==='r'){ if(v>b.count) over=v-b.count; const n=Math.max(0,Math.min(v,b.count)); p=b.count?n/b.count:0; q=tq*p; }
+  else{ if(v>100) over=v-100; p=Math.max(0,Math.min(v,100))/100; q=tq*p; }
+  // 超過合約量會被壓回上限——以前壓得無聲無息，使用者以為系統壞了。
+  // 講清楚為什麼，並指出超做的量要當追加工程另計。每次開頁只提醒一次，不然打字很煩。
+  if(over>0&&!_overWarned){
+    _overWarned=true;
+    const unit=kind==='r'?b.unit:(kind==='p'?'%':it.unit);
+    const cap=kind==='r'?qfmt(b.count):(kind==='p'?'100':qfmt(tq));
+    setTimeout(()=>alert(`「${it.name}」填的量超過合約量，已經壓回上限 ${cap} ${unit}。\n\n`
+      +`合約這個區塊是 ${qfmt(b.count)} ${b.unit}，請款金額＝合約金額 × 完成度，\n`
+      +`所以單一細項最多只能請到 100%，再多就變成「請的比合約多」。\n\n`
+      +`實際做超過的部分屬於<追加工程>，要另外立一條來請：\n`
+      +`到「合約明細」找（或新增）一個「追加工程」區塊（單位「式」、數量 1），\n`
+      +`用「＋ 手動加細項」加一條、勾起「追加工程」，數量填超做的總量。\n\n`
+      +`（追加工程不受簽約總價折讓，會照明細單價實算。）`.replace(/[<>]/g,m=>m==='<'?'「':'」')),0);
+  }
   period.prog||(period.prog={});
   if(p>0){
     const rec={p,q:+q.toFixed(2)};
