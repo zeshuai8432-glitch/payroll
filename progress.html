@@ -109,7 +109,7 @@ body.printing #print-overlay{display:block;position:absolute;inset:0;background:
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.09.17-groupqty';
+const APP_VERSION='vG2026.09.17b-bulksync';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -475,6 +475,38 @@ function driftedItems(proj){
     if(diff.length||priceDiff) out.push({blk:b,it,src,diff,priceDiff});
   }));
   return out;
+}
+// 母專案「整批改」「整組改數量」之後也要能一起更新子專案。
+// 原本只有單條「改」會問，其他路徑改完就沒下文，使用者得自己進每個子專案按同步 ——
+// 常常根本不知道要去按，結果母子就默默對不起來了。
+// changes：[{it, before:{name,unit,qty,price}}]，before 是改之前的值。
+function syncKidsAfterEdit(proj,changes){
+  if(!proj||proj.parentId) return 0;   // 子專案自己改不往下傳
+  const plan=[];
+  (changes||[]).forEach(({it,before})=>{
+    if(!it||!before) return;
+    const changed=SYNC_KEYS.filter(([k])=>String(before[k]??'')!==String(it[k]??''));
+    const priceChanged=!priceEq(before.price,it.price);
+    if(!changed.length&&!priceChanged) return;
+    childRefsOf(proj,it.id).forEach(r=>plan.push({
+      it:r.it, src:it, kid:r.kid, priceChanged,
+      // 單價只同步「原本跟母專案一樣」的（＝照抄的）；另外議過價的不能蓋掉
+      syncPrice:priceChanged&&priceEq(r.it.price,before.price)
+    }));
+  });
+  if(!plan.length) return 0;
+  const kids=[...new Set(plan.map(p=>p.kid.name))];
+  const nPrice=plan.filter(p=>p.syncPrice).length;
+  const kept=plan.filter(p=>p.priceChanged&&!p.syncPrice).length;
+  if(!confirm(`這次改到的細項已經發包給：${kids.join('、')}\n\n`
+    +`對應到子專案共 ${plan.length} 條，要一起更新過去嗎？\n\n`
+    +`・名稱／單位／單間數量會跟著改\n`
+    +(nPrice?`・其中 ${nPrice} 條的單價原本就跟母專案一樣（照抄的），會一起改\n`:'')
+    +(kept?`・另有 ${kept} 條是跟那家另外議定的價，單價不會被蓋掉\n`:'')
+    +`・間數一律不動（各家做幾間是各自的）\n\n`
+    +`【確定】一起更新　【取消】只改母專案（之後可在子專案按「跟母專案同步」補）`)) return 0;
+  applyDrift(plan.map(p=>({it:p.it,src:p.src,syncPrice:p.syncPrice})));
+  return plan.length;
 }
 function applyDrift(list){
   list.forEach(({it,src,syncPrice})=>{
@@ -2317,26 +2349,32 @@ document.addEventListener('click',async e=>{
   if(t.dataset.batchalledit){ batchAll=true; batchEdit=itemEdit=itemAdd=blkEdit=copyInto=null; blkAdd=false; render(); return; }
   if(t.dataset.batchallcancel){ batchAll=false; render(); return; }
   if(t.dataset.batchallok){
+    const changes=[];
     for(const b of proj.blocks)for(const it of b.items){
       const qEl=g('be-qty-'+it.id), pEl=g('be-price-'+it.id);
       if(!qEl&&!pEl)continue;
+      changes.push({it,before:{name:it.name,unit:it.unit,qty:it.qty,price:it.price}});
       if(qEl){ const raw=qEl.value.trim(); it.qty=evalExpr(raw)||0; it.qtyExpr=hasExpr(raw)?raw:''; }
       if(pEl){ const raw=pEl.value.trim(); it.price=evalExpr(raw); it.priceExpr=hasExpr(raw)?raw:''; }
       it.amount=it.qty*it.price;
     }
+    syncKidsAfterEdit(proj,changes);
     batchAll=false; save(); render(); return;
   }
   if(t.dataset.batchedit){ batchEdit=t.dataset.batchedit; itemEdit=itemAdd=blkEdit=copyInto=null; blkAdd=false; render(); return; }
   if(t.dataset.batchcancel){ batchEdit=null; render(); return; }
   if(t.dataset.batchok){
     const b=proj.blocks.find(x=>x.id===t.dataset.batchok);if(!b){batchEdit=null;render();return;}
+    const changes=[];
     for(const it of b.items){
       const qEl=g('be-qty-'+it.id), pEl=g('be-price-'+it.id);
       if(!qEl&&!pEl)continue; // 被隱藏的 0 元項目維持原樣
+      changes.push({it,before:{name:it.name,unit:it.unit,qty:it.qty,price:it.price}});
       if(qEl){ const raw=qEl.value.trim(); it.qty=evalExpr(raw)||0; it.qtyExpr=hasExpr(raw)?raw:''; }
       if(pEl){ const raw=pEl.value.trim(); it.price=evalExpr(raw); it.priceExpr=hasExpr(raw)?raw:''; }
       it.amount=it.qty*it.price;
     }
+    syncKidsAfterEdit(proj,changes);
     batchEdit=null; save(); render(); return;
   }
   if(t.dataset.splititem){
@@ -2850,11 +2888,13 @@ document.addEventListener('change',e=>{
     if(raw===''){ render(); return; }
     const nv=evalExpr(raw); if(!(nv>0)){ alert('數量要大於 0。'); render(); return; }
     const expr=hasExpr(raw)?raw:'';
+    const changes=subs.map(s=>({it:s,before:{name:s.name,unit:s.unit,qty:s.qty,price:s.price}}));
     subs.forEach(s=>{
       rescaleItemProgress(proj,b,s,nv);      // 已經做掉的量不變，只換算完成度
       s.qty=nv; s.qtyExpr=expr;
       s.amount=(Number(s.qty)||0)*(Number(s.price)||0);
     });
+    syncKidsAfterEdit(proj,changes);         // 已經發包出去的，問要不要一起改
     save(); render();
     return;
   }
