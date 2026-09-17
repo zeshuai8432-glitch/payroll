@@ -109,7 +109,7 @@ body.printing #print-overlay{display:block;position:absolute;inset:0;background:
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.09.17b-bulksync';
+const APP_VERSION='vG2026.09.17c-lonegroup';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -136,7 +136,17 @@ function load(){
   try{const d=JSON.parse(localStorage.getItem(LS)||'null');if(d&&Array.isArray(d.projects))return d;}catch(e){}
   return {projects:[],cur:null,tab:'items'};
 }
-function save(){ state.savedAt=Date.now(); localStorage.setItem(LS,JSON.stringify(state)); schedulePush(); }
+// 只剩一道的工序群組沒有分組的意義，卻會讓進度請款那邊變成「逐道填」——
+// 得展開才填得到，跟旁邊沒拆的那幾條長得不一樣，看起來像壞掉。
+// 刪細項時本來就會解除，但從別的專案只抓了其中一道、或拆成一道時會留下來，
+// 所以在存檔時統一清一次，舊資料也會自己好。
+function normalizeGroups(){
+  (state.projects||[]).forEach(p=>(p.blocks||[]).forEach(b=>{
+    const n={}; (b.items||[]).forEach(x=>{ if(x.groupId) n[x.groupId]=(n[x.groupId]||0)+1; });
+    (b.items||[]).forEach(x=>{ if(x.groupId&&n[x.groupId]<2){ delete x.groupId; delete x.groupName; } });
+  }));
+}
+function save(){ normalizeGroups(); state.savedAt=Date.now(); localStorage.setItem(LS,JSON.stringify(state)); schedulePush(); }
 const curProj=()=>state.projects.find(p=>p.id===state.cur)||null;
 
 /* ═══════════ xlsx 解析（純瀏覽器，不用外部程式庫） ═══════════ */
@@ -3119,7 +3129,7 @@ function appLockToggle(){
 }
 document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='visible') appLockGate(function(){}); });
 
-appLockGate(function(){ render(); initCloud(); });
+appLockGate(function(){ normalizeGroups(); render(); initCloud(); });
 </script>
 </body>
 </html>
