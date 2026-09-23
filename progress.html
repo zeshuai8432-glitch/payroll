@@ -109,7 +109,7 @@ body.printing #print-overlay{display:block;position:absolute;inset:0;background:
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.09.23c-xfer';
+const APP_VERSION='vG2026.09.23d-xfer2';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -1081,7 +1081,8 @@ function viewItems(proj){
               <td class="num">${s.price?qfmt(s.price):''}${s.priceExpr?`<div style="font-size:11px;color:var(--muted)">=${esc(s.priceExpr)}</div>`:''}</td>
               <td class="num">${qfmt(s.amount)}</td>
               <td class="muted" style="font-size:12px">${esc(s.remark||'')}</td>
-              <td><button class="btn sub sm" data-edititem="${b.id}::${s.id}">改</button> <button class="btn bad sm" data-delitem="${b.id}::${s.id}">刪</button></td></tr>`;
+              <td><button class="btn sub sm" data-edititem="${b.id}::${s.id}">改</button>${proj.parentId?` <button class="btn sub sm" data-xfer="${b.id}::${s.id}" style="border-color:#38bdf8;color:#7dd3fc" title="這家做不完，把這道工序剩下的量轉給別的工班或收回自辦">↗ 轉出</button>`:''} <button class="btn bad sm" data-delitem="${b.id}::${s.id}">刪</button></td></tr>`;
+            if(xfer===b.id+'::'+s.id) h+=xferPanelHtml(proj,b,s);
           }
         }
         continue;
@@ -1156,12 +1157,13 @@ function viewItems(proj){
     if(drift.length) h+=`<div class="card" style="margin-top:10px;border-color:rgba(251,191,36,.55);background:rgba(251,191,36,.08)">
       <div style="font-size:13.5px;font-weight:600;margin-bottom:4px">⚠ 有 ${drift.length} 條跟母專案不一樣</div>
       <div class="muted" style="font-size:12px;margin-bottom:8px">名稱／單位／數量不一樣，多半是母專案後來改過、這邊沒跟上。<b>單價不一樣則不一定是問題</b>——可能是跟這家議定的價，也可能是母專案改了沒跟上，所以分成兩顆按鈕，你自己決定。<b>間數一律不動。</b></div>
-      <table style="font-size:12.5px"><tr><th>細項</th><th>差在哪</th><th class="num">這邊</th><th class="num">母專案</th></tr>
+      <table style="font-size:12.5px"><tr><th style="width:34px"></th><th>細項</th><th>差在哪</th><th class="num">這邊</th><th class="num">母專案</th></tr>
       ${drift.map(d=>{ const rows=[...d.diff.map(([k,lbl])=>[lbl,d.it[k],d.src[k],false]),
                                   ...(d.priceDiff?[['單價',qfmt(d.it.price),qfmt(d.src.price),true]]:[])];
-        return rows.map(([lbl,a,bb,isP],i)=>`<tr>${i===0?`<td rowspan="${rows.length}">${esc(d.it.name)}</td>`:''}
+        return rows.map(([lbl,a,bb,isP],i)=>`<tr>${i===0?`<td rowspan="${rows.length}"><input type="checkbox" data-dpick="${d.it.id}" checked style="width:16px;height:16px"></td><td rowspan="${rows.length}">${esc(d.it.name)}</td>`:''}
           <td${isP?' style="color:var(--warn)"':''}>${lbl}</td><td class="num">${esc(String(a??''))}</td><td class="num"><b>${esc(String(bb??''))}</b></td></tr>`).join(''); }).join('')}
       </table>
+      <div class="rowline" style="gap:8px;margin-top:6px"><button class="btn sub sm" id="drift-all">全選</button><button class="btn sub sm" id="drift-none">全不選</button><span class="muted" style="font-size:11.5px">只同步勾起來的那幾條</span></div>
       <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">
         ${nField?`<button class="btn sm" id="drift-sync">↻ 同步名稱／單位／數量（${nField} 條）</button>`:''}
         ${nPrice?`<button class="btn sub sm" id="drift-sync-price" style="border-color:var(--warn);color:var(--warn)">↻ 連單價一起同步（${nPrice} 條）</button>`:''}
@@ -2205,7 +2207,7 @@ function setProgInput(proj,blkId,itemId,kind,val){
 }
 
 document.addEventListener('click',async e=>{
-  const t=e.target.closest('[data-tab],[data-editblk],[data-delblk],[data-edititem],[data-delitem],[data-additem],[data-splititem],[data-sortitems],[data-grouptoggle],[data-groupmerge],[data-groupdetect],[data-whtoggle],[data-rttoggle],[data-whtax],[data-whtaxauto],[data-rtamt],[data-selfone],[data-selfrooms],[data-selfrest],[data-selfclear],[data-delmode],[data-delcancel],[data-delall],[data-delnone],[data-delinv],[data-delzero],[data-deldo],#sub-toggle,#sub-close,#sub-go,[data-backfill],[data-backfillcancel],[data-backfillok],[data-addmissblk],#trash-toggle,#trash-clear,[data-trashrestore],[data-trashdrop],#drift-sync,#drift-sync-price,[data-copyinto],[data-copyok],[data-copycancel],[data-xcopy],[data-xcopycancel],[data-xcopyall],[data-xcopyok],[data-xfer],[data-xfercancel],[data-xferok],[data-batchedit],[data-batchok],[data-batchcancel],[data-batchalledit],[data-batchallok],[data-batchallcancel],[data-itemok],[data-itemcancel],[data-blkok],[data-blkcancel],[data-bapply],[data-gapply],#btn-invrecon,[data-editextra],[data-delextra],#btn-import,#btn-import2,#btn-newproj,#btn-newproj2,#btn-addblk,#btn-addblk-ok,#btn-addperiod,#btn-delperiod,#btn-addextra,#btn-roundup,[data-gotoproj],#btn-print,#btn-setretain,#orphan-fix,#orphan-detach,#proj-groupall,#set-save,#proj-dup,#proj-detach,#backup-export,#backup-import-btn,#proj-del,#cloud-push,#cloud-pull');
+  const t=e.target.closest('[data-tab],[data-editblk],[data-delblk],[data-edititem],[data-delitem],[data-additem],[data-splititem],[data-sortitems],[data-grouptoggle],[data-groupmerge],[data-groupdetect],[data-whtoggle],[data-rttoggle],[data-whtax],[data-whtaxauto],[data-rtamt],[data-selfone],[data-selfrooms],[data-selfrest],[data-selfclear],[data-delmode],[data-delcancel],[data-delall],[data-delnone],[data-delinv],[data-delzero],[data-deldo],#sub-toggle,#sub-close,#sub-go,[data-backfill],[data-backfillcancel],[data-backfillok],[data-addmissblk],#trash-toggle,#trash-clear,[data-trashrestore],[data-trashdrop],#drift-sync,#drift-sync-price,#drift-all,#drift-none,[data-copyinto],[data-copyok],[data-copycancel],[data-xcopy],[data-xcopycancel],[data-xcopyall],[data-xcopyok],[data-xfer],[data-xfercancel],[data-xferok],[data-batchedit],[data-batchok],[data-batchcancel],[data-batchalledit],[data-batchallok],[data-batchallcancel],[data-itemok],[data-itemcancel],[data-blkok],[data-blkcancel],[data-bapply],[data-gapply],#btn-invrecon,[data-editextra],[data-delextra],#btn-import,#btn-import2,#btn-newproj,#btn-newproj2,#btn-addblk,#btn-addblk-ok,#btn-addperiod,#btn-delperiod,#btn-addextra,#btn-roundup,[data-gotoproj],#btn-print,#btn-setretain,#orphan-fix,#orphan-detach,#proj-groupall,#set-save,#proj-dup,#proj-detach,#backup-export,#backup-import-btn,#proj-del,#cloud-push,#cloud-pull');
   if(!t)return;
   const proj=curProj();
   if(t.dataset.tab){state.tab=t.dataset.tab;save();render();return;}
@@ -2351,11 +2353,20 @@ document.addEventListener('click',async e=>{
   }
   if(t.dataset.backfill){ backfill=t.dataset.backfill; itemEdit=itemAdd=blkEdit=copyInto=batchEdit=null; blkAdd=false; batchAll=false; openBlk.add(backfill); render(); return; }
   if(t.dataset.backfillcancel){ backfill=null; render(); return; }
+  if(t.id==='drift-all'||t.id==='drift-none'){
+    const on=(t.id==='drift-all');
+    document.querySelectorAll('[data-dpick]').forEach(cb=>{cb.checked=on;});
+    return;
+  }
   if(t.id==='drift-sync'||t.id==='drift-sync-price'){
     const withPrice=(t.id==='drift-sync-price');
     const all=driftedItems(proj);
-    const drift=withPrice?all.filter(d=>d.priceDiff):all.filter(d=>d.diff.length);
-    if(!drift.length) return;
+    // 只同步勾起來的那幾條：有些差異是刻意的（這家只做一部分），不該被一鍵蓋掉
+    const picked=new Set([...document.querySelectorAll('[data-dpick]:checked')].map(x=>x.dataset.dpick));
+    const sel=all.filter(d=>picked.has(d.it.id));
+    if(!sel.length){ alert('請先勾要同步的細項。'); return; }
+    const drift=withPrice?sel.filter(d=>d.priceDiff):sel.filter(d=>d.diff.length);
+    if(!drift.length){ alert(withPrice?'勾起來的這幾條單價都跟母專案一樣，沒有要同步的。':'勾起來的這幾條名稱／單位／數量都跟母專案一樣，沒有要同步的。'); return; }
     const lines=drift.slice(0,12).map(d=>{
       const parts=d.diff.map(([k,lbl])=>`${lbl} ${d.it[k]} → ${d.src[k]}`);
       if(withPrice&&d.priceDiff) parts.push(`單價 ${qfmt(d.it.price)} → ${qfmt(d.src.price)}`);
