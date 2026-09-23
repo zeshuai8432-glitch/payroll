@@ -109,7 +109,7 @@ body.printing #print-overlay{display:block;position:absolute;inset:0;background:
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.09.23d-xfer2';
+const APP_VERSION='vG2026.09.23e-xfer3';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -1276,11 +1276,13 @@ function xferPanelHtml(proj,b,it){
   return `<tr><td colspan="8" style="padding:10px;background:rgba(56,189,248,.08);border-left:3px solid #38bdf8">
     <div class="rowline" style="align-items:center;margin-bottom:6px"><b style="font-size:13.5px">↗ 把「${esc(it.name)}」轉一部分出去</b><span style="flex:1"></span><button class="btn sub sm" data-xfercancel="1">取消</button></div>
     <div class="muted" style="font-size:12px;margin-bottom:8px">目前這條是 <b>${qfmt(cur)} ${esc(b.unit)}</b>，已完成 <b>${qfmt(done)} ${esc(b.unit)}</b>。
-      填「${esc(proj.vendor||proj.name)} 最後做幾${esc(b.unit)}」，剩下的就轉出去。
+      填要轉出幾${esc(b.unit)}，預設帶「<b>他還沒做的量</b>」（${qfmt(cur)} − ${qfmt(done)} ＝ ${qfmt(+(cur-done).toFixed(4))}）。
       <b>他已經請過的錢不會變</b>；母專案完全不動。</div>
     <div class="rowline" style="gap:10px;flex-wrap:wrap;align-items:flex-end">
-      <div class="field" style="display:flex;flex-direction:column;gap:2px"><label style="font-size:11px;color:var(--muted)">${esc(proj.vendor||'這家')}最後做幾${esc(b.unit)}</label>
-        <input class="pin" id="xf-keep" inputmode="decimal" value="${qfmt(done)}" style="height:32px;width:110px;text-align:right"></div>
+      <div class="field" style="display:flex;flex-direction:column;gap:2px"><label style="font-size:11px;color:var(--muted)">轉出幾${esc(b.unit)}</label>
+        <input class="pin" id="xf-move" data-xfmove="${b.id}::${it.id}" inputmode="decimal" value="${qfmt(+(cur-done).toFixed(4))}" style="height:32px;width:110px;text-align:right" title="預設是他還沒做的量（${qfmt(cur)} − 已完成 ${qfmt(done)}）"></div>
+      <div class="field" style="display:flex;flex-direction:column;gap:2px"><label style="font-size:11px;color:var(--muted)">　</label>
+        <div style="height:32px;line-height:32px;font-size:12.5px;color:var(--muted);white-space:nowrap">${esc(proj.vendor||'這家')}剩下 <b data-xfleft="1" style="color:var(--accent)">${qfmt(done)}</b> ${esc(b.unit)}</div></div>
       <div class="field" style="display:flex;flex-direction:column;gap:2px"><label style="font-size:11px;color:var(--muted)">轉給誰</label>
         <select id="xf-to" style="height:32px;min-width:190px">
           <option value="__self__">收回自辦（母專案自己做）</option>
@@ -2690,10 +2692,12 @@ document.addEventListener('click',async e=>{
     const b=proj.blocks.find(x=>x.id===blkId); if(!b) return;
     const it=b.items.find(x=>x.id===itemId); if(!it) return;
     const par=parentProject(proj); if(!par){ alert('這不是子專案，沒有母專案可以對應。'); return; }
-    const cur=effCount(it,b);
-    const keep=Math.max(0,evalExpr((g('xf-keep')||{}).value||'0')||0);
-    if(keep>=cur){ alert(`「最後做幾${b.unit}」要比現在的 ${qfmt(cur)} ${b.unit} 少，才有量可以轉出。`); return; }
-    const move=+(cur-keep).toFixed(4);
+    const cur=effCount(it,b), done=doneCountOf(proj,b,it);
+    const move=Math.max(0,evalExpr((g('xf-move')||{}).value||'0')||0);
+    if(!(move>0)){ alert(`請填要轉出幾${b.unit}。`); return; }
+    if(move>cur){ alert(`最多只能轉出 ${qfmt(cur)} ${b.unit}（這條目前的量）。`); return; }
+    const keep=+(cur-move).toFixed(4);
+    if(keep<done-1e-9){ alert(`轉太多了。\n\n${proj.vendor||'這家'}已經做了 ${qfmt(done)} ${b.unit}，最多只能轉出 ${qfmt(+(cur-done).toFixed(4))} ${b.unit}。\n\n（已經做掉的量不能轉給別人——那是他該請的錢。）`); return; }
     const to=(g('xf-to')||{}).value||'__self__';
     const priceRaw=((g('xf-price')||{}).value||'').trim();
     const who=proj.vendor||proj.name;
@@ -2744,11 +2748,21 @@ document.addEventListener('click',async e=>{
     }
 
     // 這邊減量：用各期存的絕對完成量回推百分比，已請過的金額不會被追溯改掉
-    rescaleItemCount(proj,b,it,keep);
-    if(keep!==(Number(b.count)||0)) it.cnt=keep; else delete it.cnt;
-    it.remark=[String(it.remark||'').trim(),`${day} 原 ${qfmt(cur)} ${b.unit}，轉 ${qfmt(move)} ${b.unit} 給 ${destName}`].filter(Boolean).join('；');
+    if(keep<=0){
+      // 整條都轉走了：這家根本不做這條，留著只會在發包分配重複計算。
+      // 丟進回收桶而不是直接消失，按錯還救得回來。
+      trashPush(proj,b,[it],`全部 ${qfmt(move)} ${b.unit} 轉給${destName}`);
+      for(const per of proj.periods) if(per.prog) delete per.prog[it.id];
+      b.items=b.items.filter(x=>x!==it);
+    } else {
+      rescaleItemCount(proj,b,it,keep);
+      if(keep!==(Number(b.count)||0)) it.cnt=keep; else delete it.cnt;
+      it.remark=[String(it.remark||'').trim(),`${day} 原 ${qfmt(cur)} ${b.unit}，轉 ${qfmt(move)} ${b.unit} 給 ${destName}`].filter(Boolean).join('；');
+    }
     xfer=null; save(); render();
-    alert(`已轉出 ${qfmt(move)} ${b.unit} 給「${destName}」。\n\n${who} 這條剩 ${qfmt(keep)} ${b.unit}，已請過的金額沒變。`);
+    alert(`已轉出 ${qfmt(move)} ${b.unit} 給「${destName}」。\n\n`+(keep<=0
+      ?`${who} 這條整個轉走了，已從他的合約移除（可到最下面的回收桶復原）。`
+      :`${who} 這條剩 ${qfmt(keep)} ${b.unit}，已請過的金額沒變。`));
     return;
   }
   if(t.dataset.xcopy){
@@ -3089,6 +3103,20 @@ document.getElementById('xlsx-file').addEventListener('change',async e=>{
 });
 document.getElementById('backup-import')?.addEventListener('change',()=>{});
 // 「本期又做好 N 間」：邊打邊顯示加完會變幾間，按下去前就看得到
+// 轉出面板：邊打邊算「這家剩下幾間」，不用自己心算
+document.addEventListener('input',e=>{
+  const t=e.target; if(!t||!t.dataset||!t.dataset.xfmove) return;
+  const proj=curProj(); if(!proj) return;
+  const [blkId,itemId]=t.dataset.xfmove.split('::');
+  const b=proj.blocks.find(x=>x.id===blkId); if(!b) return;
+  const it=b.items.find(x=>x.id===itemId); if(!it) return;
+  const el=document.querySelector('[data-xfleft]'); if(!el) return;
+  const cur=effCount(it,b), done=doneCountOf(proj,b,it);
+  const mv=Math.max(0,evalExpr(t.value)||0), left=+(cur-mv).toFixed(4);
+  el.textContent=qfmt(left);
+  // 轉超過他還沒做的量＝把人家做掉的活也轉走了，先標紅
+  el.style.color=(mv>cur||left<done-1e-9)?'var(--bad)':'var(--accent)';
+});
 document.addEventListener('input',e=>{
   const t=e.target; if(!t||!t.dataset||!t.dataset.gfill) return;
   const proj=curProj(); if(!proj) return;
