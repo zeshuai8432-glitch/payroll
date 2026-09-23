@@ -109,7 +109,7 @@ body.printing #print-overlay{display:block;position:absolute;inset:0;background:
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.09.23j-settleprint';
+const APP_VERSION='vG2026.09.23k-cntdisp';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -1592,7 +1592,7 @@ function viewProg(proj){
         <span class="muted" style="font-size:12px">合約${esc(b.unit)}數 ${qfmt(b.count)} → 加完變 <b data-gnew="${b.id}">${qfmt(b.count)}</b>，本期累計完成也一併補到滿。舊期已請的金額不動。</span></div>`;
     }
     const hasR=b.count>1;const cols=hasR?9:9;
-    h+=`<table><tr><th>項次</th><th>名稱及規格</th><th>單位</th><th class="num">數量</th><th class="num">單價</th><th class="num">前期%</th><th class="num" title="${hasR?`這個區塊有 ${qfmt(b.count)} ${b.unit}，填「做完幾${b.unit}」比較快；系統換算成％`:`這個區塊只有 1 ${b.unit}，沒有間數可填，所以直接填累計完成的量（${esc(b.items[0]&&b.items[0].unit||'量')}）`}">${hasR?`完成${esc(b.unit)}數<br><span style="font-weight:400;text-transform:none;letter-spacing:0">（共 ${qfmt(b.count)} ${esc(b.unit)}）</span>`:`累計完成量<br><span style="font-weight:400;text-transform:none;letter-spacing:0">（照單位填）</span>`}</th><th class="num">累計%</th><th class="num">本期金額</th></tr>`;
+    h+=`<table><tr><th>項次</th><th>名稱及規格</th><th>單位</th><th class="num">數量</th><th class="num">單價</th><th class="num">前期%</th><th class="num" title="${hasR?`這個區塊有 ${qfmt(b.count)} ${b.unit}，填「做完幾${b.unit}」比較快；系統換算成％`:`這個區塊只有 1 ${b.unit}，沒有間數可填，所以直接填累計完成的量（${esc(b.items[0]&&b.items[0].unit||'量')}）`}">${hasR?`完成${esc(b.unit)}數<br><span style="font-weight:400;text-transform:none;letter-spacing:0">（共 ${qfmt(b.count)} ${esc(b.unit)}${ownCountItems(b).length?`，另計的看 <b style="color:#6ee7b7">/N</b>`:''}）</span>`:`累計完成量<br><span style="font-weight:400;text-transform:none;letter-spacing:0">（照單位填）</span>`}</th><th class="num">累計%</th><th class="num">本期金額</th></tr>`;
     let ch='', gDone=new Set();
     for(const ci of cb.items){
       const it=ci.it;
@@ -1619,13 +1619,13 @@ function viewProg(proj){
         if(open){
           for(const s of g){
             const si=s.it, sz=s.v===0, stq=itemTotalQty(si,b), spr=progOf(period,si.id);
-            const srVal=(spr.exprKind==='r'&&spr.expr)?spr.expr:(spr.p?+(spr.p*effCount(s,b)).toFixed(2):'');
+            const srVal=(spr.exprKind==='r'&&spr.expr)?spr.expr:(spr.p?+(spr.p*effCount(si,b)).toFixed(2):'');
             h+=`<tr class="${sz?'zero':''}"><td></td>
               <td style="padding-left:26px;color:var(--muted)">↳ ${stageHtml(si.name,it.groupName)}</td>
               <td>${esc(si.unit)}</td><td class="num">${qfmt(si.qty)}</td><td class="num">${si.price?qfmt(si.price):''}</td>
               <td class="num muted">${pfmt(s.pp)}</td>
               <td class="num">${hasR
-                ?(editable&&!sz?`<input class="pin pct" data-r="${b.id}::${si.id}" inputmode="decimal" value="${srVal}" placeholder="0">`:(srVal||'—'))
+                ?(editable&&!sz?`<input class="pin pct" data-r="${b.id}::${si.id}" inputmode="decimal" value="${srVal}" placeholder="0">${hasOwnCount(si)?`<span class="muted" style="font-size:11px"> / ${qfmt(effCount(si,b))}</span>`:''}`:(srVal||'—')+(hasOwnCount(si)?`<span class="muted" style="font-size:11px"> / ${qfmt(effCount(si,b))}</span>`:''))
                 :(editable&&!sz?`<input class="pin" data-q="${b.id}::${si.id}" inputmode="decimal" value="${(spr.exprKind==='q'&&spr.expr)?esc(spr.expr):(spr.p?qfmt(spr.q||stq*spr.p):'')}" placeholder="0">`:qfmt(spr.q||stq*spr.p))}</td>
               <td class="num">${editable&&!sz?`<input class="pin pct" data-p="${b.id}::${si.id}" inputmode="decimal" value="${spr.p?+(spr.p*100).toFixed(1):''}" placeholder="0">`:pfmt(s.p)}</td>
               <td class="num" data-c="ti-${si.id}">${s.thisAmt?money(s.thisAmt):'—'}</td></tr>`;
@@ -1641,7 +1641,7 @@ function viewProg(proj){
         <td class="num">${qfmt(it.qty)}</td><td class="num">${it.price?qfmt(it.price):''}</td>
         <td class="num muted">${pfmt(ci.pp)}</td>
         <td class="num">${hasR
-          ?(editable&&!zero?`<input class="pin pct" data-r="${b.id}::${it.id}" inputmode="decimal" value="${rVal}" placeholder="0">`:(rVal||'—'))
+          ?(editable&&!zero?`<input class="pin pct" data-r="${b.id}::${it.id}" inputmode="decimal" value="${rVal}" placeholder="0">${hasOwnCount(it)?`<span class="muted" style="font-size:11px"> / ${qfmt(effCount(it,b))}</span>`:''}`:(rVal||'—')+(hasOwnCount(it)?`<span class="muted" style="font-size:11px"> / ${qfmt(effCount(it,b))}</span>`:''))
           :(editable&&!zero?`<input class="pin" data-q="${b.id}::${it.id}" inputmode="decimal" value="${(pr.exprKind==='q'&&pr.expr)?esc(pr.expr):(pr.p?qfmt(pr.q||tq*pr.p):'')}" placeholder="0">`:qfmt(pr.q||tq*pr.p))}</td>
         <td class="num">${editable&&!zero?`<input class="pin pct" data-p="${b.id}::${it.id}" inputmode="decimal" value="${pr.p?+(pr.p*100).toFixed(1):''}" placeholder="0">`:pfmt(ci.p)}</td>
         <td class="num" data-c="ti-${it.id}">${ci.thisAmt?money(ci.thisAmt):'—'}</td></tr>`;
@@ -2350,7 +2350,7 @@ function setProgInput(proj,blkId,itemId,kind,val){
   const qEl=document.querySelector(`[data-q="${blkId}::${itemId}"]`),pEl=document.querySelector(`[data-p="${blkId}::${itemId}"]`),rEl=document.querySelector(`[data-r="${blkId}::${itemId}"]`);
   if(kind!=='q'&&qEl)qEl.value=p?qfmt(q):'';
   if(kind!=='p'&&pEl)pEl.value=p?+(p*100).toFixed(1):'';
-  if(kind!=='r'&&rEl)rEl.value=p?+(p*b.count).toFixed(2):'';
+  if(kind!=='r'&&rEl)rEl.value=p?+(p*effCount(it,b)).toFixed(2):'';   // 這條自己的間數，不是區塊的
 }
 
 document.addEventListener('click',async e=>{
