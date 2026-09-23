@@ -109,7 +109,7 @@ body.printing #print-overlay{display:block;position:absolute;inset:0;background:
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.09.23l-recon';
+const APP_VERSION='vG2026.09.23m-reconopen';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -1440,7 +1440,8 @@ function reconPanelHtml(proj,c,perIdx){
   let verdict='';
   if(!nLock){
     verdict=`<b style="color:var(--warn)">⚠ 沒有任何一期鎖定實際請款金額。</b>
-      系統只能照<b>現在的明細</b>重算每一期，所以你改了數量或進度，舊期的數字就跟著變，<b>看不出多請或少請</b>。
+      系統只能照<b>現在的明細</b>重算每一期，所以你改了數量或進度，舊期的數字就跟著變。
+      <br><b style="color:#fca5a5">後果是：就算你多請或少請了，上面的「差額」永遠是 0，帳面看起來完全正常，你不會發現。</b>
       <br>請到每一期按「🔒 結算鎖定本期」，填<b>當初實際請出去的金額</b>（不是預設帶的那個數字）。`;
   } else if(diff<-0.5){
     verdict=`<b style="color:var(--warn)">你多請了 ${money(-diff)}。</b>
@@ -1453,7 +1454,17 @@ function reconPanelHtml(proj,c,perIdx){
   } else {
     verdict=`<b style="color:var(--ok)">✓ 對得起來</b>——該請的和實際請的一致。`;
   }
-  return `<details style="margin-top:12px"><summary style="cursor:pointer;font-size:13px;color:var(--accent)">💡 對帳檢查：為什麼金額對不起來？</summary>
+  if(nLock&&nLock<per.length){
+    const un=per.filter(x=>!isLocked(x)).map(x=>'第 '+x.no+' 期').join('、');
+    verdict+=`<div style="margin-top:6px;color:var(--warn)">還有${un}沒鎖定。已經送出去的期別請按「🔒」記下實際金額，
+      否則它會跟著明細變動，多請少請都看不出來。（還在跑的當期不用鎖。）</div>`;
+  }
+  // 有問題就自己打開——收合起來的東西沒人會點，而「沒鎖定」這件事會讓多收的錢
+  // 在畫面上完全看不出來（系統照現在的明細重算，帳面永遠是平的），不能讓它藏著。
+  const billedSomething=per.some(x=>x&&x.prog&&Object.keys(x.prog).length);
+  const risky=billedSomething&&(nLock<per.length);
+  const openIt=(risky||Math.abs(diff)>0.5)?' open':'';
+  return `<details style="margin-top:12px"${openIt}><summary style="cursor:pointer;font-size:13px;color:${risky||Math.abs(diff)>0.5?'var(--warn)':'var(--accent)'}">${risky||Math.abs(diff)>0.5?'⚠':'💡'} 對帳檢查：為什麼金額對不起來？${risky?`（有 ${per.length-nLock} 期沒鎖定實際金額）`:''}</summary>
     <div style="margin-top:8px">
     <table style="font-size:12.5px"><tr><th>期別</th><th>日期</th><th class="num">系統算的</th><th class="num">實際請的</th><th>狀態</th></tr>
     ${per.map((x,k)=>{ const cc=calc(proj,k); const lk=isLocked(x);
