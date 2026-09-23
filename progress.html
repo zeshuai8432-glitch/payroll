@@ -109,7 +109,7 @@ body.printing #print-overlay{display:block;position:absolute;inset:0;background:
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.09.23f-allocqty';
+const APP_VERSION='vG2026.09.23g-pricemode';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -359,12 +359,34 @@ function rescaleItemTo(proj,blk,it,newTotal){
 const rescaleItemProgress=(proj,blk,it,newQty)=>rescaleItemTo(proj,blk,it,(Number(newQty)||0)*effCount(it,blk));
 // 改「單間數量」請一律走這裡：先按新總量把各期完成度回推，已請過的金額才不會被追溯改掉。
 // 直接寫 it.qty= 會讓舊期的請款金額跟著數量一起變，對帳就對不起來了。
-function setItemQty(proj,blk,it,newQty,expr){
+function setItemQty(proj,blk,it,newQty,expr,keepRooms){
   const q=Number(newQty)||0; let touched=0;
-  if(Math.abs((Number(it.qty)||0)-q)>1e-9) touched=rescaleItemTo(proj,blk,it,q*effCount(it,blk))||0;
+  if(Math.abs((Number(it.qty)||0)-q)>1e-9){
+    if(keepRooms){
+      // 覆核重新丈量：做完的「間數」是事實，錯的是每間幾㎡。
+      // 完成度（間數）不動，完成量跟著新數量放大／縮小，錢就跟著新數量走。
+      const nt=q*effCount(it,blk);
+      for(const per of (proj.periods||[])){
+        const pr=per&&per.prog&&per.prog[it.id]; if(!pr) continue;
+        pr.q=+(((Number(pr.p)||0)*nt)).toFixed(2); touched++;
+      }
+    } else {
+      // 改施作範圍：做掉的量是事實，完成度跟著新總量重算
+      touched=rescaleItemTo(proj,blk,it,q*effCount(it,blk))||0;
+    }
+  }
   it.qty=q; if(expr!==undefined) it.qtyExpr=expr;
   it.amount=q*(Number(it.price)||0);
-  return touched>0;   // 有登錄過進度的，完成間數會被換算，呼叫端要說一聲
+  return touched>0;
+}
+// 改數量時，已登錄的進度要照哪一種算？回傳 true＝完成間數不變（覆核）
+function askKeepRooms(unit,names){
+  return confirm(`${names.length===1?`「${names[0]}」`:`這 ${names.length} 條`}已經登錄過進度，數量改了要照哪一種算？\n\n`
+    +`【確定】＝ 完成的「${unit}數」不變（覆核重新丈量）\n`
+    +`　　做完的 ${unit}數就是事實，錯的是每${unit}的數量。金額會跟著新數量走，差額算在本期。\n\n`
+    +`【取消】＝ 完成的「量」不變（改施作範圍）\n`
+    +`　　已經做掉的㎡／式就是那麼多，完成${unit}數會跟著新數量重算。金額不變。\n\n`
+    +`※ 已經結算鎖定的期別，兩種都不會被動到。`);
 }
 // 這條各期登錄過的「絕對完成量」最大值（單位同細項，不是間數）
 function doneQtyOf(proj,blk,it){
@@ -638,6 +660,23 @@ function projChargeTotal(p){
 // 若把它算進分母，折數會被稀釋、連already 請過的舊期金額都會縮水。
 // 舊資料相容：手動加的細項項次固定是「增」，沿用當標記。
 const isExtraItem = it => (it && it.extra!==undefined) ? !!it.extra : String(it&&it.no||'')==='增';
+// 原合約明細總額（追加不算）——議價折讓的分母
+function vbaseOf(proj){
+  let v=0;
+  ((proj&&proj.blocks)||[]).forEach(b=>(b.items||[]).forEach(it=>{ if(!isExtraItem(it)) v+=itemValue(it,b); }));
+  return v;
+}
+// 議價折數。兩種計價方式，差別只在分母用哪一個：
+//   總價承攬（lump，預設）＝ 簽約總價 ÷「當下」明細總額。
+//     總額永遠等於簽約總價；覆核改數量只是重新分配，超做的要另開追加工程。
+//   實作實算（actual）＝ 簽約總價 ÷「簽約當時」明細總額，折數就此固定。
+//     做多少算多少：覆核把量改大，總額照同一個折數跟著變大。
+function factorOf(proj){
+  const signed=Number(proj&&proj.signedTotal)||0;
+  if(!(signed>0)) return 1;
+  const base=(proj.priceMode==='actual'&&Number(proj.signedBase)>0)?Number(proj.signedBase):vbaseOf(proj);
+  return base>0?signed/base:1;
+}
 function calc(proj,perIdx){
   const period=proj.periods[perIdx];
   const prev=perIdx>0?proj.periods[perIdx-1]:null;
@@ -658,8 +697,7 @@ function calc(proj,perIdx){
   // 折讓基準只算「原合約」的細項；追加的另計，不進分母也不打折
   let Vbase=0, Vext=0;
   proj.blocks.forEach(blk=>blk.items.forEach(it=>{ (isExtraItem(it)?  (Vext+=itemValue(it,blk)) : (Vbase+=itemValue(it,blk))); }));
-  // 議價折數：簽約總價 ÷ 原合約明細總額（明細不動、整體照比例折讓）；未填＝1（照明細）
-  const factor=(proj.signedTotal>0&&Vbase>0)?proj.signedTotal/Vbase:1;
+  const factor=factorOf(proj);
   const discount=factor!==1;
   // ── 現金制請款：折讓後累計計價 −（訂金＋前期各期實請）＝ 本次應請 ──
   // 拆成「原合約」與「追加」兩份：前者要乘折數，後者原價計
@@ -678,7 +716,10 @@ function calc(proj,perIdx){
     const applied=Math.round(sp.base*factor)+sp.ext+chgLE;   // 原合約折讓後 ＋ 追加原價 ＋ 加項
     const received=depLE+runningBilled;    // 已收（訂金＋先前各期實請）
     const computed=applied-received;
-    const tgt=proj.periods[k].roundTarget;
+    // 已結算（送出去過）的期別，金額鎖死：之後不管改數量、改單價、改折讓，都不會被追溯改掉，
+    // 差額一律往本期跑。settled 優先於湊整（湊整只是最後一期還沒結算時的調整）。
+    const per=proj.periods[k];
+    const tgt=(per.settled!==undefined&&per.settled!==null&&per.settled!=='')?per.settled:per.roundTarget;
     const actual=(tgt!==undefined&&tgt!==null&&tgt!=='')?Math.round(num(tgt)):computed;
     if(k<perIdx) priorBills.push({label:`第 ${proj.periods[k].no} 期請款`,date:proj.periods[k].date||'',amount:actual});
     if(k===perIdx){ billPre=received; billComputed=computed; billActual=actual; }
@@ -694,10 +735,12 @@ function calc(proj,perIdx){
   const itemCumExt=spNow.ext;                           // 追加細項的累計完成（不折讓）
   const cumDiscItem=Math.round(spNow.base*factor)+spNow.ext;  // 原合約折讓後 ＋ 追加原價
   const cumApplied=cumDiscItem+chgTotal;                // 折讓後累計應請（供本次計算）
-  const billRound=billActual-billComputed;
+  const perNow=proj.periods[perIdx];
+  const isSettled=!!(perNow&&perNow.settled!==undefined&&perNow.settled!==null&&perNow.settled!=='');
+  const billRound=isSettled?0:(billActual-billComputed);
   return {blocks,V,Vbase,Vext,itemCumExt,itemCum,itemPre,cumRaw,cumDiscItem,cumApplied,factor,discount,signedTotal:proj.signedTotal||0,chgTotal,
           receivedList,noteList,chargeList,billPre,billComputed,billRound,billActual,cum:billPre+billActual,period,prev,
-          thisAmt:billActual,pre:billPre};
+          thisAmt:billActual,pre:billPre,settled:isSettled};
 }
 
 /* ═══════════ 畫面 ═══════════ */
@@ -1421,11 +1464,12 @@ function viewProg(proj){
     ${editable?`<input type="date" id="period-date" value="${esc(period.date)}">`:''}
     <button class="btn sub sm" id="btn-addperiod">＋ 新增一期</button>
     ${editable&&proj.periods.length?`<button class="btn bad sm" id="btn-delperiod">刪除本期</button>`:''}
+    ${proj.periods.length?`<button class="btn sub sm" id="settle-toggle" title="鎖住這一期的實請金額，之後改數量／單價／折讓都不會動到它">${c.settled?`🔓 解除鎖定（已鎖 ${money(proj.periods[proj.curPeriod||0].settled)}）`:'🔒 結算鎖定本期'}</button>`:''}
     <span style="flex:1"></span>
     <label class="muted" style="font-size:13px;cursor:pointer"><input type="checkbox" id="hide-zero"${proj.hideZero?' checked':''}> 隱藏 0 元項目</label>
     <button class="btn" id="btn-print">🖨 列印請款單</button>
   </div>
-  ${editable?'':'<div class="notice">這是舊期別，唯讀。要修改請切到最新一期。</div>'}
+  ${editable?'':`<div class="notice">這是舊期別，唯讀。要修改請切到最新一期。${c.settled?'<b>（本期金額已結算鎖定，不會再被之後的改動影響）</b>':'<b style="color:var(--warn)">本期還沒結算鎖定——之後改數量或單價會連帶改掉這一期的金額，建議按上面的「🔒 結算鎖定本期」。</b>'}</div>`}
   <div class="grid" style="margin-bottom:12px">
     <div class="stat"><div class="l">累計完成計價${c.discount?'（折讓後）':''}</div><div class="v" data-c="g-applied">${money(c.cumApplied)}</div><div class="l">占合約 <span data-c="g-pct">${pfmt(c.V?c.itemCum/c.V:0)}</span></div></div>
     <div class="stat"><div class="l">前期累計已收</div><div class="v" data-c="g-pre">${money(c.billPre)}</div></div>
@@ -1703,6 +1747,20 @@ function viewSet(proj){
       <span class="muted" style="font-size:12px">每期先保留的％（例：5），通常完工後才放款。填 0 或空白＝不保留。放款時到「進度請款」按已放款。</span></div>
     <div class="rowline">簽約總價（議價後）<input id="set-signed" inputmode="decimal" style="min-width:180px" value="${proj.signedTotal||''}" placeholder="空白＝照明細 ${money(proj.blocks.reduce((s,b)=>s+b.items.reduce((x,i)=>x+itemValue(i,b),0),0))}"></div>
     <div class="muted" style="font-size:12px;margin-bottom:6px">議價後總價跟明細不同時填這裡（例：明細 ${money(proj.blocks.reduce((s,b)=>s+b.items.reduce((x,i)=>x+itemValue(i,b),0),0))}、簽約 25,500,000）。明細不用改，程式會自動照比例折讓每期請款。</div>
+    ${(()=>{ const vb=vbaseOf(proj), signed=Number(proj.signedTotal)||0, mode=proj.priceMode==='actual'?'actual':'lump';
+      const base=(mode==='actual'&&Number(proj.signedBase)>0)?Number(proj.signedBase):vb;
+      return `<div class="rowline" style="align-items:flex-start;flex-wrap:wrap">計價方式
+      <select id="set-pricemode" style="min-width:210px">
+        <option value="lump"${mode==='lump'?' selected':''}>總價承攬（對業主）</option>
+        <option value="actual"${mode==='actual'?' selected':''}>實作實算（發包代工）</option>
+      </select></div>
+    <div class="muted" style="font-size:12px;margin-bottom:6px">
+      <b>總價承攬</b>：總額永遠等於簽約總價。覆核改數量只會<b>重新分配</b>各期，總額不變；多做的要另外開「追加工程」跟業主請。<br>
+      <b>實作實算</b>：議定的<b>折數固定住</b>，做多少算多少。覆核把量改大，總額照同一個折數<b>跟著變大</b>，不用開追加。
+      ${signed>0?`<br>目前折數 <b style="color:var(--accent)">${(100*(base>0?signed/base:1)).toFixed(2)}%</b>
+        （${money(signed)} ÷ ${money(base)}${mode==='actual'?`，分母是<b>簽約當時</b>的明細總額${Number(proj.signedBase)>0?'':'（還沒設，儲存後就以現在的明細為準）'}；目前明細 ${money(vb)}`:'，分母是目前的明細總額'}）
+        ${mode==='actual'&&Number(proj.signedBase)>0?` <button class="btn sub sm" id="set-rebase" style="margin-left:4px">重設折數基準</button>`:''}`:''}
+    </div>`; })()}
     <button class="btn" id="set-save">儲存</button></div>
   ${proj.parentId?'':`<div class="card"><h3>建立廠商子專案（發包）</h3>
     <div class="muted" style="font-size:13px;margin-bottom:8px">把這份當<b>母專案（發包總表）</b>，在這裡設好你的<b>發包單價與總量</b>；然後每個廠商建一個<b>子專案</b>。這裡是<b>整份複製</b>（全部細項都帶），適合一家包全部。<b>只發其中幾道工序、幾間</b>的話，用「合約明細 → 🏗 發包給工班」比較快。<br><b>系統會盯著：所有子專案加起來不能超過母專案的量</b>，超了會在「發包分配」紅字警告。子專案的期別、進度、請款各自獨立，不會互相污染。</div>
@@ -2337,13 +2395,16 @@ document.addEventListener('click',async e=>{
         if(ownCnt!==(hasOwnCount(it)?Number(it.cnt):null))
           rescaleItemCount(proj,b,it,ownCnt!==null?ownCnt:(Number(b.count)||0));
         if(ownCnt!==null) it.cnt=ownCnt; else delete it.cnt;
-        // 數量改小到比已經做掉的還少：完成度會被壓在 100%，已請的錢會往下修，先問一聲
         const doneQ=doneQtyOf(proj,b,it), newTot=(Number(qty)||0)*(ownCnt!==null?ownCnt:(Number(b.count)||0));
-        if(doneQ>0 && doneQ>newTot+1e-6 &&
-           !confirm(`這條已經登錄完成 ${qfmt(doneQ)} ${it.unit}，改完之後整條總量只剩 ${qfmt(newTot)} ${it.unit}。\n\n完成度會被壓在 100%，已經請過的金額會跟著往下修。\n\n還是要改嗎？`)) return;
+        const qtyMoved=Math.abs((Number(qty)||0)-(Number(before.qty)||0))>1e-9;
+        // 已經登錄過進度：先問這次改數量是「覆核重新丈量」還是「改施作範圍」
+        const keepRooms=(qtyMoved&&doneQ>0)?askKeepRooms(b.unit,[it.name]):false;
+        // 只有「完成量不變」那種才會把完成度壓到 100%、連帶把錢往下修，那時才需要再問一次
+        if(!keepRooms && doneQ>0 && qtyMoved && doneQ>newTot+1e-6 &&
+           !confirm(`這條已經登錄完成 ${qfmt(doneQ)} ${it.unit}，改完之後整條總量只剩 ${qfmt(newTot)} ${it.unit}。\n\n完成度會被壓在 100%，還沒結算鎖定的期別金額會跟著往下修。\n\n還是要改嗎？`)) return;
         it.name=name; it.unit=unit; it.price=price; it.priceExpr=priceExpr; it.remark=remark; it.extra=isExt;
-        const doneBefore=+(doneQ/(Number(before.qty)||1)).toFixed(2);   // 換算前的完成間數
-        if(setItemQty(proj,b,it,qty,qtyExpr))
+        const doneBefore=+(doneQ/(Number(before.qty)||1)).toFixed(2);   // 改之前的完成間數
+        if(setItemQty(proj,b,it,qty,qtyExpr,keepRooms)&&!keepRooms)
           qtyRescaleNote.push(`・${it.name}：${qfmt(doneBefore)} → ${qfmt(doneCountOf(proj,b,it))} ${b.unit}`);
         const changed=SYNC_KEYS.filter(([k])=>String(before[k]??'')!==String(it[k]??''));
         const priceChanged=!priceEq(before.price,it.price);
@@ -2518,34 +2579,42 @@ document.addEventListener('click',async e=>{
   if(t.dataset.batchalledit){ batchAll=true; batchEdit=itemEdit=itemAdd=blkEdit=copyInto=null; blkAdd=false; render(); return; }
   if(t.dataset.batchallcancel){ batchAll=false; render(); return; }
   if(t.dataset.batchallok){
-    const changes=[], rescaled=[];
+    const changes=[], rescaled=[], plan=[];
     for(const b of proj.blocks)for(const it of b.items){
       const qEl=g('be-qty-'+it.id), pEl=g('be-price-'+it.id);
       if(!qEl&&!pEl)continue;
       changes.push({it,before:{name:it.name,unit:it.unit,qty:it.qty,price:it.price}});
       if(pEl){ const raw=pEl.value.trim(); it.price=evalExpr(raw); it.priceExpr=hasExpr(raw)?raw:''; }
-      if(qEl){ const raw=qEl.value.trim(); if(setItemQty(proj,b,it,evalExpr(raw)||0,hasExpr(raw)?raw:'')) rescaled.push(it.name); }
-      it.amount=(Number(it.qty)||0)*(Number(it.price)||0);
+      if(qEl){ const raw=qEl.value.trim(); plan.push({b,it,q:evalExpr(raw)||0,expr:hasExpr(raw)?raw:''}); }
     }
+    // 數量有動、又已經登錄過進度的，先問一次要照哪一種算（整批共用同一個選擇）
+    const hot=plan.filter(x=>Math.abs((Number(x.it.qty)||0)-x.q)>1e-9 && doneQtyOf(proj,x.b,x.it)>0);
+    const keepRooms=hot.length?askKeepRooms(hot[0].b.unit,hot.map(x=>x.it.name)):false;
+    plan.forEach(x=>{ if(setItemQty(proj,x.b,x.it,x.q,x.expr,keepRooms)&&!keepRooms) rescaled.push(x.it.name); });
+    for(const x of plan) x.it.amount=(Number(x.it.qty)||0)*(Number(x.it.price)||0);
     syncKidsAfterEdit(proj,changes);
-    if(rescaled.length) alert(`有 ${rescaled.length} 條登錄過進度的細項，完成量已按新數量換算：\n\n${rescaled.slice(0,10).map(x=>'・'+x).join('\n')}${rescaled.length>10?`\n…等共 ${rescaled.length} 條`:''}\n\n【已經請過的金額完全沒變】。完成％會跟著新數量重算，若實際已做完，到「進度請款」重填一次即可。`);
+    if(rescaled.length) alert(`有 ${rescaled.length} 條登錄過進度的細項，完成量已按新數量換算：\n\n${rescaled.slice(0,10).map(x=>'・'+x).join('\n')}${rescaled.length>10?`\n…等共 ${rescaled.length} 條`:''}\n\n【已經結算鎖定的期別金額完全沒變】。完成％會跟著新數量重算，若實際已做完，到「進度請款」重填一次即可。`);
     batchAll=false; save(); render(); return;
   }
   if(t.dataset.batchedit){ batchEdit=t.dataset.batchedit; itemEdit=itemAdd=blkEdit=copyInto=null; blkAdd=false; render(); return; }
   if(t.dataset.batchcancel){ batchEdit=null; render(); return; }
   if(t.dataset.batchok){
     const b=proj.blocks.find(x=>x.id===t.dataset.batchok);if(!b){batchEdit=null;render();return;}
-    const changes=[], rescaled=[];
+    const changes=[], rescaled=[], plan=[];
     for(const it of b.items){
       const qEl=g('be-qty-'+it.id), pEl=g('be-price-'+it.id);
       if(!qEl&&!pEl)continue; // 被隱藏的 0 元項目維持原樣
       changes.push({it,before:{name:it.name,unit:it.unit,qty:it.qty,price:it.price}});
       if(pEl){ const raw=pEl.value.trim(); it.price=evalExpr(raw); it.priceExpr=hasExpr(raw)?raw:''; }
-      if(qEl){ const raw=qEl.value.trim(); if(setItemQty(proj,b,it,evalExpr(raw)||0,hasExpr(raw)?raw:'')) rescaled.push(it.name); }
-      it.amount=(Number(it.qty)||0)*(Number(it.price)||0);
+      if(qEl){ const raw=qEl.value.trim(); plan.push({b,it,q:evalExpr(raw)||0,expr:hasExpr(raw)?raw:''}); }
     }
+    // 數量有動、又已經登錄過進度的，先問一次要照哪一種算（整批共用同一個選擇）
+    const hot=plan.filter(x=>Math.abs((Number(x.it.qty)||0)-x.q)>1e-9 && doneQtyOf(proj,x.b,x.it)>0);
+    const keepRooms=hot.length?askKeepRooms(hot[0].b.unit,hot.map(x=>x.it.name)):false;
+    plan.forEach(x=>{ if(setItemQty(proj,x.b,x.it,x.q,x.expr,keepRooms)&&!keepRooms) rescaled.push(x.it.name); });
+    for(const x of plan) x.it.amount=(Number(x.it.qty)||0)*(Number(x.it.price)||0);
     syncKidsAfterEdit(proj,changes);
-    if(rescaled.length) alert(`有 ${rescaled.length} 條登錄過進度的細項，完成量已按新數量換算：\n\n${rescaled.slice(0,10).map(x=>'・'+x).join('\n')}${rescaled.length>10?`\n…等共 ${rescaled.length} 條`:''}\n\n【已經請過的金額完全沒變】。完成％會跟著新數量重算，若實際已做完，到「進度請款」重填一次即可。`);
+    if(rescaled.length) alert(`有 ${rescaled.length} 條登錄過進度的細項，完成量已按新數量換算：\n\n${rescaled.slice(0,10).map(x=>'・'+x).join('\n')}${rescaled.length>10?`\n…等共 ${rescaled.length} 條`:''}\n\n【已經結算鎖定的期別金額完全沒變】。完成％會跟著新數量重算，若實際已做完，到「進度請款」重填一次即可。`);
     batchEdit=null; save(); render(); return;
   }
   if(t.dataset.splititem){
@@ -2959,14 +3028,39 @@ document.addEventListener('click',async e=>{
     return;
   }
   if(t.id==='btn-addperiod'){
-    const last=proj.periods[proj.periods.length-1];
+    const lastIdx=proj.periods.length-1;
+    const last=proj.periods[lastIdx];
+    // 開新的一期＝前一期已經送出去了，把它的實請金額結算鎖住。
+    // 之後覆核改數量／改單價／改折讓，都只會影響本期，不會回頭改掉已經請過的帳。
+    let settledMsg='';
+    if(last&&(last.settled===undefined||last.settled===null||last.settled==='')){
+      last.settled=Math.round(calc(proj,lastIdx).billActual);
+      settledMsg=`第 ${last.no} 期已結算並鎖在 ${money(last.settled)}。\n之後改數量或單價都不會再動到它，差額會走新的一期。\n（金額不對的話，切回第 ${last.no} 期按「🔓 解除鎖定」可以改。）\n\n`;
+    }
     const prog=last?JSON.parse(JSON.stringify(last.prog||{})):{};
     proj.periods.push({id:uid(),no:proj.periods.length+1,date:today(),prog});
-    proj.curPeriod=proj.periods.length-1;state.tab='prog';save();render();return;
+    proj.curPeriod=proj.periods.length-1;state.tab='prog';save();render();
+    if(settledMsg) alert(settledMsg+`已新增第 ${proj.periods.length} 期。`);
+    return;
   }
   if(t.id==='btn-delperiod'){
     if(!confirm(`刪除第 ${proj.periods.length} 期？本期填的進度會遺失。`))return;
     proj.periods.pop();proj.curPeriod=Math.max(0,proj.periods.length-1);save();render();return;
+  }
+  if(t.id==='settle-toggle'){
+    const idx=proj.curPeriod||0, per=proj.periods[idx]; if(!per) return;
+    if(per.settled!==undefined&&per.settled!==null&&per.settled!==''){
+      if(!confirm(`解除第 ${per.no} 期的鎖定？\n\n解除後這期的金額會跟著明細重算，之後改數量／單價／折讓都會動到它。`)) return;
+      delete per.settled; save(); render(); return;
+    }
+    const cur=calc(proj,idx).billActual;
+    const inp=prompt(`把第 ${per.no} 期的實請金額鎖起來。\n\n`
+      +`鎖住之後，不管之後怎麼改數量、單價、折讓，這一期都不會再被改掉，差額會跑到後面的期別。\n\n`
+      +`請填「這期實際送出去的金額」（預設帶目前算出來的）：`, String(Math.round(cur)));
+    if(inp===null) return;
+    per.settled=Math.round(num(inp)); save(); render();
+    alert(`第 ${per.no} 期已鎖在 ${money(per.settled)}。`);
+    return;
   }
   if(t.id==='btn-addextra'){
     const period=proj.periods[proj.periods.length-1];if(!period)return;
@@ -3039,12 +3133,30 @@ document.addEventListener('click',async e=>{
           :'接下來：刪掉不是這家做的細項、用「✂ 拆」把一條拆成骨架／封板，數量與單價改成議定的。'}\n${(Number((proj.blocks[0]||{}).count)||0)>1?'如果他只做其中幾間，把區塊的「合約數量（間數）」改成他做的間數就好。\n':''}回母專案的「發包分配」分頁可以看還剩多少可發包。`);
     return;
   }
+  if(t.id==='set-rebase'){
+    const vb=vbaseOf(proj), signed=Number(proj.signedTotal)||0;
+    if(!confirm(`把折數基準改成「現在的明細總額」？\n\n`
+      +`現在：${money(signed)} ÷ ${money(Number(proj.signedBase)||0)} ＝ ${(100*(Number(proj.signedBase)>0?signed/Number(proj.signedBase):1)).toFixed(2)}%\n`
+      +`改成：${money(signed)} ÷ ${money(vb)} ＝ ${(100*(vb>0?signed/vb:1)).toFixed(2)}%\n\n`
+      +`這會改變往後每期的金額。重新議價、或當初的基準抓錯時才用。`)) return;
+    proj.signedBase=vb; save(); render(); return;
+  }
   if(t.id==='set-save'){
     proj.name=document.getElementById('set-name').value.trim()||proj.name;
     proj.owner=document.getElementById('set-owner').value.trim();
     proj.vendor=document.getElementById('set-vendor').value.trim();
     const cv=document.getElementById('set-childvendor'); if(cv) proj.vendor=cv.value.trim(); // 子專案：廠商名以發包資訊欄為準
     const sv=num(document.getElementById('set-signed').value); proj.signedTotal=sv>0?sv:0;
+    (()=>{ const el=document.getElementById('set-pricemode'); if(!el) return;
+      const mode=el.value==='actual'?'actual':'lump';
+      const was=proj.priceMode==='actual'?'actual':'lump';
+      if(mode==='actual'){
+        proj.priceMode='actual';
+        // 剛切過來、或簽約總價剛改：用「現在的明細總額」當折數分母鎖住。
+        // 之後覆核改數量，分母不動，總額才跟著量走。
+        if(was!=='actual'||!(Number(proj.signedBase)>0)) proj.signedBase=vbaseOf(proj);
+      } else { delete proj.priceMode; delete proj.signedBase; }
+    })();
     ['invTitle:set-invtitle','invTaxId:set-invtaxid','invTel:set-invtel','invAddr:set-invaddr','invTo:set-invto'].forEach(pair=>{
       const [k,id]=pair.split(':'); const el=document.getElementById(id); if(!el) return;
       const v=el.value.trim(); if(v) proj[k]=v; else delete proj[k];
@@ -3385,7 +3497,31 @@ function appLockToggle(){
 }
 document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='visible') appLockGate(function(){}); });
 
-appLockGate(function(){ normalizeGroups(); render(); initCloud(); });
+// 舊檔補鎖：已經翻過去的期別（本期之前的）都是送出去過的帳，按現值結算鎖住。
+// 數字不變，只是加上鎖——之後覆核改數量就不會再回頭改掉它們。
+function settleOldPeriods(){
+  let n=0;
+  (state.projects||[]).forEach(proj=>{
+    const cur=Number(proj.curPeriod)||0;
+    for(let k=0;k<cur&&k<(proj.periods||[]).length;k++){
+      const per=proj.periods[k];
+      if(per.settled===undefined||per.settled===null||per.settled===''){
+        try{ per.settled=Math.round(calc(proj,k).billActual); n++; }catch(e){}
+      }
+    }
+  });
+  return n;
+}
+appLockGate(function(){
+  normalizeGroups();
+  const nSettled=settleOldPeriods();
+  if(nSettled){ save();
+    setTimeout(()=>alert(`已把 ${nSettled} 個「已經翻過去的期別」結算鎖定。\n\n`
+      +`金額完全沒變，只是鎖起來——以後覆核改數量、改單價、改折讓，都不會再回頭改掉已經請過的帳，差額會走當期。\n\n`
+      +`要改某一期的金額：切到那一期，按「🔓 解除鎖定」。`),600);
+  }
+  render(); initCloud();
+});
 </script>
 </body>
 </html>
