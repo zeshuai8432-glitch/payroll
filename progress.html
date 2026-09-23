@@ -109,7 +109,7 @@ body.printing #print-overlay{display:block;position:absolute;inset:0;background:
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.09.23g-pricemode';
+const APP_VERSION='vG2026.09.23h-settlefix';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -1464,7 +1464,7 @@ function viewProg(proj){
     ${editable?`<input type="date" id="period-date" value="${esc(period.date)}">`:''}
     <button class="btn sub sm" id="btn-addperiod">＋ 新增一期</button>
     ${editable&&proj.periods.length?`<button class="btn bad sm" id="btn-delperiod">刪除本期</button>`:''}
-    ${proj.periods.length?`<button class="btn sub sm" id="settle-toggle" title="鎖住這一期的實請金額，之後改數量／單價／折讓都不會動到它">${c.settled?`🔓 解除鎖定（已鎖 ${money(proj.periods[proj.curPeriod||0].settled)}）`:'🔒 結算鎖定本期'}</button>`:''}
+    ${proj.periods.length?`<button class="btn sub sm" id="settle-toggle" title="記下這一期實際請了多少。鎖住後改數量／單價／折讓都不會動到它；直接打字就能改，不用去動數量">${c.settled?`🔒 已鎖 ${money(proj.periods[proj.curPeriod||0].settled)}（點我改）`:'🔒 結算鎖定本期'}</button>`:''}
     <span style="flex:1"></span>
     <label class="muted" style="font-size:13px;cursor:pointer"><input type="checkbox" id="hide-zero"${proj.hideZero?' checked':''}> 隱藏 0 元項目</label>
     <button class="btn" id="btn-print">🖨 列印請款單</button>
@@ -2322,7 +2322,7 @@ function setProgInput(proj,blkId,itemId,kind,val){
 }
 
 document.addEventListener('click',async e=>{
-  const t=e.target.closest('[data-tab],[data-editblk],[data-delblk],[data-edititem],[data-delitem],[data-additem],[data-splititem],[data-sortitems],[data-grouptoggle],[data-groupmerge],[data-groupdetect],[data-whtoggle],[data-rttoggle],[data-whtax],[data-whtaxauto],[data-rtamt],[data-selfone],[data-selfrooms],[data-selfrest],[data-selfclear],[data-delmode],[data-delcancel],[data-delall],[data-delnone],[data-delinv],[data-delzero],[data-deldo],#sub-toggle,#sub-close,#sub-go,[data-backfill],[data-backfillcancel],[data-backfillok],[data-addmissblk],#trash-toggle,#trash-clear,[data-trashrestore],[data-trashdrop],#drift-sync,#drift-sync-price,#drift-all,#drift-none,[data-copyinto],[data-copyok],[data-copycancel],[data-xcopy],[data-xcopycancel],[data-xcopyall],[data-xcopyok],[data-xfer],[data-xfercancel],[data-xferok],[data-batchedit],[data-batchok],[data-batchcancel],[data-batchalledit],[data-batchallok],[data-batchallcancel],[data-itemok],[data-itemcancel],[data-blkok],[data-blkcancel],[data-bapply],[data-gapply],#btn-invrecon,[data-editextra],[data-delextra],#btn-import,#btn-import2,#btn-newproj,#btn-newproj2,#btn-addblk,#btn-addblk-ok,#btn-addperiod,#btn-delperiod,#btn-addextra,#btn-roundup,[data-gotoproj],#btn-print,#btn-setretain,#orphan-fix,#orphan-detach,#proj-groupall,#set-save,#proj-dup,#proj-detach,#backup-export,#backup-import-btn,#proj-del,#cloud-push,#cloud-pull');
+  const t=e.target.closest('[data-tab],[data-editblk],[data-delblk],[data-edititem],[data-delitem],[data-additem],[data-splititem],[data-sortitems],[data-grouptoggle],[data-groupmerge],[data-groupdetect],[data-whtoggle],[data-rttoggle],[data-whtax],[data-whtaxauto],[data-rtamt],[data-selfone],[data-selfrooms],[data-selfrest],[data-selfclear],[data-delmode],[data-delcancel],[data-delall],[data-delnone],[data-delinv],[data-delzero],[data-deldo],#sub-toggle,#sub-close,#sub-go,[data-backfill],[data-backfillcancel],[data-backfillok],[data-addmissblk],#trash-toggle,#trash-clear,[data-trashrestore],[data-trashdrop],#drift-sync,#drift-sync-price,#drift-all,#drift-none,[data-copyinto],[data-copyok],[data-copycancel],[data-xcopy],[data-xcopycancel],[data-xcopyall],[data-xcopyok],[data-xfer],[data-xfercancel],[data-xferok],[data-batchedit],[data-batchok],[data-batchcancel],[data-batchalledit],[data-batchallok],[data-batchallcancel],[data-itemok],[data-itemcancel],[data-blkok],[data-blkcancel],[data-bapply],[data-gapply],#btn-invrecon,[data-editextra],[data-delextra],#btn-import,#btn-import2,#btn-newproj,#btn-newproj2,#btn-addblk,#btn-addblk-ok,#btn-addperiod,#btn-delperiod,#btn-addextra,#btn-roundup,#settle-toggle,#set-rebase,[data-gotoproj],#btn-print,#btn-setretain,#orphan-fix,#orphan-detach,#proj-groupall,#set-save,#proj-dup,#proj-detach,#backup-export,#backup-import-btn,#proj-del,#cloud-push,#cloud-pull');
   if(!t)return;
   const proj=curProj();
   if(t.dataset.tab){state.tab=t.dataset.tab;save();render();return;}
@@ -3049,17 +3049,23 @@ document.addEventListener('click',async e=>{
   }
   if(t.id==='settle-toggle'){
     const idx=proj.curPeriod||0, per=proj.periods[idx]; if(!per) return;
-    if(per.settled!==undefined&&per.settled!==null&&per.settled!==''){
-      if(!confirm(`解除第 ${per.no} 期的鎖定？\n\n解除後這期的金額會跟著明細重算，之後改數量／單價／折讓都會動到它。`)) return;
-      delete per.settled; save(); render(); return;
-    }
-    const cur=calc(proj,idx).billActual;
-    const inp=prompt(`把第 ${per.no} 期的實請金額鎖起來。\n\n`
-      +`鎖住之後，不管之後怎麼改數量、單價、折讓，這一期都不會再被改掉，差額會跑到後面的期別。\n\n`
-      +`請填「這期實際送出去的金額」（預設帶目前算出來的）：`, String(Math.round(cur)));
+    const locked=(per.settled!==undefined&&per.settled!==null&&per.settled!=='');
+    // 直接打字改金額就好，不用去把數量改回當初的樣子——這裡記的是「這期實際請了多少」，
+    // 跟現在的數量無關。清空＝解除鎖定。
+    const cur=locked?Number(per.settled):Math.round(calc(proj,idx).billActual);
+    const inp=prompt(`第 ${per.no} 期實際請款金額\n\n`
+      +(locked?`目前鎖在 ${money(Number(per.settled))}。直接改成請款單上的金額即可。\n`
+              :`鎖住之後，不管之後怎麼改數量、單價、折讓，這一期都不會再被改掉，差額會跑到後面的期別。\n`)
+      +`（不用把數量改回原本的，這裡填的就是最終金額）\n\n`
+      +`清空後按確定＝解除鎖定，金額改回跟著明細重算。`, String(cur));
     if(inp===null) return;
+    if(String(inp).trim()===''){
+      if(!locked){ render(); return; }
+      if(!confirm(`解除第 ${per.no} 期的鎖定？\n\n解除後這期的金額會跟著明細重算，之後改數量／單價／折讓都會動到它。`)) return;
+      delete per.settled; save(); render(); alert(`第 ${per.no} 期已解除鎖定。`); return;
+    }
     per.settled=Math.round(num(inp)); save(); render();
-    alert(`第 ${per.no} 期已鎖在 ${money(per.settled)}。`);
+    alert(`第 ${per.no} 期已鎖在 ${money(per.settled)}。\n\n差額會自動算到後面的期別。`);
     return;
   }
   if(t.id==='btn-addextra'){
