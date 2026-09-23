@@ -109,7 +109,7 @@ body.printing #print-overlay{display:block;position:absolute;inset:0;background:
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.09.23e-xfer3';
+const APP_VERSION='vG2026.09.23f-allocqty';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -344,16 +344,38 @@ const itemTotalQty=(it,blk)=>it.qty*effCount(it,blk);
 // 單一細項的總量變了（改單間數量、或改「這條做幾間」）時，用各期存下來的
 // 絕對完成量回推新的百分比——已經做掉的量是既成事實，已請過款的金額才不會被追溯改掉。
 function rescaleItemTo(proj,blk,it,newTotal){
-  if(!proj||!blk||!it||!Array.isArray(proj.periods)) return;
+  if(!proj||!blk||!it||!Array.isArray(proj.periods)) return 0;
   const oldTotal=itemTotalQty(it,blk);
+  let n=0;
   for(const per of proj.periods){
     const pr=per&&per.prog&&per.prog[it.id]; if(!pr) continue;
+    n++;
     const doneQty=(pr.q!==undefined&&pr.q!==null)?Number(pr.q):(Number(pr.p)||0)*oldTotal;
     if(newTotal>0){ pr.p=Math.min(doneQty/newTotal,1); pr.q=+doneQty.toFixed(2); }
     else { pr.p=0; pr.q=0; }
   }
+  return n;
 }
 const rescaleItemProgress=(proj,blk,it,newQty)=>rescaleItemTo(proj,blk,it,(Number(newQty)||0)*effCount(it,blk));
+// 改「單間數量」請一律走這裡：先按新總量把各期完成度回推，已請過的金額才不會被追溯改掉。
+// 直接寫 it.qty= 會讓舊期的請款金額跟著數量一起變，對帳就對不起來了。
+function setItemQty(proj,blk,it,newQty,expr){
+  const q=Number(newQty)||0; let touched=0;
+  if(Math.abs((Number(it.qty)||0)-q)>1e-9) touched=rescaleItemTo(proj,blk,it,q*effCount(it,blk))||0;
+  it.qty=q; if(expr!==undefined) it.qtyExpr=expr;
+  it.amount=q*(Number(it.price)||0);
+  return touched>0;   // 有登錄過進度的，完成間數會被換算，呼叫端要說一聲
+}
+// 這條各期登錄過的「絕對完成量」最大值（單位同細項，不是間數）
+function doneQtyOf(proj,blk,it){
+  const tot=itemTotalQty(it,blk); let mx=0;
+  for(const per of ((proj&&proj.periods)||[])){
+    const pr=per&&per.prog&&per.prog[it.id]; if(!pr) continue;
+    const q=(pr.q!==undefined&&pr.q!==null)?Number(pr.q):(Number(pr.p)||0)*tot;
+    if(q>mx) mx=q;
+  }
+  return +mx.toFixed(4);
+}
 const rescaleItemCount=(proj,blk,it,newCnt)=>rescaleItemTo(proj,blk,it,(Number(it.qty)||0)*(Number(newCnt)||0));
 // 這條細項目前做到幾「間」（用來預設「他最後做幾間」）
 function doneCountOf(proj,blk,it){
@@ -395,20 +417,35 @@ function allocationOf(parent){
   const kids=childProjects(parent.id);
   const map={}; // srcId -> {qty, amount, by:[{name,qty,amount}]}
   kids.forEach(k=>{
+    // ── 這家「認領了多少量」──
+    // 同一條母細項被這家拆成好幾道工序（骨架／封板）時，那是同一片牆分段做，
+    // 每一道的數量都等於整條的量，相加會憑空多一倍。同一組只算一次。
+    const kq={}, gseen={};
+    k.blocks.forEach(b=>b.items.forEach(it=>{
+      const src=it.srcId; if(!src) return;
+      const q=itemTotalQty(it,b);
+      if(it.groupId){
+        const key=src+'\u0000'+it.groupId, prev=gseen[key]||0;
+        if(q>prev){ gseen[key]=q; kq[src]=(kq[src]||0)+(q-prev); }   // 整組取最大，不累加
+      } else kq[src]=(kq[src]||0)+q;
+    }));
+    // ── 金額與明細：照實相加（工序拆開後各段金額本來就該加總）──
     k.blocks.forEach(b=>b.items.forEach(it=>{
       const src=it.srcId; if(!src) return;
       const e=map[src]||(map[src]={qty:0,amount:0,by:[],refs:[]});
-      const q=itemTotalQty(it,b);      // 子的總量（單間量×間數）
       const a=itemValue(it,b);
-      e.qty+=q; e.amount+=a;
+      e.amount+=a;
       e.refs.push({projId:k.id,projName:k.name,blkName:b.name,item:it,name:it.name,amount:a});
       const hit=e.by.find(x=>x.id===k.id);
-      if(hit){ hit.qty+=q; hit.amount+=a; } else e.by.push({id:k.id,name:k.name,qty:q,amount:a});
+      if(hit) hit.amount+=a; else e.by.push({id:k.id,name:k.name,qty:0,amount:a});
     }));
+    Object.keys(kq).forEach(src=>{
+      const e=map[src]; if(!e) return;
+      e.qty+=kq[src];
+      const hit=e.by.find(x=>x.id===k.id); if(hit) hit.qty=kq[src];
+    });
   });
-  // 超額判斷用「金額」：子專案可能把一條拆成骨架／封板，數量會變兩倍但金額仍相加，
-  // 用金額比才不會誤報（140×12＋140×12 ＝ 280×12）。數量僅供參考顯示。
-  const rows=[]; let over=0, totMother=0, totAlloc=0, totSelf=0;
+  const rows=[]; let over=0, totMother=0, totAlloc=0, totCost=0, totSelf=0;
   const seen=new Set();
   parent.blocks.forEach(b=>b.items.forEach(it=>{
     const mQty=itemTotalQty(it,b), mAmt=itemValue(it,b);
@@ -418,17 +455,23 @@ function allocationOf(parent){
     const unitPrice=mQty?mAmt/mQty:0;
     const selfQty=Math.max(0, Math.min(Number(it.selfQty)||0, mQty));
     const selfAmt=selfQty*unitPrice;
-    totMother+=mAmt; totAlloc+=e.amount; totSelf+=selfAmt;
-    const isOver=(e.amount+selfAmt)-mAmt>0.5;
+    // 「已發包」一律換算成合約價值（認領的量 × 母專案單價），不用子專案的實際發包價：
+    // 跟每一家談的價都不一樣，拿實付金額去跟母金額比，永遠對不起來。
+    // 實際發包成本另外放在 aCost，兩者的差就是價差。
+    const aQty=e.qty, aAmt=aQty*unitPrice, aCost=e.amount;
+    totMother+=mAmt; totAlloc+=aAmt; totCost+=aCost; totSelf+=selfAmt;
+    // 超額判斷用「量」：發包價比母單價高或低，都不該被誤判成發包超量
+    const isOver=(aQty+selfQty)-mQty>0.01;
     if(isOver) over++;
-    rows.push({blk:b, it, mQty, mAmt, aQty:e.qty, aAmt:e.amount, by:e.by, selfQty, selfAmt, unitPrice,
-               leftQty:+(mQty-e.qty-selfQty).toFixed(4), leftAmt:mAmt-e.amount-selfAmt, over:isOver});
+    rows.push({blk:b, it, mQty, mAmt, aQty, aAmt, aCost, by:e.by, selfQty, selfAmt, unitPrice,
+               leftQty:+(mQty-aQty-selfQty).toFixed(4), leftAmt:mAmt-aAmt-selfAmt, over:isOver});
   }));
   // 孤兒：子專案的 srcId 在母專案已找不到（多半是母那條被拆開或刪掉了），
   // 這些金額仍是實際發包出去的，要列出來提醒，不能默默消失。
   const orphans=[]; let orphanAmt=0;
   Object.keys(map).forEach(src=>{ if(!seen.has(src)){ orphans.push(map[src]); orphanAmt+=map[src].amount; } });
-  return {rows, kids, over, totMother, totAlloc, totSelf, totLeft:totMother-totAlloc-totSelf, orphans, orphanAmt};
+  return {rows, kids, over, totMother, totAlloc, totCost, totSelf,
+          totLeft:totMother-totAlloc-totSelf, orphans, orphanAmt};
 }
 function periodOf(p,idx){return p.periods[idx]||null;}
 // 子專案的某個區塊，對照母專案同一個區塊還少哪幾條。
@@ -515,7 +558,7 @@ function syncKidsAfterEdit(proj,changes){
     const priceChanged=!priceEq(before.price,it.price);
     if(!changed.length&&!priceChanged) return;
     childRefsOf(proj,it.id).forEach(r=>plan.push({
-      it:r.it, src:it, kid:r.kid, priceChanged,
+      it:r.it, src:it, kid:r.kid, blk:r.blk, priceChanged,
       // 單價只同步「原本跟母專案一樣」的（＝照抄的）；另外議過價的不能蓋掉
       syncPrice:priceChanged&&priceEq(r.it.price,before.price)
     }));
@@ -531,11 +574,15 @@ function syncKidsAfterEdit(proj,changes){
     +(kept?`・另有 ${kept} 條是跟那家另外議定的價，單價不會被蓋掉\n`:'')
     +`・間數一律不動（各家做幾間是各自的）\n\n`
     +`【確定】一起更新　【取消】只改母專案（之後可在子專案按「跟母專案同步」補）`)) return 0;
-  applyDrift(plan.map(p=>({it:p.it,src:p.src,syncPrice:p.syncPrice})));
+  applyDrift(plan.map(p=>({it:p.it,src:p.src,syncPrice:p.syncPrice,proj:p.kid,blk:p.blk})));
   return plan.length;
 }
 function applyDrift(list){
-  list.forEach(({it,src,syncPrice})=>{
+  list.forEach(({it,src,syncPrice,proj,blk})=>{
+    // 母專案的單間數量同步下來時，子專案各期的完成度要按新總量回推，
+    // 不然這家舊期已經請過的錢會跟著數量一起被改掉
+    if(proj&&blk&&Math.abs((Number(it.qty)||0)-(Number(src.qty)||0))>1e-9)
+      rescaleItemTo(proj,blk,it,(Number(src.qty)||0)*effCount(it,blk));
     SYNC_KEYS.forEach(([k])=>{ it[k]=src[k]; });
     it.qtyExpr=src.qtyExpr||'';
     if(syncPrice){ it.price=src.price; it.priceExpr=src.priceExpr||''; }  // 只有沒另外議價的才跟著改
@@ -733,7 +780,7 @@ function render(){
     const al=allocationOf(proj);
     h+=`<div class="notice" style="margin-bottom:10px${al.over?';border-color:rgba(248,113,113,.55);background:rgba(248,113,113,.12);color:#fca5a5':''}">
       母專案（發包總表），底下有 <b>${kids.length}</b> 個廠商子專案。
-      ${al.over?`<b>⚠ 有 ${al.over} 條細項發包超過母專案的量</b>，請到「發包分配」查看。`:`已發包 ${money(al.totAlloc)}${al.totSelf?`｜自辦 ${money(al.totSelf)}`:''}｜還沒決定 ${money(al.totLeft)}（母專案總額 ${money(al.totMother)}）。`}</div>`;
+      ${al.over?`<b>⚠ 有 ${al.over} 條細項發包超過母專案的量</b>，請到「發包分配」查看。`:`已發包 ${money(al.totAlloc)}${al.totSelf?`｜自辦 ${money(al.totSelf)}`:''}｜還沒決定 ${money(al.totLeft)}（母專案總額 ${money(al.totMother)}）。${Math.abs(al.totAlloc-al.totCost)>0.5?`　實際發包 ${money(al.totCost)}，價差 ${money(al.totAlloc-al.totCost)}。`:''}`}</div>`;
   }
   // 舊資料：整份專案還有沒收合的拆分時，各分頁都提示一次（不用鑽進區塊找）
   const pRuns=projectSplitRuns(proj);
@@ -1562,13 +1609,18 @@ function viewAlloc(proj){
   const al=allocationOf(proj);
   let h=`<div class="grid" style="margin-bottom:12px">
     <div class="stat"><div class="l">母專案總額（發包預算）</div><div class="v">${money(al.totMother)}</div></div>
-    <div class="stat"><div class="l">已發包</div><div class="v" style="color:${al.totAlloc>al.totMother?'#fca5a5':'inherit'}">${money(al.totAlloc)}</div></div>
+    <div class="stat"><div class="l">已發包（照母單價）</div><div class="v" style="color:${al.totAlloc>al.totMother?'#fca5a5':'inherit'}">${money(al.totAlloc)}</div></div>
     <div class="stat"><div class="l">自辦（自己做）</div><div class="v" style="color:var(--accent2)">${money(al.totSelf)}</div></div>
     <div class="stat"><div class="l">還沒決定</div><div class="v" style="color:${al.totLeft<0?'#fca5a5':'var(--ok)'}">${money(al.totLeft)}</div></div>
+  </div>
+  <div class="grid" style="margin-bottom:12px">
+    <div class="stat"><div class="l">實際發包成本（各家談的價）</div><div class="v">${money(al.totCost)}</div></div>
+    <div class="stat"><div class="l">價差（母單價 − 實際發包）</div><div class="v" style="color:${al.totAlloc-al.totCost<0?'#fca5a5':'var(--ok)'}">${money(al.totAlloc-al.totCost)}</div>
+      <div class="muted" style="font-size:11px;margin-top:2px">${al.totAlloc?`已發包的部分，毛利 ${(100*(al.totAlloc-al.totCost)/al.totAlloc).toFixed(1)}%`:'還沒發包'}</div></div>
   </div>`;
   if(al.over){
     h+=`<div class="notice" style="border-color:rgba(248,113,113,.55);background:rgba(248,113,113,.12);color:#fca5a5;margin-bottom:10px">
-      <b>⚠ 有 ${al.over} 條細項的發包量超過母專案</b>——通常是複製子專案後沒刪乾淨、同一條被發包給兩家。下面紅底的就是，請到該子專案把多的刪掉或改數量。</div>`;
+      <b>⚠ 有 ${al.over} 條細項的發包量超過母專案</b>——通常是複製子專案後沒刪乾淨、同一條被發包給兩家。下面紅底的就是，請到該子專案把多的刪掉或改數量（或按「↗ 轉出」把量挪過去）。</div>`;
   }
   {
     // 母專案這邊也要看得到：哪些子專案的細項跟現在的母專案對不起來
@@ -1594,12 +1646,14 @@ function viewAlloc(proj){
         <span class="muted" style="font-size:11.5px">找不到同名時：可到母專案把那條加回來，或標為額外項目就不再提醒。</span>
       </div></div>`;
   }
-  h+=`<div class="muted" style="font-size:12.5px;margin-bottom:8px">母專案設定<b>發包總量與單價</b>；每個廠商子專案認領的部分列在「已分配」。<b>自辦</b>欄填自己要做的部分：<b>上格填間數</b>（自己做 5 間就填 5），或<b>下格直接填量</b>（㎡、式…），兩格連動，<b>還沒決定</b>＝母總量−已發包−自辦。<b>已發包＋自辦不可超過母專案</b>，超了會標紅。</div>
+  h+=`<div class="muted" style="font-size:12.5px;margin-bottom:8px">母專案設定<b>發包總量與單價</b>；每個廠商子專案認領的部分列在「已分配」。<b>自辦</b>欄填自己要做的部分：<b>上格填間數</b>（自己做 5 間就填 5），或<b>下格直接填量</b>（㎡、式…），兩格連動，<b>還沒決定</b>＝母總量−已發包−自辦。<b>已發包＋自辦不可超過母專案的量</b>，超了會標紅。
+  <br>金額有兩欄：<b>已發包（母價）</b>＝認領的量×母專案單價，用來看合約發掉多少；<b>實際發包</b>＝跟各家談的價，兩者的差就是價差。
+  <b>超額是比「量」不是比錢</b>——發包價談得比母單價低不算超額。</div>
     <div style="margin-bottom:8px"><button class="btn sub sm" data-selfrest="1" title="把每條「還沒決定」的量全部歸為自辦">🙋 把剩下的全部設為自辦</button> <button class="btn sub sm" data-selfclear="1">清除所有自辦</button></div>`;
   let curBlk=null;
-  h+=`<table><tr><th>細項</th><th class="num">母·總量</th><th class="num">已分配量</th><th class="num">自辦（間數／量）</th><th class="num">還沒決定</th><th>分給誰</th><th class="num">母·金額</th><th class="num">已發包金額</th></tr>`;
+  h+=`<table><tr><th>細項</th><th class="num">母·總量</th><th class="num">已分配量</th><th class="num">自辦（間數／量）</th><th class="num">還沒決定</th><th>分給誰</th><th class="num">母·金額</th><th class="num">已發包（母價）</th><th class="num">實際發包</th></tr>`;
   for(const r of al.rows){
-    if(curBlk!==r.blk.id){ curBlk=r.blk.id; h+=`<tr class="chapter"><td colspan="8">${esc(r.blk.name)}（${qfmt(r.blk.count)} ${esc(r.blk.unit)}）</td></tr>`; }
+    if(curBlk!==r.blk.id){ curBlk=r.blk.id; h+=`<tr class="chapter"><td colspan="9">${esc(r.blk.name)}（${qfmt(r.blk.count)} ${esc(r.blk.unit)}）</td></tr>`; }
     const zero=r.aQty===0;
     h+=`<tr${r.over?' style="background:rgba(248,113,113,.10)"':''}>
       <td>${esc(r.it.name)}${r.over?'<span class="tag" style="background:rgba(248,113,113,.22);border-color:rgba(248,113,113,.5);color:#fca5a5">超額</span>':''}</td>
@@ -1613,9 +1667,10 @@ function viewAlloc(proj){
       <td class="num" style="color:${r.leftAmt<0?'#fca5a5':(r.leftAmt>0?'var(--muted)':'inherit')}">${money(r.leftAmt)}${r.leftQty>0?`<div style="font-size:10.5px;color:var(--muted)"><button class="btn sub sm" data-selfone="${r.blk.id}::${r.it.id}" style="font-size:10px;padding:0 6px;height:20px">設為自辦</button></div>`:''}</td>
       <td style="font-size:12px">${r.by.length?r.by.map(x=>`<span class="tag" style="cursor:pointer" data-gotoproj="${x.id}">${esc(x.name)} ${money(x.amount)}</span>`).join(' '):(r.selfQty>=r.mQty-0.0001?'<span class="tag" style="background:rgba(96,165,250,.2);border-color:rgba(96,165,250,.5);color:#bfdbfe">自辦</span>':'<span class="muted">尚未發包</span>')}</td>
       <td class="num">${money(r.mAmt)}</td>
-      <td class="num"${r.over?' style="color:#fca5a5;font-weight:700"':(zero?' class="muted"':'')}>${zero?'—':money(r.aAmt)}</td></tr>`;
+      <td class="num"${r.over?' style="color:#fca5a5;font-weight:700"':(zero?' class="muted"':'')}>${zero?'—':money(r.aAmt)}</td>
+      <td class="num"${zero?' class="muted"':''}>${zero?'—':`${money(r.aCost)}${Math.abs(r.aAmt-r.aCost)>0.5?`<div style="font-size:10.5px;color:${r.aAmt-r.aCost<0?'#fca5a5':'var(--ok)'}">${r.aAmt-r.aCost<0?'貴了':'省了'} ${money(Math.abs(r.aAmt-r.aCost))}</div>`:''}`}</td></tr>`;
   }
-  h+=`<tr class="chapter"><td>合計</td><td></td><td></td><td class="num"><b style="color:var(--accent2)">${money(al.totSelf)}</b></td><td class="num"><b>${money(al.totLeft)}</b></td><td></td><td class="num"><b>${money(al.totMother)}</b></td><td class="num"><b style="color:${al.totAlloc>al.totMother?'#fca5a5':'inherit'}">${money(al.totAlloc)}</b></td></tr></table>`;
+  h+=`<tr class="chapter"><td>合計</td><td></td><td></td><td class="num"><b style="color:var(--accent2)">${money(al.totSelf)}</b></td><td class="num"><b>${money(al.totLeft)}</b></td><td></td><td class="num"><b>${money(al.totMother)}</b></td><td class="num"><b style="color:${al.totAlloc>al.totMother?'#fca5a5':'inherit'}">${money(al.totAlloc)}</b></td><td class="num"><b>${money(al.totCost)}</b></td></tr></table>`;
   h+=`<div class="card" style="margin-top:12px"><h3>各廠商子專案</h3>
     <div class="muted" style="font-size:12px;margin-bottom:6px">「加項」＝該子專案各期登錄的點工／修繕等不按量算的錢，不在合約明細裡，所以不算進上面的發包量管控，但一樣要付。</div>
     <table><tr><th>廠商子專案</th><th>廠商</th><th class="num">發包金額</th><th class="num">加項（點工等）</th><th class="num">合計</th><th></th></tr>
@@ -2262,6 +2317,7 @@ document.addEventListener('click',async e=>{
   if(t.dataset.edititem){ itemEdit=t.dataset.edititem; itemAdd=blkEdit=null; blkAdd=false; render(); return; }
   if(t.dataset.itemcancel){ itemEdit=itemAdd=null; render(); return; }
   if(t.dataset.itemok){
+    const qtyRescaleNote=[];
     const parts=t.dataset.itemok.split('::'); const b=proj.blocks.find(x=>x.id===parts[0]);if(!b)return;
     const name=g('if-name').value.trim(); if(!name){ alert('請填名稱'); return; }
     const unit=g('if-unit').value.trim()||'式', remark=g('if-remark').value.trim();
@@ -2281,7 +2337,14 @@ document.addEventListener('click',async e=>{
         if(ownCnt!==(hasOwnCount(it)?Number(it.cnt):null))
           rescaleItemCount(proj,b,it,ownCnt!==null?ownCnt:(Number(b.count)||0));
         if(ownCnt!==null) it.cnt=ownCnt; else delete it.cnt;
-        it.name=name; it.unit=unit; it.qty=qty; it.qtyExpr=qtyExpr; it.price=price; it.priceExpr=priceExpr; it.amount=qty*price; it.remark=remark; it.extra=isExt;
+        // 數量改小到比已經做掉的還少：完成度會被壓在 100%，已請的錢會往下修，先問一聲
+        const doneQ=doneQtyOf(proj,b,it), newTot=(Number(qty)||0)*(ownCnt!==null?ownCnt:(Number(b.count)||0));
+        if(doneQ>0 && doneQ>newTot+1e-6 &&
+           !confirm(`這條已經登錄完成 ${qfmt(doneQ)} ${it.unit}，改完之後整條總量只剩 ${qfmt(newTot)} ${it.unit}。\n\n完成度會被壓在 100%，已經請過的金額會跟著往下修。\n\n還是要改嗎？`)) return;
+        it.name=name; it.unit=unit; it.price=price; it.priceExpr=priceExpr; it.remark=remark; it.extra=isExt;
+        const doneBefore=+(doneQ/(Number(before.qty)||1)).toFixed(2);   // 換算前的完成間數
+        if(setItemQty(proj,b,it,qty,qtyExpr))
+          qtyRescaleNote.push(`・${it.name}：${qfmt(doneBefore)} → ${qfmt(doneCountOf(proj,b,it))} ${b.unit}`);
         const changed=SYNC_KEYS.filter(([k])=>String(before[k]??'')!==String(it[k]??''));
         const priceChanged=!priceEq(before.price,it.price);
         const refs=(!proj.parentId&&(changed.length||priceChanged))?childRefsOf(proj,it.id):[];
@@ -2297,7 +2360,7 @@ document.addEventListener('click',async e=>{
             if(kept.length) lines.push(`　└ 不會動：${kept.map(r=>r.kid.name+'（另外議定 '+qfmt(r.it.price)+'）').join('、')}`);
           }
           if(confirm(`這條已經發包給：${who}\n\n要一起更新過去嗎？\n\n${lines.join('\n')}\n\n・間數不會動（各家做幾間是各自的）\n・另外議過價的子專案，單價不會被蓋掉\n\n【確定】一起更新　【取消】只改母專案（之後可在子專案按「跟母專案同步」補）`)) {
-            applyDrift(refs.map(r=>({it:r.it,src:it,syncPrice:priceChanged&&priceEq(r.it.price,before.price)})));
+            applyDrift(refs.map(r=>({it:r.it,src:it,syncPrice:priceChanged&&priceEq(r.it.price,before.price),proj:r.kid,blk:r.blk})));
           }
         }
       }
@@ -2305,7 +2368,14 @@ document.addEventListener('click',async e=>{
     else { const ni={id:uid(),no:isExt?'增':'',tag:'',chapter:'',name,unit,qty:qty||1,qtyExpr,price,priceExpr,amount:(qty||1)*price,remark,extra:isExt};
       if(ownCnt!==null) ni.cnt=ownCnt;
       b.items.push(ni); itemAdd=null; }
-    save(); render(); return;
+    save(); render();
+    // 單間數量改了，各期的「完成間數」要跟著換算，不然舊期請過的錢會被追溯改掉。
+    // 錢沒動，但畫面上的完成間數會變，先講一聲免得以為資料跑掉。
+    if(qtyRescaleNote.length)
+      alert(`單間數量改了，完成間數已按新數量換算：\n\n${qtyRescaleNote.join('\n')}\n\n`
+        +`【已經請過的金額完全沒變】——換算的用意就是保住它。\n`
+        +`如果那幾${b.unit}其實已經整${b.unit}做完了，到「進度請款」把完成${b.unit}數填回去即可，差額會算在本期。`);
+    return;
   }
   if(t.dataset.delitem){
     const [blkId,itemId]=t.dataset.delitem.split('::'); const b=proj.blocks.find(x=>x.id===blkId);if(!b)return;
@@ -2375,7 +2445,7 @@ document.addEventListener('click',async e=>{
       return `・${d.it.name}：${parts.join('、')}`;
     });
     if(!confirm(`把 ${drift.length} 條同步成母專案的內容？\n\n${lines.join('\n')}${drift.length>12?`\n…等共 ${drift.length} 條`:''}\n\n${withPrice?'・「單價會被改成母專案的」——如果那是你跟這家議定的價，請按取消\n':'・單價不會動（跟這家議定的價保留）\n'}・間數不會動\n・金額會照同步後的數量×單價重算\n\n確定同步？`)) return;
-    applyDrift(drift.map(d=>({it:d.it,src:d.src,syncPrice:withPrice&&d.priceDiff})));
+    applyDrift(drift.map(d=>({it:d.it,src:d.src,syncPrice:withPrice&&d.priceDiff,proj,blk:d.blk})));
     save(); render();
     alert(`已同步 ${drift.length} 條。${withPrice?'單價已改成母專案的；':'單價維持原樣；'}間數不動。`);
     return;
@@ -2448,32 +2518,34 @@ document.addEventListener('click',async e=>{
   if(t.dataset.batchalledit){ batchAll=true; batchEdit=itemEdit=itemAdd=blkEdit=copyInto=null; blkAdd=false; render(); return; }
   if(t.dataset.batchallcancel){ batchAll=false; render(); return; }
   if(t.dataset.batchallok){
-    const changes=[];
+    const changes=[], rescaled=[];
     for(const b of proj.blocks)for(const it of b.items){
       const qEl=g('be-qty-'+it.id), pEl=g('be-price-'+it.id);
       if(!qEl&&!pEl)continue;
       changes.push({it,before:{name:it.name,unit:it.unit,qty:it.qty,price:it.price}});
-      if(qEl){ const raw=qEl.value.trim(); it.qty=evalExpr(raw)||0; it.qtyExpr=hasExpr(raw)?raw:''; }
       if(pEl){ const raw=pEl.value.trim(); it.price=evalExpr(raw); it.priceExpr=hasExpr(raw)?raw:''; }
-      it.amount=it.qty*it.price;
+      if(qEl){ const raw=qEl.value.trim(); if(setItemQty(proj,b,it,evalExpr(raw)||0,hasExpr(raw)?raw:'')) rescaled.push(it.name); }
+      it.amount=(Number(it.qty)||0)*(Number(it.price)||0);
     }
     syncKidsAfterEdit(proj,changes);
+    if(rescaled.length) alert(`有 ${rescaled.length} 條登錄過進度的細項，完成量已按新數量換算：\n\n${rescaled.slice(0,10).map(x=>'・'+x).join('\n')}${rescaled.length>10?`\n…等共 ${rescaled.length} 條`:''}\n\n【已經請過的金額完全沒變】。完成％會跟著新數量重算，若實際已做完，到「進度請款」重填一次即可。`);
     batchAll=false; save(); render(); return;
   }
   if(t.dataset.batchedit){ batchEdit=t.dataset.batchedit; itemEdit=itemAdd=blkEdit=copyInto=null; blkAdd=false; render(); return; }
   if(t.dataset.batchcancel){ batchEdit=null; render(); return; }
   if(t.dataset.batchok){
     const b=proj.blocks.find(x=>x.id===t.dataset.batchok);if(!b){batchEdit=null;render();return;}
-    const changes=[];
+    const changes=[], rescaled=[];
     for(const it of b.items){
       const qEl=g('be-qty-'+it.id), pEl=g('be-price-'+it.id);
       if(!qEl&&!pEl)continue; // 被隱藏的 0 元項目維持原樣
       changes.push({it,before:{name:it.name,unit:it.unit,qty:it.qty,price:it.price}});
-      if(qEl){ const raw=qEl.value.trim(); it.qty=evalExpr(raw)||0; it.qtyExpr=hasExpr(raw)?raw:''; }
       if(pEl){ const raw=pEl.value.trim(); it.price=evalExpr(raw); it.priceExpr=hasExpr(raw)?raw:''; }
-      it.amount=it.qty*it.price;
+      if(qEl){ const raw=qEl.value.trim(); if(setItemQty(proj,b,it,evalExpr(raw)||0,hasExpr(raw)?raw:'')) rescaled.push(it.name); }
+      it.amount=(Number(it.qty)||0)*(Number(it.price)||0);
     }
     syncKidsAfterEdit(proj,changes);
+    if(rescaled.length) alert(`有 ${rescaled.length} 條登錄過進度的細項，完成量已按新數量換算：\n\n${rescaled.slice(0,10).map(x=>'・'+x).join('\n')}${rescaled.length>10?`\n…等共 ${rescaled.length} 條`:''}\n\n【已經請過的金額完全沒變】。完成％會跟著新數量重算，若實際已做完，到「進度請款」重填一次即可。`);
     batchEdit=null; save(); render(); return;
   }
   if(t.dataset.splititem){
@@ -3072,9 +3144,7 @@ document.addEventListener('change',e=>{
     const expr=hasExpr(raw)?raw:'';
     const changes=subs.map(s=>({it:s,before:{name:s.name,unit:s.unit,qty:s.qty,price:s.price}}));
     subs.forEach(s=>{
-      rescaleItemProgress(proj,b,s,nv);      // 已經做掉的量不變，只換算完成度
-      s.qty=nv; s.qtyExpr=expr;
-      s.amount=(Number(s.qty)||0)*(Number(s.price)||0);
+      setItemQty(proj,b,s,nv,expr);          // 已經做掉的量不變，只換算完成度
     });
     syncKidsAfterEdit(proj,changes);         // 已經發包出去的，問要不要一起改
     save(); render();
