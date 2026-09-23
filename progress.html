@@ -109,7 +109,7 @@ body.printing #print-overlay{display:block;position:absolute;inset:0;background:
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.09.23b-itemcount';
+const APP_VERSION='vG2026.09.23c-xfer';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -341,16 +341,25 @@ const itemTotalQty=(it,blk)=>it.qty*effCount(it,blk);
 // 改「單間數量」時保住歷史：同 rescaleBlockProgress 的道理，但針對單一細項。
 // 已經做掉的絕對數量是既成事實，總量變了只是完成度的百分比要跟著換算，
 // 不換算的話已經請過款的舊期金額會被追溯改掉。
-function rescaleItemProgress(proj,blk,it,newQty){
+// 單一細項的總量變了（改單間數量、或改「這條做幾間」）時，用各期存下來的
+// 絕對完成量回推新的百分比——已經做掉的量是既成事實，已請過款的金額才不會被追溯改掉。
+function rescaleItemTo(proj,blk,it,newTotal){
   if(!proj||!blk||!it||!Array.isArray(proj.periods)) return;
-  const cnt=Number(blk.count)||0;
-  const oldTotal=(Number(it.qty)||0)*cnt, newTotal=(Number(newQty)||0)*cnt;
+  const oldTotal=itemTotalQty(it,blk);
   for(const per of proj.periods){
     const pr=per&&per.prog&&per.prog[it.id]; if(!pr) continue;
     const doneQty=(pr.q!==undefined&&pr.q!==null)?Number(pr.q):(Number(pr.p)||0)*oldTotal;
     if(newTotal>0){ pr.p=Math.min(doneQty/newTotal,1); pr.q=+doneQty.toFixed(2); }
     else { pr.p=0; pr.q=0; }
   }
+}
+const rescaleItemProgress=(proj,blk,it,newQty)=>rescaleItemTo(proj,blk,it,(Number(newQty)||0)*effCount(it,blk));
+const rescaleItemCount=(proj,blk,it,newCnt)=>rescaleItemTo(proj,blk,it,(Number(it.qty)||0)*(Number(newCnt)||0));
+// 這條細項目前做到幾「間」（用來預設「他最後做幾間」）
+function doneCountOf(proj,blk,it){
+  let mx=0;
+  for(const per of (proj.periods||[])){ const pr=per&&per.prog&&per.prog[it.id]; if(pr&&Number(pr.p)>mx) mx=Number(pr.p); }
+  return +(mx*effCount(it,blk)).toFixed(2);
 }
 function rescaleBlockProgress(proj,blk,newCount){
   if(!proj||!blk||!Array.isArray(proj.periods)) return 0;
@@ -747,6 +756,7 @@ function render(){
 let subPanel=false;
 let backfill=null;   // 「從母專案補細項」展開中的區塊 id
 let trashOpen=false; // 「已刪除的細項」回收桶展開中
+let xfer=null;       // 「轉出給別人」展開中的 blkId::itemId
 let xcopy=null, xcopyProj='', xcopyBlk='';   // 「從別的專案抓細項」：展開中的區塊 id ＋ 選定的來源專案／區塊
 let _subInfo={};   // {blkId:{stage:{rooms(母間數), used(已發包間數), perRoom(每間金額), n(條數)}}}
 const SUB_ALL='*';  // 「整條發包」的虛擬工序代碼
@@ -1088,7 +1098,8 @@ function viewItems(proj){
         <td>${esc(it.unit)}</td><td class="num">${qfmt(it.qty)}${it.qtyExpr?`<div style="font-size:11px;color:var(--muted)">=${esc(it.qtyExpr)}</div>`:''}</td>
         <td class="num">${it.price?qfmt(it.price):''}${it.priceExpr?`<div style="font-size:11px;color:var(--muted)">=${esc(it.priceExpr)}</div>`:''}</td><td class="num">${qfmt(it.amount)}</td>
         <td class="muted" style="font-size:12px">${esc(it.remark)}</td>
-        <td><button class="btn sub sm" data-edititem="${b.id}::${it.id}">改</button> <button class="btn sub sm" data-splititem="${b.id}::${it.id}" title="拆成骨架／封板等多道工序，數量沿用">✂ 拆</button> <button class="btn bad sm" data-delitem="${b.id}::${it.id}">刪</button></td></tr>`;
+        <td><button class="btn sub sm" data-edititem="${b.id}::${it.id}">改</button> <button class="btn sub sm" data-splititem="${b.id}::${it.id}" title="拆成骨架／封板等多道工序，數量沿用">✂ 拆</button>${proj.parentId?` <button class="btn sub sm" data-xfer="${b.id}::${it.id}" style="border-color:#38bdf8;color:#7dd3fc" title="這家做不完，把剩下的量轉給別的工班或收回自辦（母專案不用動）">↗ 轉出</button>`:''} <button class="btn bad sm" data-delitem="${b.id}::${it.id}">刪</button></td></tr>`;
+      if(xfer===b.id+'::'+it.id) h+=xferPanelHtml(proj,b,it);
     }
     if(itemAdd===b.id) h+=itemForm(b,null);
     if(b.items.length>1){
@@ -1251,6 +1262,35 @@ function xcopyPanelHtml(proj,b){
     ${nMaybe?`<div class="muted" style="font-size:11.5px;margin-top:6px">＊標「可能重複」的 ${nMaybe} 條：這邊有名稱對得上的，但一邊拆過工序、一邊沒拆，不敢直接幫你擋。要抓還是可以勾。</div>`:''}
     ${nHid?`<div style="font-size:11.5px;margin-top:6px;padding:6px 8px;background:rgba(251,191,36,.12);border:1px solid rgba(251,191,36,.4);border-radius:8px">⚠ 其中 ${nHid} 條說「已經有了」，但你在合約明細裡<b>找不到</b>——因為那幾條金額是 0，被上面的「隱藏 0 元項目」藏起來了。把那個勾勾取消就看得到。</div>`:''}</div>`;
   return h;
+}
+
+// ↗ 轉出：這家做不完，把剩下的量轉給別的工班或收回自辦。
+// 不從母標單刪掉再加給別人——母專案完全不動，只改子專案的量，
+// 發包分配自然會變成「這家 5 間 ＋ 那家 7 間」。
+function xferPanelHtml(proj,b,it){
+  const par=parentProject(proj);
+  const cur=effCount(it,b), done=doneCountOf(proj,b,it);
+  const sibs=childProjects(proj.parentId).filter(k=>k.id!==proj.id);
+  return `<tr><td colspan="8" style="padding:10px;background:rgba(56,189,248,.08);border-left:3px solid #38bdf8">
+    <div class="rowline" style="align-items:center;margin-bottom:6px"><b style="font-size:13.5px">↗ 把「${esc(it.name)}」轉一部分出去</b><span style="flex:1"></span><button class="btn sub sm" data-xfercancel="1">取消</button></div>
+    <div class="muted" style="font-size:12px;margin-bottom:8px">目前這條是 <b>${qfmt(cur)} ${esc(b.unit)}</b>，已完成 <b>${qfmt(done)} ${esc(b.unit)}</b>。
+      填「${esc(proj.vendor||proj.name)} 最後做幾${esc(b.unit)}」，剩下的就轉出去。
+      <b>他已經請過的錢不會變</b>；母專案完全不動。</div>
+    <div class="rowline" style="gap:10px;flex-wrap:wrap;align-items:flex-end">
+      <div class="field" style="display:flex;flex-direction:column;gap:2px"><label style="font-size:11px;color:var(--muted)">${esc(proj.vendor||'這家')}最後做幾${esc(b.unit)}</label>
+        <input class="pin" id="xf-keep" inputmode="decimal" value="${qfmt(done)}" style="height:32px;width:110px;text-align:right"></div>
+      <div class="field" style="display:flex;flex-direction:column;gap:2px"><label style="font-size:11px;color:var(--muted)">轉給誰</label>
+        <select id="xf-to" style="height:32px;min-width:190px">
+          <option value="__self__">收回自辦（母專案自己做）</option>
+          ${sibs.map(k=>`<option value="${k.id}">${esc(k.vendor||k.name)}</option>`).join('')}
+          <option value="__new__">＋ 新的工班…</option>
+        </select></div>
+      <div class="field" style="display:flex;flex-direction:column;gap:2px"><label style="font-size:11px;color:var(--muted)">對方單價（自辦免填）</label>
+        <input class="pin" id="xf-price" inputmode="decimal" placeholder="${qfmt(it.price)}" style="height:32px;width:110px;text-align:right"></div>
+      <button class="btn sm" data-xferok="${b.id}::${it.id}" style="background:#0284c7;border-color:#0284c7">↗ 轉出</button>
+    </div>
+    <div class="muted" style="font-size:11.5px;margin-top:6px">＊選「收回自辦」會把轉出的量加到母專案那條的「自辦量」，不會建子專案。</div>
+  </td></tr>`;
 }
 
 // 🗑 已刪除的細項：刪掉之後又要做，從這裡原樣復原（連原本的 id）。
@@ -2165,7 +2205,7 @@ function setProgInput(proj,blkId,itemId,kind,val){
 }
 
 document.addEventListener('click',async e=>{
-  const t=e.target.closest('[data-tab],[data-editblk],[data-delblk],[data-edititem],[data-delitem],[data-additem],[data-splititem],[data-sortitems],[data-grouptoggle],[data-groupmerge],[data-groupdetect],[data-whtoggle],[data-rttoggle],[data-whtax],[data-whtaxauto],[data-rtamt],[data-selfone],[data-selfrooms],[data-selfrest],[data-selfclear],[data-delmode],[data-delcancel],[data-delall],[data-delnone],[data-delinv],[data-delzero],[data-deldo],#sub-toggle,#sub-close,#sub-go,[data-backfill],[data-backfillcancel],[data-backfillok],[data-addmissblk],#trash-toggle,#trash-clear,[data-trashrestore],[data-trashdrop],#drift-sync,#drift-sync-price,[data-copyinto],[data-copyok],[data-copycancel],[data-xcopy],[data-xcopycancel],[data-xcopyall],[data-xcopyok],[data-batchedit],[data-batchok],[data-batchcancel],[data-batchalledit],[data-batchallok],[data-batchallcancel],[data-itemok],[data-itemcancel],[data-blkok],[data-blkcancel],[data-bapply],[data-gapply],#btn-invrecon,[data-editextra],[data-delextra],#btn-import,#btn-import2,#btn-newproj,#btn-newproj2,#btn-addblk,#btn-addblk-ok,#btn-addperiod,#btn-delperiod,#btn-addextra,#btn-roundup,[data-gotoproj],#btn-print,#btn-setretain,#orphan-fix,#orphan-detach,#proj-groupall,#set-save,#proj-dup,#proj-detach,#backup-export,#backup-import-btn,#proj-del,#cloud-push,#cloud-pull');
+  const t=e.target.closest('[data-tab],[data-editblk],[data-delblk],[data-edititem],[data-delitem],[data-additem],[data-splititem],[data-sortitems],[data-grouptoggle],[data-groupmerge],[data-groupdetect],[data-whtoggle],[data-rttoggle],[data-whtax],[data-whtaxauto],[data-rtamt],[data-selfone],[data-selfrooms],[data-selfrest],[data-selfclear],[data-delmode],[data-delcancel],[data-delall],[data-delnone],[data-delinv],[data-delzero],[data-deldo],#sub-toggle,#sub-close,#sub-go,[data-backfill],[data-backfillcancel],[data-backfillok],[data-addmissblk],#trash-toggle,#trash-clear,[data-trashrestore],[data-trashdrop],#drift-sync,#drift-sync-price,[data-copyinto],[data-copyok],[data-copycancel],[data-xcopy],[data-xcopycancel],[data-xcopyall],[data-xcopyok],[data-xfer],[data-xfercancel],[data-xferok],[data-batchedit],[data-batchok],[data-batchcancel],[data-batchalledit],[data-batchallok],[data-batchallcancel],[data-itemok],[data-itemcancel],[data-blkok],[data-blkcancel],[data-bapply],[data-gapply],#btn-invrecon,[data-editextra],[data-delextra],#btn-import,#btn-import2,#btn-newproj,#btn-newproj2,#btn-addblk,#btn-addblk-ok,#btn-addperiod,#btn-delperiod,#btn-addextra,#btn-roundup,[data-gotoproj],#btn-print,#btn-setretain,#orphan-fix,#orphan-detach,#proj-groupall,#set-save,#proj-dup,#proj-detach,#backup-export,#backup-import-btn,#proj-del,#cloud-push,#cloud-pull');
   if(!t)return;
   const proj=curProj();
   if(t.dataset.tab){state.tab=t.dataset.tab;save();render();return;}
@@ -2234,15 +2274,8 @@ document.addEventListener('click',async e=>{
         // 先記下會影響子專案的欄位有沒有變
         const before={name:it.name,unit:it.unit,qty:it.qty,price:it.price};
         // 間數改了要用各期存的絕對完成量回推百分比，舊期請過的金額才不會被追溯改掉
-        if(ownCnt!==(hasOwnCount(it)?Number(it.cnt):null)){
-          const fake={count:ownCnt!==null?ownCnt:(Number(b.count)||0)};
-          const oldTotal=itemTotalQty(it,b), newTotal=(Number(it.qty)||0)*fake.count;
-          for(const per of proj.periods){
-            const pr=per&&per.prog&&per.prog[it.id]; if(!pr) continue;
-            const done=(pr.q!==undefined&&pr.q!==null)?Number(pr.q):(Number(pr.p)||0)*oldTotal;
-            if(newTotal>0){ pr.p=Math.min(done/newTotal,1); pr.q=+done.toFixed(2); } else { pr.p=0; pr.q=0; }
-          }
-        }
+        if(ownCnt!==(hasOwnCount(it)?Number(it.cnt):null))
+          rescaleItemCount(proj,b,it,ownCnt!==null?ownCnt:(Number(b.count)||0));
         if(ownCnt!==null) it.cnt=ownCnt; else delete it.cnt;
         it.name=name; it.unit=unit; it.qty=qty; it.qtyExpr=qtyExpr; it.price=price; it.priceExpr=priceExpr; it.amount=qty*price; it.remark=remark; it.extra=isExt;
         const changed=SYNC_KEYS.filter(([k])=>String(before[k]??'')!==String(it[k]??''));
@@ -2638,6 +2671,74 @@ document.addEventListener('click',async e=>{
     b.items.splice(Math.min(i,b.items.length),0,merged);
     for(const per of proj.periods) if(per.prog) subs.forEach(s=>delete per.prog[s.id]);
     openGroup.delete(gid); save(); render(); return;
+  }
+  if(t.dataset.xfer){ xfer=t.dataset.xfer; itemEdit=itemAdd=blkEdit=copyInto=backfill=xcopy=null; blkAdd=false; render(); return; }
+  if(t.dataset.xfercancel){ xfer=null; render(); return; }
+  if(t.dataset.xferok){
+    const [blkId,itemId]=t.dataset.xferok.split('::');
+    const b=proj.blocks.find(x=>x.id===blkId); if(!b) return;
+    const it=b.items.find(x=>x.id===itemId); if(!it) return;
+    const par=parentProject(proj); if(!par){ alert('這不是子專案，沒有母專案可以對應。'); return; }
+    const cur=effCount(it,b);
+    const keep=Math.max(0,evalExpr((g('xf-keep')||{}).value||'0')||0);
+    if(keep>=cur){ alert(`「最後做幾${b.unit}」要比現在的 ${qfmt(cur)} ${b.unit} 少，才有量可以轉出。`); return; }
+    const move=+(cur-keep).toFixed(4);
+    const to=(g('xf-to')||{}).value||'__self__';
+    const priceRaw=((g('xf-price')||{}).value||'').trim();
+    const who=proj.vendor||proj.name;
+    const day=today();
+
+    let destName='';
+    if(to==='__self__'){
+      // 收回自辦：加到母專案那條的自辦量（單位是「間數 × 單間量」）
+      const mIt=(()=>{ for(const mb of par.blocks){ const f=mb.items.find(x=>x.id===it.srcId); if(f) return f; } return null; })();
+      if(!mIt){ alert('這條在母專案找不到對應（可能是孤兒發包），沒辦法轉成自辦。\n\n請先到發包分配處理，或改成轉給別的工班。'); return; }
+      const add=+(move*(Number(it.qty)||0)).toFixed(4);
+      if(!confirm(`把「${it.name}」轉 ${qfmt(move)} ${b.unit} 收回自辦？\n\n・${who} 從 ${qfmt(cur)} ${b.unit} 減成 ${qfmt(keep)} ${b.unit}\n・母專案那條的自辦量 +${qfmt(add)} ${it.unit}\n・${who} 已經請過的錢不會變\n・母專案的合約明細完全不動`)) return;
+      mIt.selfQty=+((Number(mIt.selfQty)||0)+add).toFixed(4);
+      destName='自辦';
+    } else {
+      let kid=null;
+      if(to==='__new__'){
+        const nm=prompt('新工班的名稱（例：阿華工班）');
+        if(!nm||!nm.trim()) return;
+        kid={id:uid(),parentId:proj.parentId,name:par.name+'-'+nm.trim(),vendor:nm.trim(),
+             taxMode:proj.taxMode||'excl',blocks:[],periods:[],curPeriod:0,createdAt:Date.now()};
+        state.projects.push(kid);
+      } else {
+        kid=state.projects.find(x=>x.id===to);
+        if(!kid){ alert('找不到那個子專案。'); return; }
+      }
+      destName=kid.vendor||kid.name;
+      const price=priceRaw?(evalExpr(priceRaw)||0):(Number(it.price)||0);
+      if(!confirm(`把「${it.name}」轉 ${qfmt(move)} ${b.unit} 給「${destName}」？\n\n・${who} 從 ${qfmt(cur)} ${b.unit} 減成 ${qfmt(keep)} ${b.unit}\n・${destName} 拿到 ${qfmt(move)} ${b.unit}，單價 ${qfmt(price)}\n・${who} 已經請過的錢不會變\n・母專案的合約明細完全不動`)) return;
+      // 對方有沒有同一個區塊？沒有就照這邊的架構建一個
+      let kb=kid.blocks.find(x=>x.srcBlk&&b.srcBlk&&x.srcBlk===b.srcBlk)||kid.blocks.find(x=>x.name===b.name);
+      if(!kb){ kb={id:uid(),name:b.name,unit:b.unit,count:Number(b.count)||0,srcBlk:b.srcBlk||undefined,items:[]}; kid.blocks.push(kb); }
+      // 已經有同一條（之前轉過）就累加間數，不要變成兩條
+      const exist=it.srcId?kb.items.find(x=>x.srcId===it.srcId):null;
+      if(exist){
+        const nc=+(effCount(exist,kb)+move).toFixed(4);
+        rescaleItemCount(kid,kb,exist,nc);
+        if(nc!==(Number(kb.count)||0)) exist.cnt=nc; else delete exist.cnt;
+      } else {
+        const ni={id:uid(),no:it.no,tag:'',chapter:it.chapter||'',name:it.name,unit:it.unit,
+          qty:it.qty,qtyExpr:it.qtyExpr||'',price,priceExpr:'',amount:(Number(it.qty)||0)*price,
+          remark:`${day} 自 ${who} 接手 ${qfmt(move)} ${b.unit}`};
+        if(it.srcId) ni.srcId=it.srcId;
+        if(it.extra!==undefined) ni.extra=it.extra;
+        if(move!==(Number(kb.count)||0)) ni.cnt=move;
+        kb.items.push(ni);
+      }
+    }
+
+    // 這邊減量：用各期存的絕對完成量回推百分比，已請過的金額不會被追溯改掉
+    rescaleItemCount(proj,b,it,keep);
+    if(keep!==(Number(b.count)||0)) it.cnt=keep; else delete it.cnt;
+    it.remark=[String(it.remark||'').trim(),`${day} 原 ${qfmt(cur)} ${b.unit}，轉 ${qfmt(move)} ${b.unit} 給 ${destName}`].filter(Boolean).join('；');
+    xfer=null; save(); render();
+    alert(`已轉出 ${qfmt(move)} ${b.unit} 給「${destName}」。\n\n${who} 這條剩 ${qfmt(keep)} ${b.unit}，已請過的金額沒變。`);
+    return;
   }
   if(t.dataset.xcopy){
     xcopy=t.dataset.xcopy; copyInto=backfill=itemEdit=itemAdd=blkEdit=null; blkAdd=false;
