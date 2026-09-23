@@ -109,7 +109,7 @@ body.printing #print-overlay{display:block;position:absolute;inset:0;background:
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.09.23k-cntdisp';
+const APP_VERSION='vG2026.09.23l-recon';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -1426,6 +1426,50 @@ function trashCardHtml(proj){
 
 // 「本次請款計算」整塊抽出來：打字時只更新其中幾個數字，會讓累計、暫扣款、實付
 // 停在舊值，跟本次實請對不起來（也跟匯出的請款單對不起來）。整塊一起重畫最保險。
+// 「為什麼金額對不起來？」的自我檢查。
+// 系統只知道「照明細算出來該請多少」，不知道「你實際請了多少」——後者要靠每期鎖定。
+// 沒鎖就看不出多請或少請；鎖了但還沒開下一期，沖銷也還沒地方跑。這張表把這些一次講完。
+function reconPanelHtml(proj,c,perIdx){
+  const per=proj.periods||[];
+  const isLocked=x=>x&&x.settled!==undefined&&x.settled!==null&&x.settled!=='';
+  const nLock=per.filter(isLocked).length;
+  const earned=Math.round(c.cumApplied);             // 到本期為止「該請」的累計
+  const billed=Math.round(c.billPre+c.billActual);   // 到本期為止「實際請出去」的累計
+  const diff=earned-billed;                          // 負＝多請了
+  const isLast=perIdx===per.length-1;
+  let verdict='';
+  if(!nLock){
+    verdict=`<b style="color:var(--warn)">⚠ 沒有任何一期鎖定實際請款金額。</b>
+      系統只能照<b>現在的明細</b>重算每一期，所以你改了數量或進度，舊期的數字就跟著變，<b>看不出多請或少請</b>。
+      <br>請到每一期按「🔒 結算鎖定本期」，填<b>當初實際請出去的金額</b>（不是預設帶的那個數字）。`;
+  } else if(diff<-0.5){
+    verdict=`<b style="color:var(--warn)">你多請了 ${money(-diff)}。</b>
+      已經請出去 ${money(billed)}，但目前累計完成計價只有 ${money(earned)}。
+      ${isLast&&per.length&&isLocked(per[perIdx])
+        ? `<br><b>這一期已經鎖住了，所以這裡看不到沖銷。按「新增一期」，這 ${money(-diff)} 就會變成下一期的負數。</b>`
+        : `<br>這筆會從後面的期別沖銷回來。`}`;
+  } else if(diff>0.5){
+    verdict=`還有 ${money(diff)} 已完成但還沒請款。${isLast?'就在本期請。':'在後面的期別請。'}`;
+  } else {
+    verdict=`<b style="color:var(--ok)">✓ 對得起來</b>——該請的和實際請的一致。`;
+  }
+  return `<details style="margin-top:12px"><summary style="cursor:pointer;font-size:13px;color:var(--accent)">💡 對帳檢查：為什麼金額對不起來？</summary>
+    <div style="margin-top:8px">
+    <table style="font-size:12.5px"><tr><th>期別</th><th>日期</th><th class="num">系統算的</th><th class="num">實際請的</th><th>狀態</th></tr>
+    ${per.map((x,k)=>{ const cc=calc(proj,k); const lk=isLocked(x);
+      return `<tr${k===perIdx?' style="background:rgba(59,130,246,.10)"':''}>
+        <td>第 ${x.no} 期</td><td>${esc(x.date||'')}</td>
+        <td class="num muted">${money(cc.billComputed)}</td>
+        <td class="num"><b>${money(cc.billActual)}</b></td>
+        <td style="font-size:11.5px">${lk?'<span style="color:var(--ok)">🔒 已鎖定</span>':'<span style="color:var(--warn)">未鎖定（會跟著明細變動）</span>'}</td></tr>`;}).join('')}
+    </table>
+    <div style="margin-top:8px;font-size:12.5px;line-height:1.7">
+      累計完成計價（該請）　<b>${money(earned)}</b><br>
+      各期實際請出去（已請）<b>${money(billed)}</b><br>
+      差額　<b style="color:${diff<-0.5?'var(--warn)':(diff>0.5?'var(--accent)':'var(--ok)')}">${money(diff)}</b>
+      <div style="margin-top:6px">${verdict}</div>
+    </div></div></details>`;
+}
 function billSummaryHtml(proj,period,c,perIdx,editable){
   return `
     <div style="display:flex;justify-content:space-between"><span>累計完成計價${c.discount?'（依簽約總價分攤）':''}</span><b>${money(c.cumApplied)}</b></div>
@@ -1504,6 +1548,7 @@ function viewProg(proj){
   if(editable)h+=`<button class="btn sub sm" id="btn-addextra">＋ 新增訂金／加項</button> <button class="btn sub sm" id="btn-roundup">🎯 湊整本次到整數</button>`;
   // 本次請款計算（整塊由 billSummaryHtml 產生，打字時原地換掉）
   h+=`<div id="bill-summary" style="margin-top:12px;padding-top:10px;border-top:1px dashed var(--line);font-size:14px">${billSummaryHtml(proj,period,c,perIdx,editable)}</div>`;
+  h+=`<div id="recon-panel">${reconPanelHtml(proj,c,perIdx)}</div>`;
   h+=`<div style="display:none">  </div>`;
   h+=`</div>`;
   // ── 暫扣款追蹤（廠商還沒公司行號、開不了發票，錢先押著；補開發票後全數退還）──
@@ -2347,6 +2392,8 @@ function setProgInput(proj,blkId,itemId,kind,val){
   if(bs) bs.innerHTML=billSummaryHtml(proj,period,c,perIdx,perIdx===proj.periods.length-1);
   const nn=document.getElementById('neg-notice');
   if(nn) nn.innerHTML=negBillNoticeHtml(c);   // 進度改成負的當下就要看到說明
+  const rp=document.getElementById('recon-panel');
+  if(rp&&rp.querySelector('details[open]')) rp.innerHTML=reconPanelHtml(proj,c,perIdx).replace('<details','<details open');
   const qEl=document.querySelector(`[data-q="${blkId}::${itemId}"]`),pEl=document.querySelector(`[data-p="${blkId}::${itemId}"]`),rEl=document.querySelector(`[data-r="${blkId}::${itemId}"]`);
   if(kind!=='q'&&qEl)qEl.value=p?qfmt(q):'';
   if(kind!=='p'&&pEl)pEl.value=p?+(p*100).toFixed(1):'';
