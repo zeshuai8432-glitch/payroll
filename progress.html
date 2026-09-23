@@ -109,7 +109,7 @@ body.printing #print-overlay{display:block;position:absolute;inset:0;background:
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.09.23-effcount';
+const APP_VERSION='vG2026.09.23b-itemcount';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -327,10 +327,13 @@ function analyzeSheet(sheet){
 }
 
 /* ═══════════ 計算 ═══════════ */
-// 一條細項實際涵蓋幾「間」。目前一律等於區塊的間數；
-// 之後要讓個別細項有自己的間數（實作量大於合約的情形），只改這裡一行即可。
+// 一條細項實際涵蓋幾「間」：沒特別指定就照區塊的間數；
+// 指定了就用自己的（發包代工常見：合約 22 間，但某條實際做了 24 間）。
 // 全程式算量、算錢一律走這個，不要再自己寫 qty*blk.count。
-const effCount=(it,blk)=>Number(blk&&blk.count)||0;
+const hasOwnCount=it=>it&&it.cnt!==undefined&&it.cnt!==null&&it.cnt!==''&&Number(it.cnt)>0;
+const effCount=(it,blk)=>hasOwnCount(it)?Number(it.cnt):(Number(blk&&blk.count)||0);
+// 這個區塊裡有幾條是自己指定間數的（要提示、要換掉會誤導的「×N 間」算式）
+const ownCountItems=blk=>((blk&&blk.items)||[]).filter(hasOwnCount);
 const itemTotalQty=(it,blk)=>it.qty*effCount(it,blk);
 // 改「間數」時保住歷史：各期進度存的是百分比 p（總量的幾成），總量＝單間數量×間數。
 // 間數一變，同一個 p 換算出來的數量與金額就跟著變，已經請過款的舊期會被追溯改掉。
@@ -980,6 +983,7 @@ function viewItems(proj){
       ${fld('單位',`<input id="if-unit" value="${esc(it?it.unit:'式')}" style="${ist};width:70px">`)}
       ${fld(`單${esc(b.unit)}數量`,`<input id="if-qty" value="${it?esc(String(it.qtyExpr||it.qty)):'1'}" style="${ist};width:120px" placeholder="可算式 5.11*3.07">`)}
       ${fld('單價',`<input id="if-price" value="${it?esc(String(it.priceExpr||it.price||'')):''}" placeholder="可算式" style="${ist};width:110px">`)}
+      ${fld(`這條做幾${esc(b.unit)}`,`<input id="if-cnt" value="${it&&hasOwnCount(it)?esc(String(it.cnt)):''}" style="${ist};width:110px" placeholder="照區塊 ${qfmt(b.count)}" title="實作量比合約多的時候才填（例：合約 ${qfmt(b.count)} ${b.unit}，這條實際做了 24 ${b.unit}）。空白＝照區塊的 ${qfmt(b.count)} ${b.unit}。">`)}
       ${fld('備註',`<input id="if-remark" value="${esc(it?it.remark||'':'')}" style="${ist};width:120px" placeholder="選填">`)}
       ${fld('　',`<label style="height:32px;display:flex;align-items:center;gap:4px;font-size:12.5px;cursor:pointer;white-space:nowrap"><input type="checkbox" id="if-extra" ${(it?isExtraItem(it):true)?'checked':''}> 追加工程<span class="muted" style="font-size:11px">（不受簽約總價折讓）</span></label>`)}
       <button class="btn sm" data-itemok="${b.id}${it?'::'+it.id:''}">儲存</button>
@@ -1080,7 +1084,7 @@ function viewItems(proj){
         continue;
       }
       const zero=it.amount===0;
-      h+=`<tr class="${zero?'zero':''}">${picking?`<td><input type="checkbox" data-delpick="${it.id}" ${delSel.has(it.id)?'checked':''} style="width:16px;height:16px"></td>`:''}<td>${esc(it.no)}</td><td>${esc(it.name)}${it.tag?`<span class="tag">${esc(it.tag)}</span>`:''}${isExtraItem(it)?'<span class="tag" style="background:rgba(251,191,36,.2);border-color:rgba(251,191,36,.5);color:#fcd34d" title="追加工程：不受簽約總價折讓，照明細單價計">追加</span>':''}</td>
+      h+=`<tr class="${zero?'zero':''}">${picking?`<td><input type="checkbox" data-delpick="${it.id}" ${delSel.has(it.id)?'checked':''} style="width:16px;height:16px"></td>`:''}<td>${esc(it.no)}</td><td>${esc(it.name)}${it.tag?`<span class="tag">${esc(it.tag)}</span>`:''}${isExtraItem(it)?'<span class="tag" style="background:rgba(251,191,36,.2);border-color:rgba(251,191,36,.5);color:#fcd34d" title="追加工程：不受簽約總價折讓，照明細單價計">追加</span>':''}${hasOwnCount(it)?`<span class="tag" style="background:rgba(52,211,153,.2);border-color:rgba(52,211,153,.55);color:#6ee7b7" title="這條的實作量跟合約不同：區塊是 ${qfmt(b.count)} ${esc(b.unit)}，這條算 ${qfmt(it.cnt)} ${esc(b.unit)}">${qfmt(it.cnt)} ${esc(b.unit)}</span>`:''}</td>
         <td>${esc(it.unit)}</td><td class="num">${qfmt(it.qty)}${it.qtyExpr?`<div style="font-size:11px;color:var(--muted)">=${esc(it.qtyExpr)}</div>`:''}</td>
         <td class="num">${it.price?qfmt(it.price):''}${it.priceExpr?`<div style="font-size:11px;color:var(--muted)">=${esc(it.priceExpr)}</div>`:''}</td><td class="num">${qfmt(it.amount)}</td>
         <td class="muted" style="font-size:12px">${esc(it.remark)}</td>
@@ -1089,7 +1093,10 @@ function viewItems(proj){
     if(itemAdd===b.id) h+=itemForm(b,null);
     if(b.items.length>1){
       const subSum=b.items.reduce((s,i)=>s+i.amount,0);
-      h+=`<tr class="chapter">${picking?'<td></td>':''}<td colspan="5" style="text-align:right">小計${b.count>1?`（每${esc(b.unit)}）`:''}</td><td class="num"><b>${qfmt(subSum)}</b></td><td colspan="2">${b.count>1?`<span class="muted" style="font-size:11px">×${qfmt(b.count)} ${esc(b.unit)} ＝ ${money(subSum*b.count)}</span>`:''}</td></tr>`;
+      const own=ownCountItems(b), blkTot=b.items.reduce((s2,i)=>s2+itemValue(i,b),0);
+      h+=`<tr class="chapter">${picking?'<td></td>':''}<td colspan="5" style="text-align:right">小計${b.count>1?`（每${esc(b.unit)}）`:''}</td><td class="num"><b>${qfmt(subSum)}</b></td><td colspan="2">${
+        own.length?`<span class="muted" style="font-size:11px">合計 ${money(blkTot)}<br>（其中 ${own.length} 條另計間數，所以不是單純 ×${qfmt(b.count)}）</span>`
+        :(b.count>1?`<span class="muted" style="font-size:11px">×${qfmt(b.count)} ${esc(b.unit)} ＝ ${money(blkTot)}</span>`:'')}</td></tr>`;
     }
     const canSort=b.items.length>1;                                  // 一律顯示；按下去若含匯入細項會先確認
     // 「沒有項次」＝手動加的（no 空白或「增」）；整區都沒項次就只能照名稱排
@@ -1493,7 +1500,7 @@ function viewProg(proj){
       const tq=itemTotalQty(it,b);
       const pr=progOf(period,it.id);
       const rVal=(pr.exprKind==='r'&&pr.expr)?pr.expr:(pr.p?+(pr.p*effCount(it,b)).toFixed(2):'');
-      h+=`<tr class="${zero?'zero':''}"><td>${esc(it.no)}</td><td>${esc(it.name)}${isExtraItem(it)?'<span class="tag" style="background:rgba(251,191,36,.2);border-color:rgba(251,191,36,.5);color:#fcd34d" title="追加工程：不受簽約總價折讓，照明細單價計">追加</span>':''}</td><td>${esc(it.unit)}</td>
+      h+=`<tr class="${zero?'zero':''}"><td>${esc(it.no)}</td><td>${esc(it.name)}${isExtraItem(it)?'<span class="tag" style="background:rgba(251,191,36,.2);border-color:rgba(251,191,36,.5);color:#fcd34d" title="追加工程：不受簽約總價折讓，照明細單價計">追加</span>':''}${hasOwnCount(it)?`<span class="tag" style="background:rgba(52,211,153,.2);border-color:rgba(52,211,153,.55);color:#6ee7b7" title="這條的實作量跟合約不同：區塊是 ${qfmt(b.count)} ${esc(b.unit)}，這條算 ${qfmt(it.cnt)} ${esc(b.unit)}">${qfmt(it.cnt)} ${esc(b.unit)}</span>`:''}</td><td>${esc(it.unit)}</td>
         <td class="num">${qfmt(it.qty)}</td><td class="num">${it.price?qfmt(it.price):''}</td>
         <td class="num muted">${pfmt(ci.pp)}</td>
         <td class="num">${hasR
@@ -1974,8 +1981,8 @@ function printDoc(proj){
               return `${esc(it.groupName)}-<b style="color:${stageColorPrint(st)}">${esc(st)}</b>`; })()
           : esc(it.name);
         h+=`<tr><td>${esc(it.no)}</td><td>${nm}</td><td>${esc(it.unit)}</td>
-          <td class="num">${qfmt(it.qty)}</td><td class="num">${it.price?qfmt(+(it.price*fOf(it)).toFixed(2)):''}</td><td class="num">${qfmt(Ri(it.amount,it))}</td>
-          <td class="num">${hasR?qfmt(+(ci.p*cb.blk.count).toFixed(2)):qfmt(pr.q||tq*ci.p)}</td><td class="num">${pfmt(ci.p)}</td>
+          <td class="num">${qfmt(it.qty)}${hasOwnCount(it)?`<div style="font-size:9px;color:#555">× ${qfmt(it.cnt)} ${esc(cb.blk.unit)}</div>`:''}</td><td class="num">${it.price?qfmt(+(it.price*fOf(it)).toFixed(2)):''}</td><td class="num">${qfmt(Ri(it.amount,it))}</td>
+          <td class="num">${hasR?qfmt(+(ci.p*effCount(it,cb.blk)).toFixed(2)):qfmt(pr.q||tq*ci.p)}</td><td class="num">${pfmt(ci.p)}</td>
           <td class="num">${money(Ri(ci.cumAmt,it))}</td></tr>`;
       }
       h+=`<tr class="tot"><td colspan="8">小計</td><td class="num">${money(blkCum(cb))}</td></tr></table>`;
@@ -2218,10 +2225,25 @@ document.addEventListener('click',async e=>{
     const qtyRaw=g('if-qty').value.trim(), priceRaw=g('if-price').value.trim();
     const qty=evalExpr(qtyRaw)||0, price=evalExpr(priceRaw);
     const qtyExpr=hasExpr(qtyRaw)?qtyRaw:'', priceExpr=hasExpr(priceRaw)?priceRaw:'';
+    // 「這條做幾間」：空白＝照區塊；跟區塊一樣也當成沒指定，免得區塊間數之後改了它卻卡住
+    const cntRaw=(g('if-cnt')?g('if-cnt').value:'').trim();
+    const cntVal=cntRaw===''?null:(evalExpr(cntRaw)||0);
+    const ownCnt=(cntVal!==null&&cntVal>0&&cntVal!==(Number(b.count)||0))?cntVal:null;
     if(parts[1]){ const it=b.items.find(x=>x.id===parts[1]);
       if(it){
         // 先記下會影響子專案的欄位有沒有變
         const before={name:it.name,unit:it.unit,qty:it.qty,price:it.price};
+        // 間數改了要用各期存的絕對完成量回推百分比，舊期請過的金額才不會被追溯改掉
+        if(ownCnt!==(hasOwnCount(it)?Number(it.cnt):null)){
+          const fake={count:ownCnt!==null?ownCnt:(Number(b.count)||0)};
+          const oldTotal=itemTotalQty(it,b), newTotal=(Number(it.qty)||0)*fake.count;
+          for(const per of proj.periods){
+            const pr=per&&per.prog&&per.prog[it.id]; if(!pr) continue;
+            const done=(pr.q!==undefined&&pr.q!==null)?Number(pr.q):(Number(pr.p)||0)*oldTotal;
+            if(newTotal>0){ pr.p=Math.min(done/newTotal,1); pr.q=+done.toFixed(2); } else { pr.p=0; pr.q=0; }
+          }
+        }
+        if(ownCnt!==null) it.cnt=ownCnt; else delete it.cnt;
         it.name=name; it.unit=unit; it.qty=qty; it.qtyExpr=qtyExpr; it.price=price; it.priceExpr=priceExpr; it.amount=qty*price; it.remark=remark; it.extra=isExt;
         const changed=SYNC_KEYS.filter(([k])=>String(before[k]??'')!==String(it[k]??''));
         const priceChanged=!priceEq(before.price,it.price);
@@ -2243,7 +2265,9 @@ document.addEventListener('click',async e=>{
         }
       }
       itemEdit=null; }
-    else { b.items.push({id:uid(),no:isExt?'增':'',tag:'',chapter:'',name,unit,qty:qty||1,qtyExpr,price,priceExpr,amount:(qty||1)*price,remark,extra:isExt}); itemAdd=null; }
+    else { const ni={id:uid(),no:isExt?'增':'',tag:'',chapter:'',name,unit,qty:qty||1,qtyExpr,price,priceExpr,amount:(qty||1)*price,remark,extra:isExt};
+      if(ownCnt!==null) ni.cnt=ownCnt;
+      b.items.push(ni); itemAdd=null; }
     save(); render(); return;
   }
   if(t.dataset.delitem){
@@ -2703,11 +2727,14 @@ document.addEventListener('click',async e=>{
     const inp=document.querySelector(`[data-bfill="${b.id}"]`);
     const n=Math.max(0,Math.min(num(inp&&inp.value),b.count));
     if(!b.count){ alert(`「${b.name}」的間數是 0（不施作），沒有可填的完成量。`); return; }
-    if(!confirm(`把「${b.name}」全部細項的完成％設成 ${qfmt(n)} ÷ ${qfmt(b.count)} ＝ ${pfmt(n/b.count)}？（會覆蓋原本逐條填的數字）`))return;
+    const ownN=ownCountItems(b).length;
+    if(!confirm(`把「${b.name}」全部細項的完成％設成 ${qfmt(n)} ÷ ${qfmt(b.count)} ＝ ${pfmt(n/b.count)}？（會覆蓋原本逐條填的數字）`
+      +(ownN?`\n\n其中 ${ownN} 條另計間數，會用自己的間數當分母（例：做好 ${qfmt(n)} 間 ÷ 該條的總間數），不會算成同一個百分比。`:'')))return;
     const period=proj.periods[proj.periods.length-1];period.prog||(period.prog={});
-    const p=n/b.count;
     for(const it of b.items){
       if(it.amount===0)continue;
+      // 自訂間數的那幾條用自己的分母：「完成 N 間」對每條都成立，只是各自的總間數不同
+      const cnt=effCount(it,b), p=cnt?Math.min(n/cnt,1):0;
       if(p>0)period.prog[it.id]={p,q:+(itemTotalQty(it,b)*p).toFixed(2)};else delete period.prog[it.id];
     }
     save();render();return;
