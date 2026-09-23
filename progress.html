@@ -109,7 +109,7 @@ body.printing #print-overlay{display:block;position:absolute;inset:0;background:
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.09.17d-overcap';
+const APP_VERSION='vG2026.09.23-effcount';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -327,7 +327,11 @@ function analyzeSheet(sheet){
 }
 
 /* ═══════════ 計算 ═══════════ */
-const itemTotalQty=(it,blk)=>it.qty*blk.count;
+// 一條細項實際涵蓋幾「間」。目前一律等於區塊的間數；
+// 之後要讓個別細項有自己的間數（實作量大於合約的情形），只改這裡一行即可。
+// 全程式算量、算錢一律走這個，不要再自己寫 qty*blk.count。
+const effCount=(it,blk)=>Number(blk&&blk.count)||0;
+const itemTotalQty=(it,blk)=>it.qty*effCount(it,blk);
 // 改「間數」時保住歷史：各期進度存的是百分比 p（總量的幾成），總量＝單間數量×間數。
 // 間數一變，同一個 p 換算出來的數量與金額就跟著變，已經請過款的舊期會被追溯改掉。
 // 這裡改用各期存下來的絕對數量 q 回推新的 p，讓舊期的完成量原封不動。
@@ -352,8 +356,8 @@ function rescaleBlockProgress(proj,blk,newCount){
     if(!per||!per.prog) continue;
     for(const it of (blk.items||[])){
       const pr=per.prog[it.id]; if(!pr) continue;
-      const oldTotal=(Number(it.qty)||0)*(Number(blk.count)||0);
-      const newTotal=(Number(it.qty)||0)*newCount;
+      const oldTotal=itemTotalQty(it,blk);
+      const newTotal=itemTotalQty(it,{count:newCount});
       const doneQty=(pr.q!==undefined&&pr.q!==null)?Number(pr.q):(Number(pr.p)||0)*oldTotal; // 舊資料沒存 q 就用 p 回推
       if(newTotal>0){ pr.p=Math.min(doneQty/newTotal,1); pr.q=+doneQty.toFixed(2); }
       else { pr.p=0; pr.q=0; }
@@ -362,7 +366,7 @@ function rescaleBlockProgress(proj,blk,newCount){
   }
   return n;
 }
-const itemValue=(it,blk)=>it.amount*blk.count;
+const itemValue=(it,blk)=>it.amount*effCount(it,blk);
 // 該期保留款：period.rtAmt 有填就直接用（湊整數用），否則照專案的％算
 const retainOf=(proj,period,base)=>{
   if(period&&period.rtAmt!==undefined&&period.rtAmt!=='') return Math.max(0,Math.round(Number(period.rtAmt)||0));
@@ -382,8 +386,8 @@ function allocationOf(parent){
     k.blocks.forEach(b=>b.items.forEach(it=>{
       const src=it.srcId; if(!src) return;
       const e=map[src]||(map[src]={qty:0,amount:0,by:[],refs:[]});
-      const q=(Number(it.qty)||0)*(Number(b.count)||0);      // 子的總量（單間量×間數）
-      const a=(Number(it.amount)||0)*(Number(b.count)||0);
+      const q=itemTotalQty(it,b);      // 子的總量（單間量×間數）
+      const a=itemValue(it,b);
       e.qty+=q; e.amount+=a;
       e.refs.push({projId:k.id,projName:k.name,blkName:b.name,item:it,name:it.name,amount:a});
       const hit=e.by.find(x=>x.id===k.id);
@@ -395,7 +399,7 @@ function allocationOf(parent){
   const rows=[]; let over=0, totMother=0, totAlloc=0, totSelf=0;
   const seen=new Set();
   parent.blocks.forEach(b=>b.items.forEach(it=>{
-    const mQty=(Number(it.qty)||0)*(Number(b.count)||0), mAmt=itemValue(it,b);
+    const mQty=itemTotalQty(it,b), mAmt=itemValue(it,b);
     const e=map[it.id]||{qty:0,amount:0,by:[]};
     seen.add(it.id);
     // 自辦：這條有多少量是自己做的（不發包）。單位與「已分配量」相同（單間量×間數）
@@ -1471,7 +1475,7 @@ function viewProg(proj){
         if(open){
           for(const s of g){
             const si=s.it, sz=s.v===0, stq=itemTotalQty(si,b), spr=progOf(period,si.id);
-            const srVal=(spr.exprKind==='r'&&spr.expr)?spr.expr:(spr.p?+(spr.p*b.count).toFixed(2):'');
+            const srVal=(spr.exprKind==='r'&&spr.expr)?spr.expr:(spr.p?+(spr.p*effCount(s,b)).toFixed(2):'');
             h+=`<tr class="${sz?'zero':''}"><td></td>
               <td style="padding-left:26px;color:var(--muted)">↳ ${stageHtml(si.name,it.groupName)}</td>
               <td>${esc(si.unit)}</td><td class="num">${qfmt(si.qty)}</td><td class="num">${si.price?qfmt(si.price):''}</td>
@@ -1488,7 +1492,7 @@ function viewProg(proj){
       const zero=ci.v===0;
       const tq=itemTotalQty(it,b);
       const pr=progOf(period,it.id);
-      const rVal=(pr.exprKind==='r'&&pr.expr)?pr.expr:(pr.p?+(pr.p*b.count).toFixed(2):'');
+      const rVal=(pr.exprKind==='r'&&pr.expr)?pr.expr:(pr.p?+(pr.p*effCount(it,b)).toFixed(2):'');
       h+=`<tr class="${zero?'zero':''}"><td>${esc(it.no)}</td><td>${esc(it.name)}${isExtraItem(it)?'<span class="tag" style="background:rgba(251,191,36,.2);border-color:rgba(251,191,36,.5);color:#fcd34d" title="追加工程：不受簽約總價折讓，照明細單價計">追加</span>':''}</td><td>${esc(it.unit)}</td>
         <td class="num">${qfmt(it.qty)}</td><td class="num">${it.price?qfmt(it.price):''}</td>
         <td class="num muted">${pfmt(ci.pp)}</td>
@@ -1591,8 +1595,8 @@ function viewSet(proj){
       <span class="muted" style="font-size:12px">談的是<b>未稅價</b>時：廠商日後補開發票，你要另外補的營業稅％（一般 5）。談含稅價就填 0。只在「未稅」列印模式＋有設暫扣款時才會用到。</span></div>
     <div class="rowline">保留款 % <input id="set-retain" inputmode="decimal" style="width:90px" value="${proj.retainPct||''}" placeholder="0">
       <span class="muted" style="font-size:12px">每期先保留的％（例：5），通常完工後才放款。填 0 或空白＝不保留。放款時到「進度請款」按已放款。</span></div>
-    <div class="rowline">簽約總價（議價後）<input id="set-signed" inputmode="decimal" style="min-width:180px" value="${proj.signedTotal||''}" placeholder="空白＝照明細 ${money(proj.blocks.reduce((s,b)=>s+b.items.reduce((x,i)=>x+i.amount*b.count,0),0))}"></div>
-    <div class="muted" style="font-size:12px;margin-bottom:6px">議價後總價跟明細不同時填這裡（例：明細 ${money(proj.blocks.reduce((s,b)=>s+b.items.reduce((x,i)=>x+i.amount*b.count,0),0))}、簽約 25,500,000）。明細不用改，程式會自動照比例折讓每期請款。</div>
+    <div class="rowline">簽約總價（議價後）<input id="set-signed" inputmode="decimal" style="min-width:180px" value="${proj.signedTotal||''}" placeholder="空白＝照明細 ${money(proj.blocks.reduce((s,b)=>s+b.items.reduce((x,i)=>x+itemValue(i,b),0),0))}"></div>
+    <div class="muted" style="font-size:12px;margin-bottom:6px">議價後總價跟明細不同時填這裡（例：明細 ${money(proj.blocks.reduce((s,b)=>s+b.items.reduce((x,i)=>x+itemValue(i,b),0),0))}、簽約 25,500,000）。明細不用改，程式會自動照比例折讓每期請款。</div>
     <button class="btn" id="set-save">儲存</button></div>
   ${proj.parentId?'':`<div class="card"><h3>建立廠商子專案（發包）</h3>
     <div class="muted" style="font-size:13px;margin-bottom:8px">把這份當<b>母專案（發包總表）</b>，在這裡設好你的<b>發包單價與總量</b>；然後每個廠商建一個<b>子專案</b>。這裡是<b>整份複製</b>（全部細項都帶），適合一家包全部。<b>只發其中幾道工序、幾間</b>的話，用「合約明細 → 🏗 發包給工班」比較快。<br><b>系統會盯著：所有子專案加起來不能超過母專案的量</b>，超了會在「發包分配」紅字警告。子專案的期別、進度、請款各自獨立，不會互相污染。</div>
@@ -2069,12 +2073,12 @@ async function importXlsx(file){
   if(!sheet)return;
   const a=analyzeSheet(sheet);
   if(!a.blocks.length||!a.blocks.some(b=>b.items.length)){alert('沒抓到任何細項，可能格式不同。可以把 Excel 給我看調整解析規則。');return;}
-  const sumV=a.blocks.reduce((s,b)=>s+b.items.reduce((x,i)=>x+i.amount*b.count,0),0);
+  const sumV=a.blocks.reduce((s,b)=>s+b.items.reduce((x,i)=>x+itemValue(i,b),0),0);
   const modal=document.createElement('div');modal.id='modal';
   modal.innerHTML=`<div class="box"><h3 style="margin-bottom:10px">確認匯入內容</h3>
     <div style="margin-bottom:8px">工程名稱：<input id="imp-name" style="min-width:320px" value="${esc(a.title||file.name.replace(/\.xlsx$/i,''))}"></div>
     <table style="margin-bottom:10px"><tr><th>區塊</th><th class="num">數量</th><th class="num">細項數</th><th class="num">金額</th></tr>
-    ${a.blocks.map(b=>`<tr><td>${esc(b.name)}</td><td class="num">${qfmt(b.count)} ${esc(b.unit)}</td><td class="num">${b.items.length}</td><td class="num">${money(b.items.reduce((s,i)=>s+i.amount*b.count,0))}</td></tr>`).join('')}
+    ${a.blocks.map(b=>`<tr><td>${esc(b.name)}</td><td class="num">${qfmt(b.count)} ${esc(b.unit)}</td><td class="num">${b.items.length}</td><td class="num">${money(b.items.reduce((s,i)=>s+itemValue(i,b),0))}</td></tr>`).join('')}
     <tr class="chapter"><td><b>合計（未稅）</b></td><td></td><td class="num">${a.blocks.reduce((s,b)=>s+b.items.length,0)}</td><td class="num"><b>${money(sumV)}</b></td></tr></table>
     ${a.grand?`<div class="${Math.abs(a.grand-sumV)<=2?'ok':'warn-t'}" style="font-size:13px;margin-bottom:8px">Excel 總價列：${money(a.grand)} ${Math.abs(a.grand-sumV)<=2?'✓ 與細項加總一致':'⚠ 與細項加總不一致，匯入後請檢查'}</div>`:''}
     ${a.warnings.map(w=>`<div class="notice">⚠ ${esc(w)}</div>`).join('')}
@@ -2105,14 +2109,14 @@ function setProgInput(proj,blkId,itemId,kind,val){
   const v=evalExpr(val);            // 可打算式：第二期填 12+4 就是累計 16
   let p,q,over=0;
   if(kind==='q'){ if(v>tq) over=v-tq; q=Math.max(0,Math.min(v,tq)); p=tq?q/tq:0; }
-  else if(kind==='r'){ if(v>b.count) over=v-b.count; const n=Math.max(0,Math.min(v,b.count)); p=b.count?n/b.count:0; q=tq*p; }
+  else if(kind==='r'){ const cnt=effCount(it,b); if(v>cnt) over=v-cnt; const n=Math.max(0,Math.min(v,cnt)); p=cnt?n/cnt:0; q=tq*p; }
   else{ if(v>100) over=v-100; p=Math.max(0,Math.min(v,100))/100; q=tq*p; }
   // 超過合約量會被壓回上限——以前壓得無聲無息，使用者以為系統壞了。
   // 講清楚為什麼，並指出超做的量要當追加工程另計。每次開頁只提醒一次，不然打字很煩。
   if(over>0&&!_overWarned){
     _overWarned=true;
     const unit=kind==='r'?b.unit:(kind==='p'?'%':it.unit);
-    const cap=kind==='r'?qfmt(b.count):(kind==='p'?'100':qfmt(tq));
+    const cap=kind==='r'?qfmt(effCount(it,b)):(kind==='p'?'100':qfmt(tq));
     setTimeout(()=>alert(`「${it.name}」填的量超過合約量，已經壓回上限 ${cap} ${unit}。\n\n`
       +`合約這個區塊是 ${qfmt(b.count)} ${b.unit}，請款金額＝合約金額 × 完成度，\n`
       +`所以單一細項最多只能請到 100%，再多就變成「請的比合約多」。\n\n`
@@ -2353,7 +2357,7 @@ document.addEventListener('click',async e=>{
       const price=raw?(evalExpr(raw)||0):(Number(it.price)||0);
       return { it, price, amount:(Number(it.qty)||0)*price };
     }).filter(Boolean);
-    const tot=plan.reduce((s2,x)=>s2+x.amount*(Number(b.count)||0),0);
+    const tot=plan.reduce((s2,x)=>s2+x.amount*(Number(b.count)||0),0); // 還沒建立的新細項：一律照區塊間數
     if(!confirm(`補 ${plan.length} 條進「${b.name}」？\n\n${plan.map(x=>`・${x.it.name}　${qfmt(x.it.qty)} × ${qfmt(x.price)}${(Number(x.it.price)||0)!==x.price?`（母單價 ${qfmt(x.it.price)}）`:''}`).join('\n')}\n\n間數 ${qfmt(b.count)} ${b.unit}，發包金額增加 ${money(Math.round(tot))}\n\n會自動接回母專案，發包分配算得到。`)) return;
     // 同名工序群組要併進這個區塊「已經有的那一組」，不要各自為政
     const gmap={};
@@ -2641,7 +2645,7 @@ document.addEventListener('click',async e=>{
       const price=raw?(evalExpr(raw)||0):(Number(it.price)||0);
       return { it, price, amount:(Number(it.qty)||0)*price };
     }).filter(Boolean);
-    const tot=plan.reduce((s2,x)=>s2+x.amount*(Number(b.count)||0),0);
+    const tot=plan.reduce((s2,x)=>s2+x.amount*(Number(b.count)||0),0); // 還沒建立的新細項：一律照區塊間數
     if(!confirm(`從「${S.sp.name}·${S.sb.name}」抓 ${plan.length} 條進「${b.name}」？\n\n${plan.map(x=>`・${x.it.name}　${qfmt(x.it.qty)} × ${qfmt(x.price)}${(Number(x.it.price)||0)!==x.price?`（來源單價 ${qfmt(x.it.price)}）`:''}`).join('\n')}\n\n間數 ${qfmt(b.count)} ${b.unit}，合約金額增加 ${money(Math.round(tot))}\n\n抓過來是新的一條，跟來源那份各改各的、不會互相影響。`)) return;
     // 同名工序群組要併進這個區塊已經有的那一組，不要各自為政
     const gmap={};
@@ -2889,7 +2893,7 @@ document.addEventListener('change',e=>{
     const [blkId,itemId]=t.dataset.selfqty.split('::');
     const b=proj.blocks.find(x=>x.id===blkId); if(!b) return;
     const it=b.items.find(x=>x.id===itemId); if(!it) return;
-    const mQty=(Number(it.qty)||0)*(Number(b.count)||0);
+    const mQty=itemTotalQty(it,b);
     const v=Math.max(0, Math.min(num(t.value), mQty));
     if(v>0) it.selfQty=v; else delete it.selfQty;
     save(); render(); return;
