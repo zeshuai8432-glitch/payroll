@@ -109,7 +109,7 @@ body.printing #print-overlay{display:block;position:absolute;inset:0;background:
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.09.23i-negbill';
+const APP_VERSION='vG2026.09.23j-settleprint';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -2026,6 +2026,25 @@ function negBillNoticeHtml(c){
     <br>・<b>錢已經請出去／收到了</b>：這樣就對了。這個負數就是要從下一張請款單<b>沖銷</b>的金額。本期先不請也行，留到下期累計會自動補回來。
     <br>・<b>前期還沒送出去</b>：把前期改對比較乾淨——先「刪除本期」退回前期，把進度改成實際的，再重新開一期。（前期若已鎖定，按「🔒 已鎖…（點我改）」清空即可解除。）</div></div>`;
 }
+// 列印請款單的當下，這個金額就送出去了——趁這時鎖住，之後改數量／進度都不會動到它。
+// 沒鎖的話，等到發現進度填錯要沖銷時，系統根本不知道當初請了多少。
+function offerSettleAfterPrint(proj){
+  const idx=Math.min(proj.curPeriod??proj.periods.length-1,proj.periods.length-1);
+  const per=proj.periods[idx]; if(!per) return;
+  if(per.settled!==undefined&&per.settled!==null&&per.settled!=='') return;   // 已經鎖了就別再問
+  if(per._noSettleAsk) return;                                               // 這一期問過就不再煩
+  setTimeout(()=>{
+    const amt=Math.round(calc(proj,idx).billActual);
+    if(confirm(`這張第 ${per.no} 期請款單送出去了嗎？\n\n`
+      +`【確定】＝送出去了，把金額鎖在 ${money(amt)}\n`
+      +`　　鎖住後不管之後改數量、改進度、改折讓，這一期都不會被改掉。\n`
+      +`　　日後發現進度填錯要沖銷時，系統才知道當初實際請了多少。\n\n`
+      +`【取消】＝還在試印，先不要鎖（本期不再問）`)){
+      per.settled=amt; save(); render();
+      alert(`第 ${per.no} 期已鎖在 ${money(amt)}。\n\n要改金額：按「🔒 已鎖…（點我改）」。`);
+    } else { per._noSettleAsk=true; save(); }
+  },400);
+}
 function printDoc(proj){
   const perIdx=Math.min(proj.curPeriod??proj.periods.length-1,proj.periods.length-1);
   const c=calc(proj,perIdx);
@@ -2180,7 +2199,7 @@ function printDoc(proj){
   document.body.classList.add('printing');
   ov.querySelectorAll('[name=ptax]').forEach(r=>r.onchange=()=>{taxMode=r.value;proj.taxMode=taxMode;save();redraw();});
   ov.querySelector('#pshowall').onchange=e2=>{showAll=e2.target.checked;proj.printAll=showAll;save();redraw();};
-  ov.querySelector('#do-print').onclick=()=>window.print();
+  ov.querySelector('#do-print').onclick=()=>{window.print();offerSettleAfterPrint(proj);};
   ov.querySelector('#close-print').onclick=()=>{document.body.classList.remove('printing');ov.innerHTML='';};
   ov.onclick=e2=>{
     const sBtn=e2.target.closest('[data-sig]'),dBtn=e2.target.closest('[data-sigdel]');
