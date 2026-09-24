@@ -109,7 +109,7 @@ body.printing #print-overlay{display:block;position:absolute;inset:0;background:
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.09.23m-reconopen';
+const APP_VERSION='vG2026.09.24-syncfix';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -1820,6 +1820,14 @@ function viewSet(proj){
         ${mode==='actual'&&Number(proj.signedBase)>0?` <button class="btn sub sm" id="set-rebase" style="margin-left:4px">重設折數基準</button>`:''}`:''}
     </div>`; })()}
     <button class="btn" id="set-save">儲存</button></div>
+  ${(()=>{ const sn=prevSnapshot(); if(!sn) return '';
+    const n=sn.state.projects.length, d=new Date(sn.at);
+    return `<div class="card" style="border-color:rgba(251,191,36,.5)"><h3>🛟 救回被覆蓋的本機資料</h3>
+    <div class="muted" style="font-size:12.5px;margin-bottom:8px">
+      ${d.toLocaleString('zh-TW')}，這台的資料被<b>${esc(sn.why||'雲端資料')}</b>覆蓋前，系統留了一份（${n} 個專案）。
+      <br>如果現在畫面上的資料<b>比較舊、或少了東西</b>，按下面還原。還原後會蓋回雲端。</div>
+    <button class="btn sub sm" id="prev-restore" style="border-color:#fbbf24;color:#fcd34d">還原這份（${n} 個專案）</button>
+    <button class="btn sub sm" id="prev-export">先下載來看</button></div>`; })()}
   ${proj.parentId?'':`<div class="card"><h3>建立廠商子專案（發包）</h3>
     <div class="muted" style="font-size:13px;margin-bottom:8px">把這份當<b>母專案（發包總表）</b>，在這裡設好你的<b>發包單價與總量</b>；然後每個廠商建一個<b>子專案</b>。這裡是<b>整份複製</b>（全部細項都帶），適合一家包全部。<b>只發其中幾道工序、幾間</b>的話，用「合約明細 → 🏗 發包給工班」比較快。<br><b>系統會盯著：所有子專案加起來不能超過母專案的量</b>，超了會在「發包分配」紅字警告。子專案的期別、進度、請款各自獨立，不會互相污染。</div>
     <div class="rowline">子專案名稱 <input id="dup-name" style="min-width:230px" placeholder="例：${esc(proj.name)}-骨架"></div>
@@ -2412,7 +2420,7 @@ function setProgInput(proj,blkId,itemId,kind,val){
 }
 
 document.addEventListener('click',async e=>{
-  const t=e.target.closest('[data-tab],[data-editblk],[data-delblk],[data-edititem],[data-delitem],[data-additem],[data-splititem],[data-sortitems],[data-grouptoggle],[data-groupmerge],[data-groupdetect],[data-whtoggle],[data-rttoggle],[data-whtax],[data-whtaxauto],[data-rtamt],[data-selfone],[data-selfrooms],[data-selfrest],[data-selfclear],[data-delmode],[data-delcancel],[data-delall],[data-delnone],[data-delinv],[data-delzero],[data-deldo],#sub-toggle,#sub-close,#sub-go,[data-backfill],[data-backfillcancel],[data-backfillok],[data-addmissblk],#trash-toggle,#trash-clear,[data-trashrestore],[data-trashdrop],#drift-sync,#drift-sync-price,#drift-all,#drift-none,[data-copyinto],[data-copyok],[data-copycancel],[data-xcopy],[data-xcopycancel],[data-xcopyall],[data-xcopyok],[data-xfer],[data-xfercancel],[data-xferok],[data-batchedit],[data-batchok],[data-batchcancel],[data-batchalledit],[data-batchallok],[data-batchallcancel],[data-itemok],[data-itemcancel],[data-blkok],[data-blkcancel],[data-bapply],[data-gapply],#btn-invrecon,[data-editextra],[data-delextra],#btn-import,#btn-import2,#btn-newproj,#btn-newproj2,#btn-addblk,#btn-addblk-ok,#btn-addperiod,#btn-delperiod,#btn-addextra,#btn-roundup,#settle-toggle,#set-rebase,[data-gotoproj],#btn-print,#btn-setretain,#orphan-fix,#orphan-detach,#proj-groupall,#set-save,#proj-dup,#proj-detach,#backup-export,#backup-import-btn,#proj-del,#cloud-push,#cloud-pull');
+  const t=e.target.closest('[data-tab],[data-editblk],[data-delblk],[data-edititem],[data-delitem],[data-additem],[data-splititem],[data-sortitems],[data-grouptoggle],[data-groupmerge],[data-groupdetect],[data-whtoggle],[data-rttoggle],[data-whtax],[data-whtaxauto],[data-rtamt],[data-selfone],[data-selfrooms],[data-selfrest],[data-selfclear],[data-delmode],[data-delcancel],[data-delall],[data-delnone],[data-delinv],[data-delzero],[data-deldo],#sub-toggle,#sub-close,#sub-go,[data-backfill],[data-backfillcancel],[data-backfillok],[data-addmissblk],#trash-toggle,#trash-clear,[data-trashrestore],[data-trashdrop],#drift-sync,#drift-sync-price,#drift-all,#drift-none,[data-copyinto],[data-copyok],[data-copycancel],[data-xcopy],[data-xcopycancel],[data-xcopyall],[data-xcopyok],[data-xfer],[data-xfercancel],[data-xferok],[data-batchedit],[data-batchok],[data-batchcancel],[data-batchalledit],[data-batchallok],[data-batchallcancel],[data-itemok],[data-itemcancel],[data-blkok],[data-blkcancel],[data-bapply],[data-gapply],#btn-invrecon,[data-editextra],[data-delextra],#btn-import,#btn-import2,#btn-newproj,#btn-newproj2,#btn-addblk,#btn-addblk-ok,#btn-addperiod,#btn-delperiod,#btn-addextra,#btn-roundup,#settle-toggle,#set-rebase,[data-gotoproj],#btn-print,#btn-setretain,#orphan-fix,#orphan-detach,#proj-groupall,#set-save,#proj-dup,#proj-detach,#backup-export,#backup-import-btn,#prev-restore,#prev-export,#proj-del,#cloud-push,#cloud-pull');
   if(!t)return;
   const proj=curProj();
   if(t.dataset.tab){state.tab=t.dataset.tab;save();render();return;}
@@ -3262,6 +3270,25 @@ document.addEventListener('click',async e=>{
     const iv=num(document.getElementById('set-invtax').value); proj.invoiceTaxPct=iv>0?iv:0;
     save();render();alert('已儲存');return;
   }
+  if(t.id==='prev-export'){
+    const sn=prevSnapshot(); if(!sn) return;
+    const blob=new Blob([JSON.stringify(sn.state,null,1)],{type:'application/json'});
+    const a=document.createElement('a');a.href=URL.createObjectURL(blob);
+    a.download=`進度請款_被覆蓋前_${today()}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),3000);return;
+  }
+  if(t.id==='prev-restore'){
+    const sn=prevSnapshot(); if(!sn) return;
+    if(!confirm(`還原 ${new Date(sn.at).toLocaleString('zh-TW')} 被覆蓋前的那份資料？\n\n`
+      +`・那份有 ${sn.state.projects.length} 個專案：${sn.state.projects.map(x=>x.name).slice(0,6).join('、')}\n`
+      +`・現在畫面上這份有 ${state.projects.length} 個專案\n\n`
+      +`還原後會蓋掉現在這份，並上傳到雲端。建議先按「先下載來看」留個檔。`)) return;
+    stashLocal('手動還原前');
+    const keepTab=state.tab;
+    state=sn.state; state.tab=keepTab; state.savedAt=Date.now();
+    if(!state.projects.some(x=>x.id===state.cur)) state.cur=state.projects[0]?state.projects[0].id:null;
+    save(); render(); alert('已還原，並排程上傳到雲端。');
+    return;
+  }
   if(t.id==='backup-export'){
     const blob=new Blob([JSON.stringify(state,null,1)],{type:'application/json'});
     const a=document.createElement('a');a.href=URL.createObjectURL(blob);
@@ -3498,14 +3525,40 @@ async function cloudPull(){
   if(!d||!Array.isArray(d.projects))throw new Error('雲端資料格式不符');
   return d;
 }
+// 被雲端覆蓋前，先把這台原本的資料留一份在本機。
+// 萬一蓋掉的才是對的（像是另一台把舊資料推上去），還救得回來。
+const LS_PREV='pm_progress_prev_v1';
+function stashLocal(why){
+  try{
+    if(!state||!state.projects||!state.projects.length) return;
+    localStorage.setItem(LS_PREV,JSON.stringify({at:Date.now(),why:why||'',savedAt:state.savedAt||0,state}));
+  }catch(e){}
+}
+function prevSnapshot(){
+  try{ const r=JSON.parse(localStorage.getItem(LS_PREV)||'null');
+    return (r&&r.state&&Array.isArray(r.state.projects))?r:null; }catch(e){ return null; }
+}
 function applyRemote(remote){
+  stashLocal('被雲端資料覆蓋');
   const keepTab=state.tab;
   state=remote;state.tab=keepTab;
   if(!state.projects.some(p=>p.id===state.cur))state.cur=state.projects[0]?state.projects[0].id:null;
   localStorage.setItem(LS,JSON.stringify(state)); // 直接落地，不觸發上傳
   render();
 }
-function schedulePush(){clearTimeout(pushTimer);pushTimer=setTimeout(doPush,1500);}
+function schedulePush(){
+  clearTimeout(pushTimer);
+  setCloud('尚未上傳…（別關掉）');   // 關鍵：關掉頁面前看得出來還沒存上去
+  pushTimer=setTimeout(doPush,1500);
+}
+// 切到背景／關頁面前把待上傳的資料送出去。手機平板按 home 之後分頁會被凍結，
+// 1.5 秒的延遲常常等不到，打完的東西就留在那台機器上沒上雲端。
+function flushPush(){ if(pushTimer){ clearTimeout(pushTimer); pushTimer=null; doPush(); } }
+document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='hidden') flushPush(); });
+window.addEventListener('pagehide',flushPush);
+window.addEventListener('beforeunload',e=>{
+  if(pushTimer||pushing){ flushPush(); e.preventDefault(); e.returnValue=''; return ''; }
+});
 async function doPush(){
   if(pushing){pendingPush=true;return;}
   if(cloudLocked){setCloud('已加密未解鎖（改動只在本機）');return;}
@@ -3610,13 +3663,17 @@ function settleOldPeriods(){
 }
 appLockGate(function(){
   normalizeGroups();
-  const nSettled=settleOldPeriods();
-  if(nSettled){ save();
-    setTimeout(()=>alert(`已把 ${nSettled} 個「已經翻過去的期別」結算鎖定。\n\n`
+  render();
+  // 補鎖一定要等雲端比對完才做。開機就 save() 會把 savedAt 蓋成「現在」，
+  // 這台的舊資料就會贏過雲端上別台剛存的新資料，然後反過來把它覆蓋掉。
+  initCloud().catch(()=>{}).then(()=>{
+    const n=settleOldPeriods();
+    if(!n) return;
+    save();
+    setTimeout(()=>alert(`已把 ${n} 個「已經翻過去的期別」結算鎖定。\n\n`
       +`金額完全沒變，只是鎖起來——以後覆核改數量、改單價、改折讓，都不會再回頭改掉已經請過的帳，差額會走當期。\n\n`
       +`要改某一期的金額：切到那一期，按「🔓 解除鎖定」。`),600);
-  }
-  render(); initCloud();
+  });
 });
 </script>
 </body>
