@@ -109,7 +109,7 @@ body.printing #print-overlay{display:block;position:absolute;inset:0;background:
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.09.24-syncfix';
+const APP_VERSION='vG2026.09.24b-syncguard';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -3528,12 +3528,13 @@ async function cloudPull(){
 // 被雲端覆蓋前，先把這台原本的資料留一份在本機。
 // 萬一蓋掉的才是對的（像是另一台把舊資料推上去），還救得回來。
 const LS_PREV='pm_progress_prev_v1';
-function stashLocal(why){
+function stashSnapshot(snap,why){
   try{
-    if(!state||!state.projects||!state.projects.length) return;
-    localStorage.setItem(LS_PREV,JSON.stringify({at:Date.now(),why:why||'',savedAt:state.savedAt||0,state}));
+    if(!snap||!snap.projects||!snap.projects.length) return;
+    localStorage.setItem(LS_PREV,JSON.stringify({at:Date.now(),why:why||'',savedAt:snap.savedAt||0,state:snap}));
   }catch(e){}
 }
+const stashLocal=why=>stashSnapshot(state,why);
 function prevSnapshot(){
   try{ const r=JSON.parse(localStorage.getItem(LS_PREV)||'null');
     return (r&&r.state&&Array.isArray(r.state.projects))?r:null; }catch(e){ return null; }
@@ -3564,6 +3565,27 @@ async function doPush(){
   if(cloudLocked){setCloud('已加密未解鎖（改動只在本機）');return;}
   pushing=true;
   try{
+    // 沒有 lastUpdateTime＝這次開頁從來沒成功讀過雲端（開機時離線／連線失敗）。
+    // 這時候上傳等於「我沒看過雲端長怎樣，但我要整份蓋掉它」——別台剛存的東西就這樣沒了。
+    // 先讀一次；讀不到就寧可不傳，資料留在本機等下次。
+    if(!lastUpdateTime){
+      let remote;
+      try{ remote=await cloudPull(); }
+      catch(e){
+        if(e&&e.locked) throw e;
+        setCloud('讀不到雲端，先不上傳（資料留在本機）');
+        clearTimeout(pushTimer); pushTimer=setTimeout(doPush,30000);
+        pushing=false; return;
+      }
+      if(remote&&(remote.savedAt||0)>(state.savedAt||0)){
+        stashSnapshot(remote,'雲端較新，你選擇用本機覆蓋');
+        if(confirm('雲端有比這台新的資料（可能是在別的裝置上做的）。\n\n'
+          +'按「確定」→ 改用雲端那份（這台還沒上傳的修改會不見）\n'
+          +'按「取消」→ 用這台覆蓋雲端（雲端那份已先備份在本機，設定頁可還原）')){
+          applyRemote(remote); setCloud('已同步（採用雲端）'); pushing=false; return;
+        }
+      }
+    }
     setCloud('上傳中…');
     const payload=await e2eEncrypt(JSON.stringify(state));
     if(payload.length>900000)setCloud('⚠ 資料量偏大，仍嘗試上傳…');
@@ -3574,7 +3596,10 @@ async function doPush(){
       // 版本衝突：先看雲端是不是更新
       const remote=await cloudPull().catch(()=>null);
       if(remote&&(remote.savedAt||0)>(state.savedAt||0)){
-        if(confirm('雲端有比本機新的資料（可能在其他裝置改過）。\n\n按「確定」→ 改用雲端資料（這台剛才的修改會被蓋掉）\n按「取消」→ 用本機資料覆蓋雲端')){
+        stashSnapshot(remote,'雲端較新，你選擇用本機覆蓋');
+        if(confirm('雲端有比本機新的資料（可能在其他裝置改過）。\n\n'
+          +'按「確定」→ 改用雲端資料（這台剛才的修改會被蓋掉）\n'
+          +'按「取消」→ 用本機覆蓋雲端（雲端那份已先備份在本機，設定頁可還原）')){
           applyRemote(remote);setCloud('已同步（採用雲端）');return;
         }
       }
