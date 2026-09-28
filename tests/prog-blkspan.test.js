@@ -18,7 +18,7 @@ const seed={ projects:[
      // 照抄架構但沒細項
      {id:'jb2',name:'TYPE-EXS 行政套房',unit:'間',count:5,srcBlk:'mb2',items:[]},
      {id:'jb3',name:'廊道 / 客用電梯廳',unit:'層',count:6,items:[]}],
-   periods:[], curPeriod:0, createdAt:2 }
+   periods:[{no:1,date:'2026-09-01',prog:{}}], curPeriod:0, createdAt:2 }
 ], cur:'kJ', tab:'items'};
 
 async function open(br,cur){
@@ -92,6 +92,35 @@ async function open(br,cur){
     const t=await p.evaluate(()=>document.body.innerText.replace(/\s+/g,' '));
     ok(/多種間數（最多 7 間）/.test(t),'⑤ 各條間數不一樣時標「多種間數（最多 7 間）」');
     ok(!/每間 \$/.test(t.split('TYPE-SK')[1]||''),'★★ 這種情況不硬算「每間」（算了會誤導）');
+    await p.close();
+  }
+
+  // ══ ⑥ 進度請款頁要跟合約明細一致 ══
+  {
+    const {p,errs}=await open(br);
+    await p.evaluate(()=>{state.tab='prog';render();curProj().blocks.forEach(b=>openBlk.add(b.id));render();});
+    await p.waitForTimeout(600);
+    const t=await p.evaluate(()=>document.body.innerText.replace(/\s+/g,' '));
+    ok(errs.length===0,'⑥ 進度頁無 JS 錯誤'+(errs.length?'：'+errs[0]:''));
+    ok(/3 間/.test(t),'★★ 進度頁區塊標題也顯示「3 間」（不是 40）');
+    ok(/合約 40/.test(t),'★ 一樣註明合約 40');
+    ok(!/行政套房/.test(t)&&!/廊道/.test(t),'★★ 進度頁也收掉沒細項的區塊');
+    ok(/隱藏沒細項的區塊（2 個）/.test(t),'★ 進度頁也有同一個開關');
+    ok(/共 3 間，合約 40/.test(t),'★★ 完成間數欄的表頭改成「共 3 間，合約 40」');
+    ok(/那條自己的間數/.test(t),'★★ 整批填說明改成「各自換算：完成間數 ÷ 那條自己的間數」');
+    await p.close();
+  }
+
+  // ══ ⑦ 進度頁的開關跟合約明細連動 ══
+  {
+    const {p}=await open(br);
+    await p.evaluate(()=>{state.tab='prog';render();}); await p.waitForTimeout(500);
+    await p.click('#hide-empty-blk'); await p.waitForTimeout(600);
+    let t=await p.evaluate(()=>document.body.innerText.replace(/\s+/g,' '));
+    ok(/行政套房/.test(t),'⑦ 在進度頁取消勾選，空區塊出現');
+    await p.evaluate(()=>{state.tab='items';render();}); await p.waitForTimeout(500);
+    t=await p.evaluate(()=>document.body.innerText.replace(/\s+/g,' '));
+    ok(/行政套房/.test(t),'★★ 切回合約明細也是顯示的（兩頁同一個設定）');
     await p.close();
   }
 
