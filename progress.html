@@ -109,7 +109,7 @@ body.printing #print-overlay{display:block;position:absolute;inset:0;background:
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.09.24b-syncguard';
+const APP_VERSION='vG2026.09.28-donelast';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -401,10 +401,15 @@ function doneQtyOf(proj,blk,it){
 }
 const rescaleItemCount=(proj,blk,it,newCnt)=>rescaleItemTo(proj,blk,it,(Number(it.qty)||0)*(Number(newCnt)||0));
 // 這條細項目前做到幾「間」（用來預設「他最後做幾間」）
+// 這條「目前做到哪」。進度是累計的，所以看最新一期填的那個就對了。
+// 不能取各期最大值：舊期填多了、後來在新的一期改正（例如 3.14 改成 3），
+// 取最大值會一直被那個舊的錯數字卡住，怎麼改都轉不出去。
+// 最新一期沒有紀錄＝那條在本期歸零（清成 0 時紀錄會被刪掉），就是 0。
 function doneCountOf(proj,blk,it){
-  let mx=0;
-  for(const per of (proj.periods||[])){ const pr=per&&per.prog&&per.prog[it.id]; if(pr&&Number(pr.p)>mx) mx=Number(pr.p); }
-  return +(mx*effCount(it,blk)).toFixed(2);
+  const per=(proj&&proj.periods)||[];
+  const last=per[per.length-1];
+  const pr=last&&last.prog&&last.prog[it.id];
+  return +(((pr&&Number(pr.p))||0)*effCount(it,blk)).toFixed(2);
 }
 function rescaleBlockProgress(proj,blk,newCount){
   if(!proj||!blk||!Array.isArray(proj.periods)) return 0;
@@ -1366,7 +1371,7 @@ function xferPanelHtml(proj,b,it){
   const sibs=childProjects(proj.parentId).filter(k=>k.id!==proj.id);
   return `<tr><td colspan="8" style="padding:10px;background:rgba(56,189,248,.08);border-left:3px solid #38bdf8">
     <div class="rowline" style="align-items:center;margin-bottom:6px"><b style="font-size:13.5px">↗ 把「${esc(it.name)}」轉一部分出去</b><span style="flex:1"></span><button class="btn sub sm" data-xfercancel="1">取消</button></div>
-    <div class="muted" style="font-size:12px;margin-bottom:8px">目前這條是 <b>${qfmt(cur)} ${esc(b.unit)}</b>，已完成 <b>${qfmt(done)} ${esc(b.unit)}</b>。
+    <div class="muted" style="font-size:12px;margin-bottom:8px">目前這條是 <b>${qfmt(cur)} ${esc(b.unit)}</b>，已完成 <b>${qfmt(done)} ${esc(b.unit)}</b><span title="讀最新一期填的完成度。數字不對的話先到「進度請款」最新一期改，再回來轉">（第 ${(proj.periods[proj.periods.length-1]||{}).no||'-'} 期填的）</span>。
       填要轉出幾${esc(b.unit)}，預設帶「<b>他還沒做的量</b>」（${qfmt(cur)} − ${qfmt(done)} ＝ ${qfmt(+(cur-done).toFixed(4))}）。
       <b>他已經請過的錢不會變</b>；母專案完全不動。</div>
     <div class="rowline" style="gap:10px;flex-wrap:wrap;align-items:flex-end">
@@ -2936,7 +2941,14 @@ document.addEventListener('click',async e=>{
     if(!(move>0)){ alert(`請填要轉出幾${b.unit}。`); return; }
     if(move>cur){ alert(`最多只能轉出 ${qfmt(cur)} ${b.unit}（這條目前的量）。`); return; }
     const keep=+(cur-move).toFixed(4);
-    if(keep<done-1e-9){ alert(`轉太多了。\n\n${proj.vendor||'這家'}已經做了 ${qfmt(done)} ${b.unit}，最多只能轉出 ${qfmt(+(cur-done).toFixed(4))} ${b.unit}。\n\n（已經做掉的量不能轉給別人——那是他該請的錢。）`); return; }
+    if(keep<done-1e-9){
+      const lastNo=(proj.periods[proj.periods.length-1]||{}).no;
+      alert(`轉太多了。\n\n${proj.vendor||'這家'}已經做了 ${qfmt(done)} ${b.unit}，最多只能轉出 ${qfmt(+(cur-done).toFixed(4))} ${b.unit}。\n\n`
+        +`（已經做掉的量不能轉給別人——那是他該請的錢。）\n\n`
+        +`※ 這個「${qfmt(done)} ${b.unit}」是讀「第 ${lastNo} 期」（最新一期）填的完成度。\n`
+        +`如果他實際沒做那麼多，先到「進度請款」的第 ${lastNo} 期把這條改成實際的數字，再回來轉出。`);
+      return;
+    }
     const to=(g('xf-to')||{}).value||'__self__';
     const priceRaw=((g('xf-price')||{}).value||'').trim();
     const who=proj.vendor||proj.name;
