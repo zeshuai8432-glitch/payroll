@@ -17,6 +17,7 @@ NODE_PATH=/opt/node22/lib/node_modules /opt/node22/bin/node prog-smoke2.test.js
 |------|--------|
 | `prog-smoke2.test.js` | 四個分頁渲染、填進度、工序子列轉出、發包分配、期別鎖定，全程無 JS 錯誤 |
 | `prog-donelast.test.js` | 「已完成幾間」讀最新一期（舊期填錯、新期改正後要轉得出去） |
+| `prog-blkspan.test.js` | 區塊標題顯示這份實際做幾間（而非照抄母專案的間數）、空區塊的隱藏 |
 
 ## 為什麼放這裡
 
