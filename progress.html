@@ -109,7 +109,7 @@ body.printing #print-overlay{display:block;position:absolute;inset:0;background:
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.09.30e-taxset';
+const APP_VERSION='vG2026.09.30f-printas';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -1107,6 +1107,7 @@ function viewItems(proj){
       ${fld('單位',`<input id="if-unit" value="${esc(it?it.unit:'式')}" style="${ist};width:70px">`)}
       ${fld(`單${esc(b.unit)}數量`,`<input id="if-qty" value="${it?esc(String(it.qtyExpr||it.qty)):'1'}" style="${ist};width:120px" placeholder="可算式 5.11*3.07">`)}
       ${fld('單價',`<input id="if-price" value="${it?esc(String(it.priceExpr||it.price||'')):''}" placeholder="可算式" style="${ist};width:110px">`)}
+      ${fld('列印合併名稱（選填）',`<input id="if-printas" value="${it?esc(it.printAs||''):''}" style="${ist};min-width:180px" placeholder="例：牆面工程" title="填一樣的幾條，印請款單給工班時會併成一行（金額加總、底下列出含哪幾條）。資料還是逐條，發包分配照樣逐條對母專案，不會有假超額。">`)}
       ${fld(`這條做幾${esc(b.unit)}`,`<input id="if-cnt" value="${it&&hasOwnCount(it)?esc(String(it.cnt)):''}" style="${ist};width:110px" placeholder="照區塊 ${qfmt(b.count)}" title="實作量比合約多的時候才填（例：合約 ${qfmt(b.count)} ${b.unit}，這條實際做了 24 ${b.unit}）。空白＝照區塊的 ${qfmt(b.count)} ${b.unit}。">`)}
       ${fld('備註',`<input id="if-remark" value="${esc(it?it.remark||'':'')}" style="${ist};width:120px" placeholder="選填">`)}
       ${fld('　',`<label style="height:32px;display:flex;align-items:center;gap:4px;font-size:12.5px;cursor:pointer;white-space:nowrap"><input type="checkbox" id="if-extra" ${(it?isExtraItem(it):true)?'checked':''}> 追加工程<span class="muted" style="font-size:11px">（不受簽約總價折讓）</span></label>`)}
@@ -1220,7 +1221,7 @@ function viewItems(proj){
         continue;
       }
       const zero=it.amount===0;
-      h+=`<tr class="${zero?'zero':''}">${picking?`<td><input type="checkbox" data-delpick="${it.id}" ${delSel.has(it.id)?'checked':''} style="width:16px;height:16px"></td>`:''}<td>${esc(it.no)}</td><td>${esc(it.name)}${it.tag?`<span class="tag">${esc(it.tag)}</span>`:''}${isExtraItem(it)?'<span class="tag" style="background:rgba(251,191,36,.2);border-color:rgba(251,191,36,.5);color:#fcd34d" title="追加工程：不受簽約總價折讓，照明細單價計">追加</span>':''}${hasOwnCount(it)?`<span class="tag" style="background:rgba(52,211,153,.2);border-color:rgba(52,211,153,.55);color:#6ee7b7" title="這條的實作量跟合約不同：區塊是 ${qfmt(b.count)} ${esc(b.unit)}，這條算 ${qfmt(it.cnt)} ${esc(b.unit)}">${qfmt(it.cnt)} ${esc(b.unit)}</span>`:''}</td>
+      h+=`<tr class="${zero?'zero':''}">${picking?`<td><input type="checkbox" data-delpick="${it.id}" ${delSel.has(it.id)?'checked':''} style="width:16px;height:16px"></td>`:''}<td>${esc(it.no)}</td><td>${esc(it.name)}${it.tag?`<span class="tag">${esc(it.tag)}</span>`:''}${isExtraItem(it)?'<span class="tag" style="background:rgba(251,191,36,.2);border-color:rgba(251,191,36,.5);color:#fcd34d" title="追加工程：不受簽約總價折讓，照明細單價計">追加</span>':''}${hasOwnCount(it)?`<span class="tag" style="background:rgba(52,211,153,.2);border-color:rgba(52,211,153,.55);color:#6ee7b7" title="這條的實作量跟合約不同：區塊是 ${qfmt(b.count)} ${esc(b.unit)}，這條算 ${qfmt(it.cnt)} ${esc(b.unit)}">${qfmt(it.cnt)} ${esc(b.unit)}</span>`:''}${it.printAs?`<span class="tag" style="background:rgba(129,140,248,.2);border-color:rgba(129,140,248,.55);color:#c7d2fe" title="列印請款單時會跟同名的幾條併成一行：${esc(it.printAs)}">印作「${esc(it.printAs)}」</span>`:''}</td>
         <td>${esc(it.unit)}</td><td class="num">${qfmt(it.qty)}${it.qtyExpr?`<div style="font-size:11px;color:var(--muted)">=${esc(it.qtyExpr)}</div>`:''}</td>
         <td class="num">${it.price?qfmt(it.price):''}${it.priceExpr?`<div style="font-size:11px;color:var(--muted)">=${esc(it.priceExpr)}</div>`:''}</td><td class="num">${qfmt(it.amount)}</td>
         <td class="muted" style="font-size:12px">${esc(it.remark)}</td>
@@ -2352,8 +2353,36 @@ function printDoc(proj){
       h+=`<table><tr class="bhead"><td colspan="9">${esc(cb.blk.name)}（${qfmt(cb.blk.count)} ${esc(cb.blk.unit)}）</td></tr>
       <tr><th>項次</th><th>名稱及規格</th><th>單位</th><th class="num">數量</th><th class="num">單價</th><th class="num">總價</th><th class="num">${hasR?`完成${esc(cb.blk.unit)}數<br>（共 ${qfmt(cb.blk.count)}）`:'累計完成量'}</th><th class="num">完成%</th><th class="num">累計完成計價</th></tr>`;
       let ch='';
+      // 「列印合併名稱」：填一樣的幾條，印給工班時併成一行。
+      // 資料還是逐條，發包分配照樣逐條對母專案，所以不會有哪一條假超額。
+      const used=new Set();
       for(const ci of rows){
         const it=ci.it;
+        const pa=String(it.printAs||'').trim();
+        if(pa&&used.has(pa)) continue;
+        if(pa){
+          used.add(pa);
+          const g=rows.filter(x=>String(x.it.printAs||'').trim()===pa);
+          if(g.length>1){
+            if(it.chapter!==ch){ch=it.chapter;if(ch)h+=`<tr class="bchap"><td colspan="9">${esc(ch)}</td></tr>`;}
+            const gAmt=g.reduce((a,x)=>a+Ri(x.it.amount,x.it),0);
+            const gCum=g.reduce((a,x)=>a+Ri(x.cumAmt,x.it),0);
+            const gVal=g.reduce((a,x)=>a+x.v,0);
+            const units=[...new Set(g.map(x=>x.it.unit))];
+            const sameUnit=units.length===1;
+            const gQty=sameUnit?g.reduce((a,x)=>a+(Number(x.it.qty)||0),0):null;
+            const cnts=[...new Set(g.map(x=>effCount(x.it,cb.blk)))];
+            h+=`<tr><td>${esc(g[0].it.no)}${g.length>1?'…':''}</td><td><b>${esc(pa)}</b>
+              <div style="font-size:9px;color:#555">含 ${g.map(x=>esc(x.it.name)).join('、')}</div></td>
+              <td>${sameUnit?esc(units[0]):'式'}</td>
+              <td class="num">${sameUnit?qfmt(+gQty.toFixed(2)):'—'}${cnts.length===1&&hasOwnCount(g[0].it)?`<div style="font-size:9px;color:#555">× ${qfmt(cnts[0])} ${esc(cb.blk.unit)}</div>`:''}</td>
+              <td class="num">—</td><td class="num">${qfmt(gAmt)}</td>
+              <td class="num">${cnts.length===1&&hasR?qfmt(+(gVal?g.reduce((a,x)=>a+x.p*x.v,0)/gVal*cnts[0]:0).toFixed(2)):'—'}</td>
+              <td class="num">${pfmt(gVal?gCum/gVal:0)}</td>
+              <td class="num">${money(gCum)}</td></tr>`;
+            continue;
+          }
+        }
         if(it.chapter!==ch){ch=it.chapter;if(ch)h+=`<tr class="bchap"><td colspan="9">${esc(ch)}</td></tr>`;}
         const tq=itemTotalQty(it,cb.blk);
         const pr=progOf(c.period,it.id);
@@ -2641,6 +2670,7 @@ document.addEventListener('click',async e=>{
         if(!keepRooms && doneQ>0 && qtyMoved && doneQ>newTot+1e-6 &&
            !confirm(`這條已經登錄完成 ${qfmt(doneQ)} ${it.unit}，改完之後整條總量只剩 ${qfmt(newTot)} ${it.unit}。\n\n完成度會被壓在 100%，還沒結算鎖定的期別金額會跟著往下修。\n\n還是要改嗎？`)) return;
         it.name=name; it.unit=unit; it.price=price; it.priceExpr=priceExpr; it.remark=remark; it.extra=isExt;
+        (()=>{ const el=g('if-printas'); if(!el) return; const v=el.value.trim(); if(v) it.printAs=v; else delete it.printAs; })();
         const doneBefore=+(doneQ/(Number(before.qty)||1)).toFixed(2);   // 改之前的完成間數
         if(setItemQty(proj,b,it,qty,qtyExpr,keepRooms)&&!keepRooms)
           qtyRescaleNote.push(`・${it.name}：${qfmt(doneBefore)} → ${qfmt(doneCountOf(proj,b,it))} ${b.unit}`);
@@ -2666,6 +2696,7 @@ document.addEventListener('click',async e=>{
       itemEdit=null; }
     else { const ni={id:uid(),no:isExt?'增':'',tag:'',chapter:'',name,unit,qty:qty||1,qtyExpr,price,priceExpr,amount:(qty||1)*price,remark,extra:isExt};
       if(ownCnt!==null) ni.cnt=ownCnt;
+      (()=>{ const el=g('if-printas'); if(el&&el.value.trim()) ni.printAs=el.value.trim(); })();
       b.items.push(ni); itemAdd=null; }
     save(); render();
     // 單間數量改了，各期的「完成間數」要跟著換算，不然舊期請過的錢會被追溯改掉。
