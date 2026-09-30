@@ -109,7 +109,7 @@ body.printing #print-overlay{display:block;position:absolute;inset:0;background:
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.09.30d-mergeinv';
+const APP_VERSION='vG2026.09.30e-taxset';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -1844,6 +1844,12 @@ function viewSet(proj){
       　電話 <input id="set-invtel" style="width:170px" value="${esc(proj.invTel||'')}" placeholder="選填"></div>
     <div class="rowline">發票寄送地址 <input id="set-invaddr" style="min-width:320px" value="${esc(proj.invAddr||'')}" placeholder="例：高雄市三民區○○路 1 號 5 樓"></div>
     <div class="rowline">收件人／聯絡人 <input id="set-invto" style="min-width:200px" value="${esc(proj.invTo||'')}" placeholder="選填"></div>
+    <div class="rowline">稅別
+      <select id="set-taxmode" style="min-width:210px">
+        <option value="excl"${(proj.taxMode||'excl')==='excl'?' selected':''}>未稅／免開發票</option>
+        <option value="incl"${proj.taxMode==='incl'?' selected':''}>外加 5% 營業稅</option>
+      </select>
+      <span class="muted" style="font-size:12px">這家有公司牌、會開發票就選「外加 5%」。<b>合併列印別的案場時，那一筆的稅額是讀該案場自己的這個設定</b>——顯示「—」就是那邊設成未稅。（列印預覽上切換也是改這裡。）</span></div>
     <div class="rowline">暫扣款 %（未開發票） <input id="set-withhold" inputmode="decimal" style="width:90px" value="${proj.withholdPct||''}" placeholder="0">
       <span class="muted" style="font-size:12px">對方還沒公司行號、開不了發票時先押住的％（例：3）。<b>這不是扣繳</b>——錢押在你這裡，不會產生扣繳憑單，等他把發票補開回來就全數退還。填 0 或空白＝不暫扣。之後補開發票再到「進度請款」按回補。</span></div>
     <div class="rowline">補開發票補稅 % <input id="set-invtax" inputmode="decimal" style="width:90px" value="${proj.invoiceTaxPct!==undefined?proj.invoiceTaxPct:5}" placeholder="5">
@@ -2297,6 +2303,7 @@ function printDoc(proj){
           <td class="num">${r.tm==='incl'?`${money(r.net+r.tax)}<div style="font-size:9.5px;color:#555">未稅 ${money(r.net)}＋稅 ${money(r.tax)}</div>`:money(r.net)}</td></tr>`).join('')}
         </table>
         ${invRows.some(r=>!r.title||!r.taxId)?`<div style="font-size:10px;color:#b45309;margin-top:3px">＊標「未設定」的，請到該案場的「設定/備份 → 發票抬頭／統一編號」補上。</div>`:''}
+        ${invRows.filter(r=>r.tm!=='incl'&&r.taxId).map(r=>`<div style="font-size:10px;color:#b45309;margin-top:3px" class="no-print">＊「${esc(r.name)}」有統編卻設成未稅，所以稅額那欄是「—」。這家要開 5% 的話，到該案場的「設定/備份 → 稅別」改成外加 5%。</div>`).join('')}
       </div>`;
     }
     // 累計暫留款項：到本期為止，還沒退還／放款的暫扣款與保留款（讓廠商看得到還有多少在我們手上）
@@ -2553,7 +2560,7 @@ function setProgInput(proj,blkId,itemId,kind,val){
 }
 
 document.addEventListener('click',async e=>{
-  const t=e.target.closest('[data-tab],[data-editblk],[data-delblk],[data-edititem],[data-delitem],[data-additem],[data-splititem],[data-sortitems],[data-grouptoggle],[data-groupmerge],[data-groupdetect],[data-whtoggle],[data-rttoggle],[data-whtax],[data-whtaxauto],[data-rtamt],[data-selfone],[data-selfrooms],[data-selfrest],[data-selfclear],[data-delmode],[data-delcancel],[data-delall],[data-delnone],[data-delinv],[data-delzero],[data-deldo],#sub-toggle,#sub-close,#sub-go,[data-backfill],[data-backfillcancel],[data-backfillok],[data-addmissblk],#trash-toggle,#trash-clear,[data-trashrestore],[data-trashdrop],#drift-sync,#drift-sync-price,#drift-all,#drift-none,[data-copyinto],[data-copyok],[data-copycancel],[data-xcopy],[data-xcopycancel],[data-xcopyall],[data-xcopyok],[data-xfer],[data-xfercancel],[data-xferok],[data-batchedit],[data-batchok],[data-batchcancel],[data-batchalledit],[data-batchallok],[data-batchallcancel],[data-itemok],[data-itemcancel],[data-blkok],[data-blkcancel],[data-bapply],[data-gapply],#btn-invrecon,[data-editextra],[data-delextra],#btn-import,#btn-import2,#btn-newproj,#btn-newproj2,#btn-addblk,#btn-addblk-ok,#btn-addperiod,#btn-delperiod,#btn-addextra,#btn-roundup,#settle-toggle,#set-rebase,[data-gotoproj],#btn-print,#btn-setretain,#orphan-fix,#orphan-detach,#proj-groupall,#set-save,#proj-dup,#proj-detach,#backup-export,#backup-import-btn,#prev-restore,#prev-export,#proj-del,#cloud-push,#cloud-pull');
+  const t=e.target.closest('[data-tab],[data-editblk],[data-delblk],[data-edititem],[data-delitem],[data-additem],[data-splititem],[data-sortitems],[data-grouptoggle],[data-groupmerge],[data-groupdetect],[data-whtoggle],[data-rttoggle],[data-whtax],[data-whtaxauto],[data-rtamt],[data-selfone],[data-selfrooms],[data-selfrest],[data-selfclear],[data-delmode],[data-delcancel],[data-delall],[data-delnone],[data-delinv],[data-delzero],[data-deldo],#sub-toggle,#sub-close,#sub-go,[data-backfill],[data-backfillcancel],[data-backfillok],[data-addmissblk],#trash-toggle,#trash-clear,[data-trashrestore],[data-trashdrop],#drift-sync,#drift-sync-price,#drift-all,#drift-none,[data-copyinto],[data-copyok],[data-copycancel],[data-xcopy],[data-xcopycancel],[data-xcopyall],[data-xcopyok],[data-xfer],[data-xfercancel],[data-xferok],[data-batchedit],[data-batchok],[data-batchcancel],[data-batchalledit],[data-batchallok],[data-batchallcancel],[data-itemok],[data-itemcancel],[data-blkok],[data-blkcancel],[data-bapply],[data-gapply],#btn-invrecon,[data-editextra],[data-delextra],#btn-import,#btn-import2,#btn-newproj,#btn-newproj2,#btn-addblk,#btn-addblk-ok,#btn-addperiod,#btn-delperiod,#btn-addextra,#btn-roundup,#settle-toggle,#set-rebase,[data-gotoproj],#btn-print,#btn-setretain,#orphan-fix,#orphan-detach,#proj-groupall,#set-save,#set-taxmode,#proj-dup,#proj-detach,#backup-export,#backup-import-btn,#prev-restore,#prev-export,#proj-del,#cloud-push,#cloud-pull');
   if(!t)return;
   const proj=curProj();
   if(t.dataset.tab){state.tab=t.dataset.tab;save();render();return;}
@@ -3391,6 +3398,7 @@ document.addEventListener('click',async e=>{
     proj.vendor=document.getElementById('set-vendor').value.trim();
     const cv=document.getElementById('set-childvendor'); if(cv) proj.vendor=cv.value.trim(); // 子專案：廠商名以發包資訊欄為準
     const sv=num(document.getElementById('set-signed').value); proj.signedTotal=sv>0?sv:0;
+    (()=>{ const el=document.getElementById('set-taxmode'); if(el) proj.taxMode=el.value==='incl'?'incl':'excl'; })();
     (()=>{ const el=document.getElementById('set-pricemode'); if(!el) return;
       const mode=el.value==='actual'?'actual':'lump';
       const was=proj.priceMode==='actual'?'actual':'lump';
