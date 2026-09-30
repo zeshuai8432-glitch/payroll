@@ -528,7 +528,7 @@ const FS_ROOT = 'https://firestore.googleapis.com/v1/projects/'+FS_PROJECT+'/dat
 const FS_DOC_BASE = FS_ROOT+'payroll/';
 const FS_SIG_BASE = FS_ROOT+'payrollSignatures/';
 const FS_REST_URL = FS_DOC_BASE+'main?key='+FS_KEY;
-const APP_VERSION = 'v2026.09.11-wageonce';
+const APP_VERSION = 'v2026.09.30-measqty';
 let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], tools:[], locations:[], assets:[], advances:[], accounts:[], ledger:[], deals:[], billings:[], measurements:[], contracts:{}, costs:[], textMemory:{clients:[],companies:[]}, parkAccId:'', oweBonus:{}, minFund:'', shareholderTx:[], myCompanies:[], payrollSnapshots:[], yearIncomeAdj:[], deletedIds:[], resurrected:{ids:[],at:0}, tab:'dash' };
 let cloudStatus='連線中…';
 let localDirty=false, lastCloudTs=0;
@@ -681,23 +681,35 @@ function bindMeasSubtotal(){
   const itemLabel=document.getElementById('meas-item-label'), item=document.getElementById('meas-item'), qtyLabel=document.getElementById('meas-qty-label'), unit=document.getElementById('meas-unit');
   const qty=document.getElementById('meas-qty'), price=document.getElementById('meas-price'), out=document.getElementById('meas-subtotal');
   const count=document.getElementById('meas-count'), countField=document.getElementById('meas-count-field');
+  const manualBtn=document.getElementById('meas-qty-manual');
   if(!qty||!price||!out) return;
+  // 隔間＋㎡ 本來只能靠寬×高自動算。遇到不規則、或現場直接量到面積時要能自己打，
+  // 所以加一個手動開關；手動時就跟其他單位一樣自己輸入，寬高留著當尺寸紀錄（選填）。
+  let manual=!!(measDraft&&measDraft.qtyManual);
   const roundArea=n=>Math.round(n*100)/100;
   const calc=()=>{
     const isPartition=!type||type.value==='partition';
     const isCarry=type&&type.value==='carry';
     const cnt=Math.max(1,parseInt(count&&count.value)||1); // 間數選填，留空=1
     const u=(unit&&unit.value||'').trim();
-    const isAutoArea=isPartition&&(u===''||u==='㎡'); // 只有「隔間＋單位㎡」才自動算面積
-    if(widthField) widthField.style.display=isAutoArea?'block':'none'; // 單位非㎡時連寬高欄位一起收掉
-    if(heightField) heightField.style.display=isAutoArea?'block':'none';
+    const canAuto=isPartition&&(u===''||u==='㎡'); // 「隔間＋單位㎡」才有自動面積可用
+    const isAutoArea=canAuto&&!manual;
+    if(manualBtn){
+      manualBtn.style.display=canAuto?'inline-block':'none';
+      manualBtn.textContent=manual?'↻ 改回自動':'✎ 手動輸入';
+      manualBtn.title=manual?'改回用寬×高×間數自動算面積':'寬×高算不出來時（不規則、現場直接量到面積）按這裡自己打';
+    }
+    qty.dataset.manual=manual&&canAuto?'1':'';
+    // 手動時寬高仍然顯示：可以留著當尺寸紀錄，但不再強制填
+    if(widthField) widthField.style.display=canAuto?'block':'none';
+    if(heightField) heightField.style.display=canAuto?'block':'none';
     if(sizeField) sizeField.style.display=isCarry?'block':'none';
     if(countField) countField.style.display=isCarry?'none':'block';
     qty.readOnly=isAutoArea;
     qty.placeholder=isAutoArea?'自動計算':(cnt>1?'每間數量':'直接輸入數量');
     if(itemLabel) itemLabel.textContent=isCarry?'材料名稱':'項目';
     if(item) item.placeholder=isCarry?'例：水泥板、角料、矽酸鈣板':'例：貼磁磚、隔間牆';
-    if(qtyLabel) qtyLabel.textContent=isCarry?'數量':(isAutoArea?'數量/面積':(cnt>1?'每間數量':'數量'));
+    if(qtyLabel) qtyLabel.textContent=isCarry?'數量':(isAutoArea?'數量/面積':(cnt>1?'每間數量':(canAuto?'數量/面積':'數量')));
     if(unit){
       unit.placeholder=isCarry?'趟、車、包、式':'㎡、坪、工、M、式';
       if(isCarry&&unit.value==='㎡') unit.value='';
@@ -710,6 +722,12 @@ function bindMeasSubtotal(){
     const q=parseFloat(qty.value),p=evalPriceExpr(price.value);
     const mult=(isCarry||isAutoArea)?1:cnt; // 手動輸入時：每間數量 × 間數（自動面積已含間數）
     out.textContent=(!isNaN(q)&&!isNaN(p))?money(q*mult*p):money(0);
+  };
+  if(manualBtn) manualBtn.onclick=()=>{
+    manual=!manual;
+    if(!manual){ qty.value=''; }      // 改回自動：清空讓寬高重新算
+    calc();
+    if(manual) qty.focus();
   };
   if(type) type.onchange=calc;
   if(width) width.oninput=calc;
@@ -4352,13 +4370,15 @@ function bind(){
     const priceExpr=/[+*/()×÷]|\d-/.test(priceRaw)?priceRaw:''; // 有運算符才記算式
     const note=document.getElementById('meas-note').value.trim();
     const count=measureType==='carry'?1:Math.max(1,parseInt((document.getElementById('meas-count')||{}).value)||1); // 間數選填，留空=1
-    const isAutoArea=measureType==='partition'&&unit==='㎡'; // 只有隔間＋㎡才強制寬高、自動算面積
-    if(isAutoArea&&(isNaN(width)||width<=0||isNaN(height)||height<=0)){ alert('隔間（㎡）請填寬度與高度（公尺）；若以工、M 等其他單位計價，請改單位後直接輸入數量'); return; }
+    const qtyManual=((document.getElementById('meas-qty')||{}).dataset||{}).manual==='1'; // 使用者按了「✎ 手動輸入」
+    const isAutoArea=measureType==='partition'&&unit==='㎡'&&!qtyManual; // 只有隔間＋㎡「且沒改手動」才強制寬高、自動算面積
+    if(isAutoArea&&(isNaN(width)||width<=0||isNaN(height)||height<=0)){ alert('隔間（㎡）請填寬度與高度（公尺）。\n\n寬×高算不出來的話（不規則、現場直接量到面積），按「數量/面積」旁邊的「✎ 手動輸入」自己打；\n若以工、M 等其他單位計價，改單位後也可以直接輸入數量。'); return; }
     if(!date||!site||!item||isNaN(qty)||qty<=0||isNaN(price)||price<0){ alert('請填日期、案場、項目/材料名稱、數量與單價'); return; }
     const sizeText=(document.getElementById('meas-size')||{}).value||'';
     let perQty=null;
     if(count>1&&!isAutoArea&&measureType!=='carry'){ perQty=qty; qty=Math.round(qty*count*100)/100; } // 手動輸入：每間數量 × 間數 = 總數量（自動面積已含間數）
-    const common={date,site,unit,note,measureType,count,perQty,sizeText:measureType==='carry'?sizeText.trim():'',width:measureType==='partition'&&!isNaN(width)&&width>0?width:null,height:measureType==='partition'&&!isNaN(height)&&height>0?height:null};
+    const common={date,site,unit,note,measureType,count,perQty,sizeText:measureType==='carry'?sizeText.trim():'',width:measureType==='partition'&&!isNaN(width)&&width>0?width:null,height:measureType==='partition'&&!isNaN(height)&&height>0?height:null,
+      ...(qtyManual?{qtyManual:true}:{})};   // 記著這筆是自己打的，之後編輯／複製不會又被自動算掉
     const pushOne=(itm,pr,pexpr)=>state.measurements.push({id:uid(),item:itm,qty,unitPrice:pr,priceExpr:pexpr,...common});
     const done=()=>{ measDraft=null; measKeep={measureType,site,date}; saveData(); render(); };
     const terms=splitPriceTerms(priceRaw);
@@ -6884,7 +6904,8 @@ function measurementSizeLabel(m){
   if(isPartition){
     const w=Number(m.width)||0, h=Number(m.height)||0;
     if(w>0&&h>0) return `${w} × ${h} m${cnt>1?` ×${cnt}間`:''}`;
-    return cnt>1?`每間 ${Number(m.perQty)||''} ×${cnt}間`:'—';
+    if(cnt>1) return `每間 ${Number(m.perQty)||''} ×${cnt}間`;
+    return m.qtyManual?'手動輸入':'—';   // 沒寬高又是自己打的，標一下才知道不是漏填
   }
   if(mt==='carry') return carrySize;
   return cnt>1?`每間 ${Number(m.perQty)||''} ×${cnt}間`:'—';
@@ -6892,7 +6913,7 @@ function measurementSizeLabel(m){
 function viewMeasurements(){
   const siteSelOpts=siteSelectOptions(measDraft?measDraft.site:(measKeep?measKeep.site:''));
   const mdType=measDraft?(measDraft.measureType||'partition'):(measKeep?measKeep.measureType:'partition');
-  const mdAutoArea=measDraft&&mdType==='partition'&&measDraft.unit==='㎡';
+  const mdAutoArea=measDraft&&mdType==='partition'&&measDraft.unit==='㎡'&&!measDraft.qtyManual;
   const mdQty=measDraft?(mdAutoArea?'':(Number(measDraft.count)>1&&measDraft.perQty?measDraft.perQty:measDraft.qty)):'';
   const list=[...state.measurements].sort((a,b)=>(b.date||'').localeCompare(a.date||'')||(a.site||'').localeCompare(b.site||''));
   const grandTotal=list.reduce((s,m)=>s+(Number(m.qty)||0)*(Number(m.unitPrice)||0),0);
@@ -7040,7 +7061,7 @@ function viewMeasurements(){
       <div class="field" id="meas-height-field"><label>高度（m）</label><input type="number" id="meas-height" value="${measDraft&&measDraft.height!=null?measDraft.height:''}" min="0" step="0.01" style="width:95px"></div>
       <div class="field" id="meas-size-field" style="display:none;flex:1 1 220px;min-width:220px"><label>尺寸</label><input id="meas-size" value="${measDraft?esc(measDraft.sizeText||''):''}" placeholder="例：4尺×8尺、120×240" style="width:100%"></div>
       <div class="field" id="meas-count-field"><label>間數（選填）</label><input type="number" id="meas-count" value="${measDraft&&Number(measDraft.count)>1?Number(measDraft.count):''}" min="1" step="1" placeholder="1" style="width:90px"></div>
-      <div class="field" style="flex:0 0 130px;min-width:130px"><label id="meas-qty-label">數量/面積</label><input type="number" id="meas-qty" value="${mdQty}" min="0" step="0.01" style="width:100%"></div>
+      <div class="field" style="flex:0 0 150px;min-width:150px"><label style="display:flex;align-items:center;gap:6px"><span id="meas-qty-label">數量/面積</span><button type="button" id="meas-qty-manual" style="display:none;font-size:11px;padding:1px 6px;border-radius:6px;border:1px solid var(--line,#ccc);background:transparent;color:var(--muted,#666);cursor:pointer"></button></label><input type="number" id="meas-qty" value="${mdQty}" min="0" step="0.01" style="width:100%"></div>
       <div class="field"><label>單價（可算式）</label><input id="meas-price" value="${measDraft?esc(measDraft.priceExpr||String(measDraft.unitPrice)):''}" placeholder="1200 或 1200*1.1" style="width:130px"></div>
       <div class="field"><label>小計</label><div id="meas-subtotal" class="num" style="height:36px;display:flex;align-items:center;font-weight:700">$0</div></div>
       <div class="field"><label>日期</label><input type="date" id="meas-date" value="${measKeep&&measKeep.date?esc(measKeep.date):localISODate()}"></div>
