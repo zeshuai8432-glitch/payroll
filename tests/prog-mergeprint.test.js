@@ -109,6 +109,36 @@ const DOC=p=>p.evaluate(()=>{const el=document.querySelector('#print-overlay .pc
     await p.close();
   }
 
+  // ⑥ 母專案（對業主那份）不該出現合併選項
+  {
+    const p=await br.newPage(); p.on('dialog',d=>d.accept());
+    await p.route('**/*',r=>r.request().url().startsWith('file://')?r.continue():r.abort());
+    // 兩個母專案的「廠商」都是自己公司東澤——不能讓它們互相認親
+    await p.addInitScript(s=>{s.cur='m1';localStorage.setItem('pm_progress_v1',JSON.stringify(s));
+      localStorage.setItem('pm_e2e_key_v1','x');},seed);
+    await p.goto('file:///home/user/payroll/progress.html'); await p.waitForTimeout(1300);
+    await p.evaluate(()=>{ // 母專案要有期別才印得出來
+      const m=state.projects.find(x=>x.id==='m1');
+      m.periods=[{no:1,date:'2026-09-01',prog:{ma:{p:0.25,q:120}}}]; m.curPeriod=0; save(); render();});
+    await p.waitForTimeout(500);
+    await p.evaluate(()=>{window.print=function(){};});
+    await p.click('#btn-print'); await p.waitForTimeout(900);
+    const n=await p.evaluate(()=>document.querySelectorAll('[data-mergejob]').length);
+    ok(n===0,'⑥ 母專案（對業主）不顯示合併選項——不然每個案場都會互相認親（實際 '+n+' 個）');
+    const jobs=await p.evaluate(()=>sameVendorJobs(state.projects.find(x=>x.id==='m1')).length);
+    ok(jobs===0,'★★ sameVendorJobs 對母專案回傳空的');
+    await p.close();
+  }
+
+  // ⑦ 候選也不會挑到母專案
+  {
+    const {p}=await open(br);
+    const has=await p.evaluate(()=>sameVendorJobs(state.projects.find(x=>x.id==='kJ'))
+      .some(x=>!x.proj.parentId&&state.projects.some(y=>y.parentId===x.proj.id)));
+    ok(!has,'⑦ 候選清單裡不會混進母專案');
+    await p.close();
+  }
+
   await br.close();
   console.log(fail?`\n${fail} 項失敗`:'\n全部通過');
   process.exit(fail?1:0);

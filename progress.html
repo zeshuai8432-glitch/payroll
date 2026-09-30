@@ -109,7 +109,7 @@ body.printing #print-overlay{display:block;position:absolute;inset:0;background:
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.09.30-mergeprint';
+const APP_VERSION='vG2026.09.30b-mergeguard';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -2162,7 +2162,10 @@ function offerSettleAfterPrint(proj){
 function sameVendorJobs(proj){
   const who=String(proj&&proj.vendor||'').trim();
   if(!who) return [];
-  return state.projects.filter(k=>k!==proj&&String(k.vendor||'').trim()===who&&(k.periods||[]).length)
+  // 只在「付錢給工班」的單上合併。母專案（對業主那份）的廠商欄填的是自己公司，
+  // 每個案場都一樣，放進來會讓不相干的案場互相認親，甚至把兩個業主的單併在一起。
+  if(isParent(proj)) return [];
+  return state.projects.filter(k=>k!==proj&&!isParent(k)&&String(k.vendor||'').trim()===who&&(k.periods||[]).length)
     .map(k=>{
       const idx=Math.min(k.curPeriod??k.periods.length-1,k.periods.length-1);
       const cc=calc(k,idx);
