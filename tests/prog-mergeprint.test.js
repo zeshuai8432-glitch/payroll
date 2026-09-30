@@ -9,6 +9,7 @@ const seed={ projects:[
      {id:'ma',no:'6.1',name:'骨架',unit:'㎡',qty:40,price:1000,amount:40000,remark:''}]}],
    periods:[], curPeriod:0, createdAt:1 },
  { id:'kJ', parentId:'m1', name:'鑫喆商旅-進凱', vendor:'進凱', taxMode:'excl',
+   invTitle:'東澤工程有限公司', invTaxId:'12345678', invTo:'王先生', invTel:'0912-000-111',
    blocks:[{id:'jb1',name:'TYPE-SK',unit:'間',count:12,srcBlk:'mb1',items:[
      {id:'ja',no:'6.1',name:'骨架',unit:'㎡',qty:40,price:700,amount:28000,remark:'',srcId:'ma'}]}],
    periods:[{no:1,date:'2026-09-01',prog:{ja:{p:0.25,q:120}}}], curPeriod:0, createdAt:2 },
@@ -18,6 +19,7 @@ const seed={ projects:[
      {id:'na',no:'1.1',name:'隔間',unit:'㎡',qty:20,price:900,amount:18000,remark:''}]}],
    periods:[], curPeriod:0, createdAt:3 },
  { id:'kJ2', parentId:'m2', name:'文心大樓-進凱', vendor:'進凱', taxMode:'incl',
+   invTitle:'東澤營造股份有限公司', invTaxId:'87654321',
    blocks:[{id:'j2b',name:'B1',unit:'間',count:4,srcBlk:'nb1',items:[
      {id:'j2a',no:'1.1',name:'隔間',unit:'㎡',qty:20,price:600,amount:12000,remark:'',srcId:'na'}]}],
    periods:[{no:1,date:'2026-09-05',prog:{j2a:{p:0.5,q:40}}}], curPeriod:0, createdAt:4 },
@@ -149,6 +151,39 @@ const DOC=p=>p.evaluate(()=>{const el=document.querySelector('#print-overlay .pc
     const has=await p.evaluate(()=>sameVendorJobs(state.projects.find(x=>x.id==='kJ'))
       .some(x=>!x.proj.parentId&&state.projects.some(y=>y.parentId===x.proj.id)));
     ok(!has,'⑦ 候選清單裡不會混進母專案');
+    await p.close();
+  }
+
+  // ⑧ 逐案場的稅別與抬頭統編
+  {
+    const {p}=await open(br);
+    await p.evaluate(()=>{document.querySelectorAll('[data-mergejob]').forEach(cb=>{cb.checked=true;cb.onchange();});});
+    await p.waitForTimeout(600);
+    const d=await DOC(p);
+    ok(/各案場發票開立方式（請分開開立）/.test(d),'⑧ 多了「各案場發票開立方式」區塊');
+    ok(/東澤工程有限公司/.test(d)&&/12345678/.test(d),'★★ 本案場的抬頭統編印出來了');
+    ok(/東澤營造股份有限公司/.test(d)&&/87654321/.test(d),'★★ 文心大樓用的是它自己的抬頭統編（不是沿用本案場的）');
+    ok(/未設定/.test(d),'★★ 零星工程沒填抬頭統編，直接標「未設定」');
+    ok(/請到該案場的「設定\/備份 → 發票抬頭／統一編號」補上/.test(d),'★ 並告訴你去哪裡補');
+
+    // 稅別欄
+    const cols=await p.evaluate(()=>{
+      const div=[...document.querySelectorAll('#print-overlay .pcontent div')].find(x=>!x.children.length&&/本次合併付款/.test(x.textContent||''));
+      const tb=div&&div.nextElementSibling;
+      return tb?[...tb.querySelectorAll('th')].map(x=>x.textContent.trim()):null;});
+    ok(cols&&cols.includes('稅別'),'★★ 合併表有「稅別」欄（'+JSON.stringify(cols)+'）');
+    ok(/外加 5%/.test(d)&&/未稅/.test(d),'★ 兩種稅別都標示得出來');
+    // 文心含稅：24,000 + 1,200 = 25,200 發票金額
+    ok(/\$25,200/.test(d),'★★ 含稅案場的發票金額列 25,200（未稅 24,000＋稅 1,200）');
+    await p.close();
+  }
+
+  // ⑨ 沒合併時，原本的單一發票資訊照舊、不會重複
+  {
+    const {p}=await open(br);
+    const d=await DOC(p);
+    ok(/發票開立資訊/.test(d),'⑨ 沒勾合併時仍印原本的「發票開立資訊」');
+    ok(!/各案場發票開立方式/.test(d),'★ 不會多出合併版的區塊');
     await p.close();
   }
 

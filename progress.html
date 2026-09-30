@@ -109,7 +109,7 @@ body.printing #print-overlay{display:block;position:absolute;inset:0;background:
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.09.30c-mergetax';
+const APP_VERSION='vG2026.09.30d-mergeinv';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -2268,17 +2268,36 @@ function printDoc(proj){
       const oTax=merged.reduce((a,x)=>a+x.pay.tax,0);
       const oPay=merged.reduce((a,x)=>a+x.pay.pay,0);
       h+=`<div style="font-weight:700;font-size:12.5px;margin:10px 0 3px">四、本次合併付款（各案場分別計稅）</div>
-        <table><tr><th>案場／工程</th><th>期別</th><th class="num">未稅金額</th>${anyTax?'<th class="num">營業稅 5%</th>':''}<th class="num">本期實付</th></tr>
+        <table><tr><th>案場／工程</th><th>期別</th><th>稅別</th><th class="num">未稅金額</th>${anyTax?'<th class="num">營業稅 5%</th>':''}<th class="num">本期實付</th></tr>
         <tr><td><b>${esc(proj.name)}</b>（本單）</td><td>第 ${c.period.no} 期${c.period.date?'　'+esc(c.period.date):''}</td>
+          <td>${taxMode==='incl'?'外加 5%':'未稅'}</td>
           <td class="num">${money(actual)}</td>${anyTax?`<td class="num">${taxMode==='incl'?money(tax):'—'}</td>`:''}<td class="num">${money(selfPay)}</td></tr>
         ${merged.map(x=>`<tr><td>${esc(x.label)}</td><td>第 ${x.periodNo} 期${x.date?'　'+esc(x.date):''}</td>
+          <td>${x.pay.tm==='incl'?'外加 5%':'未稅'}</td>
           <td class="num">${money(x.pay.actual)}</td>${anyTax?`<td class="num">${x.pay.tm==='incl'?money(x.pay.tax):'—'}</td>`:''}<td class="num">${money(x.pay.pay)}</td></tr>`).join('')}
-        <tr class="tot"><td colspan="2"><b>本次合計應付</b></td><td class="num">${money(actual+oNet)}</td>${anyTax?`<td class="num">${money(tax+oTax)}</td>`:''}<td class="num"><b>${money(selfPay+oPay)}</b></td></tr></table>
+        <tr class="tot"><td colspan="3"><b>本次合計應付</b></td><td class="num">${money(actual+oNet)}</td>${anyTax?`<td class="num">${money(tax+oTax)}</td>`:''}<td class="num"><b>${money(selfPay+oPay)}</b></td></tr></table>
         <div style="font-size:10px;color:#666;margin:-4px 0 8px">
           ＊本表僅為合併付款之用。<b>各案場的金額與發票請分別開立</b>（上表已逐案場列出未稅與稅額），
           各案場金額仍分別記在各自的工程帳上，不計入本案場合約金額。
           ${merged.some(x=>x.pay.wh>0||x.pay.rt>0)?'<br>＊其他案場的「本期實付」已各自扣除該案場的暫扣款／保留款。':''}
         </div>`;
+      // 每個案場的抬頭統編可能不同（子專案開給我方、母專案開給業主），不能互相沿用，
+      // 所以逐案場列出來，工班照著開就好。沒設定的直接標出來，才知道要去補。
+      const invRows=[{name:proj.name,tm:taxMode,net:actual,tax:taxMode==='incl'?tax:0,
+                      title:proj.invTitle||'',taxId:proj.invTaxId||'',to:proj.invTo||'',tel:proj.invTel||''}]
+        .concat(merged.map(x=>({name:x.label,tm:x.pay.tm,net:x.pay.actual,tax:x.pay.tm==='incl'?x.pay.tax:0,
+                      title:x.proj.invTitle||'',taxId:x.proj.invTaxId||'',to:x.proj.invTo||'',tel:x.proj.invTel||''})));
+      h+=`<div style="margin:8px 0 10px;padding:8px 10px;border:1.5px solid #1e3a8a;border-radius:6px;background:#eef4fd">
+        <div style="font-weight:700;font-size:11.5px;color:#1e3a8a;margin-bottom:3px">各案場發票開立方式（請分開開立）</div>
+        <table style="margin:0"><tr><th>案場／工程</th><th>發票抬頭</th><th>統一編號</th><th>稅別</th><th class="num">發票金額</th></tr>
+        ${invRows.map(r=>`<tr><td>${esc(r.name)}</td>
+          <td>${r.title?esc(r.title):'<span style="color:#b45309">未設定</span>'}${r.to?`<div style="font-size:9.5px;color:#555">收件人 ${esc(r.to)}${r.tel?'　'+esc(r.tel):''}</div>`:''}</td>
+          <td>${r.taxId?esc(r.taxId):'<span style="color:#b45309">未設定</span>'}</td>
+          <td>${r.tm==='incl'?'外加 5%':'未稅／免開'}</td>
+          <td class="num">${r.tm==='incl'?`${money(r.net+r.tax)}<div style="font-size:9.5px;color:#555">未稅 ${money(r.net)}＋稅 ${money(r.tax)}</div>`:money(r.net)}</td></tr>`).join('')}
+        </table>
+        ${invRows.some(r=>!r.title||!r.taxId)?`<div style="font-size:10px;color:#b45309;margin-top:3px">＊標「未設定」的，請到該案場的「設定/備份 → 發票抬頭／統一編號」補上。</div>`:''}
+      </div>`;
     }
     // 累計暫留款項：到本期為止，還沒退還／放款的暫扣款與保留款（讓廠商看得到還有多少在我們手上）
     if(whPct>0||rtPct>0){
@@ -2301,7 +2320,7 @@ function printDoc(proj){
         </div>`;
       }
     }
-    if(proj.invTitle||proj.invTaxId||proj.invAddr){
+    if(!merged.length&&(proj.invTitle||proj.invTaxId||proj.invAddr)){
       h+=`<div style="margin:8px 0 10px;padding:8px 10px;border:1px solid #c7d4e8;border-radius:6px;background:#f6f9fd">
         <div style="font-weight:700;font-size:11.5px;color:#1e3a8a;margin-bottom:3px">發票開立資訊</div>
         <table style="margin:0;border:none">
