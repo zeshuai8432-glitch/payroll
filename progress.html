@@ -109,7 +109,7 @@ body.printing #print-overlay{display:block;position:absolute;inset:0;background:
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.09.30b-mergeguard';
+const APP_VERSION='vG2026.09.30c-mergetax';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -2159,6 +2159,20 @@ function offerSettleAfterPrint(proj){
 // 同一個工班在「別的地方」也做了事：帳各記各的（那邊自己一個專案），
 // 但對工班只給一張單比較省事。這裡找出同廠商、其他專案本期要付的錢。
 // 找的是廠商名字相同的專案——不管那邊是正式案場的子專案，還是收零星工程的獨立專案。
+// 某個工程本期實際要付多少。稅別、暫扣％、保留款％都是各專案自己的設定，
+// 合併列印時必須各算各的，直接把未稅跟含稅相加會錯。
+function jobPayable(k,idx){
+  const cc=calc(k,idx), per=(k.periods||[])[idx];
+  const actual=Math.round(cc.billActual);
+  const tm=k.taxMode||'excl';
+  const tax=tm==='incl'?Math.round(actual*0.05):0;
+  const payBase=actual+tax;
+  const whPct=Math.max(0,Number(k.withholdPct)||0);
+  const wh=whPct>0?Math.round(payBase*whPct/100):0;
+  const rt=retainOf(k,per,payBase);
+  const rel=releasedInPeriod(k,idx);
+  return {actual,tax,tm,wh,rt,rel,pay:payBase-wh-rt+(rel.rt||0)+(rel.wh||0)};
+}
 function sameVendorJobs(proj){
   const who=String(proj&&proj.vendor||'').trim();
   if(!who) return [];
@@ -2168,9 +2182,9 @@ function sameVendorJobs(proj){
   return state.projects.filter(k=>k!==proj&&!isParent(k)&&String(k.vendor||'').trim()===who&&(k.periods||[]).length)
     .map(k=>{
       const idx=Math.min(k.curPeriod??k.periods.length-1,k.periods.length-1);
-      const cc=calc(k,idx);
       const par=k.parentId?state.projects.find(x=>x.id===k.parentId):null;
-      return {proj:k,idx,amt:Math.round(cc.billActual),
+      const pay=jobPayable(k,idx);
+      return {proj:k,idx,amt:pay.actual,pay,
               label:par?`${par.name} / ${k.name}`:k.name,
               periodNo:(k.periods[idx]||{}).no,date:(k.periods[idx]||{}).date||''};
     })
@@ -2248,16 +2262,23 @@ function printDoc(proj){
     if(merged.length){
       const selfPay=payBase-wh-rt+rel.rt+rel.wh;
       const otherSum=merged.reduce((a,x)=>a+x.amt,0);
-      h+=`<div style="font-weight:700;font-size:12.5px;margin:10px 0 3px">四、其他案場／零星工程（本期）</div>
-        <table><tr><th>案場／工程</th><th>期別</th><th class="num">本期金額</th></tr>
-        ${merged.map(x=>`<tr><td>${esc(x.label)}</td><td>第 ${x.periodNo} 期${x.date?'　'+esc(x.date):''}</td><td class="num">${money(x.amt)}</td></tr>`).join('')}
-        <tr class="tot"><td colspan="2">其他小計</td><td class="num">${money(otherSum)}</td></tr></table>
-        <table style="margin-top:6px">
-          <tr><td>本案場（${esc(proj.name)}）本次實付</td><td class="num">${money(selfPay)}</td></tr>
-          <tr><td>其他案場／零星工程 小計</td><td class="num">${money(otherSum)}</td></tr>
-          <tr class="tot"><td><b>本次合計應付</b></td><td class="num"><b>${money(selfPay+otherSum)}</b></td></tr>
-        </table>
-        <div style="font-size:10px;color:#666;margin:-4px 0 8px">＊上表僅為合併付款之用；各案場金額仍分別記在各自的工程帳上，不計入本案場合約金額。</div>`;
+      // tax 在上面是無條件先算好的，只有 incl 模式才會用到，所以要看稅別而不是看 tax>0
+      const anyTax=taxMode==='incl'||merged.some(x=>x.pay.tm==='incl'&&x.pay.tax>0);
+      const oNet=merged.reduce((a,x)=>a+x.pay.actual,0);
+      const oTax=merged.reduce((a,x)=>a+x.pay.tax,0);
+      const oPay=merged.reduce((a,x)=>a+x.pay.pay,0);
+      h+=`<div style="font-weight:700;font-size:12.5px;margin:10px 0 3px">四、本次合併付款（各案場分別計稅）</div>
+        <table><tr><th>案場／工程</th><th>期別</th><th class="num">未稅金額</th>${anyTax?'<th class="num">營業稅 5%</th>':''}<th class="num">本期實付</th></tr>
+        <tr><td><b>${esc(proj.name)}</b>（本單）</td><td>第 ${c.period.no} 期${c.period.date?'　'+esc(c.period.date):''}</td>
+          <td class="num">${money(actual)}</td>${anyTax?`<td class="num">${taxMode==='incl'?money(tax):'—'}</td>`:''}<td class="num">${money(selfPay)}</td></tr>
+        ${merged.map(x=>`<tr><td>${esc(x.label)}</td><td>第 ${x.periodNo} 期${x.date?'　'+esc(x.date):''}</td>
+          <td class="num">${money(x.pay.actual)}</td>${anyTax?`<td class="num">${x.pay.tm==='incl'?money(x.pay.tax):'—'}</td>`:''}<td class="num">${money(x.pay.pay)}</td></tr>`).join('')}
+        <tr class="tot"><td colspan="2"><b>本次合計應付</b></td><td class="num">${money(actual+oNet)}</td>${anyTax?`<td class="num">${money(tax+oTax)}</td>`:''}<td class="num"><b>${money(selfPay+oPay)}</b></td></tr></table>
+        <div style="font-size:10px;color:#666;margin:-4px 0 8px">
+          ＊本表僅為合併付款之用。<b>各案場的金額與發票請分別開立</b>（上表已逐案場列出未稅與稅額），
+          各案場金額仍分別記在各自的工程帳上，不計入本案場合約金額。
+          ${merged.some(x=>x.pay.wh>0||x.pay.rt>0)?'<br>＊其他案場的「本期實付」已各自扣除該案場的暫扣款／保留款。':''}
+        </div>`;
     }
     // 累計暫留款項：到本期為止，還沒退還／放款的暫扣款與保留款（讓廠商看得到還有多少在我們手上）
     if(whPct>0||rtPct>0){
