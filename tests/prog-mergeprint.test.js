@@ -17,12 +17,12 @@ const seed={ projects:[
    blocks:[{id:'nb1',name:'B1',unit:'間',count:4,items:[
      {id:'na',no:'1.1',name:'隔間',unit:'㎡',qty:20,price:900,amount:18000,remark:''}]}],
    periods:[], curPeriod:0, createdAt:3 },
- { id:'kJ2', parentId:'m2', name:'文心大樓-進凱', vendor:'進凱', taxMode:'excl',
+ { id:'kJ2', parentId:'m2', name:'文心大樓-進凱', vendor:'進凱', taxMode:'incl',
    blocks:[{id:'j2b',name:'B1',unit:'間',count:4,srcBlk:'nb1',items:[
      {id:'j2a',no:'1.1',name:'隔間',unit:'㎡',qty:20,price:600,amount:12000,remark:'',srcId:'na'}]}],
    periods:[{no:1,date:'2026-09-05',prog:{j2a:{p:0.5,q:40}}}], curPeriod:0, createdAt:4 },
  // 零星工程：沒有母專案的獨立專案
- { id:'z1', name:'零星工程', owner:'', vendor:'進凱', taxMode:'excl',
+ { id:'z1', name:'零星工程', owner:'', vendor:'進凱', taxMode:'excl', withholdPct:10,
    blocks:[{id:'zb1',name:'修繕',unit:'式',count:1,items:[
      {id:'za',no:'1',name:'補牆',unit:'式',qty:1,price:8000,amount:8000,remark:''}]}],
    periods:[{no:1,date:'2026-09-10',prog:{za:{p:1,q:1}}}], curPeriod:0, createdAt:5 },
@@ -63,7 +63,7 @@ const DOC=p=>p.evaluate(()=>{const el=document.querySelector('#print-overlay .pc
   {
     const {p}=await open(br);
     const d=await DOC(p);
-    ok(!/其他案場／零星工程/.test(d),'② 沒勾的時候單子上不會多出東西');
+    ok(!/本次合併付款/.test(d),'② 沒勾的時候單子上不會多出東西');
     await p.close();
   }
 
@@ -73,13 +73,22 @@ const DOC=p=>p.evaluate(()=>{const el=document.querySelector('#print-overlay .pc
     await p.evaluate(()=>{document.querySelectorAll('[data-mergejob]').forEach(cb=>{cb.checked=true;cb.onchange();});});
     await p.waitForTimeout(600);
     const d=await DOC(p);
-    ok(/四、其他案場／零星工程（本期）/.test(d),'③ 單子上多了「其他案場／零星工程」那一段');
+    ok(/四、本次合併付款/.test(d),'③ 單子上多了「本次合併付款」那一段');
     ok(/文心大樓/.test(d)&&/零星工程/.test(d),'★ 兩筆都印出來了');
-    // 文心：12,000×4×0.5＝24,000；零星：8,000
-    ok(/其他小計 \$32,000/.test(d),'★★ 其他小計 32,000（文心 24,000 ＋ 零星 8,000）');
-    // 本案場：28,000×12×0.25＝84,000
-    ok(/本次合計應付 \$116,000/.test(d),'★★ 本次合計應付 116,000（本案場 84,000 ＋ 其他 32,000）');
-    ok(/不計入本案場合約金額/.test(d),'★★ 單子上註明各案場金額仍分別記帳');
+    ok(/各案場分別計稅/.test(d),'★★ 標題就寫明「各案場分別計稅」');
+    const cols3=await p.evaluate(()=>{
+      const div=[...document.querySelectorAll('#print-overlay .pcontent div')].find(x=>!x.children.length&&/本次合併付款/.test(x.textContent||''));
+      const tb=div&&div.nextElementSibling;
+      return tb&&tb.tagName==='TABLE'?[...tb.querySelectorAll('th')].map(x=>x.textContent.trim()):null;});
+    ok(cols3&&cols3.some(x=>/營業稅/.test(x)),'★★ 有含稅專案時合併表出現營業稅欄（'+JSON.stringify(cols3)+'）');
+    // 文心 12,000×4×0.5＝24,000 未稅，稅 1,200
+    ok(/\$24,000/.test(d)&&/\$1,200/.test(d),'★★ 文心逐筆列出未稅 24,000 與稅額 1,200');
+    // 零星 8,000 未稅、暫扣 10% → 實付 7,200
+    ok(/\$7,200/.test(d),'★★ 零星工程扣掉自己的暫扣款 10% 後實付 7,200');
+    // 合計未稅 84,000+24,000+8,000＝116,000
+    ok(/\$116,000/.test(d),'★★ 未稅合計 116,000');
+    ok(/各案場的金額與發票請分別開立/.test(d),'★★ 明寫發票要分開開立');
+    ok(/已各自扣除該案場的暫扣款／保留款/.test(d),'★ 說明其他案場的實付已扣自己的暫扣／保留');
     await p.close();
   }
 
@@ -90,9 +99,13 @@ const DOC=p=>p.evaluate(()=>{const el=document.querySelector('#print-overlay .pc
       cb.checked=true;cb.onchange();});
     await p.waitForTimeout(600);
     const d=await DOC(p);
-    ok(/其他小計 \$8,000/.test(d),'④ 只勾零星工程：其他小計 8,000');
-    ok(/本次合計應付 \$92,000/.test(d),'★ 合計 92,000');
+    ok(/零星工程/.test(d)&&/\$7,200/.test(d),'④ 只勾零星工程：實付 7,200（已扣自己的暫扣 10%）');
     ok(!/文心大樓/.test(d),'★ 沒勾的文心不會印出來');
+    const cols=await p.evaluate(()=>{
+      const div=[...document.querySelectorAll('#print-overlay .pcontent div')].find(x=>!x.children.length&&/本次合併付款/.test(x.textContent||''));
+      const tb=div&&div.nextElementSibling;
+      return tb&&tb.tagName==='TABLE'?[...tb.querySelectorAll('th')].map(x=>x.textContent.trim()):null;});
+    ok(cols&&!cols.some(x=>/營業稅/.test(x)),'★★ 兩邊都是未稅專案時，合併表不會多出用不到的稅額欄（欄位：'+JSON.stringify(cols)+'）');
     await p.close();
   }
 
