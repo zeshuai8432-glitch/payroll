@@ -109,7 +109,7 @@ body.printing #print-overlay{display:block;position:absolute;inset:0;background:
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.09.28c-progspan';
+const APP_VERSION='vG2026.09.30-mergeprint';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -2156,6 +2156,23 @@ function offerSettleAfterPrint(proj){
     } else { per._noSettleAsk=true; save(); }
   },400);
 }
+// 同一個工班在「別的地方」也做了事：帳各記各的（那邊自己一個專案），
+// 但對工班只給一張單比較省事。這裡找出同廠商、其他專案本期要付的錢。
+// 找的是廠商名字相同的專案——不管那邊是正式案場的子專案，還是收零星工程的獨立專案。
+function sameVendorJobs(proj){
+  const who=String(proj&&proj.vendor||'').trim();
+  if(!who) return [];
+  return state.projects.filter(k=>k!==proj&&String(k.vendor||'').trim()===who&&(k.periods||[]).length)
+    .map(k=>{
+      const idx=Math.min(k.curPeriod??k.periods.length-1,k.periods.length-1);
+      const cc=calc(k,idx);
+      const par=k.parentId?state.projects.find(x=>x.id===k.parentId):null;
+      return {proj:k,idx,amt:Math.round(cc.billActual),
+              label:par?`${par.name} / ${k.name}`:k.name,
+              periodNo:(k.periods[idx]||{}).no,date:(k.periods[idx]||{}).date||''};
+    })
+    .filter(x=>Math.abs(x.amt)>0.5);
+}
 function printDoc(proj){
   const perIdx=Math.min(proj.curPeriod??proj.periods.length-1,proj.periods.length-1);
   const c=calc(proj,perIdx);
@@ -2223,6 +2240,22 @@ function printDoc(proj){
       ${rel.wh>0?`<tr><td>退還暫扣款（第 ${rel.whFrom.join('、')} 期，已補開發票）</td><td class="num">+${money(rel.wh).slice(1)}</td></tr>`:''}
       ${(whPct>0||rt>0||rel.rt>0||rel.wh>0)?`<tr class="tot"><td><b>本次實付</b></td><td class="num"><b>${money(payBase-wh-rt+rel.rt+rel.wh)}</b></td></tr>`:''}
       </table>`;
+    // ── 其他案場／零星工程：同一個工班在別的地方做的，錢記在那邊，這裡只是併成一張單 ──
+    const merged=sameVendorJobs(proj).filter(x=>mergeSel.has(x.proj.id));
+    if(merged.length){
+      const selfPay=payBase-wh-rt+rel.rt+rel.wh;
+      const otherSum=merged.reduce((a,x)=>a+x.amt,0);
+      h+=`<div style="font-weight:700;font-size:12.5px;margin:10px 0 3px">四、其他案場／零星工程（本期）</div>
+        <table><tr><th>案場／工程</th><th>期別</th><th class="num">本期金額</th></tr>
+        ${merged.map(x=>`<tr><td>${esc(x.label)}</td><td>第 ${x.periodNo} 期${x.date?'　'+esc(x.date):''}</td><td class="num">${money(x.amt)}</td></tr>`).join('')}
+        <tr class="tot"><td colspan="2">其他小計</td><td class="num">${money(otherSum)}</td></tr></table>
+        <table style="margin-top:6px">
+          <tr><td>本案場（${esc(proj.name)}）本次實付</td><td class="num">${money(selfPay)}</td></tr>
+          <tr><td>其他案場／零星工程 小計</td><td class="num">${money(otherSum)}</td></tr>
+          <tr class="tot"><td><b>本次合計應付</b></td><td class="num"><b>${money(selfPay+otherSum)}</b></td></tr>
+        </table>
+        <div style="font-size:10px;color:#666;margin:-4px 0 8px">＊上表僅為合併付款之用；各案場金額仍分別記在各自的工程帳上，不計入本案場合約金額。</div>`;
+    }
     // 累計暫留款項：到本期為止，還沒退還／放款的暫扣款與保留款（讓廠商看得到還有多少在我們手上）
     if(whPct>0||rtPct>0){
       let hWh=0,hRt=0;
@@ -2295,6 +2328,8 @@ function printDoc(proj){
   };
   let taxMode=proj.taxMode||'excl';
   let showAll=!!proj.printAll;
+  const jobs=sameVendorJobs(proj);
+  const mergeSel=new Set();   // 只影響這張單怎麼印，不動任何資料
   const redraw=()=>{ov.querySelector('.pcontent').innerHTML=build(taxMode,showAll);};
   ov.innerHTML=`<div class="pbar">
     <b style="color:var(--ink)">列印預覽</b>
@@ -2302,6 +2337,10 @@ function printDoc(proj){
     <label style="color:var(--ink);font-size:13px"><input type="radio" name="ptax" value="incl"${taxMode==='incl'?' checked':''}> 外加 5% 營業稅（有公司牌開發票）</label>
     <span class="muted" style="font-size:11.5px">＊此設定會記在這個專案，下次列印沿用</span>
     <label style="color:var(--ink);font-size:13px"><input type="checkbox" id="pshowall"${showAll?' checked':''}> 連「沒進度」的項目一起印（不勾＝只印做過的）</label>
+    ${jobs.length?`<span style="color:var(--ink);font-size:13px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;border-left:1px solid var(--line);padding-left:10px">
+      <b style="font-size:12px">同一廠商在別處（併入本單）</b>
+      ${jobs.map(x=>`<label style="font-size:12.5px;white-space:nowrap"><input type="checkbox" data-mergejob="${x.proj.id}"${mergeSel.has(x.proj.id)?' checked':''}> ${esc(x.label)} ${money(x.amt)}</label>`).join('')}
+    </span>`:''}
     <span style="flex:1"></span>
     <button class="btn" id="do-print">🖨 列印 / 存 PDF</button>
     <button class="btn sub" id="close-print">關閉</button></div>
@@ -2310,6 +2349,10 @@ function printDoc(proj){
   document.body.classList.add('printing');
   ov.querySelectorAll('[name=ptax]').forEach(r=>r.onchange=()=>{taxMode=r.value;proj.taxMode=taxMode;save();redraw();});
   ov.querySelector('#pshowall').onchange=e2=>{showAll=e2.target.checked;proj.printAll=showAll;save();redraw();};
+  ov.querySelectorAll('[data-mergejob]').forEach(cb=>cb.onchange=()=>{
+    cb.checked?mergeSel.add(cb.dataset.mergejob):mergeSel.delete(cb.dataset.mergejob);
+    redraw();   // 只重畫預覽，資料不動
+  });
   ov.querySelector('#do-print').onclick=()=>{window.print();offerSettleAfterPrint(proj);};
   ov.querySelector('#close-print').onclick=()=>{document.body.classList.remove('printing');ov.innerHTML='';};
   ov.onclick=e2=>{
