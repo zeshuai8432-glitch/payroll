@@ -25,6 +25,7 @@ const seed={ projects:[
    periods:[{no:1,date:'2026-09-05',prog:{j2a:{p:0.5,q:40}}}], curPeriod:0, createdAt:4 },
  // 零星工程：沒有母專案的獨立專案
  { id:'z1', name:'零星工程', owner:'', vendor:'進凱', taxMode:'excl', withholdPct:10,
+   invTitle:'廣昕工程行', invTaxId:'92114986',
    blocks:[{id:'zb1',name:'修繕',unit:'式',count:1,items:[
      {id:'za',no:'1',name:'補牆',unit:'式',qty:1,price:8000,amount:8000,remark:''}]}],
    periods:[{no:1,date:'2026-09-10',prog:{za:{p:1,q:1}}}], curPeriod:0, createdAt:5 },
@@ -163,8 +164,9 @@ const DOC=p=>p.evaluate(()=>{const el=document.querySelector('#print-overlay .pc
     ok(/各案場發票開立方式（請分開開立）/.test(d),'⑧ 多了「各案場發票開立方式」區塊');
     ok(/東澤工程有限公司/.test(d)&&/12345678/.test(d),'★★ 本案場的抬頭統編印出來了');
     ok(/東澤營造股份有限公司/.test(d)&&/87654321/.test(d),'★★ 文心大樓用的是它自己的抬頭統編（不是沿用本案場的）');
-    ok(/未設定/.test(d),'★★ 零星工程沒填抬頭統編，直接標「未設定」');
-    ok(/請到該案場的「設定\/備份 → 發票抬頭／統一編號」補上/.test(d),'★ 並告訴你去哪裡補');
+    ok(/廣昕工程行/.test(d)&&/92114986/.test(d),'★★ 零星工程用廣昕的抬頭統編（A 開品佑、B 開廣昕）');
+    ok(/有統編卻設成未稅/.test(d),'★★ 有統編卻設未稅時會點出來，說明稅額為什麼是「—」');
+    ok(/設定\/備份 → 稅別/.test(d),'★ 並指出去哪裡改');
 
     // 稅別欄
     const cols=await p.evaluate(()=>{
@@ -184,6 +186,31 @@ const DOC=p=>p.evaluate(()=>{const el=document.querySelector('#print-overlay .pc
     const d=await DOC(p);
     ok(/發票開立資訊/.test(d),'⑨ 沒勾合併時仍印原本的「發票開立資訊」');
     ok(!/各案場發票開立方式/.test(d),'★ 不會多出合併版的區塊');
+    await p.close();
+  }
+
+  // ⑩ 稅別可以在設定頁改，不必到列印預覽找
+  {
+    const {p}=await open(br);
+    await p.evaluate(()=>{const ov=document.getElementById('print-overlay');
+      document.body.classList.remove('printing'); if(ov) ov.innerHTML='';
+      state.cur='z1'; state.tab='set'; render();});
+    await p.waitForTimeout(600);
+    ok(!!(await p.$('#set-taxmode')),'⑩ 設定/備份 有「稅別」下拉');
+    ok(await p.evaluate(()=>document.getElementById('set-taxmode').value)==='excl','★ 目前是未稅');
+    await p.selectOption('#set-taxmode','incl');
+    await p.click('#set-save'); await p.waitForTimeout(600);
+    ok(await p.evaluate(()=>state.projects.find(x=>x.id==='z1').taxMode)==='incl','★★ 存檔後真的變成外加 5%');
+
+    // 回到本單重印，第二筆就有稅額了
+    await p.evaluate(()=>{state.cur='kJ';state.tab='prog';render();window.print=function(){};});
+    await p.waitForTimeout(500);
+    await p.click('#btn-print'); await p.waitForTimeout(900);
+    await p.evaluate(()=>{document.querySelectorAll('[data-mergejob]').forEach(cb=>{cb.checked=true;cb.onchange();});});
+    await p.waitForTimeout(600);
+    const d=await DOC(p);
+    ok(/\$400/.test(d),'★★ 零星那筆現在算得出稅額 400（8,000 × 5%）');
+    ok(!/有統統編卻設成未稅/.test(d)&&!/零星工程」有統編卻設成未稅/.test(d),'★ 改好之後就不再提示');
     await p.close();
   }
 
