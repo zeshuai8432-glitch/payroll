@@ -22,6 +22,7 @@ NODE_PATH=/opt/node22/lib/node_modules /opt/node22/bin/node prog-smoke2.test.js
 | `prog-groupedit.test.js` | 拆成工序的那條，收合那行可直接改名稱／數量／單價（值的邏輯） |
 | `prog-clouddiag.test.js` | 雲端連不上時把真正原因講出來，並提供連線測試 |
 | `prog-lockedui.test.js` | 新裝置上沒本機資料時，要分清「加密沒解鎖」「連不上」「真的沒資料」 |
+| `prog-unlockfix.test.js` | 手機讀不到雲端：瀏覽器缺 DecompressionStream、prompt 被擋、開頁不自動問密碼、解不開時禁止上傳 |
 | `prog-plans.test.js` | 圖面附件：存本機不同步、按房型穿插列印、空間滿的處理 |
 | `prog-printnote.test.js` | 請款單印出備註（放名稱底下、濾掉系統自動寫的轉出紀錄） |
 | `prog-noteedit.test.js` | 備註點一下就能改（群組一起改／工序個別改／不一樣時先問） |
