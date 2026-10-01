@@ -25,7 +25,11 @@ const G=p=>p.evaluate(()=>{const b=curProj().blocks[0];
   const subs=b.items.filter(x=>x.groupId==='gg');
   return {names:subs.map(x=>x.name),groupName:subs[0]&&subs[0].groupName,
           prices:subs.map(x=>x.price),qtys:subs.map(x=>x.qty),amts:subs.map(x=>x.amount)};});
-const fire=async(p,sel,v)=>{ await p.fill(sel,v);
+// 名稱／單價現在是「點一下才變輸入框」，所以要先點開
+const fire=async(p,sel,v)=>{
+  const f=/gname/.test(sel)?'name':(/gprice/.test(sel)?'price':null);
+  if(f){ await p.click(`[data-gedit="b1::gg::${f}"]`); await p.waitForTimeout(350); }
+  await p.fill(sel,v);
   await p.evaluate(s=>document.querySelector(s).dispatchEvent(new Event('change',{bubbles:true})),sel);
   await p.waitForTimeout(700); };
 
@@ -36,9 +40,10 @@ const fire=async(p,sel,v)=>{ await p.fill(sel,v);
   {
     const {p,errs}=await open(br);
     ok(errs.length===0,'① JS 無錯誤'+(errs.length?'：'+errs[0]:''));
-    ok(!!(await p.$('[data-gname="b1::gg"]')),'★★ 收合那行的名稱是可以打字的輸入框');
-    ok(!!(await p.$('[data-gprice="b1::gg"]')),'★★ 單價也是輸入框');
-    ok(!!(await p.$('[data-gqty="b1::gg"]')),'★ 數量本來就有');
+    ok(!!(await p.$('[data-gedit="b1::gg::name"]')),'★★ 收合那行的名稱點一下就能改');
+    ok(!!(await p.$('[data-gedit="b1::gg::price"]')),'★★ 單價也是');
+    ok(!!(await p.$('[data-gqty="b1::gg"]')),'★ 數量維持原本的輸入框');
+    ok(!(await p.$('[data-gname]')),'★★ 平常不是輸入框（畫面才不會變成一排框）');
 
     await fire(p,'[data-gname="b1::gg"]','分戶牆複牆');
     const g=await G(p);

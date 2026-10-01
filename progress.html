@@ -33,6 +33,8 @@ th,td{padding:6px 8px;border-bottom:1px solid var(--line);text-align:left;vertic
 th{color:var(--muted);font-weight:600;font-size:12.5px;white-space:nowrap}
 td.num,th.num{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
 .muted{color:var(--muted)} .ok{color:var(--ok)} .warn-t{color:var(--warn)} .bad-t{color:var(--bad)}
+.ed{cursor:text;border-bottom:1px dashed transparent;border-radius:3px;padding:0 2px}
+.ed:hover{border-bottom-color:var(--accent);background:rgba(59,130,246,.08)}
 .tag{display:inline-block;padding:1px 7px;border-radius:99px;font-size:11px;background:var(--card2);border:1px solid var(--line);color:var(--muted);margin-left:6px}
 details.blk{border:1px solid var(--line);border-radius:12px;margin-bottom:10px;background:var(--card)}
 details.blk>summary{cursor:pointer;padding:10px 14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;list-style:none}
@@ -109,7 +111,7 @@ body.printing #print-overlay{display:block;position:absolute;inset:0;background:
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.10.01b-groupedit';
+const APP_VERSION='vG2026.10.01c-clickedit';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -864,6 +866,7 @@ let subPanel=false;
 let backfill=null;   // 「從母專案補細項」展開中的區塊 id
 let trashOpen=false; // 「已刪除的細項」回收桶展開中
 let xfer=null;       // 「轉出給別人」展開中的 blkId::itemId
+let gEdit=null;      // 工序群組收合行上，正在編輯哪一格：blkId::groupId::欄位
 let xcopy=null, xcopyProj='', xcopyBlk='';   // 「從別的專案抓細項」：展開中的區塊 id ＋ 選定的來源專案／區塊
 let _subInfo={};   // {blkId:{stage:{rooms(母間數), used(已發包間數), perRoom(每間金額), n(條數)}}}
 const SUB_ALL='*';  // 「整條發包」的虛擬工序代碼
@@ -1189,12 +1192,16 @@ function viewItems(proj){
         h+=`<tr style="background:var(--card2)">
           ${picking?`<td><input type="checkbox" data-delpick-group="${it.groupId}" ${subs.every(x=>delSel.has(x.id))?'checked':''} style="width:16px;height:16px"></td>`:''}
           <td>${esc(it.no==='增'?'':it.no)}</td>
-          <td><button class="btn sub sm" data-grouptoggle="${it.groupId}" style="border:none;background:none;padding:0 6px 0 0;color:var(--accent)">${open?'▾':'▸'}</button>${picking?`<b>${esc(it.groupName||it.name)}</b>`:`<input class="pin" data-gname="${b.id}::${it.groupId}" value="${esc(it.groupName||it.name)}" style="min-width:260px;max-width:100%;font-weight:700" title="在這裡改名稱，這 ${subs.length} 道工序的名稱前綴會一起改，不用先合回">`}${subs.slice(0,4).map(x=>{const st=stageOf(x.name,it.groupName);const c=stageColor(st);return `<span class="tag" style="background:${c}22;border-color:${c}88;color:${c};margin-left:4px">${esc(st)}</span>`;}).join('')}${subs.length>4?`<span class="tag" title="共 ${subs.length} 道工序">+${subs.length-4}</span>`:''}<span class="tag" style="background:rgba(99,102,241,.22);border-color:rgba(129,140,248,.5);color:#c7d2fe">${subs.length} 道工序</span></td>
+          <td><button class="btn sub sm" data-grouptoggle="${it.groupId}" style="border:none;background:none;padding:0 6px 0 0;color:var(--accent)">${open?'▾':'▸'}</button>${(!picking&&gEdit===b.id+'::'+it.groupId+'::name')
+            ?`<input class="pin" data-gname="${b.id}::${it.groupId}" value="${esc(it.groupName||it.name)}" style="min-width:320px;max-width:100%;font-weight:700">`
+            :`<b${picking?'':` class="ed" data-gedit="${b.id}::${it.groupId}::name" title="點一下改名稱（這 ${subs.length} 道工序的前綴會一起換，不用先合回）"`}>${esc(it.groupName||it.name)}</b>`}${subs.slice(0,4).map(x=>{const st=stageOf(x.name,it.groupName);const c=stageColor(st);return `<span class="tag" style="background:${c}22;border-color:${c}88;color:${c};margin-left:4px">${esc(st)}</span>`;}).join('')}${subs.length>4?`<span class="tag" title="共 ${subs.length} 道工序">+${subs.length-4}</span>`:''}<span class="tag" style="background:rgba(99,102,241,.22);border-color:rgba(129,140,248,.5);color:#c7d2fe">${subs.length} 道工序</span></td>
           <td>${esc(it.unit)}</td>
           <td class="num">${picking?(sameQty?qfmt(gQty):'<span class="muted" style="font-size:11px">各段不同</span>')
             :`<input class="pin" data-gqty="${b.id}::${it.groupId}" inputmode="decimal" value="${sameQty?esc(String(gQty)):''}" placeholder="${sameQty?'':'各段不同'}" style="width:92px;text-align:right" title="在這裡改數量，這 ${subs.length} 道工序會一起改（可填算式）">`}</td>
           <td class="num">${picking||!sameQty?(sameQty?qfmt(gPrice):'<span class="muted" style="font-size:11px">—</span>')
-            :`<input class="pin" data-gprice="${b.id}::${it.groupId}" inputmode="decimal" value="${esc(String(gPrice))}" style="width:86px;text-align:right" title="在這裡改單價，會照各道工序原本的比例分回去（目前 ${subs.map(x=>qfmt(x.price)).join('＋')}）。可填算式。">`}</td>
+            :(gEdit===b.id+'::'+it.groupId+'::price'
+              ?`<input class="pin" data-gprice="${b.id}::${it.groupId}" inputmode="decimal" value="${esc(String(gPrice))}" style="width:86px;text-align:right">`
+              :`<span class="ed" data-gedit="${b.id}::${it.groupId}::price" title="點一下改單價，會照各道工序原本的比例分回去（目前 ${subs.map(x=>qfmt(x.price)).join('＋')}）。可填算式。">${qfmt(gPrice)}</span>`)}</td>
           <td class="num"><b>${qfmt(gAmt)}</b></td>
           <td class="muted" style="font-size:12px">${esc(it.remark||'')}</td>
           <td><button class="btn sub sm" data-groupmerge="${b.id}::${it.groupId}" title="取消拆分，合回一條">↩ 合回</button></td></tr>`;
@@ -2655,7 +2662,7 @@ function setProgInput(proj,blkId,itemId,kind,val){
 }
 
 document.addEventListener('click',async e=>{
-  const t=e.target.closest('[data-tab],[data-editblk],[data-delblk],[data-edititem],[data-delitem],[data-additem],[data-splititem],[data-sortitems],[data-grouptoggle],[data-groupmerge],[data-groupdetect],[data-whtoggle],[data-rttoggle],[data-whtax],[data-whtaxauto],[data-rtamt],[data-selfone],[data-selfrooms],[data-selfrest],[data-selfclear],[data-delmode],[data-delcancel],[data-delall],[data-delnone],[data-delinv],[data-delzero],[data-deldo],#sub-toggle,#sub-close,#sub-go,[data-backfill],[data-backfillcancel],[data-backfillok],[data-addmissblk],#trash-toggle,#trash-clear,[data-trashrestore],[data-trashdrop],#drift-sync,#drift-sync-price,#drift-all,#drift-none,[data-copyinto],[data-copyok],[data-copycancel],[data-xcopy],[data-xcopycancel],[data-xcopyall],[data-xcopyok],[data-xfer],[data-xfercancel],[data-xferok],[data-batchedit],[data-batchok],[data-batchcancel],[data-batchalledit],[data-batchallok],[data-batchallcancel],[data-itemok],[data-itemcancel],[data-blkok],[data-blkcancel],[data-bapply],[data-gapply],#btn-invrecon,[data-editextra],[data-delextra],#btn-import,#btn-import2,#btn-newproj,#btn-newproj2,#btn-addblk,#btn-addblk-ok,#btn-addperiod,#btn-delperiod,#btn-addextra,#btn-roundup,#settle-toggle,#set-rebase,[data-gotoproj],#btn-print,#btn-setretain,#orphan-fix,#orphan-detach,#proj-groupall,#set-save,#set-taxmode,#proj-dup,#proj-detach,#backup-export,#backup-import-btn,#prev-restore,#prev-export,#proj-del,#cloud-push,#cloud-pull');
+  const t=e.target.closest('[data-tab],[data-editblk],[data-delblk],[data-edititem],[data-delitem],[data-additem],[data-splititem],[data-sortitems],[data-grouptoggle],[data-groupmerge],[data-groupdetect],[data-whtoggle],[data-rttoggle],[data-whtax],[data-whtaxauto],[data-rtamt],[data-selfone],[data-selfrooms],[data-selfrest],[data-selfclear],[data-delmode],[data-delcancel],[data-delall],[data-delnone],[data-delinv],[data-delzero],[data-deldo],#sub-toggle,#sub-close,#sub-go,[data-backfill],[data-backfillcancel],[data-backfillok],[data-addmissblk],#trash-toggle,#trash-clear,[data-trashrestore],[data-trashdrop],#drift-sync,#drift-sync-price,#drift-all,#drift-none,[data-copyinto],[data-copyok],[data-copycancel],[data-xcopy],[data-xcopycancel],[data-xcopyall],[data-xcopyok],[data-xfer],[data-xfercancel],[data-xferok],[data-gedit],[data-batchedit],[data-batchok],[data-batchcancel],[data-batchalledit],[data-batchallok],[data-batchallcancel],[data-itemok],[data-itemcancel],[data-blkok],[data-blkcancel],[data-bapply],[data-gapply],#btn-invrecon,[data-editextra],[data-delextra],#btn-import,#btn-import2,#btn-newproj,#btn-newproj2,#btn-addblk,#btn-addblk-ok,#btn-addperiod,#btn-delperiod,#btn-addextra,#btn-roundup,#settle-toggle,#set-rebase,[data-gotoproj],#btn-print,#btn-setretain,#orphan-fix,#orphan-detach,#proj-groupall,#set-save,#set-taxmode,#proj-dup,#proj-detach,#backup-export,#backup-import-btn,#prev-restore,#prev-export,#proj-del,#cloud-push,#cloud-pull');
   if(!t)return;
   const proj=curProj();
   if(t.dataset.tab){state.tab=t.dataset.tab;save();render();return;}
@@ -3161,6 +3168,10 @@ document.addEventListener('click',async e=>{
     for(const per of proj.periods) if(per.prog) subs.forEach(s=>delete per.prog[s.id]);
     openGroup.delete(gid); save(); render(); return;
   }
+  if(t.dataset.gedit){ gEdit=t.dataset.gedit; render();
+    const sel=gEdit.endsWith('::name')?'[data-gname]':'[data-gprice]';
+    const el=document.querySelector(sel); if(el){ el.focus(); el.select&&el.select(); }
+    return; }
   if(t.dataset.xfer){ xfer=t.dataset.xfer; itemEdit=itemAdd=blkEdit=copyInto=backfill=xcopy=null; blkAdd=false; render(); return; }
   if(t.dataset.xfercancel){ xfer=null; render(); return; }
   if(t.dataset.xferok){
@@ -3614,6 +3625,7 @@ document.addEventListener('change',e=>{
     render(); return;
   }
   if(t.dataset.xcopyblk){ xcopyBlk=t.value; render(); return; }
+  if(t.dataset.gname||t.dataset.gprice){ gEdit=null; }   // 改完就收回文字
   if(t.dataset.gname){
     // 收合那行直接改名稱：整組的名字跟各道工序的前綴一起換，不用先合回
     const [blkId,gid]=t.dataset.gname.split('::');
@@ -3840,6 +3852,16 @@ function schedulePush(){
 // 切到背景／關頁面前把待上傳的資料送出去。手機平板按 home 之後分頁會被凍結，
 // 1.5 秒的延遲常常等不到，打完的東西就留在那台機器上沒上雲端。
 function flushPush(){ if(pushTimer){ clearTimeout(pushTimer); pushTimer=null; doPush(); } }
+document.addEventListener('focusout',e=>{
+  // 點開來又沒改就走掉：收回文字，不要一直掛著輸入框
+  if(!gEdit) return;
+  const t=e.target; if(!t||!t.dataset||!(t.dataset.gname||t.dataset.gprice)) return;
+  const was=gEdit;   // 期間若點去別格，gEdit 會換成新的那格，別把它一起收掉
+  setTimeout(()=>{ if(gEdit===was){ gEdit=null; render(); } },0);
+});
+document.addEventListener('keydown',e=>{
+  if(e.key==='Escape'&&gEdit){ gEdit=null; render(); }
+});
 document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='hidden') flushPush(); });
 window.addEventListener('pagehide',flushPush);
 window.addEventListener('beforeunload',e=>{
