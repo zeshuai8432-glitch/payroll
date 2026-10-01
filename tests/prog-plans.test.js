@@ -20,7 +20,7 @@ async function open(br){
   await p.goto('file:///home/user/payroll/progress.html'); await p.waitForTimeout(1200);
   return {p,errs};
 }
-const addPlan=(p,blk,name)=>p.evaluate(([b,n])=>planAdd('p1',b,n,'data:image/jpeg;base64,'+'A'.repeat(2000)),[blk,name]);
+const addPlan=(p,blk,name)=>p.evaluate(async([b,n])=>await planAdd('p1',b,n,'data:image/jpeg;base64,'+'A'.repeat(2000)),[blk,name]);
 const openPrint=async p=>{ await p.evaluate(()=>{window.print=function(){};});
   await p.click('#btn-print'); await p.waitForTimeout(900); };
 
@@ -34,9 +34,11 @@ const openPrint=async p=>{ await p.evaluate(()=>{window.print=function(){};});
     await addPlan(p,'b1','SK平面圖.jpg');
     const r=await p.evaluate(()=>({
       inState:JSON.stringify(state).includes('data:image/jpeg'),
-      inPlans:(JSON.parse(localStorage.getItem('pm_progress_plans_v1')||'{}')['p1::b1']||[]).length,
+      inPlans:planList('p1','b1').length,
+      lsAll:Object.keys(localStorage).some(k=>String(localStorage.getItem(k)).includes('data:image/jpeg')),
       stateKey:localStorage.getItem('pm_progress_v1').includes('data:image/jpeg')}));
     ok(r.inPlans===1,'★ 圖面存進本機的圖面區');
+    ok(r.lsAll===false,'★★ localStorage 裡完全沒有圖片——不會排擠到主資料的空間');
     ok(r.inState===false&&r.stateKey===false,'★★ 專案資料裡完全沒有圖片——不會把雲端那 1MB 額度吃掉');
     await p.close();
   }
@@ -97,7 +99,7 @@ const openPrint=async p=>{ await p.evaluate(()=>{window.print=function(){};});
     ok(/只存在這台瀏覽器，不會同步到雲端/.test(t),'★★ 明確標示不會同步');
     ok(/1MB 上限/.test(t),'★ 並說明為什麼不放雲端');
     ok(/TYPE-SK 標準大床/.test(t)&&/TYPE-DD 標準雙床/.test(t),'★ 每個房型各自附圖');
-    await p.evaluate(()=>{planDel('p1','b1',0);});
+    await p.evaluate(async()=>{await planDel('p1','b1',0);});
     ok((await p.evaluate(()=>planList('p1','b1').length))===0,'★ 刪得掉');
     await p.close();
   }
@@ -123,11 +125,29 @@ const openPrint=async p=>{ await p.evaluate(()=>{window.print=function(){};});
       await openPlanModal(state.projects[0],null);
       const inp=document.querySelector('#modal input[type=file]');
       return inp?inp.accept:null;});
-    ok(acc==='image/*','⑦ 檔案挑選器目前只收圖片（accept='+acc+'）');
+    ok(/image\/\*/.test(acc||'')&&/application\/pdf/.test(acc||''),'⑦ 檔案挑選器收圖片也收 PDF（accept='+acc+'）');
     const err=await p.evaluate(async()=>{
-      try{ await compressImage(new File([new Uint8Array([37,80,68,70])],'圖面.pdf',{type:'application/pdf'}),1600,0.75); return null; }
+      try{ await pdfToImages(new File([new Uint8Array([37,80,68,70])],'圖面.pdf',{type:'application/pdf'})); return null; }
       catch(e){ return e.message; }});
-    ok(/PDF 請先轉成圖片/.test(err||''),'★★ 真的丟 PDF 進來會講清楚要先轉成圖片：'+err);
+    ok(/連不到 pdf.js/.test(err||''),'★★ 載不到 pdf.js 時訊息講得清楚（離線時請先轉成圖片）：'+err);
+    await p.close();
+  }
+
+  // ⑧ 舊版存在 localStorage 的圖面，開檔時搬到 IndexedDB 並清掉舊的
+  {
+    const p=await br.newPage(); p.on('dialog',d=>d.accept());
+    await p.route('**/*',r=>r.request().url().startsWith('file://')?r.continue():r.abort());
+    await p.addInitScript(s=>{
+      localStorage.setItem('pm_progress_v1',JSON.stringify(s));
+      localStorage.setItem('pm_e2e_key_v1','x');
+      localStorage.setItem('pm_progress_plans_v1',JSON.stringify({'p1::b1':[{name:'舊版的圖',d:'data:image/jpeg;base64,'+'B'.repeat(500),at:1}]}));
+    },seed);
+    await p.goto('file:///home/user/payroll/progress.html'); await p.waitForTimeout(1600);
+    const r=await p.evaluate(()=>({n:planList('p1','b1').length,
+      nm:(planList('p1','b1')[0]||{}).name,
+      oldGone:localStorage.getItem('pm_progress_plans_v1')===null}));
+    ok(r.n===1&&r.nm==='舊版的圖','⑧ 舊版 localStorage 的圖面自動搬到 IndexedDB');
+    ok(r.oldGone,'★★ 搬完把 localStorage 那份清掉，不再佔主資料的空間');
     await p.close();
   }
 

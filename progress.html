@@ -111,7 +111,7 @@ body.printing #print-overlay{display:block;position:absolute;inset:0;background:
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.10.01f-plans';
+const APP_VERSION='vG2026.10.01g-plansidb';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -152,7 +152,7 @@ function normalizeGroups(){
 function save(){
   normalizeGroups(); state.savedAt=Date.now();
   try{ localStorage.setItem(LS,JSON.stringify(state)); }
-  catch(e){ alert('⚠ 這台的瀏覽器空間滿了，剛才的修改沒有存進本機。\n\n請到「設定/備份」把用不到的圖面附件刪掉，或先匯出備份。\n\n（資料還在畫面上，別關掉這一頁。）'); }
+  catch(e){ alert('⚠ 這台的瀏覽器空間滿了，剛才的修改沒有存進本機。\n\n請先到「設定/備份」匯出一份備份，再清一些瀏覽器資料。\n\n（資料還在畫面上，別關掉這一頁。）'); }
   schedulePush();
 }
 const curProj=()=>state.projects.find(p=>p.id===state.cur)||null;
@@ -2294,58 +2294,132 @@ function printRemark(r){
 /* ═══════════ 圖面附件（只存這台，不進雲端） ═══════════
    雲端存的是整個專案一份 JSON，Firestore 單一文件上限 1MB，加密後還會膨脹約 1.37 倍，
    一張壓過的圖面就可能把額度吃掉大半 → 上傳失敗、資料卡在本機。
-   所以圖面另外存在 localStorage 的獨立 key，不進 state、不同步。 */
-const LS_PLANS='pm_progress_plans_v1';
-const PLANS_MAX=4*1024*1024;   // 全部圖面加起來的上限，避免把 localStorage 塞爆害主資料存不進去
-function loadPlans(){ try{ return JSON.parse(localStorage.getItem(LS_PLANS)||'{}')||{}; }catch(e){ return {}; } }
-function plansBytes(o){ let n=0; for(const k in o) (o[k]||[]).forEach(x=>n+=(x.d||'').length); return n; }
-function savePlans(o){
-  try{ localStorage.setItem(LS_PLANS,JSON.stringify(o)); return true; }
-  catch(e){ alert('這台的空間存不下了，圖面沒有存進去。\n\n請先刪掉幾張舊的圖面再試。'); return false; }
+   所以圖面不進 state、不同步。
+
+   存在 IndexedDB 而不是 localStorage：localStorage 跟主資料共用那 5~10MB，
+   圖放多了會排擠到專案資料存不進去；IndexedDB 空間大得多而且完全分開。
+   列印是同步組字串的，所以在記憶體留一份快取 PLANS 給它讀。 */
+const IDB_NAME='pm_progress_files', IDB_STORE='plans';
+const LS_PLANS_OLD='pm_progress_plans_v1';   // 舊版放這裡，開檔時搬過去
+let PLANS={};                                 // 記憶體快取：key -> [{name,d,at}]
+function idb(){
+  return new Promise((res,rej)=>{
+    const r=indexedDB.open(IDB_NAME,1);
+    r.onupgradeneeded=()=>{ if(!r.result.objectStoreNames.contains(IDB_STORE)) r.result.createObjectStore(IDB_STORE); };
+    r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error);
+  });
+}
+function idbPut(k,v){ return idb().then(db=>new Promise((res,rej)=>{
+  const t=db.transaction(IDB_STORE,'readwrite'); t.objectStore(IDB_STORE).put(v,k);
+  t.oncomplete=()=>res(true); t.onerror=()=>rej(t.error); })); }
+function idbDel(k){ return idb().then(db=>new Promise((res,rej)=>{
+  const t=db.transaction(IDB_STORE,'readwrite'); t.objectStore(IDB_STORE).delete(k);
+  t.oncomplete=()=>res(true); t.onerror=()=>rej(t.error); })); }
+function idbAll(){ return idb().then(db=>new Promise((res,rej)=>{
+  const t=db.transaction(IDB_STORE,'readonly'), st=t.objectStore(IDB_STORE), out={};
+  const kq=st.getAllKeys(), vq=st.getAll();
+  t.oncomplete=()=>{ (kq.result||[]).forEach((k,i)=>out[k]=vq.result[i]); res(out); };
+  t.onerror=()=>rej(t.error); })); }
+async function plansLoad(){
+  try{ PLANS=await idbAll(); }catch(e){ PLANS={}; }
+  // 舊版存在 localStorage 的搬過去，搬完就把舊的清掉，不要佔主資料的空間
+  try{
+    const old=JSON.parse(localStorage.getItem(LS_PLANS_OLD)||'null');
+    if(old&&Object.keys(old).length){
+      for(const k in old){ if(!PLANS[k]){ PLANS[k]=old[k]; await idbPut(k,old[k]); } }
+      localStorage.removeItem(LS_PLANS_OLD);
+    }
+  }catch(e){}
 }
 const planKey=(projId,blkId)=>projId+'::'+blkId;
-const planList=(projId,blkId)=>loadPlans()[planKey(projId,blkId)]||[];
-function planAdd(projId,blkId,name,dataUrl){
-  const o=loadPlans(), k=planKey(projId,blkId);
-  if(plansBytes(o)+dataUrl.length>PLANS_MAX){ alert('圖面總量超過上限（約 4MB）。\n\n請先刪掉幾張用不到的再加。'); return false; }
-  (o[k]||(o[k]=[])).push({name:String(name||'圖面'),d:dataUrl,at:Date.now()});
-  return savePlans(o);
+const planList=(projId,blkId)=>PLANS[planKey(projId,blkId)]||[];
+function plansBytes(){ let n=0; for(const k in PLANS) (PLANS[k]||[]).forEach(x=>n+=(x.d||'').length); return n; }
+async function planAdd(projId,blkId,name,dataUrl){
+  const k=planKey(projId,blkId);
+  const next=(PLANS[k]||[]).concat([{name:String(name||'圖面'),d:dataUrl,at:Date.now()}]);
+  try{ await idbPut(k,next); PLANS[k]=next; return true; }
+  catch(e){ alert('圖面存不進去：'+(e&&e.message||e)+'\n\n可能是這台的空間滿了，先刪掉幾張用不到的再試。'); return false; }
 }
-function planDel(projId,blkId,i){
-  const o=loadPlans(), k=planKey(projId,blkId);
-  if(!o[k]) return; o[k].splice(i,1); if(!o[k].length) delete o[k]; savePlans(o);
+async function planDel(projId,blkId,i){
+  const k=planKey(projId,blkId);
+  const next=(PLANS[k]||[]).slice(); next.splice(i,1);
+  try{
+    if(next.length){ await idbPut(k,next); PLANS[k]=next; } else { await idbDel(k); delete PLANS[k]; }
+  }catch(e){ alert('刪不掉：'+(e&&e.message||e)); }
 }
-// 圖面縮到合理大小再存：原圖動輒好幾 MB，瀏覽器空間與列印都吃不消
+// 圖面縮到合理大小再存：原圖動輒好幾 MB，瀏覽器空間與列印都吃不消。
+// 2000px 寬約等於 A4 200dpi，圖上的隔間編號與尺寸標註看得清楚。
+const PLAN_W=2000, PLAN_Q=0.82;
 function compressImage(file,maxW,quality){
   return new Promise((res,rej)=>{
     const fr=new FileReader();
     fr.onerror=()=>rej(new Error('讀不到檔案'));
     fr.onload=()=>{
       const img=new Image();
-      img.onerror=()=>rej(new Error('這個檔案不是圖片（PDF 請先轉成圖片）'));
+      img.onerror=()=>rej(new Error('這個檔案不是圖片'));
       img.onload=()=>{
-        const w=Math.min(img.width,maxW||1600), h=Math.round(img.height*w/img.width);
+        const w=Math.min(img.width,maxW||PLAN_W), h=Math.round(img.height*w/img.width);
         const c=document.createElement('canvas'); c.width=w; c.height=h;
         const g=c.getContext('2d'); g.fillStyle='#fff'; g.fillRect(0,0,w,h); g.drawImage(img,0,0,w,h);
-        res(c.toDataURL('image/jpeg',quality||0.75));
+        res(c.toDataURL('image/jpeg',quality||PLAN_Q));
       };
       img.src=fr.result;
     };
     fr.readAsDataURL(file);
   });
 }
+/* ── PDF：選到 PDF 時才去載 pdf.js，把每頁畫成圖片 ──
+   這個檔案本身零外部依賴、離線可用；pdf.js 只在「加圖面」這個動作用得到，
+   列印與其他功能都不受影響。載不到或轉失敗時明確講，使用者還是可以自己先轉成圖片。 */
+const PDFJS_VER='3.11.174';
+const PDFJS_SRC=`https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${PDFJS_VER}/pdf.min.js`;
+const PDFJS_WORKER=`https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${PDFJS_VER}/pdf.worker.min.js`;
+let _pdfjs=null;
+function ensurePdfJs(){
+  if(_pdfjs) return Promise.resolve(_pdfjs);
+  if(window.pdfjsLib){ _pdfjs=window.pdfjsLib; _pdfjs.GlobalWorkerOptions.workerSrc=PDFJS_WORKER; return Promise.resolve(_pdfjs); }
+  return new Promise((res,rej)=>{
+    const sc=document.createElement('script'); sc.src=PDFJS_SRC;
+    sc.onload=()=>{
+      if(!window.pdfjsLib) return rej(new Error('pdf.js 載入了但不能用'));
+      _pdfjs=window.pdfjsLib; _pdfjs.GlobalWorkerOptions.workerSrc=PDFJS_WORKER; res(_pdfjs);
+    };
+    sc.onerror=()=>rej(new Error('連不到 pdf.js（需要網路；離線時請先把 PDF 轉成圖片）'));
+    document.head.appendChild(sc);
+  });
+}
+async function pdfToImages(file,onProgress){
+  const lib=await ensurePdfJs();
+  const buf=await file.arrayBuffer();
+  const doc=await lib.getDocument({data:new Uint8Array(buf)}).promise;
+  const out=[];
+  for(let i=1;i<=doc.numPages;i++){
+    if(onProgress) onProgress(i,doc.numPages);
+    const pg=await doc.getPage(i);
+    const v1=pg.getViewport({scale:1});
+    const scale=Math.min(PLAN_W/v1.width,4);
+    const vp=pg.getViewport({scale});
+    const c=document.createElement('canvas'); c.width=Math.round(vp.width); c.height=Math.round(vp.height);
+    const g=c.getContext('2d'); g.fillStyle='#fff'; g.fillRect(0,0,c.width,c.height);
+    await pg.render({canvasContext:g,viewport:vp}).promise;
+    out.push(c.toDataURL('image/jpeg',PLAN_Q));
+  }
+  return out;
+}
 function openPlanModal(proj,onClose){
   const old=document.getElementById('modal'); if(old) old.remove();
   const m=document.createElement('div'); m.id='modal';
   const draw=()=>{
-    const o=loadPlans();
+    const o=PLANS;
     m.innerHTML=`<div class="box" style="max-width:760px;max-height:86vh;overflow:auto"><h3 style="margin-bottom:6px">🖼 圖面附件</h3>
       <div class="muted" style="font-size:12.5px;margin-bottom:10px">
         每個房型可以附自己的圖面，列印時接在<b>那個房型的明細後面</b>，一張一頁滿版，工班可以直接對你標在圖上的編號。
         <br><b style="color:var(--warn)">圖面只存在這台瀏覽器，不會同步到雲端</b>——換手機或換電腦要重新選一次。
         （雲端一份資料有 1MB 上限，圖放進去會把整份資料卡住上傳不了。）
-        <br>選進來的圖會自動縮到寬 1600px、JPEG 壓縮。PDF 請先轉成圖片。
-        <br>目前已用 <b>${(plansBytes(o)/1024/1024).toFixed(2)} MB</b> / 4 MB。</div>
+        <br><b>圖片或 PDF 都可以。</b>PDF 會自動轉成圖片（這一步需要網路；多頁可以挑要哪幾頁）。
+        <br>選進來的圖會縮到寬 ${PLAN_W}px（約 A4 200dpi），圖上的編號與標註看得清楚。
+        <br>目前已用 <b>${(plansBytes()/1024/1024).toFixed(2)} MB</b>。
+        <div id="plan-busy" style="margin-top:4px;color:var(--accent);font-weight:600"></div></div>
       ${(proj.blocks||[]).map(b=>{
         const list=o[proj.id+'::'+b.id]||[];
         return `<div style="border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin-bottom:8px">
@@ -2362,23 +2436,49 @@ function openPlanModal(proj,onClose){
   };
   draw();
   document.body.appendChild(m);
-  const inp=document.createElement('input'); inp.type='file'; inp.accept='image/*'; inp.multiple=true; inp.style.display='none';
+  const inp=document.createElement('input'); inp.type='file'; inp.accept='image/*,application/pdf'; inp.multiple=true; inp.style.display='none';
   m.appendChild(inp);
-  let pickBlk=null;
+  let pickBlk=null, busy=false;
+  const say=t=>{ const el=m.querySelector('#plan-busy'); if(el) el.textContent=t||''; };
   inp.onchange=async()=>{
     const files=[...inp.files]; inp.value='';
-    for(const f of files){
-      try{ const d=await compressImage(f,1600,0.75); if(!planAdd(proj.id,pickBlk,f.name,d)) break; }
-      catch(e){ alert(`「${f.name}」加不進來：${e.message}`); }
-    }
-    draw();
+    if(busy) return; busy=true;
+    try{
+      for(const f of files){
+        const isPdf=/\.pdf$/i.test(f.name)||f.type==='application/pdf';
+        try{
+          if(isPdf){
+            say(`正在轉「${f.name}」…`);
+            const pages=await pdfToImages(f,(i,n)=>say(`正在轉「${f.name}」第 ${i}／${n} 頁…`));
+            let pick=pages.map((_,i)=>i);
+            if(pages.length>1){
+              const ans=prompt(`「${f.name}」有 ${pages.length} 頁。要加哪幾頁？\n\n`
+                +`填頁碼，用逗號分開（例：1,3）；留空＝全部加進來。`,'1');
+              if(ans===null){ say(''); continue; }
+              if(ans.trim()) pick=ans.split(/[,，\s]+/).map(x=>parseInt(x,10)-1).filter(i=>i>=0&&i<pages.length);
+            }
+            for(const i of pick){
+              const nm=pages.length>1?`${f.name}（第 ${i+1} 頁）`:f.name;
+              if(!await planAdd(proj.id,pickBlk,nm,pages[i])) break;
+            }
+          } else {
+            say(`正在處理「${f.name}」…`);
+            const d=await compressImage(f,PLAN_W,PLAN_Q);
+            if(!await planAdd(proj.id,pickBlk,f.name,d)) break;
+          }
+        }catch(e){
+          alert(`「${f.name}」加不進來：${e.message}\n\n`
+            +(isPdf?'PDF 轉換需要網路。離線或轉不成功的話，請先用其他方式把 PDF 存成圖片（JPG／PNG）再丟進來。':''));
+        }
+      }
+    } finally { busy=false; say(''); draw(); }
   };
-  m.onclick=e=>{
+  m.onclick=async e=>{
     const pick=e.target.closest('[data-planpick]'), del=e.target.closest('[data-plandel]');
     if(pick){ pickBlk=pick.dataset.planpick; inp.click(); return; }
     if(del){ const [bid,i]=del.dataset.plandel.split('::');
-      if(confirm('刪掉這張圖面？')){ planDel(proj.id,bid,+i); draw(); } return; }
-    if(e.target.id==='plan-close'||e.target===m){ m.remove(); if(onClose) onClose(); }
+      if(confirm('刪掉這張圖面？')){ await planDel(proj.id,bid,+i); draw(); } return; }
+    if(e.target.id==='plan-close'||e.target===m){ if(busy){ alert('還在處理圖面，請稍候。'); return; } m.remove(); if(onClose) onClose(); }
   };
 }
 function printDoc(proj){
@@ -2611,7 +2711,7 @@ function printDoc(proj){
     <label style="color:var(--ink);font-size:13px"><input type="radio" name="ptax" value="incl"${taxMode==='incl'?' checked':''}> 外加 5% 營業稅（有公司牌開發票）</label>
     <span class="muted" style="font-size:11.5px">＊此設定會記在這個專案，下次列印沿用</span>
     <label style="color:var(--ink);font-size:13px"><input type="checkbox" id="pshowall"${showAll?' checked':''}> 連「沒進度」的項目一起印（不勾＝只印做過的）</label>
-    <button class="btn sub" id="plan-manage" title="附上圖面（只存這台，不會同步）">🖼 圖面${(()=>{const o=loadPlans();let n=0;(proj.blocks||[]).forEach(b=>n+=(o[proj.id+'::'+b.id]||[]).length);return n?`（${n}）`:'';})()}</button>
+    <button class="btn sub" id="plan-manage" title="附上圖面（只存這台，不會同步）">🖼 圖面${(()=>{let n=0;(proj.blocks||[]).forEach(b=>n+=planList(proj.id,b.id).length);return n?`（${n}）`:'';})()}</button>
     ${jobs.length?`<span style="color:var(--ink);font-size:13px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;border-left:1px solid var(--line);padding-left:10px">
       <b style="font-size:12px">同一廠商在別處（併入本單）</b>
       ${jobs.map(x=>`<label style="font-size:12.5px;white-space:nowrap"><input type="checkbox" data-mergejob="${x.proj.id}"${mergeSel.has(x.proj.id)?' checked':''}> ${esc(x.label)} ${money(x.amt)}</label>`).join('')}
@@ -4141,6 +4241,7 @@ function settleOldPeriods(){
 }
 appLockGate(function(){
   normalizeGroups();
+  plansLoad().then(()=>{ if(state.tab==='prog') render(); });   // 圖面存在 IndexedDB，讀進來是非同步的
   render();
   // 補鎖一定要等雲端比對完才做。開機就 save() 會把 savedAt 蓋成「現在」，
   // 這台的舊資料就會贏過雲端上別台剛存的新資料，然後反過來把它覆蓋掉。
