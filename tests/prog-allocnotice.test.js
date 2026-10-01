@@ -89,6 +89,34 @@ const notice=pg=>pg.evaluate(()=>{const n=document.querySelector('#app .notice')
   await pg.close();
 }
 
+// ⑥ 發包分配沒套議價折讓：平常不填就不囉嗦，真的填了要講出來
+{
+  const st=mk([B(2000)]);
+  const {pg}=await open(st);
+  await pg.evaluate(()=>{ state.tab='alloc'; render(); }); await pg.waitForTimeout(400);
+  t('⑥ 沒填簽約總額時不出現這個提醒', !/沒有套議價折讓/.test(await pg.textContent('#app')));
+  await pg.close();
+
+  const st2=mk([B(2000)]);
+  st2.projects[0].signedTotal=8000;        // 明細 9,000，簽約 8,000
+  const {pg:p2}=await open(st2);
+  await p2.evaluate(()=>{ state.tab='alloc'; render(); }); await p2.waitForTimeout(400);
+  const txt=await p2.textContent('#app');
+  t('⑥ 母專案填了就講出來', /沒有套議價折讓/.test(txt));
+  t('⑥ 把兩個數字和差額都寫出來', /\$8,000/.test(txt)&&/\$9,000/.test(txt)&&/差 \$1,000/.test(txt));
+  t('⑥ 並說清楚留 0 就準了', /留 0 或清掉/.test(txt));
+  await p2.close();
+
+  const st3=mk([B(2000)]);
+  st3.projects[1].signedTotal=1800;        // 子專案填了
+  const {pg:p3}=await open(st3);
+  await p3.evaluate(()=>{ state.tab='alloc'; render(); }); await p3.waitForTimeout(400);
+  const t3=await p3.textContent('#app');
+  t('⑥ 子專案填了也要講，並點名是哪一家', /1 個子專案填了簽約總額/.test(t3)&&/自己/.test(t3));
+  t('⑥ 講明是折讓前的錢、比實際要付的多', /折讓前的錢，比你實際要付的多/.test(t3));
+  await p3.close();
+}
+
 await br.close();
 console.log(`\n${ok.length} passed, ${bad.length} failed`);
 if(bad.length){bad.forEach(b=>console.log(' FAIL '+b));process.exit(1);}
