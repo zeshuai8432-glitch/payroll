@@ -18,6 +18,7 @@ NODE_PATH=/opt/node22/lib/node_modules /opt/node22/bin/node prog-smoke2.test.js
 |------|--------|
 | `prog-smoke2.test.js` | 四個分頁渲染、填進度、工序子列轉出、發包分配、期別鎖定，全程無 JS 錯誤 |
 | `prog-donelast.test.js` | 「已完成幾間」讀最新一期（舊期填錯、新期改正後要轉得出去） |
+| `prog-xferin.test.js` | ↙ 從別家轉入（搬量守恆、擋對方已做掉的量）＋ 同一條母細項拆出的工序不得被併成一條 |
 | `prog-blkspan.test.js` | 區塊標題顯示這份實際做幾間（而非照抄母專案的間數）、空區塊的隱藏 |
 | `prog-groupedit.test.js` | 拆成工序的那條，收合那行可直接改名稱／數量／單價（值的邏輯） |
 | `prog-clouddiag.test.js` | 雲端連不上時把真正原因講出來，並提供連線測試 |
