@@ -111,7 +111,7 @@ body.printing #print-overlay{display:block;position:absolute;inset:0;background:
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.10.01h-lockedui';
+const APP_VERSION='vG2026.10.01i-clouddiag';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -844,9 +844,10 @@ function render(){
         <div style="font-size:38px;margin-bottom:10px">☁</div>
         <div style="font-size:16px;margin-bottom:6px">連不到雲端，這台也還沒有本機資料</div>
         <div class="muted" style="font-size:13px;margin-bottom:16px">
-          目前狀態：<b>${esc(cloudStatus||'')}</b><br>
+          ${lastCloudErr?`原因：<b style="color:var(--warn)">${esc(lastCloudErr)}</b><br>`:`目前狀態：<b>${esc(cloudStatus||'')}</b><br>`}
           <b>別急著重建專案</b>——你的資料在雲端，等連得上就會自己下來。</div>
         <button class="btn" id="btn-retrycloud">↻ 再連一次雲端</button>
+        <div style="margin-top:10px"><button class="btn sub" id="btn-clouddiag">🔍 測試連線（查原因）</button></div>
         <div style="margin-top:10px"><button class="btn sub" id="btn-newproj2">我確定要在這台建新專案</button></div></div>`;
       return;
     }
@@ -1985,7 +1986,8 @@ function viewSet(proj){
         （${money(signed)} ÷ ${money(base)}${mode==='actual'?`，分母是<b>簽約當時</b>的明細總額${Number(proj.signedBase)>0?'':'（還沒設，儲存後就以現在的明細為準）'}；目前明細 ${money(vb)}`:'，分母是目前的明細總額'}）
         ${mode==='actual'&&Number(proj.signedBase)>0?` <button class="btn sub sm" id="set-rebase" style="margin-left:4px">重設折數基準</button>`:''}`:''}
     </div>`; })()}
-    <button class="btn" id="set-save">儲存</button></div>
+    <button class="btn" id="set-save">儲存</button>
+    <button class="btn sub" id="btn-clouddiag" style="margin-left:6px">🔍 測試雲端連線</button></div>
   ${(()=>{ const sn=prevSnapshot(); if(!sn) return '';
     const n=sn.state.projects.length, d=new Date(sn.at);
     return `<div class="card" style="border-color:rgba(251,191,36,.5)"><h3>🛟 救回被覆蓋的本機資料</h3>
@@ -2911,11 +2913,12 @@ function setProgInput(proj,blkId,itemId,kind,val){
 }
 
 document.addEventListener('click',async e=>{
-  const t=e.target.closest('[data-tab],[data-editblk],[data-delblk],[data-edititem],[data-delitem],[data-additem],[data-splititem],[data-sortitems],[data-grouptoggle],[data-groupmerge],[data-groupdetect],[data-whtoggle],[data-rttoggle],[data-whtax],[data-whtaxauto],[data-rtamt],[data-selfone],[data-selfrooms],[data-selfrest],[data-selfclear],[data-delmode],[data-delcancel],[data-delall],[data-delnone],[data-delinv],[data-delzero],[data-deldo],#sub-toggle,#sub-close,#sub-go,[data-backfill],[data-backfillcancel],[data-backfillok],[data-addmissblk],#trash-toggle,#trash-clear,[data-trashrestore],[data-trashdrop],#drift-sync,#drift-sync-price,#drift-all,#drift-none,[data-copyinto],[data-copyok],[data-copycancel],[data-xcopy],[data-xcopycancel],[data-xcopyall],[data-xcopyok],[data-xfer],[data-xfercancel],[data-xferok],[data-gedit],[data-batchedit],[data-batchok],[data-batchcancel],[data-batchalledit],[data-batchallok],[data-batchallcancel],[data-itemok],[data-itemcancel],[data-blkok],[data-blkcancel],[data-bapply],[data-gapply],#btn-invrecon,[data-editextra],[data-delextra],#btn-import,#btn-import2,#btn-unlock,#btn-retrycloud,#btn-newproj,#btn-newproj2,#btn-addblk,#btn-addblk-ok,#btn-addperiod,#btn-delperiod,#btn-addextra,#btn-roundup,#settle-toggle,#set-rebase,[data-gotoproj],#btn-print,#btn-setretain,#orphan-fix,#orphan-detach,#proj-groupall,#set-save,#set-taxmode,#proj-dup,#proj-detach,#backup-export,#backup-import-btn,#prev-restore,#prev-export,#proj-del,#cloud-push,#cloud-pull');
+  const t=e.target.closest('[data-tab],[data-editblk],[data-delblk],[data-edititem],[data-delitem],[data-additem],[data-splititem],[data-sortitems],[data-grouptoggle],[data-groupmerge],[data-groupdetect],[data-whtoggle],[data-rttoggle],[data-whtax],[data-whtaxauto],[data-rtamt],[data-selfone],[data-selfrooms],[data-selfrest],[data-selfclear],[data-delmode],[data-delcancel],[data-delall],[data-delnone],[data-delinv],[data-delzero],[data-deldo],#sub-toggle,#sub-close,#sub-go,[data-backfill],[data-backfillcancel],[data-backfillok],[data-addmissblk],#trash-toggle,#trash-clear,[data-trashrestore],[data-trashdrop],#drift-sync,#drift-sync-price,#drift-all,#drift-none,[data-copyinto],[data-copyok],[data-copycancel],[data-xcopy],[data-xcopycancel],[data-xcopyall],[data-xcopyok],[data-xfer],[data-xfercancel],[data-xferok],[data-gedit],[data-batchedit],[data-batchok],[data-batchcancel],[data-batchalledit],[data-batchallok],[data-batchallcancel],[data-itemok],[data-itemcancel],[data-blkok],[data-blkcancel],[data-bapply],[data-gapply],#btn-invrecon,[data-editextra],[data-delextra],#btn-import,#btn-import2,#btn-unlock,#btn-retrycloud,#btn-clouddiag,#btn-newproj,#btn-newproj2,#btn-addblk,#btn-addblk-ok,#btn-addperiod,#btn-delperiod,#btn-addextra,#btn-roundup,#settle-toggle,#set-rebase,[data-gotoproj],#btn-print,#btn-setretain,#orphan-fix,#orphan-detach,#proj-groupall,#set-save,#set-taxmode,#proj-dup,#proj-detach,#backup-export,#backup-import-btn,#prev-restore,#prev-export,#proj-del,#cloud-push,#cloud-pull');
   if(!t)return;
   const proj=curProj();
   if(t.dataset.tab){state.tab=t.dataset.tab;save();render();return;}
   if(t.id==='btn-unlock'||t.id==='btn-retrycloud'){ cloudLocked=false; initCloud(); return; }
+  if(t.id==='btn-clouddiag'){ cloudDiag(); return; }
   if(t.id==='btn-import'||t.id==='btn-import2'){document.getElementById('xlsx-file').click();return;}
   if(t.id==='btn-newproj'||t.id==='btn-newproj2'){
     const name=prompt('專案名稱（例：王記隔間工程、A工地外包）'); if(name===null)return;
@@ -4080,6 +4083,20 @@ async function fetchT(url,opt={},ms=15000){
   const c=new AbortController();const t=setTimeout(()=>c.abort(),ms);
   try{return await fetch(url,{...opt,signal:c.signal});}finally{clearTimeout(t);}
 }
+let lastCloudErr='';   // 最後一次雲端失敗的真正原因（給畫面與診斷用）
+// fetch 失敗的原因很多種，全部顯示成「離線」等於把線索丟掉。翻成看得懂的話。
+function cloudErrText(e){
+  if(!e) return '不明原因';
+  if(e.name==='AbortError') return '連線逾時（超過 15 秒沒回應）——訊號太慢，或被網路／防火牆擋住';
+  const m=String(e.message||e);
+  if(/Failed to fetch|NetworkError|Load failed/i.test(m))
+    return '連不出去——這台沒網路，或被 VPN／廣告阻擋器／公司網路擋掉了';
+  if(/^HTTP 40[13]/.test(m)) return m+'：雲端拒絕這次存取（金鑰或權限設定問題）';
+  if(/^HTTP 404/.test(m)) return m+'：雲端上還沒有資料';
+  if(/^HTTP 5/.test(m)) return m+'：Google 那邊暫時有問題，等一下再試';
+  if(/^HTTP /.test(m)) return m;
+  return m;
+}
 async function cloudPull(){
   const r=await fetchT(FS_URL);
   if(r.status===404)return null;
@@ -4206,9 +4223,31 @@ async function initCloud(){
     else setCloud('已同步');
     if(!state.projects.length) render();   // 還是空的：把上面那張說明卡重畫成正確狀態
   }catch(e){
-    if(e&&e.locked){cloudLocked=true;setCloud('已加密未解鎖（點此輸入密碼）');}
-    else setCloud('離線（僅本機）');
+    if(e&&e.locked){cloudLocked=true;lastCloudErr='';setCloud('已加密未解鎖（點此輸入密碼）');}
+    else { lastCloudErr=cloudErrText(e); setCloud('離線（僅本機）'); }
     if(!state.projects.length) render();   // 本機沒資料時，要讓畫面講清楚是鎖住還是連不上
+  }
+}
+// 連不上的時候要查得出原因：直接打一次雲端，把拿到什麼原原本本講出來
+async function cloudDiag(){
+  const t0=Date.now();
+  try{
+    const r=await fetchT(FS_URL,{},20000);
+    const ms=Date.now()-t0;
+    let body=''; try{ body=(await r.text()).slice(0,300); }catch(e){}
+    alert(`連線測試結果\n\n`
+      +`HTTP 狀態：${r.status} ${r.statusText||''}\n`
+      +`耗時：${ms} ms\n\n`
+      +(r.ok?`✓ 連得到雲端。資料前 300 字：\n${body}`
+            :`✗ 雲端回了錯誤。回應內容：\n${body}`)
+      +`\n\n（把這段截圖給我，我就知道問題在哪。）`);
+  }catch(e){
+    alert(`連線測試結果\n\n✗ 連不出去\n\n`
+      +`錯誤類型：${e&&e.name||'?'}\n`
+      +`訊息：${e&&e.message||e}\n`
+      +`耗時：${Date.now()-t0} ms\n\n`
+      +`判讀：${cloudErrText(e)}\n\n`
+      +`（把這段截圖給我，我就知道問題在哪。）`);
   }
 }
 document.getElementById('cloud-status').onclick=()=>{
