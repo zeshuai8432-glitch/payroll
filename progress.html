@@ -109,7 +109,7 @@ body.printing #print-overlay{display:block;position:absolute;inset:0;background:
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.10.01-blkcap';
+const APP_VERSION='vG2026.10.01b-groupedit';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -1189,11 +1189,12 @@ function viewItems(proj){
         h+=`<tr style="background:var(--card2)">
           ${picking?`<td><input type="checkbox" data-delpick-group="${it.groupId}" ${subs.every(x=>delSel.has(x.id))?'checked':''} style="width:16px;height:16px"></td>`:''}
           <td>${esc(it.no==='增'?'':it.no)}</td>
-          <td><button class="btn sub sm" data-grouptoggle="${it.groupId}" style="border:none;background:none;padding:0 6px 0 0;color:var(--accent)">${open?'▾':'▸'}</button><b>${esc(it.groupName||it.name)}</b>${subs.slice(0,4).map(x=>{const st=stageOf(x.name,it.groupName);const c=stageColor(st);return `<span class="tag" style="background:${c}22;border-color:${c}88;color:${c};margin-left:4px">${esc(st)}</span>`;}).join('')}${subs.length>4?`<span class="tag" title="共 ${subs.length} 道工序">+${subs.length-4}</span>`:''}<span class="tag" style="background:rgba(99,102,241,.22);border-color:rgba(129,140,248,.5);color:#c7d2fe">${subs.length} 道工序</span></td>
+          <td><button class="btn sub sm" data-grouptoggle="${it.groupId}" style="border:none;background:none;padding:0 6px 0 0;color:var(--accent)">${open?'▾':'▸'}</button>${picking?`<b>${esc(it.groupName||it.name)}</b>`:`<input class="pin" data-gname="${b.id}::${it.groupId}" value="${esc(it.groupName||it.name)}" style="min-width:260px;max-width:100%;font-weight:700" title="在這裡改名稱，這 ${subs.length} 道工序的名稱前綴會一起改，不用先合回">`}${subs.slice(0,4).map(x=>{const st=stageOf(x.name,it.groupName);const c=stageColor(st);return `<span class="tag" style="background:${c}22;border-color:${c}88;color:${c};margin-left:4px">${esc(st)}</span>`;}).join('')}${subs.length>4?`<span class="tag" title="共 ${subs.length} 道工序">+${subs.length-4}</span>`:''}<span class="tag" style="background:rgba(99,102,241,.22);border-color:rgba(129,140,248,.5);color:#c7d2fe">${subs.length} 道工序</span></td>
           <td>${esc(it.unit)}</td>
           <td class="num">${picking?(sameQty?qfmt(gQty):'<span class="muted" style="font-size:11px">各段不同</span>')
             :`<input class="pin" data-gqty="${b.id}::${it.groupId}" inputmode="decimal" value="${sameQty?esc(String(gQty)):''}" placeholder="${sameQty?'':'各段不同'}" style="width:92px;text-align:right" title="在這裡改數量，這 ${subs.length} 道工序會一起改（可填算式）">`}</td>
-          <td class="num">${sameQty?qfmt(gPrice):'<span class="muted" style="font-size:11px">—</span>'}</td>
+          <td class="num">${picking||!sameQty?(sameQty?qfmt(gPrice):'<span class="muted" style="font-size:11px">—</span>')
+            :`<input class="pin" data-gprice="${b.id}::${it.groupId}" inputmode="decimal" value="${esc(String(gPrice))}" style="width:86px;text-align:right" title="在這裡改單價，會照各道工序原本的比例分回去（目前 ${subs.map(x=>qfmt(x.price)).join('＋')}）。可填算式。">`}</td>
           <td class="num"><b>${qfmt(gAmt)}</b></td>
           <td class="muted" style="font-size:12px">${esc(it.remark||'')}</td>
           <td><button class="btn sub sm" data-groupmerge="${b.id}::${it.groupId}" title="取消拆分，合回一條">↩ 合回</button></td></tr>`;
@@ -3613,6 +3614,45 @@ document.addEventListener('change',e=>{
     render(); return;
   }
   if(t.dataset.xcopyblk){ xcopyBlk=t.value; render(); return; }
+  if(t.dataset.gname){
+    // 收合那行直接改名稱：整組的名字跟各道工序的前綴一起換，不用先合回
+    const [blkId,gid]=t.dataset.gname.split('::');
+    const b=proj.blocks.find(x=>x.id===blkId); if(!b) return;
+    const subs=b.items.filter(x=>x.groupId===gid); if(!subs.length) return;
+    const nv=String(t.value||'').trim();
+    if(!nv){ alert('名稱不能空白。'); render(); return; }
+    const old=subs[0].groupName||'';
+    if(nv===old){ return; }
+    const changes=subs.map(x=>({it:x,before:{name:x.name,unit:x.unit,qty:x.qty,price:x.price}}));
+    subs.forEach(x=>{
+      const st=stageOf(x.name,old);          // 原本的工序名（骨架／封板…）
+      x.groupName=nv;
+      x.name=st?`${nv}-${st}`:nv;
+    });
+    syncKidsAfterEdit(proj,changes);
+    save(); render(); return;
+  }
+  if(t.dataset.gprice){
+    // 收合那行直接改單價：照各道工序原本的比例分回去，總價才對得起來
+    const [blkId,gid]=t.dataset.gprice.split('::');
+    const b=proj.blocks.find(x=>x.id===blkId); if(!b) return;
+    const subs=b.items.filter(x=>x.groupId===gid); if(!subs.length) return;
+    const raw=String(t.value||'').trim();
+    if(raw===''){ render(); return; }
+    const nv=evalExpr(raw);
+    if(!(nv>=0)){ alert('單價要是數字（可填算式）。'); render(); return; }
+    const cur=subs.reduce((a,x)=>a+(Number(x.price)||0),0);
+    const changes=subs.map(x=>({it:x,before:{name:x.name,unit:x.unit,qty:x.qty,price:x.price}}));
+    let left=+nv.toFixed(2);
+    subs.forEach((x,i)=>{
+      let v;
+      if(i===subs.length-1) v=+left.toFixed(2);                  // 最後一道吸收四捨五入的零頭
+      else { v=cur>0?+(nv*(Number(x.price)||0)/cur).toFixed(2):+(nv/subs.length).toFixed(2); left-=v; }
+      x.price=v; x.priceExpr=''; x.amount=(Number(x.qty)||0)*v;
+    });
+    syncKidsAfterEdit(proj,changes);
+    save(); render(); return;
+  }
   if(t.dataset.gqty){
     // 拆開的工序共用同一個數量，在收合那行改一次，整組一起改
     const [blkId,gid]=t.dataset.gqty.split('::');
