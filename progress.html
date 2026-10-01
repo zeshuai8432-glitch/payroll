@@ -114,7 +114,7 @@ tr.hilite>td{animation:hlflash 1s ease-in-out 3}
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.10.01n-allocnotice';
+const APP_VERSION='vG2026.10.01p-allocsigned';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -1920,6 +1920,18 @@ function viewAlloc(proj){
     <div class="stat"><div class="l">剩餘（自辦＋毛利）</div><div class="v" style="color:${ba.totLeft<0?'#fca5a5':'var(--ok)'}">${money(ba.totLeft)}</div>
       <div class="muted" style="font-size:11px;margin-top:2px">${ba.totMother?`占 ${(100*ba.totLeft/ba.totMother).toFixed(1)}%`:''}</div></div>
   </div>
+  ${(()=>{
+    // 發包分配一律用明細的 數量×單價 算，沒有套議價折讓。代工母子專案通常不議價，
+    // 所以平常沒差；真的填了簽約總額就會差一截，而且差在看不見的地方——說出來。
+    const sg=Number(proj.signedTotal)||0, vb=vbaseOf(proj);
+    const kidsSigned=childProjects(proj.id).filter(k=>(Number(k.signedTotal)||0)>0);
+    if(!(sg>0&&Math.abs(sg-vb)>0.5)&&!kidsSigned.length) return '';
+    return `<div class="notice" style="border-color:rgba(251,191,36,.5);background:rgba(251,191,36,.12);color:#fcd34d;margin-bottom:10px">
+      <b>⚠ 下面的金額沒有套議價折讓，是明細原價</b>（數量 × 單價）。
+      ${sg>0&&Math.abs(sg-vb)>0.5?`這份母專案填了簽約總額 ${money(sg)}，但明細加起來是 ${money(vb)}，差 ${money(vb-sg)}——「母合約金額」那欄顯示的是 ${money(vb)}，不是你實際收得到的 ${money(sg)}。`:''}
+      ${kidsSigned.length?`有 ${kidsSigned.length} 個子專案填了簽約總額（${kidsSigned.map(k=>esc(k.vendor||k.name)).join('、')}），「已發包」算的是折讓前的錢，比你實際要付的多。`:''}
+      <div style="font-size:11.5px;margin-top:4px">代工發包通常不用折讓。如果你不是刻意要用，把「簽約總額」留 0 或清掉，這些數字就是準的。</div></div>`;
+  })()}
   ${ba.over?`<div class="notice" style="border-color:rgba(248,113,113,.55);background:rgba(248,113,113,.12);color:#fca5a5;margin-bottom:10px">
     <b>⚠ 有 ${ba.over} 個房型發包金額超過母合約</b>——發出去的比收得到的還多。
     多半是同一塊工作重複發包給兩家，或單價談太高。下面紅底的就是。</div>`:''}

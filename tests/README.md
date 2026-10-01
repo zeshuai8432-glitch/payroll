@@ -28,7 +28,7 @@ NODE_PATH=/opt/node22/lib/node_modules /opt/node22/bin/node prog-smoke2.test.js
 | `prog-noteedit.test.js` | 備註點一下就能改（群組一起改／工序個別改／不一樣時先問） |
 | `prog-groupedit2.test.js` | 同上的操作方式：平常是文字，點一下才變輸入框 |
 | `prog-blkcap.test.js` | 房型層級的發包金額上限（子合約可任意重寫、超過才報錯） |
-| `prog-allocnotice.test.js` | 每個分頁都看得到的提示列：合併過的子合約不誤報超額、真超額要報、對不到母合約的子區塊要點出來 |
+| `prog-allocnotice.test.js` | 每個分頁都看得到的提示列：合併過的子合約不誤報超額、真超額要報、對不到母合約的子區塊要點出來、填了議價折讓要講明數字沒套 |
 | `prog-xcopyfind.test.js` | 抓細項說「已經有了」卻找不到：帶我去看、強制抓、回收桶優先、拆成工序的比對 |
 | `prog-printas.test.js` | 多條細項在請款單上併成一行（資料仍逐條，發包分配不受影響） |
 | `prog-printas2.test.js` | 印作要跟著發包走、單條當純改名用、批次設定（代工母專案一條對一條不動結構） |
