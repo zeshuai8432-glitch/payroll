@@ -111,7 +111,7 @@ body.printing #print-overlay{display:block;position:absolute;inset:0;background:
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.10.01g-plansidb';
+const APP_VERSION='vG2026.10.01h-lockedui';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -825,6 +825,31 @@ function render(){
     ||'<option value="">（尚無專案）</option>';
   const proj=curProj();
   if(!proj){
+    // 一台新裝置上，雲端資料是加密的、或根本連不上，這時候本機當然沒有專案。
+    // 以前這裡一律顯示「還沒有專案」，等於告訴使用者資料不見了——其實只是沒解鎖。
+    // 而且手機瀏覽器常常把開頁時自動跳的密碼框擋掉，使用者連密碼都沒機會輸入。
+    if(cloudLocked){
+      app.innerHTML=`<div class="card" style="text-align:center;padding:40px 20px;border-color:rgba(251,191,36,.55)">
+        <div style="font-size:38px;margin-bottom:10px">🔒</div>
+        <div style="font-size:16px;margin-bottom:6px">雲端資料已加密，還沒解鎖</div>
+        <div class="muted" style="font-size:13px;margin-bottom:16px">
+          <b>你的資料還在</b>，只是這台裝置還沒輸入過解鎖密碼，所以讀不出來。<br>
+          （手機瀏覽器常會擋掉開頁時自動跳出的密碼框，所以要自己按一下。）</div>
+        <button class="btn" id="btn-unlock" style="font-size:15px;padding:10px 22px">🔓 輸入密碼解鎖</button>
+        <div class="muted" style="font-size:12px;margin-top:12px">密碼跟 payroll 薪資系統是同一組。</div></div>`;
+      return;
+    }
+    if(/離線|失敗|連線中/.test(cloudStatus||'')){
+      app.innerHTML=`<div class="card" style="text-align:center;padding:40px 20px">
+        <div style="font-size:38px;margin-bottom:10px">☁</div>
+        <div style="font-size:16px;margin-bottom:6px">連不到雲端，這台也還沒有本機資料</div>
+        <div class="muted" style="font-size:13px;margin-bottom:16px">
+          目前狀態：<b>${esc(cloudStatus||'')}</b><br>
+          <b>別急著重建專案</b>——你的資料在雲端，等連得上就會自己下來。</div>
+        <button class="btn" id="btn-retrycloud">↻ 再連一次雲端</button>
+        <div style="margin-top:10px"><button class="btn sub" id="btn-newproj2">我確定要在這台建新專案</button></div></div>`;
+      return;
+    }
     app.innerHTML=`<div class="card" style="text-align:center;padding:44px 20px">
       <div style="font-size:38px;margin-bottom:10px">📐</div>
       <div style="font-size:16px;margin-bottom:6px">還沒有專案</div>
@@ -2886,10 +2911,11 @@ function setProgInput(proj,blkId,itemId,kind,val){
 }
 
 document.addEventListener('click',async e=>{
-  const t=e.target.closest('[data-tab],[data-editblk],[data-delblk],[data-edititem],[data-delitem],[data-additem],[data-splititem],[data-sortitems],[data-grouptoggle],[data-groupmerge],[data-groupdetect],[data-whtoggle],[data-rttoggle],[data-whtax],[data-whtaxauto],[data-rtamt],[data-selfone],[data-selfrooms],[data-selfrest],[data-selfclear],[data-delmode],[data-delcancel],[data-delall],[data-delnone],[data-delinv],[data-delzero],[data-deldo],#sub-toggle,#sub-close,#sub-go,[data-backfill],[data-backfillcancel],[data-backfillok],[data-addmissblk],#trash-toggle,#trash-clear,[data-trashrestore],[data-trashdrop],#drift-sync,#drift-sync-price,#drift-all,#drift-none,[data-copyinto],[data-copyok],[data-copycancel],[data-xcopy],[data-xcopycancel],[data-xcopyall],[data-xcopyok],[data-xfer],[data-xfercancel],[data-xferok],[data-gedit],[data-batchedit],[data-batchok],[data-batchcancel],[data-batchalledit],[data-batchallok],[data-batchallcancel],[data-itemok],[data-itemcancel],[data-blkok],[data-blkcancel],[data-bapply],[data-gapply],#btn-invrecon,[data-editextra],[data-delextra],#btn-import,#btn-import2,#btn-newproj,#btn-newproj2,#btn-addblk,#btn-addblk-ok,#btn-addperiod,#btn-delperiod,#btn-addextra,#btn-roundup,#settle-toggle,#set-rebase,[data-gotoproj],#btn-print,#btn-setretain,#orphan-fix,#orphan-detach,#proj-groupall,#set-save,#set-taxmode,#proj-dup,#proj-detach,#backup-export,#backup-import-btn,#prev-restore,#prev-export,#proj-del,#cloud-push,#cloud-pull');
+  const t=e.target.closest('[data-tab],[data-editblk],[data-delblk],[data-edititem],[data-delitem],[data-additem],[data-splititem],[data-sortitems],[data-grouptoggle],[data-groupmerge],[data-groupdetect],[data-whtoggle],[data-rttoggle],[data-whtax],[data-whtaxauto],[data-rtamt],[data-selfone],[data-selfrooms],[data-selfrest],[data-selfclear],[data-delmode],[data-delcancel],[data-delall],[data-delnone],[data-delinv],[data-delzero],[data-deldo],#sub-toggle,#sub-close,#sub-go,[data-backfill],[data-backfillcancel],[data-backfillok],[data-addmissblk],#trash-toggle,#trash-clear,[data-trashrestore],[data-trashdrop],#drift-sync,#drift-sync-price,#drift-all,#drift-none,[data-copyinto],[data-copyok],[data-copycancel],[data-xcopy],[data-xcopycancel],[data-xcopyall],[data-xcopyok],[data-xfer],[data-xfercancel],[data-xferok],[data-gedit],[data-batchedit],[data-batchok],[data-batchcancel],[data-batchalledit],[data-batchallok],[data-batchallcancel],[data-itemok],[data-itemcancel],[data-blkok],[data-blkcancel],[data-bapply],[data-gapply],#btn-invrecon,[data-editextra],[data-delextra],#btn-import,#btn-import2,#btn-unlock,#btn-retrycloud,#btn-newproj,#btn-newproj2,#btn-addblk,#btn-addblk-ok,#btn-addperiod,#btn-delperiod,#btn-addextra,#btn-roundup,#settle-toggle,#set-rebase,[data-gotoproj],#btn-print,#btn-setretain,#orphan-fix,#orphan-detach,#proj-groupall,#set-save,#set-taxmode,#proj-dup,#proj-detach,#backup-export,#backup-import-btn,#prev-restore,#prev-export,#proj-del,#cloud-push,#cloud-pull');
   if(!t)return;
   const proj=curProj();
   if(t.dataset.tab){state.tab=t.dataset.tab;save();render();return;}
+  if(t.id==='btn-unlock'||t.id==='btn-retrycloud'){ cloudLocked=false; initCloud(); return; }
   if(t.id==='btn-import'||t.id==='btn-import2'){document.getElementById('xlsx-file').click();return;}
   if(t.id==='btn-newproj'||t.id==='btn-newproj2'){
     const name=prompt('專案名稱（例：王記隔間工程、A工地外包）'); if(name===null)return;
@@ -4178,9 +4204,11 @@ async function initCloud(){
     if(remote&&(remote.savedAt||0)>(state.savedAt||0)){applyRemote(remote);setCloud('已同步（載入雲端）');}
     else if((state.savedAt||0)>((remote&&remote.savedAt)||0)&&state.projects.length){setCloud('已連線');schedulePush();}
     else setCloud('已同步');
+    if(!state.projects.length) render();   // 還是空的：把上面那張說明卡重畫成正確狀態
   }catch(e){
     if(e&&e.locked){cloudLocked=true;setCloud('已加密未解鎖（點此輸入密碼）');}
     else setCloud('離線（僅本機）');
+    if(!state.projects.length) render();   // 本機沒資料時，要讓畫面講清楚是鎖住還是連不上
   }
 }
 document.getElementById('cloud-status').onclick=()=>{

@@ -20,6 +20,7 @@ NODE_PATH=/opt/node22/lib/node_modules /opt/node22/bin/node prog-smoke2.test.js
 | `prog-donelast.test.js` | 「已完成幾間」讀最新一期（舊期填錯、新期改正後要轉得出去） |
 | `prog-blkspan.test.js` | 區塊標題顯示這份實際做幾間（而非照抄母專案的間數）、空區塊的隱藏 |
 | `prog-groupedit.test.js` | 拆成工序的那條，收合那行可直接改名稱／數量／單價（值的邏輯） |
+| `prog-lockedui.test.js` | 新裝置上沒本機資料時，要分清「加密沒解鎖」「連不上」「真的沒資料」 |
 | `prog-plans.test.js` | 圖面附件：存本機不同步、按房型穿插列印、空間滿的處理 |
 | `prog-printnote.test.js` | 請款單印出備註（放名稱底下、濾掉系統自動寫的轉出紀錄） |
 | `prog-noteedit.test.js` | 備註點一下就能改（群組一起改／工序個別改／不一樣時先問） |
