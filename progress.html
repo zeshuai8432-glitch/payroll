@@ -114,7 +114,7 @@ tr.hilite>td{animation:hlflash 1s ease-in-out 3}
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.10.01q-backupplans';
+const APP_VERSION='vG2026.10.01r-copyno';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -3703,9 +3703,23 @@ document.addEventListener('click',async e=>{
     const dst=proj.blocks.find(x=>x.id===t.dataset.copyok);if(!dst)return;
     const srcId=(document.getElementById('copy-src')||{}).value;
     const src=proj.blocks.find(x=>x.id===srcId);if(!src){copyInto=null;render();return;}
-    src.items.forEach(it=>dst.items.push({id:uid(),no:'增',tag:'',chapter:it.chapter||'',name:it.name,unit:it.unit,qty:it.qty,qtyExpr:it.qtyExpr||'',price:it.price,priceExpr:it.priceExpr||'',amount:it.qty*it.price,remark:it.remark||''}));
+    // 同名工序群組要併進目的區塊已經有的那一組，不要各自為政
+    const gmap={};
+    dst.items.forEach(x=>{ if(x.groupId&&x.groupName) gmap[x.groupName]=x.groupId; });
+    src.items.forEach(it=>{
+      // 項次／追加旗標照來源帶。原本寫死 no:'增'，而 isExtraItem 把「增」當成追加工程：
+      // 追加會跳出折讓的分母，也不算進發包分配的「母合約金額」——複製過來的錢在
+      // 預算核對裡等於不存在。項次也一併不見，智慧排序只能把它們丟到最後。
+      const ni={ id:uid(), no:it.no||'', tag:'', chapter:it.chapter||'', name:it.name, unit:it.unit,
+        qty:it.qty, qtyExpr:it.qtyExpr||'', price:it.price, priceExpr:it.priceExpr||'',
+        amount:(Number(it.qty)||0)*(Number(it.price)||0), remark:it.remark||'' };
+      if(it.extra!==undefined) ni.extra=it.extra; else if(String(it.no||'').trim()==='增') ni.extra=true;
+      if(it.printAs) ni.printAs=it.printAs;
+      if(it.groupName){ ni.groupName=it.groupName; ni.groupId=gmap[it.groupName]||(gmap[it.groupName]=uid()); }
+      dst.items.push(ni);
+    });
     copyInto=null; save(); render();
-    alert(`已從「${src.name}」複製 ${src.items.length} 條細項過來（單價一併帶入，需要不同再改）。`);
+    alert(`已從「${src.name}」複製 ${src.items.length} 條細項過來。\n\n項次、章節、單價、列印合併名稱都照原本帶過來，需要不同再改。`);
     return;
   }
   if(t.dataset.sortitems){
