@@ -111,7 +111,7 @@ body.printing #print-overlay{display:block;position:absolute;inset:0;background:
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.10.01i-clouddiag';
+const APP_VERSION='vG2026.10.01j-unlockfix';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -837,6 +837,22 @@ function render(){
           （手機瀏覽器常會擋掉開頁時自動跳出的密碼框，所以要自己按一下。）</div>
         <button class="btn" id="btn-unlock" style="font-size:15px;padding:10px 22px">🔓 輸入密碼解鎖</button>
         <div class="muted" style="font-size:12px;margin-top:12px">密碼跟 payroll 薪資系統是同一組。</div></div>`;
+      return;
+    }
+    // 抓得到雲端、但這台解不開（瀏覽器太舊）。這跟「沒資料」完全不同，
+    // 而且在這台新建專案也傳不上去（上傳已被封鎖），所以不給建，只給出路。
+    if(cloudNoDecomp){
+      app.innerHTML=`<div class="card" style="text-align:center;padding:40px 20px;border-color:rgba(251,191,36,.55)">
+        <div style="font-size:38px;margin-bottom:10px">📵</div>
+        <div style="font-size:16px;margin-bottom:6px">這台的瀏覽器太舊，讀不出雲端資料</div>
+        <div class="muted" style="font-size:13px;margin-bottom:16px">
+          <b>你的資料還在雲端，沒有不見。</b>雲端也連得上（已經抓到了），<br>
+          只是這台瀏覽器缺少解壓縮功能，沒辦法把資料還原。<br><br>
+          解法：把這台的系統／瀏覽器更新（iPhone 需要 iOS 16.4 以上），<br>
+          或先用平板、電腦開。<br><br>
+          <b>這台不會上傳任何東西</b>，所以不用擔心會蓋掉雲端那份。</div>
+        <button class="btn" id="btn-retrycloud">↻ 再連一次雲端</button>
+        <div style="margin-top:10px"><button class="btn sub" id="btn-clouddiag">🔍 測試連線（查原因）</button></div></div>`;
       return;
     }
     if(/離線|失敗|連線中/.test(cloudStatus||'')){
@@ -2917,7 +2933,11 @@ document.addEventListener('click',async e=>{
   if(!t)return;
   const proj=curProj();
   if(t.dataset.tab){state.tab=t.dataset.tab;save();render();return;}
-  if(t.id==='btn-unlock'||t.id==='btn-retrycloud'){ cloudLocked=false; initCloud(); return; }
+  if(t.id==='btn-unlock'||t.id==='btn-retrycloud'){
+    cloudLocked=false; allowUnlockPrompt=true;      // 使用者按的，這時候問密碼才不會被擋
+    initCloud().finally(()=>{ allowUnlockPrompt=false; });
+    return;
+  }
   if(t.id==='btn-clouddiag'){ cloudDiag(); return; }
   if(t.id==='btn-import'||t.id==='btn-import2'){document.getElementById('xlsx-file').click();return;}
   if(t.id==='btn-newproj'||t.id==='btn-newproj2'){
@@ -4045,35 +4065,63 @@ async function e2eEncrypt(plain){
   const ct=new Uint8Array(await crypto.subtle.encrypt({name:'AES-GCM',iv},key,body));
   return JSON.stringify({v:'PMENC1',z,iv:_b64(iv),ct:_b64(ct)});
 }
+// 加密端有判斷 CompressionStream 才壓縮，解密端原本沒判斷——舊瀏覽器（Safari 16.4 以前）
+// 沒有 DecompressionStream，解壓那行會直接丟 ReferenceError，再被當成「密碼不對」，
+// 使用者輸入正確密碼也永遠進不去。這裡先認出來並講實話。
+function _assertCanDecomp(o){
+  if(o&&o.z&&typeof DecompressionStream==='undefined'){
+    const err=new Error('這台瀏覽器太舊，解不開壓縮過的雲端資料（需要 Safari 16.4 以上 / 較新的 Chrome）');
+    err.nodecomp=true; throw err;
+  }
+}
 async function _tryE2eDecrypt(key,blob){
   const o=JSON.parse(blob);
+  // 加密端有判斷 CompressionStream 才壓縮，解密端卻沒判斷——舊瀏覽器（Safari 16.4 以前）
+  // 沒有 DecompressionStream，這裡會直接丟 ReferenceError，然後被當成「密碼不對」，
+  // 使用者輸入正確密碼也永遠進不去。先認出來並講實話。
+  _assertCanDecomp(o);
   let pt=new Uint8Array(await crypto.subtle.decrypt({name:'AES-GCM',iv:_ub64(o.iv)},key,_ub64(o.ct)));
   if(o.z)pt=await _gzip(pt,'d');
   return new TextDecoder().decode(pt);
 }
+// 開頁時自動跳 prompt 會被手機瀏覽器擋掉（不是使用者操作觸發的），
+// 擋掉之後有些瀏覽器回 null、有些直接丟例外，結果就是一片空白又看不出原因。
+// 所以開頁一律不問密碼，標成「未解鎖」讓畫面出現解鎖按鈕；按鈕是使用者操作，問得到。
+let allowUnlockPrompt=false;
 async function e2eDecrypt(str){
   if(!isEncBlob(str))return str;
+  try{ _assertCanDecomp(JSON.parse(str)); }catch(e){ if(e&&e.nodecomp) throw e; }
   let key=await _loadE2eKey();
-  if(key){try{return await _tryE2eDecrypt(key,str);}catch(e){_encKey=null;}}
+  if(key){
+    try{return await _tryE2eDecrypt(key,str);}
+    catch(e){ if(e&&e.nodecomp) throw e; _encKey=null; }
+  }
+  if(!allowUnlockPrompt){ const err=new Error('已加密，尚未解鎖');err.locked=true;throw err; }
   if(_unlockP){await _unlockP;return e2eDecrypt(str);}
   let done;_unlockP=new Promise(r=>done=r);
   try{
     while(true){
-      const p=prompt('☁ 雲端資料已加密。\n請輸入與 payroll 共用的解鎖密碼：');
-      if(p===null){const err=new Error('已加密，尚未解鎖');err.locked=true;throw err;}
+      let p;
+      try{ p=prompt('☁ 雲端資料已加密。\n請輸入與 payroll 共用的解鎖密碼：'); }
+      catch(e){ p=null; }   // 瀏覽器擋掉 prompt 時當成取消，不要讓例外變成「連不到雲端」
+      if(p===null||p===undefined){const err=new Error('已加密，尚未解鎖');err.locked=true;throw err;}
       const k=await _deriveE2eKey(p);
       try{
         const out=await _tryE2eDecrypt(k,str);
         await _storeE2eKey(k);
         try{localStorage.setItem(LS_E2E_ON,'1');}catch(e){}
         return out;
-      }catch(e){alert('密碼不對，請再試一次。');}
+      }catch(e){
+        if(e&&e.nodecomp) throw e;            // 不是密碼的問題，別叫人一直重打
+        alert('密碼不對，請再試一次。');
+      }
     }
   }finally{done();_unlockP=null;}
 }
 
 /* ═══════════ Firestore 雲端同步 ═══════════ */
 let cloudStatus='連線中…',lastUpdateTime='',pushTimer=null,cloudLocked=false,pushing=false,pendingPush=false;
+let cloudNoDecomp=false;   // 這台解不開雲端資料（瀏覽器太舊）→ 一律禁止上傳，免得空白蓋掉雲端
 function setCloud(s){
   cloudStatus=s;
   const el=document.getElementById('cloud-status');
@@ -4102,13 +4150,15 @@ async function cloudPull(){
   if(r.status===404)return null;
   if(!r.ok)throw new Error('HTTP '+r.status);
   const jd=await r.json();
-  lastUpdateTime=jd.updateTime||'';
   const raw=jd.fields&&jd.fields.json&&jd.fields.json.stringValue||'';
-  if(!raw)return null;
+  if(!raw){lastUpdateTime=jd.updateTime||'';return null;}
+  // lastUpdateTime 要等「真的看懂雲端內容」才寫。抓得到但解不開（沒解鎖、瀏覽器太舊、
+  // 格式不符）也算沒看過；否則上傳那邊會以為自己看過雲端，直接整份蓋掉別台存的東西。
   const txt=await e2eDecrypt(raw); // 密文會要求解鎖；取消會丟 locked
-  cloudLocked=false;
   const d=JSON.parse(txt);
   if(!d||!Array.isArray(d.projects))throw new Error('雲端資料格式不符');
+  lastUpdateTime=jd.updateTime||'';
+  cloudLocked=false;
   return d;
 }
 // 被雲端覆蓋前，先把這台原本的資料留一份在本機。
@@ -4158,6 +4208,7 @@ window.addEventListener('beforeunload',e=>{
 });
 async function doPush(){
   if(pushing){pendingPush=true;return;}
+  if(cloudNoDecomp){setCloud('這台解不開雲端資料，改動只留本機（不上傳，避免蓋掉雲端）');return;}
   if(cloudLocked){setCloud('已加密未解鎖（改動只在本機）');return;}
   pushing=true;
   try{
@@ -4215,7 +4266,7 @@ async function doPush(){
   }
 }
 async function initCloud(){
-  setCloud('連線中…');
+  setCloud('連線中…'); cloudNoDecomp=false;
   try{
     const remote=await cloudPull();
     if(remote&&(remote.savedAt||0)>(state.savedAt||0)){applyRemote(remote);setCloud('已同步（載入雲端）');}
@@ -4224,6 +4275,7 @@ async function initCloud(){
     if(!state.projects.length) render();   // 還是空的：把上面那張說明卡重畫成正確狀態
   }catch(e){
     if(e&&e.locked){cloudLocked=true;lastCloudErr='';setCloud('已加密未解鎖（點此輸入密碼）');}
+    else if(e&&e.nodecomp){ cloudNoDecomp=true; lastCloudErr=e.message; setCloud('這台瀏覽器太舊，解不開雲端資料'); }
     else { lastCloudErr=cloudErrText(e); setCloud('離線（僅本機）'); }
     if(!state.projects.length) render();   // 本機沒資料時，要讓畫面講清楚是鎖住還是連不上
   }
@@ -4251,7 +4303,10 @@ async function cloudDiag(){
   }
 }
 document.getElementById('cloud-status').onclick=()=>{
-  if(/加密|離線|失敗/.test(cloudStatus)){cloudLocked=false;initCloud();}
+  if(/加密|離線|失敗/.test(cloudStatus)){
+    cloudLocked=false; allowUnlockPrompt=true;
+    initCloud().finally(()=>{ allowUnlockPrompt=false; });
+  }
 };
 
 /* ── App 開頁鎖：沒密碼看不到（沿用雲端加密同一組密碼；只擋畫面，本機資料仍明文） ── */
