@@ -28,6 +28,7 @@ NODE_PATH=/opt/node22/lib/node_modules /opt/node22/bin/node prog-smoke2.test.js
 | `prog-noteedit.test.js` | 備註點一下就能改（群組一起改／工序個別改／不一樣時先問） |
 | `prog-groupedit2.test.js` | 同上的操作方式：平常是文字，點一下才變輸入框 |
 | `prog-blkcap.test.js` | 房型層級的發包金額上限（子合約可任意重寫、超過才報錯） |
+| `prog-xcopyfind.test.js` | 抓細項說「已經有了」卻找不到：帶我去看、強制抓、回收桶優先、拆成工序的比對 |
 | `prog-printas.test.js` | 多條細項在請款單上併成一行（資料仍逐條，發包分配不受影響） |
 | `prog-mergeprint.test.js` | 同一廠商在別的案場／零星工程的金額，可併入同一張請款單列印（帳不混） |
 | `wage-measqty.test.js` | payroll 計量明細：隔間㎡ 的數量可切手動輸入（`payroll.html`） |
