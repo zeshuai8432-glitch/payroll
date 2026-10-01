@@ -109,7 +109,7 @@ body.printing #print-overlay{display:block;position:absolute;inset:0;background:
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.09.30f-printas';
+const APP_VERSION='vG2026.10.01-blkcap';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -1280,9 +1280,11 @@ function viewItems(proj){
   if(proj.parentId&&!batchAll){
     const drift=driftedItems(proj);
     const nField=drift.filter(d=>d.diff.length).length, nPrice=drift.filter(d=>d.priceDiff).length;
-    if(drift.length) h+=`<div class="card" style="margin-top:10px;border-color:rgba(251,191,36,.55);background:rgba(251,191,36,.08)">
-      <div style="font-size:13.5px;font-weight:600;margin-bottom:4px">⚠ 有 ${drift.length} 條跟母專案不一樣</div>
-      <div class="muted" style="font-size:12px;margin-bottom:8px">名稱／單位／數量不一樣，多半是母專案後來改過、這邊沒跟上。<b>單價不一樣則不一定是問題</b>——可能是跟這家議定的價，也可能是母專案改了沒跟上，所以分成兩顆按鈕，你自己決定。<b>間數一律不動。</b></div>
+    if(drift.length) h+=`<details class="card" style="margin-top:10px">
+      <summary style="cursor:pointer;font-size:13px;color:var(--muted)">有 ${drift.length} 條跟母專案不一樣（要同步才點開）</summary>
+      <div class="muted" style="font-size:12px;margin:8px 0">子專案的合約<b>本來就可以自己重寫</b>，所以不一樣不代表有問題——真正會擋你的是發包分配那邊的「房型金額超過母合約」。
+        這裡只是讓你在<b>母合約後來改過、想讓這邊跟上</b>時有個地方一次同步。
+        <b>單價</b>不一樣多半是跟這家議定的價，所以分成兩顆按鈕，你自己決定。<b>間數一律不動。</b></div>
       <table style="font-size:12.5px"><tr><th style="width:34px"></th><th>細項</th><th>差在哪</th><th class="num">這邊</th><th class="num">母專案</th></tr>
       ${drift.map(d=>{ const rows=[...d.diff.map(([k,lbl])=>[lbl,d.it[k],d.src[k],false]),
                                   ...(d.priceDiff?[['單價',qfmt(d.it.price),qfmt(d.src.price),true]]:[])];
@@ -1294,7 +1296,7 @@ function viewItems(proj){
         ${nField?`<button class="btn sm" id="drift-sync">↻ 同步名稱／單位／數量（${nField} 條）</button>`:''}
         ${nPrice?`<button class="btn sub sm" id="drift-sync-price" style="border-color:var(--warn);color:var(--warn)">↻ 連單價一起同步（${nPrice} 條）</button>`:''}
       </div>
-      ${nPrice?`<div class="muted" style="font-size:11.5px;margin-top:6px">＊按第二顆會把單價改成母專案的。如果那些是你跟這家議定的價，<b>不要按</b>。</div>`:''}</div>`;
+      ${nPrice?`<div class="muted" style="font-size:11.5px;margin-top:6px">＊按第二顆會把單價改成母專案的。如果那些是你跟這家議定的價，<b>不要按</b>。</div>`:''}</details>`;
     const miss=missingBlocks(proj);
     if(miss.length) h+=`<div class="card" style="margin-top:10px;border-color:rgba(96,165,250,.5);background:rgba(59,130,246,.07)">
       <div style="font-size:13.5px;font-weight:600;margin-bottom:4px">↩ 母專案還有 ${miss.length} 個區塊這裡沒有</div>
@@ -1755,14 +1757,76 @@ function viewProg(proj){
   return h;
 }
 
+// ── 房型（區塊）層級的發包金額對照 ──
+// 子專案可以任意重寫合約：名稱、條數、數量、單價都不用跟母專案一樣。
+// 只管一件事：這個房型發出去的錢，不能超過母合約這個房型的明細金額。
+// 超過＝同一塊工作重複發包、或單價談太高，那是真的要處理的。
+// 追加工程不在原合約裡，兩邊都排除。
+function blockAllocationOf(parent){
+  const kids=childProjects(parent.id);
+  const sumBlk=b=>((b&&b.items)||[]).reduce((a,it)=>a+(isExtraItem(it)?0:itemValue(it,b)),0);
+  const used=new Set();
+  const rows=(parent.blocks||[]).map(mb=>{
+    const mAmt=sumBlk(mb);
+    const by=[];
+    kids.forEach(k=>{
+      // 發包／轉出建出來的子區塊記著對應哪個母區塊；手動建的只好靠名稱
+      const kb=(k.blocks||[]).find(x=>x.srcBlk&&x.srcBlk===mb.id)
+            || (k.blocks||[]).find(x=>!x.srcBlk&&String(x.name||'').trim()===String(mb.name||'').trim());
+      if(!kb) return;
+      used.add(k.id+'::'+kb.id);
+      const amt=sumBlk(kb);
+      if(amt>0||((kb.items||[]).length)) by.push({id:k.id,name:k.vendor||k.name,amt,blkName:kb.name});
+    });
+    const aAmt=by.reduce((a,x)=>a+x.amt,0);
+    return {blk:mb,mAmt,aAmt,by,left:mAmt-aAmt,over:aAmt-mAmt>0.5};
+  });
+  // 子專案裡對不到母區塊的（手動建又改過名），錢是真的發出去了，要列出來不能漏
+  const stray=[];
+  kids.forEach(k=>(k.blocks||[]).forEach(kb=>{
+    if(used.has(k.id+'::'+kb.id)) return;
+    const amt=sumBlk(kb);
+    if(amt>0) stray.push({projId:k.id,projName:k.vendor||k.name,blkName:kb.name,amt});
+  }));
+  const totMother=rows.reduce((a,r)=>a+r.mAmt,0);
+  const totAlloc=rows.reduce((a,r)=>a+r.aAmt,0);
+  const strayAmt=stray.reduce((a,x)=>a+x.amt,0);
+  return {rows,stray,strayAmt,totMother,totAlloc,totLeft:totMother-totAlloc,
+          over:rows.filter(r=>r.over).length};
+}
 function viewAlloc(proj){
   const al=allocationOf(proj);
+  const ba=blockAllocationOf(proj);
   let h=`<div class="grid" style="margin-bottom:12px">
-    <div class="stat"><div class="l">母專案總額（發包預算）</div><div class="v">${money(al.totMother)}</div></div>
-    <div class="stat"><div class="l">已發包（照母單價）</div><div class="v" style="color:${al.totAlloc>al.totMother?'#fca5a5':'inherit'}">${money(al.totAlloc)}</div></div>
-    <div class="stat"><div class="l">自辦（自己做）</div><div class="v" style="color:var(--accent2)">${money(al.totSelf)}</div></div>
-    <div class="stat"><div class="l">還沒決定</div><div class="v" style="color:${al.totLeft<0?'#fca5a5':'var(--ok)'}">${money(al.totLeft)}</div></div>
+    <div class="stat"><div class="l">母合約明細總額</div><div class="v">${money(ba.totMother)}</div></div>
+    <div class="stat"><div class="l">已發包出去</div><div class="v" style="color:${ba.totAlloc>ba.totMother?'#fca5a5':'inherit'}">${money(ba.totAlloc)}</div></div>
+    <div class="stat"><div class="l">剩餘（自辦＋毛利）</div><div class="v" style="color:${ba.totLeft<0?'#fca5a5':'var(--ok)'}">${money(ba.totLeft)}</div>
+      <div class="muted" style="font-size:11px;margin-top:2px">${ba.totMother?`占 ${(100*ba.totLeft/ba.totMother).toFixed(1)}%`:''}</div></div>
   </div>
+  ${ba.over?`<div class="notice" style="border-color:rgba(248,113,113,.55);background:rgba(248,113,113,.12);color:#fca5a5;margin-bottom:10px">
+    <b>⚠ 有 ${ba.over} 個房型發包金額超過母合約</b>——發出去的比收得到的還多。
+    多半是同一塊工作重複發包給兩家，或單價談太高。下面紅底的就是。</div>`:''}
+  ${ba.stray.length?`<div class="notice" style="border-color:rgba(251,191,36,.5);background:rgba(251,191,36,.12);color:#fcd34d;margin-bottom:10px">
+    <b>⚠ 有 ${ba.stray.length} 個子專案的區塊對不到母合約</b>（合計 ${money(ba.strayAmt)}）——這些錢沒被算進上面的「已發包」。
+    <div style="font-size:12px;margin-top:4px">${ba.stray.map(x=>`${esc(x.projName)}／${esc(x.blkName)}　${money(x.amt)}`).join('；')}
+    <br>把子專案那個區塊的名稱改成跟母合約一樣就會自動對上（或用「發包」功能建區塊，會自動記住對應）。</div></div>`:''}
+  <div class="muted" style="font-size:12.5px;margin-bottom:8px">
+    <b>子專案的合約可以任意重寫</b>——項目名稱、條數、數量、單價都不用跟母合約一樣。
+    這裡只核對一件事：<b>每個房型發包出去的總金額，不能超過母合約這個房型的明細金額</b>。
+    超過代表發出去的比收得到的還多，那才是問題。<b>剩餘</b>＝母 − 已發包，裡面含你自己要做的部分與毛利。</div>
+  <div class="scroll"><table><tr><th>房型／區塊</th><th class="num">母合約金額</th><th class="num">已發包</th><th class="num">剩餘</th><th>發給誰</th></tr>
+  ${ba.rows.map(r=>`<tr${r.over?' style="background:rgba(248,113,113,.10)"':''}>
+    <td>${esc(r.blk.name)}${r.over?'<span class="tag" style="background:rgba(248,113,113,.22);border-color:rgba(248,113,113,.5);color:#fca5a5">超過</span>':''}
+      <div style="font-size:11px;color:var(--muted)">${qfmt(r.blk.count)} ${esc(r.blk.unit)}${r.blk.count>0?`　每${esc(r.blk.unit)} ${money(r.mAmt/r.blk.count)}`:''}</div></td>
+    <td class="num">${money(r.mAmt)}</td>
+    <td class="num"${r.over?' style="color:#fca5a5;font-weight:700"':''}>${r.aAmt?money(r.aAmt):'—'}</td>
+    <td class="num" style="color:${r.left<0?'#fca5a5':'var(--ok)'}">${money(r.left)}</td>
+    <td style="font-size:12px">${r.by.length?r.by.map(x=>`<span class="tag" style="cursor:pointer" data-gotoproj="${x.id}">${esc(x.name)} ${money(x.amt)}</span>`).join(' '):'<span class="muted">尚未發包</span>'}</td></tr>`).join('')}
+  <tr class="chapter"><td>合計</td><td class="num"><b>${money(ba.totMother)}</b></td>
+    <td class="num"><b style="color:${ba.totAlloc>ba.totMother?'#fca5a5':'inherit'}">${money(ba.totAlloc)}</b></td>
+    <td class="num"><b>${money(ba.totLeft)}</b></td><td></td></tr></table></div>
+  <details style="margin-top:14px"><summary style="cursor:pointer;font-size:13px;color:var(--accent)">🔎 逐條核對（細項層級：量、自辦、發包分配）</summary><div style="margin-top:8px">
+  <div class="muted" style="font-size:12px;margin-bottom:8px">只有「從母專案補細項」帶著連結的條目才算得到。你如果重寫過子合約，這裡的數字會對不起來是正常的，以上面的房型金額為準。</div>
   <div class="grid" style="margin-bottom:12px">
     <div class="stat"><div class="l">實際發包成本（各家談的價）</div><div class="v">${money(al.totCost)}</div></div>
     <div class="stat"><div class="l">價差（母單價 − 實際發包）</div><div class="v" style="color:${al.totAlloc-al.totCost<0?'#fca5a5':'var(--ok)'}">${money(al.totAlloc-al.totCost)}</div>
@@ -1773,12 +1837,12 @@ function viewAlloc(proj){
       <b>⚠ 有 ${al.over} 條細項的發包量超過母專案</b>——通常是複製子專案後沒刪乾淨、同一條被發包給兩家。下面紅底的就是，請到該子專案把多的刪掉或改數量（或按「↗ 轉出」把量挪過去）。</div>`;
   }
   {
-    // 母專案這邊也要看得到：哪些子專案的細項跟現在的母專案對不起來
+    // 子專案本來就可以重寫合約，所以這不是警告，只是資訊——收在逐條區裡
     const dr=al.kids.map(k=>({k,n:driftedItems(k).length})).filter(x=>x.n);
-    if(dr.length) h+=`<div class="notice" style="border-color:rgba(251,191,36,.5);background:rgba(251,191,36,.12);color:#fcd34d;margin-bottom:10px">
-      <b>⚠ 有子專案跟母專案對不起來</b>——母專案後來改過名稱／單位／數量，這些子專案還是舊的：
+    if(dr.length) h+=`<div class="notice" style="border-color:var(--line);background:transparent;color:var(--muted);margin-bottom:10px">
+      <b>有子專案的細項跟母專案不一樣</b>——可能是你重寫過子合約（正常），也可能是母專案後來改過、子專案沒跟上：
       ${dr.map(x=>`<span class="tag" style="cursor:pointer" data-gotoproj="${x.k.id}">${esc(x.k.name)}　${x.n} 條</span>`).join(' ')}
-      <div style="font-size:11.5px;margin-top:4px">點進去按「↻ 跟母專案同步」即可。單價與間數不會被動到。</div></div>`;
+      <div style="font-size:11.5px;margin-top:4px">要跟母專案一致才點進去按「↻ 跟母專案同步」；自己重寫的就不用理它。單價與間數不會被動到。</div></div>`;
   }
   if(al.orphans.length){
     const refs=al.orphans.flatMap(o=>o.refs||[]);
@@ -1821,6 +1885,7 @@ function viewAlloc(proj){
       <td class="num"${zero?' class="muted"':''}>${zero?'—':`${money(r.aCost)}${Math.abs(r.aAmt-r.aCost)>0.5?`<div style="font-size:10.5px;color:${r.aAmt-r.aCost<0?'#fca5a5':'var(--ok)'}">${r.aAmt-r.aCost<0?'貴了':'省了'} ${money(Math.abs(r.aAmt-r.aCost))}</div>`:''}`}</td></tr>`;
   }
   h+=`<tr class="chapter"><td>合計</td><td></td><td></td><td class="num"><b style="color:var(--accent2)">${money(al.totSelf)}</b></td><td class="num"><b>${money(al.totLeft)}</b></td><td></td><td class="num"><b>${money(al.totMother)}</b></td><td class="num"><b style="color:${al.totAlloc>al.totMother?'#fca5a5':'inherit'}">${money(al.totAlloc)}</b></td><td class="num"><b>${money(al.totCost)}</b></td></tr></table>`;
+  h+=`</div></details>`;
   h+=`<div class="card" style="margin-top:12px"><h3>各廠商子專案</h3>
     <div class="muted" style="font-size:12px;margin-bottom:6px">「加項」＝該子專案各期登錄的點工／修繕等不按量算的錢，不在合約明細裡，所以不算進上面的發包量管控，但一樣要付。</div>
     <table><tr><th>廠商子專案</th><th>廠商</th><th class="num">發包金額</th><th class="num">加項（點工等）</th><th class="num">合計</th><th></th></tr>
