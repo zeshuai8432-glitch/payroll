@@ -111,7 +111,7 @@ body.printing #print-overlay{display:block;position:absolute;inset:0;background:
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.10.01d-noteedit';
+const APP_VERSION='vG2026.10.01e-printnote';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -2279,6 +2279,13 @@ function sameVendorJobs(proj){
     })
     .filter(x=>Math.abs(x.amt)>0.5);
 }
+// 列印用的備註：系統在轉出／接手時會自動把紀錄接在備註後面
+// （「2026-09-28 原 10 間，轉 3 間 給 進凱」），那是給自己看的，
+// 印在給工班或業主的單子上很尷尬。這裡只留使用者自己寫的部分。
+function printRemark(r){
+  return String(r||'').split(/[；;]/).map(x=>x.trim())
+    .filter(x=>x&&!/^\d{4}-\d{2}-\d{2}\s*(原|自)/.test(x)).join('；');
+}
 function printDoc(proj){
   const perIdx=Math.min(proj.curPeriod??proj.periods.length-1,proj.periods.length-1);
   const c=calc(proj,perIdx);
@@ -2454,8 +2461,10 @@ function printDoc(proj){
             const sameUnit=units.length===1;
             const gQty=sameUnit?g.reduce((a,x)=>a+(Number(x.it.qty)||0),0):null;
             const cnts=[...new Set(g.map(x=>effCount(x.it,cb.blk)))];
+            const gRk=[...new Set(g.map(x=>printRemark(x.it.remark)).filter(Boolean))].join('；');
             h+=`<tr><td>${esc(g[0].it.no)}${g.length>1?'…':''}</td><td><b>${esc(pa)}</b>
-              <div style="font-size:9px;color:#555">含 ${g.map(x=>esc(x.it.name)).join('、')}</div></td>
+              <div style="font-size:9px;color:#555">含 ${g.map(x=>esc(x.it.name)).join('、')}</div>
+              ${gRk?`<div style="font-size:9.5px;color:#555;margin-top:1px">${esc(gRk)}</div>`:''}</td>
               <td>${sameUnit?esc(units[0]):'式'}</td>
               <td class="num">${sameUnit?qfmt(+gQty.toFixed(2)):'—'}${cnts.length===1&&hasOwnCount(g[0].it)?`<div style="font-size:9px;color:#555">× ${qfmt(cnts[0])} ${esc(cb.blk.unit)}</div>`:''}</td>
               <td class="num">—</td><td class="num">${qfmt(gAmt)}</td>
@@ -2472,7 +2481,8 @@ function printDoc(proj){
           ? (()=>{ const st=String(it.name).slice(it.groupName.length+1);
               return `${esc(it.groupName)}-<b style="color:${stageColorPrint(st)}">${esc(st)}</b>`; })()
           : esc(it.name);
-        h+=`<tr><td>${esc(it.no)}</td><td>${nm}</td><td>${esc(it.unit)}</td>
+        const rk=printRemark(it.remark);
+        h+=`<tr><td>${esc(it.no)}</td><td>${nm}${rk?`<div style="font-size:9.5px;color:#555;margin-top:1px">${esc(rk)}</div>`:''}</td><td>${esc(it.unit)}</td>
           <td class="num">${qfmt(it.qty)}${hasOwnCount(it)?`<div style="font-size:9px;color:#555">× ${qfmt(it.cnt)} ${esc(cb.blk.unit)}</div>`:''}</td><td class="num">${it.price?qfmt(+(it.price*fOf(it)).toFixed(2)):''}</td><td class="num">${qfmt(Ri(it.amount,it))}</td>
           <td class="num">${hasR?qfmt(+(ci.p*effCount(it,cb.blk)).toFixed(2)):qfmt(pr.q||tq*ci.p)}</td><td class="num">${pfmt(ci.p)}</td>
           <td class="num">${money(Ri(ci.cumAmt,it))}</td></tr>`;
