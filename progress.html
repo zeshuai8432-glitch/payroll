@@ -114,7 +114,7 @@ tr.hilite>td{animation:hlflash 1s ease-in-out 3}
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.10.01k-xcopyfind';
+const APP_VERSION='vG2026.10.01m-printas';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -1113,6 +1113,7 @@ function doSubcontract(proj){
       tb.items.push({ id:uid(), no:it.no, tag:'', chapter:it.chapter||'', name:it.name, unit:it.unit,
         qty:it.qty, qtyExpr:'', price, priceExpr:'', amount:(Number(it.qty)||0)*price,
         remark:note||it.remark||'', srcId:it.id,
+        ...(it.printAs?{printAs:it.printAs}:{}),
         ...(it.groupId?{groupId:(gmap[it.groupId]||(gmap[it.groupId]=uid())),groupName:it.groupName||''}:{}) });
       added++;
     });
@@ -1206,7 +1207,7 @@ function viewItems(proj){
         const nZero=b.items.filter(x=>Number(x.amount)===0).length;
         h+=`<div style="margin-bottom:6px;padding:6px 8px;background:rgba(148,163,184,.12);border:1px solid rgba(148,163,184,.45);border-radius:8px;position:sticky;top:0;z-index:5">
           <div class="rowline" style="gap:8px;align-items:center">
-            <b style="font-size:13px">批次刪除「${esc(b.name)}」</b>
+            <b style="font-size:13px">批次處理「${esc(b.name)}」</b>
             <span class="muted" style="font-size:12px">已選 <b id="delcount-${b.id}" style="color:var(--accent)">${nSel}</b> 條</span>
             <button class="btn sub sm" data-delall="${b.id}">全選</button>
             <button class="btn sub sm" data-delnone="${b.id}">全不選</button>
@@ -1215,12 +1216,17 @@ function viewItems(proj){
             <span style="flex:1"></span>
             <button class="btn sub sm" data-delcancel="1">取消</button>
           </div>
-          <div class="rowline" style="gap:8px;align-items:center;margin-top:6px">
+          <div class="rowline" style="gap:8px;align-items:center;margin-top:6px;flex-wrap:wrap">
+            <span class="muted" style="font-size:12px">列印合併名稱</span>
+            <input id="pa-${b.id}" placeholder="例：雙面隔間" style="min-width:160px;height:30px">
+            <button class="btn sm" data-pado="${b.id}" style="border-color:#818cf8">🖨 設給勾選的 ${nSel} 條</button>
+            <button class="btn sub sm" data-paclear="${b.id}" title="清掉勾選那幾條的列印合併名稱，印出來就回到各自原本的名字">清掉</button>
             <span style="flex:1"></span>
             <button class="btn bad sm" data-deldo="${b.id}">🗑 刪除勾選</button>
-          </div></div>`;
+          </div>
+          <div class="muted" style="font-size:11.5px;margin-top:5px">填一樣名字的幾條，<b>印請款單給工班時會併成一行</b>（金額加總、底下列出含哪幾條）。只設一條＝單純換個工班看得懂的說法。<b>資料還是逐條</b>，數量×單價、抓長補短、發包分配全部照原本的算，不受影響。</div></div>`;
       }else{
-        h+=`<div style="margin-bottom:6px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn sub sm" data-batchedit="${b.id}">✏️ 整批改本區數量／單價</button><button class="btn sub sm" data-delmode="${b.id}" title="勾起來可以批次刪除，或批次標工班">☑ 批次刪除細項</button></div>`;
+        h+=`<div style="margin-bottom:6px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn sub sm" data-batchedit="${b.id}">✏️ 整批改本區數量／單價</button><button class="btn sub sm" data-delmode="${b.id}" title="勾起來可以批次刪除，或一次設好「列印合併名稱」">☑ 批次處理（刪除／設列印名稱）</button></div>`;
       }
     }
     const picking=delMode===b.id;
@@ -2755,10 +2761,13 @@ function printDoc(proj){
         if(it.chapter!==ch){ch=it.chapter;if(ch)h+=`<tr class="bchap"><td colspan="9">${esc(ch)}</td></tr>`;}
         const tq=itemTotalQty(it,cb.blk);
         const pr=progOf(c.period,it.id);
-        const nm=it.groupId&&it.groupName&&String(it.name).startsWith(it.groupName+'-')
+        // 「印作」只有一條時也要生效：這是純改名（合約一條、工班看另一種說法），
+        // 不是合併。項次照印，所以還是對得回合約，不會因為改名就追不到。
+        const nm=pa?`<b>${esc(pa)}</b>`
+          :(it.groupId&&it.groupName&&String(it.name).startsWith(it.groupName+'-')
           ? (()=>{ const st=String(it.name).slice(it.groupName.length+1);
               return `${esc(it.groupName)}-<b style="color:${stageColorPrint(st)}">${esc(st)}</b>`; })()
-          : esc(it.name);
+          : esc(it.name));
         const rk=printRemark(it.remark);
         h+=`<tr><td>${esc(it.no)}</td><td>${nm}${rk?`<div style="font-size:9.5px;color:#555;margin-top:1px">${esc(rk)}</div>`:''}</td><td>${esc(it.unit)}</td>
           <td class="num">${qfmt(it.qty)}${hasOwnCount(it)?`<div style="font-size:9px;color:#555">× ${qfmt(it.cnt)} ${esc(cb.blk.unit)}</div>`:''}</td><td class="num">${it.price?qfmt(+(it.price*fOf(it)).toFixed(2)):''}</td><td class="num">${qfmt(Ri(it.amount,it))}</td>
@@ -2904,8 +2913,11 @@ async function importXlsx(file){
 function updateDelCount(proj){
   if(!delMode) return;
   const b=proj.blocks.find(x=>x.id===delMode); if(!b) return;
+  const n=b.items.filter(x=>delSel.has(x.id)).length;
   const el=document.getElementById('delcount-'+delMode);
-  if(el) el.textContent=b.items.filter(x=>delSel.has(x.id)).length;
+  if(el) el.textContent=n;
+  const pb=document.querySelector(`[data-pado="${delMode}"]`);   // 勾選不重繪，這顆按鈕的條數也要跟上
+  if(pb) pb.textContent=`🖨 設給勾選的 ${n} 條`;
 }
 let _overWarned=false;   // 「超過合約量」的說明每次開頁只跳一次
 function setProgInput(proj,blkId,itemId,kind,val){
@@ -2969,7 +2981,7 @@ function setProgInput(proj,blkId,itemId,kind,val){
 }
 
 document.addEventListener('click',async e=>{
-  const t=e.target.closest('[data-tab],[data-editblk],[data-delblk],[data-edititem],[data-delitem],[data-additem],[data-splititem],[data-sortitems],[data-grouptoggle],[data-groupmerge],[data-groupdetect],[data-whtoggle],[data-rttoggle],[data-whtax],[data-whtaxauto],[data-rtamt],[data-selfone],[data-selfrooms],[data-selfrest],[data-selfclear],[data-delmode],[data-delcancel],[data-delall],[data-delnone],[data-delinv],[data-delzero],[data-deldo],#sub-toggle,#sub-close,#sub-go,[data-backfill],[data-backfillcancel],[data-backfillok],[data-addmissblk],#trash-toggle,#trash-clear,[data-trashrestore],[data-trashdrop],#drift-sync,#drift-sync-price,#drift-all,#drift-none,[data-copyinto],[data-copyok],[data-copycancel],[data-xcopy],[data-xcopycancel],[data-xcopyall],[data-xcopyok],[data-xcdup],[data-xcfind],[data-xfer],[data-xfercancel],[data-xferok],[data-gedit],[data-batchedit],[data-batchok],[data-batchcancel],[data-batchalledit],[data-batchallok],[data-batchallcancel],[data-itemok],[data-itemcancel],[data-blkok],[data-blkcancel],[data-bapply],[data-gapply],#btn-invrecon,[data-editextra],[data-delextra],#btn-import,#btn-import2,#btn-unlock,#btn-retrycloud,#btn-clouddiag,#btn-newproj,#btn-newproj2,#btn-addblk,#btn-addblk-ok,#btn-addperiod,#btn-delperiod,#btn-addextra,#btn-roundup,#settle-toggle,#set-rebase,[data-gotoproj],#btn-print,#btn-setretain,#orphan-fix,#orphan-detach,#proj-groupall,#set-save,#set-taxmode,#proj-dup,#proj-detach,#backup-export,#backup-import-btn,#prev-restore,#prev-export,#proj-del,#cloud-push,#cloud-pull');
+  const t=e.target.closest('[data-tab],[data-editblk],[data-delblk],[data-edititem],[data-delitem],[data-additem],[data-splititem],[data-sortitems],[data-grouptoggle],[data-groupmerge],[data-groupdetect],[data-whtoggle],[data-rttoggle],[data-whtax],[data-whtaxauto],[data-rtamt],[data-selfone],[data-selfrooms],[data-selfrest],[data-selfclear],[data-pado],[data-paclear],[data-delmode],[data-delcancel],[data-delall],[data-delnone],[data-delinv],[data-delzero],[data-deldo],#sub-toggle,#sub-close,#sub-go,[data-backfill],[data-backfillcancel],[data-backfillok],[data-addmissblk],#trash-toggle,#trash-clear,[data-trashrestore],[data-trashdrop],#drift-sync,#drift-sync-price,#drift-all,#drift-none,[data-copyinto],[data-copyok],[data-copycancel],[data-xcopy],[data-xcopycancel],[data-xcopyall],[data-xcopyok],[data-xcdup],[data-xcfind],[data-xfer],[data-xfercancel],[data-xferok],[data-gedit],[data-batchedit],[data-batchok],[data-batchcancel],[data-batchalledit],[data-batchallok],[data-batchallcancel],[data-itemok],[data-itemcancel],[data-blkok],[data-blkcancel],[data-bapply],[data-gapply],#btn-invrecon,[data-editextra],[data-delextra],#btn-import,#btn-import2,#btn-unlock,#btn-retrycloud,#btn-clouddiag,#btn-newproj,#btn-newproj2,#btn-addblk,#btn-addblk-ok,#btn-addperiod,#btn-delperiod,#btn-addextra,#btn-roundup,#settle-toggle,#set-rebase,[data-gotoproj],#btn-print,#btn-setretain,#orphan-fix,#orphan-detach,#proj-groupall,#set-save,#set-taxmode,#proj-dup,#proj-detach,#backup-export,#backup-import-btn,#prev-restore,#prev-export,#proj-del,#cloud-push,#cloud-pull');
   if(!t)return;
   const proj=curProj();
   if(t.dataset.tab){state.tab=t.dataset.tab;save();render();return;}
@@ -3222,6 +3234,7 @@ document.addEventListener('click',async e=>{
       b.items.push({ id:uid(), no:it.no, tag:'', chapter:it.chapter||'', name:it.name, unit:it.unit,
         qty:it.qty, qtyExpr:'', price, priceExpr:'', amount,
         remark:it.remark||'', srcId:it.id,
+        ...(it.printAs?{printAs:it.printAs}:{}),
         ...(it.groupId&&it.groupName?{groupId:(gmap[it.groupName]||(gmap[it.groupName]=uid())),groupName:it.groupName}:{}) });
     });
     // 母專案的順序才是圖面順序，照著排回去
@@ -3444,6 +3457,33 @@ document.addEventListener('click',async e=>{
     else b.items.filter(x=>Number(x.amount)===0).forEach(x=>delSel.add(x.id));
     render(); return;
   }
+  // 批次設「列印合併名稱」：A 有幾十條時一條一條進編輯表單填會瘋掉
+  if(t.dataset.pado||t.dataset.paclear){
+    const bid=t.dataset.pado||t.dataset.paclear;
+    const b=proj.blocks.find(x=>x.id===bid); if(!b) return;
+    const sel=b.items.filter(x=>delSel.has(x.id));
+    if(!sel.length){ alert('請先勾要設定的細項。'); return; }
+    if(t.dataset.paclear){
+      if(!confirm(`清掉這 ${sel.length} 條的列印合併名稱？\n\n印出來會回到各自原本的名字。資料本來就沒動過，不受影響。`)) return;
+      sel.forEach(it=>{ delete it.printAs; });
+      delMode=null; delSel.clear(); save(); render(); return;
+    }
+    const el=document.getElementById('pa-'+bid);
+    const v=el?el.value.trim():'';
+    if(!v){ alert('請先填列印合併名稱（例：雙面隔間）。'); if(el)el.focus(); return; }
+    const amt=sel.reduce((a,it)=>a+itemValue(it,b),0);
+    const dups=b.items.filter(x=>!delSel.has(x.id)&&String(x.printAs||'').trim()===v);
+    if(!confirm(`把這 ${sel.length} 條的列印合併名稱設成「${v}」？\n\n`
+      +sel.map(it=>`・${it.no?it.no+'　':''}${it.name}　${qfmt(it.qty)} ${it.unit} × ${qfmt(it.price)}`).join('\n')
+      +`\n\n印請款單給工班時會併成一行「${v}」，金額 ${money(amt)}。`
+      +(dups.length?`\n\n⚠ 這個區塊另外還有 ${dups.length} 條也叫「${v}」，會一起併進同一行。`:'')
+      +`\n\n資料不動：數量×單價、抓長補短、發包分配照原本逐條算。`)) return;
+    sel.forEach(it=>{ it.printAs=v; });
+    delMode=null; delSel.clear(); save(); render();
+    alert(`已設好 ${sel.length} 條。\n\n接下來發包出去的子專案會自動帶著這個名稱，不用在每一家重設一次。`);
+    return;
+  }
+
   if(t.dataset.deldo){
     const b=proj.blocks.find(x=>x.id===t.dataset.deldo); if(!b) return;
     const gone=b.items.filter(x=>delSel.has(x.id));
@@ -3549,6 +3589,7 @@ document.addEventListener('click',async e=>{
           qty:it.qty,qtyExpr:it.qtyExpr||'',price,priceExpr:'',amount:(Number(it.qty)||0)*price,
           remark:`${day} 自 ${who} 接手 ${qfmt(move)} ${b.unit}`};
         if(it.srcId) ni.srcId=it.srcId;
+        if(it.printAs) ni.printAs=it.printAs;   // 列印合併名稱要跟著走，不然接手的那家印出來又散回原本幾條
         if(it.extra!==undefined) ni.extra=it.extra;
         if(move!==(Number(kb.count)||0)) ni.cnt=move;
         kb.items.push(ni);
@@ -3806,6 +3847,7 @@ document.addEventListener('click',async e=>{
         return {id:uid(),name:b.name,unit:b.unit,count:b.count,srcBlk:b.id,
         items:items.map(it=>({id:uid(),no:it.no,tag:it.tag||'',chapter:it.chapter||'',name:it.name,unit:it.unit,
           qty:it.qty,qtyExpr:it.qtyExpr||'',price:it.price,priceExpr:it.priceExpr||'',amount:it.amount,remark:it.remark||'',
+          ...(it.printAs?{printAs:it.printAs}:{}),
           ...(it.groupId?{groupId:(gmap[it.groupId]||(gmap[it.groupId]=uid())),groupName:it.groupName||''}:{}),
           ...(alone?{}:{srcId:it.id})}))}; }),
       periods:[], curPeriod:0, createdAt:Date.now(),
