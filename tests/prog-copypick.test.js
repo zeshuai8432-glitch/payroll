@@ -10,7 +10,8 @@ const seed=extra=>({savedAt:Date.now(),tab:'items',cur:'A',projects:[
       {id:'i1',no:'6.1',chapter:'第六章',name:'雙面隔間-骨架',unit:'㎡',qty:10,price:120,amount:1200,groupId:'g1',groupName:'雙面隔間',printAs:'雙面隔間'},
       {id:'i2',no:'6.2',chapter:'第六章',name:'雙面隔間-封板',unit:'㎡',qty:10,price:100,amount:1000,groupId:'g1',groupName:'雙面隔間',printAs:'雙面隔間'},
       {id:'i3',no:'6.9',chapter:'第六章',name:'壁龕',unit:'㎡',qty:2.5,price:280,amount:700,remark:'至天花板'},
-      {id:'i4',no:'6.20',name:'走道天花',unit:'㎡',qty:8,price:260,amount:2080}]},
+      {id:'i4',no:'6.20',name:'走道天花',unit:'㎡',qty:8,price:260,amount:2080,
+       remark:'圖面編號D1/F1；2026-10-01 原 40 間，轉 6 間 給 鑫'}]},
     {id:'b2',name:'TYPE-L',unit:'間',count:1,items:[
       {id:'j1',no:'6.9',name:'壁龕',unit:'㎡',qty:2.5,price:280,amount:700}]}]},
   ...(extra||[])]});
@@ -125,6 +126,22 @@ const panel=pg=>pg.textContent('.card[style*="167,139,250"]');
   const order=await pg.evaluate(()=>state.projects[0].blocks[1].items.map(x=>x.no));
   t('⑥ 智慧排序排得動（6.1 → 6.2 → 6.9 → 6.20）：'+order.join(' '),
     order.join(' ')==='6.1 6.2 6.9 6.20');
+  await pg.close();
+}
+
+// ⑦ 複製時不要把系統寫的轉出紀錄一起帶過來（那是來源那份的歷史，在這裡是假的）
+{
+  const {pg}=await open(seed());
+  await pg.evaluate(()=>{ openBlk.add('b2'); render(); }); await pg.waitForTimeout(250);
+  await pg.click('[data-xcopy="b2"]'); await pg.waitForTimeout(250);
+  await pg.selectOption('[data-xcopyproj="1"]','A'); await pg.waitForTimeout(200);
+  await pg.selectOption('[data-xcopyblk="1"]','b1'); await pg.waitForTimeout(300);
+  await pg.click('[data-xcpick="i4"]');
+  await pg.click('[data-xcopyok="b2"]'); await pg.waitForTimeout(600);
+  const got=await pg.evaluate(()=>{const b=state.projects[0].blocks[1];
+    const it=b.items.find(x=>x.name==='走道天花'); return it?(it.remark||''):'(沒找到)';});
+  t('⑦ 自己寫的備註留著（圖面編號）：'+got, /圖面編號D1\/F1/.test(got));
+  t('⑦ 系統寫的轉出紀錄沒被帶過來', !/轉 6 間 給 鑫/.test(got)&&!/原 40 間/.test(got));
   await pg.close();
 }
 

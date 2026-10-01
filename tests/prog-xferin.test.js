@@ -59,7 +59,7 @@ const alloc=pg=>pg.evaluate(()=>{
   t('① 接手方拿到 2 間、單價照填的 280', r.it.cnt===2&&r.it.price===280);
   t('① 溯源跟著走（發包分配對得回母專案）', r.it.srcId==='m1');
   t('① 列印合併名稱也跟著走', r.it.printAs==='雙面隔間');
-  t('① 備註留痕', /自 東澤 接手 2 間/.test(r.it.remark||''));
+  t('① 留痕在 xlog，不在備註', /自 東澤 接手 2 間/.test((r.it.xlog||[]).join('；'))&&!/接手/.test(r.it.remark||''));
   t('① 來源同步減成 4 間（是搬量不是複製）', r.tcnt===4);
   t('① 沒有 JS 錯誤', errs.length===0);
   await pg.close();
@@ -168,15 +168,15 @@ const alloc=pg=>pg.evaluate(()=>{
     xferApply(T,sb,sb.items.find(x=>x.id==='t1'),C,6-3,140); // 再轉 3 間（共 6）
     save();
     const it=C.blocks[0].items[0];
-    return {cnt:effCount(it,C.blocks[0]),rk:it.remark||'',n:C.blocks[0].items.length,
-            printed:printRemark(it.remark||'')};
+    return {cnt:effCount(it,C.blocks[0]),rk:(it.xlog||[]).join('；'),n:C.blocks[0].items.length,
+            printed:it.remark||''};
   });
   t('⑧ 累加成一條，不會變成兩條', twice.n===1);
   t('⑧ 間數累加正確（6）', twice.cnt===6);
-  t('⑧ 備註記了第一次', /自 東澤 接手 3 間/.test(twice.rk));
+  t('⑧ xlog 記了第一次', /自 東澤 接手 3 間/.test(twice.rk));
   t('⑧ 也記了第二次與累計總數：'+twice.rk.split('；').pop(),
     /再接手 3 間（原 3，共 6 間）/.test(twice.rk));
-  t('⑧ 這些系統紀錄不會印在請款單上', twice.printed==='');
+  t('⑧ 備註完全乾淨（所以列印也看不到）', twice.printed==='');
   await pg.close();
 }
 
@@ -249,6 +249,50 @@ const alloc=pg=>pg.evaluate(()=>{
   });
   t('⑪ 同一道工序再轉才累加（骨架 6＋2＝8，仍然 2 條）',
     r2.n===2&&r2.items[0].cnt===8&&r2.items[1].cnt===3);
+  await pg.close();
+}
+
+// ⑫ 轉出入紀錄不進備註、不進列印
+{
+  const st=seed();
+  st.projects[1].blocks[0].items[0].remark='圖面編號D1/F1';
+  st.projects[2].blocks=[{id:'bC',name:'TYPE-EXS',unit:'間',count:0,srcBlk:'bA',items:[]}];
+  const {pg}=await open(st);
+  const r=await pg.evaluate(()=>{
+    const T=state.projects.find(p=>p.id==='T'), C=state.projects.find(p=>p.id==='C');
+    const sb=T.blocks[0];
+    xferApply(T,sb,sb.items.find(x=>x.id==='t1'),C,2,140);
+    xferApply(T,sb,sb.items.find(x=>x.id==='t1'),C,1,140);
+    save();
+    const src=T.blocks[0].items.find(x=>x.id==='t1'), dst=C.blocks[0].items[0];
+    return {srcRk:src.remark||'',srcLog:src.xlog||[],dstRk:dst.remark||'',dstLog:dst.xlog||[]};
+  });
+  t('⑫ 來源備註只剩自己寫的（圖面編號）：'+r.srcRk, r.srcRk==='圖面編號D1/F1');
+  t('⑫ 轉出紀錄存在 xlog（2 筆）', r.srcLog.length===2&&/轉 2 間 給 阿華/.test(r.srcLog[0]));
+  t('⑫ 接手方備註帶自己寫的、不帶系統紀錄', r.dstRk==='圖面編號D1/F1'&&!/接手/.test(r.dstRk));
+  t('⑫ 接手方 xlog 有建立與累加兩筆', r.dstLog.length===2&&/再接手 1 間（原 2，共 3 間）/.test(r.dstLog[1]));
+
+  // 畫面上：備註欄沒有系統文字，名稱旁有 ⇄ 小標籤
+  await pg.evaluate(()=>{ state.cur='T'; state.tab='items'; openBlk.add('bT'); render(); });
+  await pg.waitForTimeout(350);
+  const row=await pg.evaluate(()=>{const tr=document.getElementById('row-t1');return tr?tr.innerText.replace(/\s+/g,' '):'';});
+  t('⑬ 備註欄看不到轉出紀錄', !/轉 2 間 給/.test(row)&&!/原 6 間/.test(row));
+  t('⑬ 名稱旁有 ⇄ 標籤（滑過去看得到紀錄）', /⇄ 2/.test(row));
+  await pg.close();
+}
+
+// ⑭ 舊資料自己好：備註裡的系統紀錄搬進 xlog
+{
+  const st=seed();
+  st.projects[1].blocks[0].items[0].remark='圖面編號D/F；2026-10-01 原 40 間，轉 6 間 給 鑫；2026-10-01 自 東澤 接手 3 間';
+  const {pg}=await open(st);
+  const r=await pg.evaluate(()=>{
+    const it=state.projects.find(p=>p.id==='T').blocks[0].items[0];
+    return {rk:it.remark||'',log:it.xlog||[]};
+  });
+  t('⑭ 自己寫的留在備註：'+r.rk, r.rk==='圖面編號D/F');
+  t('⑭ 兩筆系統紀錄搬進 xlog', r.log.length===2
+    &&/轉 6 間 給 鑫/.test(r.log[0])&&/自 東澤 接手 3 間/.test(r.log[1]));
   await pg.close();
 }
 

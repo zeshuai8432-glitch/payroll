@@ -114,7 +114,7 @@ tr.hilite>td{animation:hlflash 1s ease-in-out 3}
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.10.01t-xferin';
+const APP_VERSION='vG2026.10.01v-xlog';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -146,7 +146,38 @@ function load(){
 // 得展開才填得到，跟旁邊沒拆的那幾條長得不一樣，看起來像壞掉。
 // 刪細項時本來就會解除，但從別的專案只抓了其中一道、或拆成一道時會留下來，
 // 所以在存檔時統一清一次，舊資料也會自己好。
+// 轉出／轉入的系統紀錄原本寫進 it.remark，靠 printRemark 在列印時濾掉。
+// 問題是畫面上的備註欄一直看得到（自己寫的備註被系統文字淹掉），而且複製細項時
+// 會被一起帶到別份去——那是來源那份的歷史，在新的地方是假的。
+// 改存在 it.xlog（不進備註、不進列印），只掛在名稱旁一個小標籤的 tooltip 裡。
+const XLOG_MAX=20;
+function xlogPush(it,line){
+  if(!it||!line) return;
+  const a=Array.isArray(it.xlog)?it.xlog:[];
+  a.push(String(line));
+  it.xlog=a.slice(-XLOG_MAX);
+}
+const isXlogLine=x=>/^\d{4}-\d{2}-\d{2}\s*(原|自)/.test(String(x||'').trim());
+// 舊資料自己好：備註裡的系統紀錄搬到 xlog，自己寫的留在備註。
+function migrateXlog(){
+  (state.projects||[]).forEach(p=>(p.blocks||[]).forEach(b=>(b.items||[]).forEach(it=>{
+    const parts=String(it.remark||'').split(/[；;]/).map(x=>x.trim()).filter(Boolean);
+    const sys=parts.filter(isXlogLine);
+    if(!sys.length) return;
+    const mine=parts.filter(x=>!isXlogLine(x));
+    const a=Array.isArray(it.xlog)?it.xlog:[];
+    sys.forEach(x=>{ if(!a.includes(x)) a.push(x); });
+    it.xlog=a.slice(-XLOG_MAX);
+    if(mine.length) it.remark=mine.join('；'); else delete it.remark;
+  })));
+}
+function xlogTag(it){
+  const a=Array.isArray(it&&it.xlog)?it.xlog:[];
+  if(!a.length) return '';
+  return `<span class="tag" style="background:rgba(148,163,184,.18);border-color:rgba(148,163,184,.45);color:#cbd5e1;cursor:help" title="轉出／轉入紀錄（不會印在請款單上）：&#10;${esc(a.join('\n'))}">⇄ ${a.length}</span>`;
+}
 function normalizeGroups(){
+  migrateXlog();
   (state.projects||[]).forEach(p=>(p.blocks||[]).forEach(b=>{
     const n={}; (b.items||[]).forEach(x=>{ if(x.groupId) n[x.groupId]=(n[x.groupId]||0)+1; });
     (b.items||[]).forEach(x=>{ if(x.groupId&&n[x.groupId]<2){ delete x.groupId; delete x.groupName; } });
@@ -1286,7 +1317,7 @@ function viewItems(proj){
           for(const s of subs){
             if(itemEdit===b.id+'::'+s.id){ h+=itemForm(b,s); continue; }
             h+=`<tr id="row-${s.id}" class="${hiliteItem===s.id?'hilite':''}">${picking?`<td><input type="checkbox" data-delpick="${s.id}" ${delSel.has(s.id)?'checked':''} style="width:16px;height:16px"></td>`:''}<td></td>
-              <td style="padding-left:26px;color:var(--muted)">↳ ${stageHtml(s.name,it.groupName)}</td>
+              <td style="padding-left:26px;color:var(--muted)">↳ ${stageHtml(s.name,it.groupName)}${xlogTag(s)}</td>
               <td>${esc(s.unit)}</td>
               <td class="num">${qfmt(s.qty)}${s.qtyExpr?`<div style="font-size:11px;color:var(--muted)">=${esc(s.qtyExpr)}</div>`:''}</td>
               <td class="num">${s.price?qfmt(s.price):''}${s.priceExpr?`<div style="font-size:11px;color:var(--muted)">=${esc(s.priceExpr)}</div>`:''}</td>
@@ -1309,7 +1340,7 @@ function viewItems(proj){
         continue;
       }
       const zero=it.amount===0;
-      h+=`<tr id="row-${it.id}" class="${zero?'zero ':''}${hiliteItem===it.id?'hilite':''}">${picking?`<td><input type="checkbox" data-delpick="${it.id}" ${delSel.has(it.id)?'checked':''} style="width:16px;height:16px"></td>`:''}<td>${esc(it.no)}</td><td>${esc(it.name)}${it.tag?`<span class="tag">${esc(it.tag)}</span>`:''}${isExtraItem(it)?'<span class="tag" style="background:rgba(251,191,36,.2);border-color:rgba(251,191,36,.5);color:#fcd34d" title="追加工程：不受簽約總價折讓，照明細單價計">追加</span>':''}${hasOwnCount(it)?`<span class="tag" style="background:rgba(52,211,153,.2);border-color:rgba(52,211,153,.55);color:#6ee7b7" title="這條的實作量跟合約不同：區塊是 ${qfmt(b.count)} ${esc(b.unit)}，這條算 ${qfmt(it.cnt)} ${esc(b.unit)}">${qfmt(it.cnt)} ${esc(b.unit)}</span>`:''}${it.printAs?`<span class="tag" style="background:rgba(129,140,248,.2);border-color:rgba(129,140,248,.55);color:#c7d2fe" title="列印請款單時會跟同名的幾條併成一行：${esc(it.printAs)}">印作「${esc(it.printAs)}」</span>`:''}</td>
+      h+=`<tr id="row-${it.id}" class="${zero?'zero ':''}${hiliteItem===it.id?'hilite':''}">${picking?`<td><input type="checkbox" data-delpick="${it.id}" ${delSel.has(it.id)?'checked':''} style="width:16px;height:16px"></td>`:''}<td>${esc(it.no)}</td><td>${esc(it.name)}${it.tag?`<span class="tag">${esc(it.tag)}</span>`:''}${isExtraItem(it)?'<span class="tag" style="background:rgba(251,191,36,.2);border-color:rgba(251,191,36,.5);color:#fcd34d" title="追加工程：不受簽約總價折讓，照明細單價計">追加</span>':''}${hasOwnCount(it)?`<span class="tag" style="background:rgba(52,211,153,.2);border-color:rgba(52,211,153,.55);color:#6ee7b7" title="這條的實作量跟合約不同：區塊是 ${qfmt(b.count)} ${esc(b.unit)}，這條算 ${qfmt(it.cnt)} ${esc(b.unit)}">${qfmt(it.cnt)} ${esc(b.unit)}</span>`:''}${it.printAs?`<span class="tag" style="background:rgba(129,140,248,.2);border-color:rgba(129,140,248,.55);color:#c7d2fe" title="列印請款單時會跟同名的幾條併成一行：${esc(it.printAs)}">印作「${esc(it.printAs)}」</span>`:''}${xlogTag(it)}</td>
         <td>${esc(it.unit)}</td><td class="num">${qfmt(it.qty)}${it.qtyExpr?`<div style="font-size:11px;color:var(--muted)">=${esc(it.qtyExpr)}</div>`:''}</td>
         <td class="num">${it.price?qfmt(it.price):''}${it.priceExpr?`<div style="font-size:11px;color:var(--muted)">=${esc(it.priceExpr)}</div>`:''}</td><td class="num">${qfmt(it.amount)}</td>
         <td class="muted" style="font-size:12px">${picking?esc(it.remark)
@@ -1579,14 +1610,13 @@ function xferApply(srcProj,srcBlk,srcIt,dstProj,move,price,dstBlkHint){
     // 第二次以後轉進來只累加間數，備註原本完全不動 —— 於是那條永遠寫著第一次的量，
     // 間數卻是累加後的總數（轉 3 再轉 6，顯示 9 間但備註說「接手 3 間」）。
     // 每次都補一行，才查得出這 9 間是怎麼來的。printRemark 會在列印時濾掉。
-    exist.remark=[String(exist.remark||'').trim(),
-      `${day} 自 ${who} 再接手 ${qfmt(move)} ${srcBlk.unit}（原 ${qfmt(was)}，共 ${qfmt(nc)} ${srcBlk.unit}）`]
-      .filter(Boolean).join('；');
+    xlogPush(exist,`${day} 自 ${who} 再接手 ${qfmt(move)} ${srcBlk.unit}（原 ${qfmt(was)}，共 ${qfmt(nc)} ${srcBlk.unit}）`);
     if(!exist.printAs&&srcIt.printAs) exist.printAs=srcIt.printAs;
   } else {
     const ni={id:uid(),no:srcIt.no,tag:'',chapter:srcIt.chapter||'',name:srcIt.name,unit:srcIt.unit,
       qty:srcIt.qty,qtyExpr:srcIt.qtyExpr||'',price,priceExpr:'',amount:(Number(srcIt.qty)||0)*price,
-      remark:`${day} 自 ${who} 接手 ${qfmt(move)} ${srcBlk.unit}`};
+      remark:printRemark(srcIt.remark),
+      xlog:[`${day} 自 ${who} 接手 ${qfmt(move)} ${srcBlk.unit}`]};
     if(srcIt.srcId) ni.srcId=srcIt.srcId;
     if(srcIt.printAs) ni.printAs=srcIt.printAs;
     if(srcIt.extra!==undefined) ni.extra=srcIt.extra;
@@ -1604,8 +1634,7 @@ function xferApply(srcProj,srcBlk,srcIt,dstProj,move,price,dstBlkHint){
   } else {
     rescaleItemCount(srcProj,srcBlk,srcIt,keep);
     if(keep!==(Number(srcBlk.count)||0)) srcIt.cnt=keep; else delete srcIt.cnt;
-    srcIt.remark=[String(srcIt.remark||'').trim(),
-      `${day} 原 ${qfmt(cur)} ${srcBlk.unit}，轉 ${qfmt(move)} ${srcBlk.unit} 給 ${destName}`].filter(Boolean).join('；');
+    xlogPush(srcIt,`${day} 原 ${qfmt(cur)} ${srcBlk.unit}，轉 ${qfmt(move)} ${srcBlk.unit} 給 ${destName}`);
   }
   return {ok:true,who,destName,cur,keep,gone:keep<=0,blk:kb};
 }
@@ -3769,8 +3798,7 @@ document.addEventListener('click',async e=>{
       } else {
         rescaleItemCount(proj,b,it,keep);
         if(keep!==(Number(b.count)||0)) it.cnt=keep; else delete it.cnt;
-        const day=today();
-        it.remark=[String(it.remark||'').trim(),`${day} 原 ${qfmt(cur)} ${b.unit}，轉 ${qfmt(move)} ${b.unit} 給 自辦`].filter(Boolean).join('；');
+        xlogPush(it,`${today()} 原 ${qfmt(cur)} ${b.unit}，轉 ${qfmt(move)} ${b.unit} 給 自辦`);
       }
       xfer=null; save(); render();
       alert(`已轉 ${qfmt(move)} ${b.unit} 回自辦。\n\n`+(keep<=0
@@ -3856,8 +3884,11 @@ document.addEventListener('click',async e=>{
     plan.forEach(({it,price,amount})=>{
       // 項次／追加旗標照來源帶：這是把原本就該有的細項抓回來，不是追加工程。
       // 寫死 no:'增' 會被當成追加、跳出折讓的分母，簽約總價一設就算錯。
+      // 備註只帶「自己寫的」。系統寫的轉出紀錄（「2026-10-01 原 40 間，轉 6 間 給 鑫」）
+      // 是來源那份的歷史，複製到別份只會騙人——看起來像這份轉給過誰，其實沒有。
+      // printRemark 本來就是用來濾掉這些系統紀錄的，拿來當複製的過濾器剛好。
       const ni={ id:uid(), no:it.no||'', tag:'', chapter:it.chapter||'', name:it.name, unit:it.unit,
-        qty:it.qty, qtyExpr:it.qtyExpr||'', price, priceExpr:'', amount, remark:it.remark||'' };
+        qty:it.qty, qtyExpr:it.qtyExpr||'', price, priceExpr:'', amount, remark:printRemark(it.remark) };
       if(it.extra!==undefined) ni.extra=it.extra; else if(String(it.no||'')==='增') ni.extra=true;
       if(it.printAs) ni.printAs=it.printAs;
       if(it.groupName){ ni.groupName=it.groupName; ni.groupId=gmap[it.groupName]||(gmap[it.groupName]=uid()); }
@@ -4481,6 +4512,7 @@ function applyRemote(remote){
   const keepTab=state.tab;
   state=remote;state.tab=keepTab;
   if(!state.projects.some(p=>p.id===state.cur))state.cur=state.projects[0]?state.projects[0].id:null;
+  migrateXlog();
   localStorage.setItem(LS,JSON.stringify(state)); // 直接落地，不觸發上傳
   render();
 }
