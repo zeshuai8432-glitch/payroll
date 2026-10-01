@@ -114,7 +114,7 @@ tr.hilite>td{animation:hlflash 1s ease-in-out 3}
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.10.01m-printas';
+const APP_VERSION='vG2026.10.01n-allocnotice';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -889,10 +889,17 @@ function render(){
   // 母子關係提示列
   if(par) h+=`<div class="notice" style="margin-bottom:10px">這是「<b>${esc(par.name)}</b>」的發包子專案（廠商：${esc(proj.vendor||'未填')}）。<button class="btn sub sm" data-gotoproj="${par.id}">回母專案</button></div>`;
   else if(kids.length){
-    const al=allocationOf(proj);
-    h+=`<div class="notice" style="margin-bottom:10px${al.over?';border-color:rgba(248,113,113,.55);background:rgba(248,113,113,.12);color:#fca5a5':''}">
+    // 這條提示列每個分頁都看得到，所以只能放「可信的」數字。
+    // 原本用的是逐條（照 srcId 比量）：子合約一旦重寫或把幾條併成一條，
+    // 那一條的量就會是母單條的好幾倍，於是永久顯示紅字「超過母專案的量」。
+    // 假警報每天看，真的超額那天也不會看了。改用房型層級的金額——
+    // 併不併都不影響房型總額，所以那個數字才站得住。
+    const ba=blockAllocationOf(proj), al=allocationOf(proj);
+    h+=`<div class="notice" style="margin-bottom:10px${ba.over?';border-color:rgba(248,113,113,.55);background:rgba(248,113,113,.12);color:#fca5a5':''}">
       母專案（發包總表），底下有 <b>${kids.length}</b> 個廠商子專案。
-      ${al.over?`<b>⚠ 有 ${al.over} 條細項發包超過母專案的量</b>，請到「發包分配」查看。`:`已發包 ${money(al.totAlloc)}${al.totSelf?`｜自辦 ${money(al.totSelf)}`:''}｜還沒決定 ${money(al.totLeft)}（母專案總額 ${money(al.totMother)}）。${Math.abs(al.totAlloc-al.totCost)>0.5?`　實際發包 ${money(al.totCost)}，價差 ${money(al.totAlloc-al.totCost)}。`:''}`}</div>`;
+      ${ba.over?`<b>⚠ 有 ${ba.over} 個房型發包金額超過母合約</b>——發出去的比收得到的還多，請到「發包分配」查看。`
+        :`已發包 ${money(ba.totAlloc)}${al.totSelf?`｜自辦 ${money(al.totSelf)}`:''}｜剩餘 ${money(ba.totLeft)}（母專案總額 ${money(ba.totMother)}）。`}
+      ${ba.stray.length?`<span style="color:#fcd34d">另有 ${ba.stray.length} 個子區塊對不到母合約（${money(ba.strayAmt)}），沒算進上面。</span>`:''}</div>`;
   }
   // 舊資料：整份專案還有沒收合的拆分時，各分頁都提示一次（不用鑽進區塊找）
   const pRuns=projectSplitRuns(proj);
