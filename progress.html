@@ -114,7 +114,7 @@ tr.hilite>td{animation:hlflash 1s ease-in-out 3}
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.10.01p-allocsigned';
+const APP_VERSION='vG2026.10.01q-backupplans';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -3937,7 +3937,16 @@ document.addEventListener('click',async e=>{
     return;
   }
   if(t.id==='backup-export'){
-    const blob=new Blob([JSON.stringify(state,null,1)],{type:'application/json'});
+    // 圖面存在 IndexedDB（不同步雲端，怕撐爆 Firestore 的 1MB），所以備份要自己帶。
+    // 不帶的話「匯出備份」會給人一種全都備份好了的錯覺，重建專案後圖面全掉。
+    const nPl=Object.keys(PLANS||{}).reduce((a,k)=>a+(PLANS[k]||[]).length,0);
+    const mb=plansBytes()/1048576;
+    let plans=PLANS;
+    if(nPl&&!confirm(`備份含 ${state.projects.length} 個專案，以及 ${nPl} 張圖面（約 ${mb.toFixed(1)} MB）。\n\n`
+      +`按「確定」＝連圖面一起備份（檔案比較大，但還原後圖面也回來）\n`
+      +`按「取消」＝只備份專案資料（檔案小，但圖面不在裡面）`)) plans=null;
+    const out=Object.assign({},state,plans?{_plans:plans}:{});
+    const blob=new Blob([JSON.stringify(out,null,1)],{type:'application/json'});
     const a=document.createElement('a');a.href=URL.createObjectURL(blob);
     a.download=`進度請款備份_${today()}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),3000);return;
   }
@@ -3958,6 +3967,10 @@ document.addEventListener('click',async e=>{
     if(!confirm(`刪除整個專案「${proj.name}」？所有細項與各期進度都會消失。`))return;
     if(!confirm('再確認一次：真的要刪除？'))return;
     kids.forEach(k=>{ delete k.parentId; k.blocks.forEach(b=>b.items.forEach(it=>{ delete it.srcId; })); });
+    // 圖面存在 IndexedDB，跟著專案 id 走。不清掉就變成永遠清不掉的垃圾，佔著空間
+    // 又讓「圖面共佔多少」算不準。
+    const pre=proj.id+'::';
+    Object.keys(PLANS||{}).filter(k=>k.indexOf(pre)===0).forEach(k=>{ idbDel(k).catch(()=>{}); delete PLANS[k]; });
     state.projects=state.projects.filter(p=>p!==proj);
     state.cur=state.projects[0]?state.projects[0].id:null;save();render();return;
   }
@@ -4147,8 +4160,19 @@ document.addEventListener('change',e=>{
     try{
       const d=JSON.parse(rd.result);
       if(!d||!Array.isArray(d.projects))throw new Error('格式不符');
-      if(!confirm(`備份含 ${d.projects.length} 個專案。匯入會「完全覆蓋」目前資料，確定？`))return;
-      state=d;save();render();alert('已還原');
+      const pl=d._plans&&typeof d._plans==='object'?d._plans:null;
+      const nPl=pl?Object.keys(pl).reduce((a,k)=>a+((pl[k]||[]).length),0):0;
+      if(!confirm(`備份含 ${d.projects.length} 個專案${nPl?`、${nPl} 張圖面`:'（沒有圖面）'}。`
+        +`\n\n匯入會「完全覆蓋」目前資料，確定？`))return;
+      delete d._plans;
+      state=d;save();render();
+      if(!pl){ alert('已還原。\n\n（這份備份沒有圖面，圖面要重新加。）'); return; }
+      (async()=>{
+        let okN=0,bad=0;
+        for(const k in pl){ try{ await idbPut(k,pl[k]); PLANS[k]=pl[k]; okN+=(pl[k]||[]).length; }catch(e){ bad++; } }
+        render();
+        alert(`已還原。圖面 ${okN} 張也回來了。`+(bad?`\n\n有 ${bad} 組圖面存不進去，可能是這台空間滿了。`:''));
+      })();
     }catch(err){alert('匯入失敗：'+err.message);}
   };
   rd.readAsText(f);
