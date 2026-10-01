@@ -31,7 +31,7 @@ NODE_PATH=/opt/node22/lib/node_modules /opt/node22/bin/node prog-smoke2.test.js
 | `prog-blkcap.test.js` | 房型層級的發包金額上限（子合約可任意重寫、超過才報錯） |
 | `prog-allocnotice.test.js` | 每個分頁都看得到的提示列：合併過的子合約不誤報超額、真超額要報、對不到母合約的子區塊要點出來、填了議價折讓要講明數字沒套 |
 | `prog-xcopyfind.test.js` | 抓細項說「已經有了」卻找不到：帶我去看、強制抓、回收桶優先、拆成工序的比對 |
-| `prog-copyno.test.js` | 複製細項自其他區塊：項次／章節／備註／印作照帶、不被當成追加工程、金額算進母合約與折讓分母 |
+| `prog-copypick.test.js` | 複製細項可勾選：來源含「這一份的其他房型」、項次／章節／印作照帶、不被當成追加、單價可覆寫、金額算進母合約與折讓分母 |
 | `prog-printas.test.js` | 多條細項在請款單上併成一行（資料仍逐條，發包分配不受影響） |
 | `prog-printas2.test.js` | 印作要跟著發包走、單條當純改名用、批次設定（代工母專案一條對一條不動結構） |
 | `prog-mergeprint.test.js` | 同一廠商在別的案場／零星工程的金額，可併入同一張請款單列印（帳不混） |
