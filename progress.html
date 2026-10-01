@@ -93,6 +93,9 @@ body.printing #print-overlay{display:block;position:absolute;inset:0;background:
 #sigmodal .srow{display:flex;gap:10px;margin-top:10px;align-items:center}
 #sigmodal .stitle{color:#111;font-size:14px;font-weight:700;margin-bottom:8px}
 @media screen and (max-width:760px){ .pdoc{width:100%;min-height:auto;padding:16px} }
+tr.hilite>td{background:rgba(251,191,36,.26)!important;box-shadow:inset 0 0 0 1px rgba(251,191,36,.8)}
+@keyframes hlflash{0%,100%{background:rgba(251,191,36,.26)}50%{background:rgba(251,191,36,.55)}}
+tr.hilite>td{animation:hlflash 1s ease-in-out 3}
 </style>
 </head>
 <body>
@@ -111,7 +114,7 @@ body.printing #print-overlay{display:block;position:absolute;inset:0;background:
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.10.01j-unlockfix';
+const APP_VERSION='vG2026.10.01k-xcopyfind';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -914,7 +917,8 @@ let backfill=null;   // 「從母專案補細項」展開中的區塊 id
 let trashOpen=false; // 「已刪除的細項」回收桶展開中
 let xfer=null;       // 「轉出給別人」展開中的 blkId::itemId
 let gEdit=null;      // 工序群組收合行上，正在編輯哪一格：blkId::groupId::欄位
-let xcopy=null, xcopyProj='', xcopyBlk='';   // 「從別的專案抓細項」：展開中的區塊 id ＋ 選定的來源專案／區塊
+let xcopy=null, xcopyProj='', xcopyBlk='', xcopyShowDup=false;
+let hiliteItem='';   // 「帶我去看」要閃一下的那條   // 「從別的專案抓細項」：展開中的區塊 id ＋ 選定的來源專案／區塊
 let _subInfo={};   // {blkId:{stage:{rooms(母間數), used(已發包間數), perRoom(每間金額), n(條數)}}}
 const SUB_ALL='*';  // 「整條發包」的虛擬工序代碼
 function buildSubInfo(proj){
@@ -1236,7 +1240,7 @@ function viewItems(proj){
         const gQty=sameQty?Number(subs[0].qty):0;
         const gPrice=sameQty&&gQty?+(gAmt/gQty).toFixed(4):0;   // 同量時＝各段單價相加
         const open=openGroup.has(it.groupId);
-        h+=`<tr style="background:var(--card2)">
+        h+=`<tr id="row-${it.groupId}" class="${hiliteItem&&subs.some(x=>x.id===hiliteItem)?'hilite':''}" style="background:var(--card2)">
           ${picking?`<td><input type="checkbox" data-delpick-group="${it.groupId}" ${subs.every(x=>delSel.has(x.id))?'checked':''} style="width:16px;height:16px"></td>`:''}
           <td>${esc(it.no==='增'?'':it.no)}</td>
           <td><button class="btn sub sm" data-grouptoggle="${it.groupId}" style="border:none;background:none;padding:0 6px 0 0;color:var(--accent)">${open?'▾':'▸'}</button>${(!picking&&gEdit===b.id+'::'+it.groupId+'::name')
@@ -1258,7 +1262,7 @@ function viewItems(proj){
         if(open){
           for(const s of subs){
             if(itemEdit===b.id+'::'+s.id){ h+=itemForm(b,s); continue; }
-            h+=`<tr>${picking?`<td><input type="checkbox" data-delpick="${s.id}" ${delSel.has(s.id)?'checked':''} style="width:16px;height:16px"></td>`:''}<td></td>
+            h+=`<tr id="row-${s.id}" class="${hiliteItem===s.id?'hilite':''}">${picking?`<td><input type="checkbox" data-delpick="${s.id}" ${delSel.has(s.id)?'checked':''} style="width:16px;height:16px"></td>`:''}<td></td>
               <td style="padding-left:26px;color:var(--muted)">↳ ${stageHtml(s.name,it.groupName)}</td>
               <td>${esc(s.unit)}</td>
               <td class="num">${qfmt(s.qty)}${s.qtyExpr?`<div style="font-size:11px;color:var(--muted)">=${esc(s.qtyExpr)}</div>`:''}</td>
@@ -1282,7 +1286,7 @@ function viewItems(proj){
         continue;
       }
       const zero=it.amount===0;
-      h+=`<tr class="${zero?'zero':''}">${picking?`<td><input type="checkbox" data-delpick="${it.id}" ${delSel.has(it.id)?'checked':''} style="width:16px;height:16px"></td>`:''}<td>${esc(it.no)}</td><td>${esc(it.name)}${it.tag?`<span class="tag">${esc(it.tag)}</span>`:''}${isExtraItem(it)?'<span class="tag" style="background:rgba(251,191,36,.2);border-color:rgba(251,191,36,.5);color:#fcd34d" title="追加工程：不受簽約總價折讓，照明細單價計">追加</span>':''}${hasOwnCount(it)?`<span class="tag" style="background:rgba(52,211,153,.2);border-color:rgba(52,211,153,.55);color:#6ee7b7" title="這條的實作量跟合約不同：區塊是 ${qfmt(b.count)} ${esc(b.unit)}，這條算 ${qfmt(it.cnt)} ${esc(b.unit)}">${qfmt(it.cnt)} ${esc(b.unit)}</span>`:''}${it.printAs?`<span class="tag" style="background:rgba(129,140,248,.2);border-color:rgba(129,140,248,.55);color:#c7d2fe" title="列印請款單時會跟同名的幾條併成一行：${esc(it.printAs)}">印作「${esc(it.printAs)}」</span>`:''}</td>
+      h+=`<tr id="row-${it.id}" class="${zero?'zero ':''}${hiliteItem===it.id?'hilite':''}">${picking?`<td><input type="checkbox" data-delpick="${it.id}" ${delSel.has(it.id)?'checked':''} style="width:16px;height:16px"></td>`:''}<td>${esc(it.no)}</td><td>${esc(it.name)}${it.tag?`<span class="tag">${esc(it.tag)}</span>`:''}${isExtraItem(it)?'<span class="tag" style="background:rgba(251,191,36,.2);border-color:rgba(251,191,36,.5);color:#fcd34d" title="追加工程：不受簽約總價折讓，照明細單價計">追加</span>':''}${hasOwnCount(it)?`<span class="tag" style="background:rgba(52,211,153,.2);border-color:rgba(52,211,153,.55);color:#6ee7b7" title="這條的實作量跟合約不同：區塊是 ${qfmt(b.count)} ${esc(b.unit)}，這條算 ${qfmt(it.cnt)} ${esc(b.unit)}">${qfmt(it.cnt)} ${esc(b.unit)}</span>`:''}${it.printAs?`<span class="tag" style="background:rgba(129,140,248,.2);border-color:rgba(129,140,248,.55);color:#c7d2fe" title="列印請款單時會跟同名的幾條併成一行：${esc(it.printAs)}">印作「${esc(it.printAs)}」</span>`:''}</td>
         <td>${esc(it.unit)}</td><td class="num">${qfmt(it.qty)}${it.qtyExpr?`<div style="font-size:11px;color:var(--muted)">=${esc(it.qtyExpr)}</div>`:''}</td>
         <td class="num">${it.price?qfmt(it.price):''}${it.priceExpr?`<div style="font-size:11px;color:var(--muted)">=${esc(it.priceExpr)}</div>`:''}</td><td class="num">${qfmt(it.amount)}</td>
         <td class="muted" style="font-size:12px">${picking?esc(it.remark)
@@ -1393,20 +1397,25 @@ const normName=s=>String(s||'').normalize('NFKC').toLowerCase()
 // 拆過工序的那邊是「群組名＋工序名」，沒拆的那邊是一整條，只比其中一種會對不起來。
 // 拆過工序的細項，name 本來就是「群組名-工序名」，不能再把群組名接一次
 // （接了會變「輕隔間輕隔間骨架」，跟沒拆的那邊永遠對不上）。
+// 第三種：群組名本身。拆成工序的那邊是「電視牆-骨架」「電視牆-封板」，
+// 沒拆的那邊就一條「電視牆」——full 和 bare 兩種都對不上（'電視牆骨架' vs '電視牆'、
+// '骨架' vs '電視牆'），結果整條會被當成全新的抓進來，變成同一個工項算兩次。
 const nameKeys=it=>{
   const full=normName(it&&it.name);
   const bare=normName(it&&it.groupName?stageOf(it.name,it.groupName):(it&&it.name));
-  return {full,bare};
+  const grp=it&&it.groupId?normName(it.groupName):'';
+  return {full,bare,grp};
 };
 function xcopyPanelHtml(proj,b){
   const S=xcopySource(proj);
   if(!S) return '';
   const {others,sp,sblks,sb}=S;
   // 記到「對上的是這邊哪一條」，比對時才看得出來是跟誰重複
-  const haveFull=new Map(), haveBare=new Map();
+  const haveFull=new Map(), haveBare=new Map(), haveGrp=new Map();
   b.items.forEach(x=>{ const k=nameKeys(x);
     if(k.full&&!haveFull.has(k.full))haveFull.set(k.full,x);
-    if(k.bare&&!haveBare.has(k.bare))haveBare.set(k.bare,x); });
+    if(k.bare&&!haveBare.has(k.bare))haveBare.set(k.bare,x);
+    if(k.grp&&!haveGrp.has(k.grp))haveGrp.set(k.grp,x); });
   let h=`<div class="card" style="margin-top:8px;border-color:rgba(167,139,250,.55);background:rgba(139,92,246,.08)">
     <div class="rowline" style="align-items:center;margin-bottom:6px"><b style="font-size:13.5px">📥 從別的專案抓細項到「${esc(b.name)}」</b><span style="flex:1"></span><button class="btn sub sm" data-xcopycancel="1">取消</button></div>
     <div class="muted" style="font-size:12px;margin-bottom:8px">同一個工地拆成好幾份標單時（對業主一份、代工一份），這邊刪掉的通常那邊還在，挑回來就好。<b>抓過來是新的一條</b>（不會跟來源綁在一起，各改各的）；間數照這個區塊現有的 ${qfmt(b.count)} ${esc(b.unit)}。</div>
@@ -1420,39 +1429,70 @@ function xcopyPanelHtml(proj,b){
   // dup＝全名對得起來，確定重複，不給勾；
   // maybe＝只有名稱那半對得起來（一邊拆過工序、一邊沒拆），提醒但還是給勾，
   //        免得真的是不同的兩條卻被擋住、永遠抓不進來。
+  // 回收桶也要一起比。當初刪掉、現在又要做的，從回收桶復原比從別的專案抓好得多：
+  // 項次、原本位置、以及子專案指著它的溯源都會原樣回來，不用重新發包。
+  const tFull=new Map(), tBare=new Map();
+  trashList(proj).filter(e=>e.blkId===b.id||e.blkName===b.name).forEach(e=>{
+    const k=nameKeys(e.item||{});
+    if(k.full&&!tFull.has(k.full))tFull.set(k.full,e);
+    if(k.bare&&!tBare.has(k.bare))tBare.set(k.bare,e);
+    if(k.grp&&!tFull.has(k.grp))tFull.set(k.grp,e);
+  });
   const rows=sb.items.map(it=>{
     const k=nameKeys(it);
-    const hit=(k.full&&haveFull.get(k.full))||null;
-    const near=hit?null:((k.bare&&(haveBare.get(k.bare)||haveFull.get(k.bare)))||(k.full&&haveBare.get(k.full))||null);
-    return {it,dup:!!hit,maybe:!!near,mate:hit||near};
+    // 來源是一整條、這邊拆成工序了＝同一個工項，確定重複（haveGrp）
+    const hit=(k.full&&(haveFull.get(k.full)||haveGrp.get(k.full)))||null;
+    // 來源是其中一道工序、這邊是一整條（或反過來）＝範圍重疊但不相等，只提醒
+    const near=hit?null:((k.bare&&(haveBare.get(k.bare)||haveFull.get(k.bare)||haveGrp.get(k.bare)))
+      ||(k.full&&haveBare.get(k.full))
+      ||(k.grp&&(haveFull.get(k.grp)||haveBare.get(k.grp)||haveGrp.get(k.grp)))||null);
+    const tr=hit?null:((k.full&&tFull.get(k.full))||(k.bare&&tBare.get(k.bare))||null);
+    return {it,dup:!!hit,maybe:!!near,mate:hit||near,tr};
   });
   const nNew=rows.filter(r=>!r.dup).length;
   const nMaybe=rows.filter(r=>r.maybe).length;
+  const nDup=rows.filter(r=>r.dup).length;
   const nHid=rows.filter(r=>r.mate&&proj.hideZero&&Number(r.mate.amount)===0).length;
   // 對上的是這邊的第幾項，直接寫在標籤上，不用自己回頭翻。
   // 0 元的那條會被「隱藏 0 元項目」藏起來 —— 不講清楚，使用者翻遍合約明細
   // 也找不到它，只會覺得系統亂認。
   const mateHidden=m=>!!(proj.hideZero&&m&&Number(m.amount)===0);
+  // 說「已經有了」卻在明細上找不到，使用者只會覺得系統亂認。
+  // 把看不到的三個原因都講出來，並給一個「帶我去看」直接跳過去。
+  const mateWhy=m=>{
+    if(!m) return '';
+    if(mateHidden(m)) return '金額 0，被上面的「隱藏 0 元項目」藏起來了';
+    if(m.groupId&&!openGroup.has(m.groupId))
+      return '它被拆成工序、收在「'+(m.groupName||m.name)+'」那一行裡（收合狀態看不到單條）';
+    return '就在下面的合約明細裡';
+  };
   const mateNo=m=>{
     if(!m) return '';
     const n=String(m.no||'').trim();
-    return `（這邊的 ${n?esc(n):'「'+esc(m.name||'')+'」'}${mateHidden(m)?'，0 元被隱藏了':''}）`;
+    return `（這邊的 ${n?esc(n):'「'+esc(m.name||'')+'」'}）`;
   };
-  const mateTip=m=>m?` title="對到這邊的：${esc((String(m.no||'').trim()?m.no+'　':'')+(m.name||''))}${mateHidden(m)?'（金額 0，被上面的「隱藏 0 元項目」藏起來，所以你在明細裡看不到）':''}"`:'';
+  const mateTip=m=>m?` title="對到這邊的：${esc((String(m.no||'').trim()?m.no+'　':'')+(m.name||''))}（${esc(mateWhy(m))}）"`:'';
+  const findBtn=m=>m?` <button class="btn sub sm" data-xcfind="${b.id}::${m.id}" style="padding:1px 6px;font-size:11px" title="跳到明細上那一條（需要的話會自動取消隱藏、展開工序）">🔍 帶我去看</button>`:'';
+  const nTr=rows.filter(r=>r.tr).length;
+  if(nTr) h+=`<div style="font-size:12px;margin-bottom:8px;padding:7px 9px;background:rgba(96,165,250,.13);border:1px solid rgba(96,165,250,.45);border-radius:8px">
+    🗑 其中 <b>${nTr}</b> 條是你<b>在這個區塊刪掉過</b>的。<b>建議按那幾條的「↩ 從回收桶復原」</b>，不要從別的專案抓——
+    復原會連原本的項次、位置和溯源一起回來，子專案原本指著它的發包會自己接回去，不用重新發包。</div>`;
   h+=`<table style="font-size:13px"><tr><th style="width:34px"></th><th style="width:64px">項次</th><th>細項</th><th class="num">來源單價</th><th class="num">這份要用的單價</th><th class="num">抓進來的金額</th></tr>
-    ${rows.map(({it,dup,maybe,mate})=>`<tr${dup?' style="opacity:.5"':''}>
-      <td>${dup?'':`<input type="checkbox" data-xcpick="${it.id}"${maybe?' data-xcmaybe="1"':''} style="width:16px;height:16px">`}</td>
+    ${rows.map(({it,dup,maybe,mate,tr})=>`<tr${dup?' style="opacity:.5"':''}>
+      <td>${(dup&&!xcopyShowDup)?'':`<input type="checkbox" data-xcpick="${it.id}"${(maybe||dup)?' data-xcmaybe="1"':''} style="width:16px;height:16px">`}</td>
       <td class="muted" style="font-size:12px;white-space:nowrap">${esc(it.no||'')}</td>
-      <td>${esc(it.name)}${dup?`<span class="tag"${mateTip(mate)}>已經有了${mateNo(mate)}</span>`:''}${maybe?`<span class="tag" style="background:rgba(251,191,36,.2);border-color:rgba(251,191,36,.5);color:#fcd34d"${mateTip(mate)}>可能重複${mateNo(mate)}</span>`:''}
+      <td>${esc(it.name)}${dup?`<span class="tag"${mateTip(mate)}>已經有了${mateNo(mate)}</span>${findBtn(mate)}<div class="muted" style="font-size:11px">${esc(mateWhy(mate))}</div>`:''}${maybe?`<span class="tag" style="background:rgba(251,191,36,.2);border-color:rgba(251,191,36,.5);color:#fcd34d"${mateTip(mate)}>可能重複${mateNo(mate)}</span>${findBtn(mate)}`:''}${tr?`<span class="tag" style="background:rgba(96,165,250,.2);border-color:rgba(96,165,250,.55);color:#bfdbfe" title="這條你刪掉過，回收桶裡還留著">刪掉過${(String(tr.item&&tr.item.no||'').trim()?'（原 '+esc(tr.item.no)+'）':'')}</span> <button class="btn sm" data-trashrestore="${tr.id}" style="padding:1px 7px;font-size:11px" title="從回收桶原樣放回去：項次、位置、溯源都保留，比從別的專案抓乾淨">↩ 從回收桶復原</button>`:''}
         <div class="muted" style="font-size:11px">${qfmt(it.qty)} ${esc(it.unit)}</div></td>
       <td class="num">${qfmt(it.price)}</td>
-      <td class="num">${dup?'':`<input class="pin" data-xcprice="${it.id}" inputmode="decimal" placeholder="${qfmt(it.price)}" style="width:88px;text-align:right">`}</td>
-      <td class="num muted" style="font-size:11.5px">${dup?'':`${money(itemValue(it,b))}<div>（${qfmt(it.qty)} × ${qfmt(b.count)} ${esc(b.unit)}）</div>`}</td></tr>`).join('')}
+      <td class="num">${(dup&&!xcopyShowDup)?'':`<input class="pin" data-xcprice="${it.id}" inputmode="decimal" placeholder="${qfmt(it.price)}" style="width:88px;text-align:right">`}</td>
+      <td class="num muted" style="font-size:11.5px">${(dup&&!xcopyShowDup)?'':`${money(itemValue(it,b))}<div>（${qfmt(it.qty)} × ${qfmt(b.count)} ${esc(b.unit)}）</div>`}</td></tr>`).join('')}
     </table>
     <div style="margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-      ${nNew?`<button class="btn sm" data-xcopyall="${b.id}">全選${nMaybe?'（不含可能重複的）':''}</button><button class="btn sm" data-xcopyok="${b.id}">📥 抓進來</button>`:'<span class="muted" style="font-size:12px">這個區塊的細項，這邊都已經有了。</span>'}
+      ${(nNew||xcopyShowDup)?`<button class="btn sm" data-xcopyall="${b.id}">全選${(nMaybe||xcopyShowDup)?'（不含可能重複的）':''}</button><button class="btn sm" data-xcopyok="${b.id}">📥 抓進來</button>`:'<span class="muted" style="font-size:12px">這個區塊的細項，這邊都已經有了。</span>'}
       <span class="muted" style="font-size:11.5px">單價留空＝照來源單價</span>
+      ${nDup?`<span style="flex:1"></span><button class="btn sub sm" data-xcdup="1" style="border-color:${xcopyShowDup?'#f87171':'#94a3b8'};color:${xcopyShowDup?'#fca5a5':'#cbd5e1'}">${xcopyShowDup?'✓ 已解鎖「已經有了」的 '+nDup+' 條':'🔓 說「已經有了」卻找不到？解開來自己抓（'+nDup+' 條）'}</button>`:''}
     </div>
+    ${xcopyShowDup?`<div style="font-size:11.5px;margin-top:6px;padding:6px 8px;background:rgba(248,113,113,.12);border:1px solid rgba(248,113,113,.4);border-radius:8px">⚠ 已經解鎖。先按每條的「🔍 帶我去看」確認這邊真的沒有，再抓；<b>直接抓會變成兩條一樣的，金額會算兩次</b>。</div>`:''}
     ${nMaybe?`<div class="muted" style="font-size:11.5px;margin-top:6px">＊標「可能重複」的 ${nMaybe} 條：這邊有名稱對得上的，但一邊拆過工序、一邊沒拆，不敢直接幫你擋。要抓還是可以勾。</div>`:''}
     ${nHid?`<div style="font-size:11.5px;margin-top:6px;padding:6px 8px;background:rgba(251,191,36,.12);border:1px solid rgba(251,191,36,.4);border-radius:8px">⚠ 其中 ${nHid} 條說「已經有了」，但你在合約明細裡<b>找不到</b>——因為那幾條金額是 0，被上面的「隱藏 0 元項目」藏起來了。把那個勾勾取消就看得到。</div>`:''}</div>`;
   return h;
@@ -2929,7 +2969,7 @@ function setProgInput(proj,blkId,itemId,kind,val){
 }
 
 document.addEventListener('click',async e=>{
-  const t=e.target.closest('[data-tab],[data-editblk],[data-delblk],[data-edititem],[data-delitem],[data-additem],[data-splititem],[data-sortitems],[data-grouptoggle],[data-groupmerge],[data-groupdetect],[data-whtoggle],[data-rttoggle],[data-whtax],[data-whtaxauto],[data-rtamt],[data-selfone],[data-selfrooms],[data-selfrest],[data-selfclear],[data-delmode],[data-delcancel],[data-delall],[data-delnone],[data-delinv],[data-delzero],[data-deldo],#sub-toggle,#sub-close,#sub-go,[data-backfill],[data-backfillcancel],[data-backfillok],[data-addmissblk],#trash-toggle,#trash-clear,[data-trashrestore],[data-trashdrop],#drift-sync,#drift-sync-price,#drift-all,#drift-none,[data-copyinto],[data-copyok],[data-copycancel],[data-xcopy],[data-xcopycancel],[data-xcopyall],[data-xcopyok],[data-xfer],[data-xfercancel],[data-xferok],[data-gedit],[data-batchedit],[data-batchok],[data-batchcancel],[data-batchalledit],[data-batchallok],[data-batchallcancel],[data-itemok],[data-itemcancel],[data-blkok],[data-blkcancel],[data-bapply],[data-gapply],#btn-invrecon,[data-editextra],[data-delextra],#btn-import,#btn-import2,#btn-unlock,#btn-retrycloud,#btn-clouddiag,#btn-newproj,#btn-newproj2,#btn-addblk,#btn-addblk-ok,#btn-addperiod,#btn-delperiod,#btn-addextra,#btn-roundup,#settle-toggle,#set-rebase,[data-gotoproj],#btn-print,#btn-setretain,#orphan-fix,#orphan-detach,#proj-groupall,#set-save,#set-taxmode,#proj-dup,#proj-detach,#backup-export,#backup-import-btn,#prev-restore,#prev-export,#proj-del,#cloud-push,#cloud-pull');
+  const t=e.target.closest('[data-tab],[data-editblk],[data-delblk],[data-edititem],[data-delitem],[data-additem],[data-splititem],[data-sortitems],[data-grouptoggle],[data-groupmerge],[data-groupdetect],[data-whtoggle],[data-rttoggle],[data-whtax],[data-whtaxauto],[data-rtamt],[data-selfone],[data-selfrooms],[data-selfrest],[data-selfclear],[data-delmode],[data-delcancel],[data-delall],[data-delnone],[data-delinv],[data-delzero],[data-deldo],#sub-toggle,#sub-close,#sub-go,[data-backfill],[data-backfillcancel],[data-backfillok],[data-addmissblk],#trash-toggle,#trash-clear,[data-trashrestore],[data-trashdrop],#drift-sync,#drift-sync-price,#drift-all,#drift-none,[data-copyinto],[data-copyok],[data-copycancel],[data-xcopy],[data-xcopycancel],[data-xcopyall],[data-xcopyok],[data-xcdup],[data-xcfind],[data-xfer],[data-xfercancel],[data-xferok],[data-gedit],[data-batchedit],[data-batchok],[data-batchcancel],[data-batchalledit],[data-batchallok],[data-batchallcancel],[data-itemok],[data-itemcancel],[data-blkok],[data-blkcancel],[data-bapply],[data-gapply],#btn-invrecon,[data-editextra],[data-delextra],#btn-import,#btn-import2,#btn-unlock,#btn-retrycloud,#btn-clouddiag,#btn-newproj,#btn-newproj2,#btn-addblk,#btn-addblk-ok,#btn-addperiod,#btn-delperiod,#btn-addextra,#btn-roundup,#settle-toggle,#set-rebase,[data-gotoproj],#btn-print,#btn-setretain,#orphan-fix,#orphan-detach,#proj-groupall,#set-save,#set-taxmode,#proj-dup,#proj-detach,#backup-export,#backup-import-btn,#prev-restore,#prev-export,#proj-del,#cloud-push,#cloud-pull');
   if(!t)return;
   const proj=curProj();
   if(t.dataset.tab){state.tab=t.dataset.tab;save();render();return;}
@@ -3545,7 +3585,23 @@ document.addEventListener('click',async e=>{
     xcopyBlk=same?same.id:'';
     render(); return;
   }
-  if(t.dataset.xcopycancel){ xcopy=null; xcopyBlk=''; render(); return; }
+  if(t.dataset.xcopycancel){ xcopy=null; xcopyBlk=''; xcopyShowDup=false; render(); return; }
+  if(t.dataset.xcdup){ xcopyShowDup=!xcopyShowDup; render(); return; }
+  // 🔍 帶我去看：跳到明細上對到的那一條。看不到就先把擋住它的東西撥開
+  // （0 元隱藏、工序收合），不然使用者永遠找不到，只會以為系統亂認。
+  if(t.dataset.xcfind){
+    const [bid,iid]=t.dataset.xcfind.split('::');
+    const bb=proj.blocks.find(x=>x.id===bid); const m=bb&&bb.items.find(x=>x.id===iid);
+    if(!m){ alert('找不到那一條了，可能剛剛被刪掉。'); return; }
+    if(proj.hideZero&&Number(m.amount)===0){ proj.hideZero=false; save(); }
+    if(m.groupId&&!openGroup.has(m.groupId)) openGroup.add(m.groupId);
+    openBlk.add(bid);
+    hiliteItem=iid; render();
+    const el=document.getElementById('row-'+iid)||document.getElementById('row-'+(m.groupId||''));
+    if(el) el.scrollIntoView({block:'center',behavior:'smooth'});
+    setTimeout(()=>{ hiliteItem=''; render(); },4000);
+    return;
+  }
   if(t.dataset.xcopyall){
     // 「可能重複」的不幫你勾，那幾條要自己判斷
     document.querySelectorAll('[data-xcpick]').forEach(cb=>{ if(!cb.dataset.xcmaybe) cb.checked=true; });
