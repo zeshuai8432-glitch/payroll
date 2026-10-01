@@ -111,7 +111,7 @@ body.printing #print-overlay{display:block;position:absolute;inset:0;background:
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.10.01e-printnote';
+const APP_VERSION='vG2026.10.01f-plans';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -149,7 +149,12 @@ function normalizeGroups(){
     (b.items||[]).forEach(x=>{ if(x.groupId&&n[x.groupId]<2){ delete x.groupId; delete x.groupName; } });
   }));
 }
-function save(){ normalizeGroups(); state.savedAt=Date.now(); localStorage.setItem(LS,JSON.stringify(state)); schedulePush(); }
+function save(){
+  normalizeGroups(); state.savedAt=Date.now();
+  try{ localStorage.setItem(LS,JSON.stringify(state)); }
+  catch(e){ alert('⚠ 這台的瀏覽器空間滿了，剛才的修改沒有存進本機。\n\n請到「設定/備份」把用不到的圖面附件刪掉，或先匯出備份。\n\n（資料還在畫面上，別關掉這一頁。）'); }
+  schedulePush();
+}
 const curProj=()=>state.projects.find(p=>p.id===state.cur)||null;
 
 /* ═══════════ xlsx 解析（純瀏覽器，不用外部程式庫） ═══════════ */
@@ -2286,6 +2291,96 @@ function printRemark(r){
   return String(r||'').split(/[；;]/).map(x=>x.trim())
     .filter(x=>x&&!/^\d{4}-\d{2}-\d{2}\s*(原|自)/.test(x)).join('；');
 }
+/* ═══════════ 圖面附件（只存這台，不進雲端） ═══════════
+   雲端存的是整個專案一份 JSON，Firestore 單一文件上限 1MB，加密後還會膨脹約 1.37 倍，
+   一張壓過的圖面就可能把額度吃掉大半 → 上傳失敗、資料卡在本機。
+   所以圖面另外存在 localStorage 的獨立 key，不進 state、不同步。 */
+const LS_PLANS='pm_progress_plans_v1';
+const PLANS_MAX=4*1024*1024;   // 全部圖面加起來的上限，避免把 localStorage 塞爆害主資料存不進去
+function loadPlans(){ try{ return JSON.parse(localStorage.getItem(LS_PLANS)||'{}')||{}; }catch(e){ return {}; } }
+function plansBytes(o){ let n=0; for(const k in o) (o[k]||[]).forEach(x=>n+=(x.d||'').length); return n; }
+function savePlans(o){
+  try{ localStorage.setItem(LS_PLANS,JSON.stringify(o)); return true; }
+  catch(e){ alert('這台的空間存不下了，圖面沒有存進去。\n\n請先刪掉幾張舊的圖面再試。'); return false; }
+}
+const planKey=(projId,blkId)=>projId+'::'+blkId;
+const planList=(projId,blkId)=>loadPlans()[planKey(projId,blkId)]||[];
+function planAdd(projId,blkId,name,dataUrl){
+  const o=loadPlans(), k=planKey(projId,blkId);
+  if(plansBytes(o)+dataUrl.length>PLANS_MAX){ alert('圖面總量超過上限（約 4MB）。\n\n請先刪掉幾張用不到的再加。'); return false; }
+  (o[k]||(o[k]=[])).push({name:String(name||'圖面'),d:dataUrl,at:Date.now()});
+  return savePlans(o);
+}
+function planDel(projId,blkId,i){
+  const o=loadPlans(), k=planKey(projId,blkId);
+  if(!o[k]) return; o[k].splice(i,1); if(!o[k].length) delete o[k]; savePlans(o);
+}
+// 圖面縮到合理大小再存：原圖動輒好幾 MB，瀏覽器空間與列印都吃不消
+function compressImage(file,maxW,quality){
+  return new Promise((res,rej)=>{
+    const fr=new FileReader();
+    fr.onerror=()=>rej(new Error('讀不到檔案'));
+    fr.onload=()=>{
+      const img=new Image();
+      img.onerror=()=>rej(new Error('這個檔案不是圖片（PDF 請先轉成圖片）'));
+      img.onload=()=>{
+        const w=Math.min(img.width,maxW||1600), h=Math.round(img.height*w/img.width);
+        const c=document.createElement('canvas'); c.width=w; c.height=h;
+        const g=c.getContext('2d'); g.fillStyle='#fff'; g.fillRect(0,0,w,h); g.drawImage(img,0,0,w,h);
+        res(c.toDataURL('image/jpeg',quality||0.75));
+      };
+      img.src=fr.result;
+    };
+    fr.readAsDataURL(file);
+  });
+}
+function openPlanModal(proj,onClose){
+  const old=document.getElementById('modal'); if(old) old.remove();
+  const m=document.createElement('div'); m.id='modal';
+  const draw=()=>{
+    const o=loadPlans();
+    m.innerHTML=`<div class="box" style="max-width:760px;max-height:86vh;overflow:auto"><h3 style="margin-bottom:6px">🖼 圖面附件</h3>
+      <div class="muted" style="font-size:12.5px;margin-bottom:10px">
+        每個房型可以附自己的圖面，列印時接在<b>那個房型的明細後面</b>，一張一頁滿版，工班可以直接對你標在圖上的編號。
+        <br><b style="color:var(--warn)">圖面只存在這台瀏覽器，不會同步到雲端</b>——換手機或換電腦要重新選一次。
+        （雲端一份資料有 1MB 上限，圖放進去會把整份資料卡住上傳不了。）
+        <br>選進來的圖會自動縮到寬 1600px、JPEG 壓縮。PDF 請先轉成圖片。
+        <br>目前已用 <b>${(plansBytes(o)/1024/1024).toFixed(2)} MB</b> / 4 MB。</div>
+      ${(proj.blocks||[]).map(b=>{
+        const list=o[proj.id+'::'+b.id]||[];
+        return `<div style="border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin-bottom:8px">
+          <div class="rowline" style="align-items:center"><b style="font-size:13.5px">${esc(b.name)}</b>
+            <span class="tag">${qfmt(b.count)} ${esc(b.unit)}</span><span style="flex:1"></span>
+            <button class="btn sub sm" data-planpick="${b.id}">＋ 選圖片</button></div>
+          ${list.length?`<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+            ${list.map((pl,i)=>`<div style="width:120px"><img src="${pl.d}" style="width:100%;border:1px solid var(--line);border-radius:4px">
+              <div class="muted" style="font-size:10.5px;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(pl.name)}">${esc(pl.name)}</div>
+              <button class="btn bad sm" data-plandel="${b.id}::${i}" style="width:100%;margin-top:2px">刪除</button></div>`).join('')}
+          </div>`:'<div class="muted" style="font-size:12px;margin-top:4px">這個房型還沒附圖面。</div>'}
+        </div>`;}).join('')}
+      <div class="rowline" style="margin-top:4px"><button class="btn" id="plan-close">關閉</button></div></div>`;
+  };
+  draw();
+  document.body.appendChild(m);
+  const inp=document.createElement('input'); inp.type='file'; inp.accept='image/*'; inp.multiple=true; inp.style.display='none';
+  m.appendChild(inp);
+  let pickBlk=null;
+  inp.onchange=async()=>{
+    const files=[...inp.files]; inp.value='';
+    for(const f of files){
+      try{ const d=await compressImage(f,1600,0.75); if(!planAdd(proj.id,pickBlk,f.name,d)) break; }
+      catch(e){ alert(`「${f.name}」加不進來：${e.message}`); }
+    }
+    draw();
+  };
+  m.onclick=e=>{
+    const pick=e.target.closest('[data-planpick]'), del=e.target.closest('[data-plandel]');
+    if(pick){ pickBlk=pick.dataset.planpick; inp.click(); return; }
+    if(del){ const [bid,i]=del.dataset.plandel.split('::');
+      if(confirm('刪掉這張圖面？')){ planDel(proj.id,bid,+i); draw(); } return; }
+    if(e.target.id==='plan-close'||e.target===m){ m.remove(); if(onClose) onClose(); }
+  };
+}
 function printDoc(proj){
   const perIdx=Math.min(proj.curPeriod??proj.periods.length-1,proj.periods.length-1);
   const c=calc(proj,perIdx);
@@ -2488,6 +2583,14 @@ function printDoc(proj){
           <td class="num">${money(Ri(ci.cumAmt,it))}</td></tr>`;
       }
       h+=`<tr class="tot"><td colspan="8">小計</td><td class="num">${money(blkCum(cb))}</td></tr></table>`;
+      // 圖面接在這個房型的明細後面，一張一頁滿版，工班可以直接攤開對編號
+      const pls=planList(proj.id,cb.blk.id);
+      pls.forEach((pl,i)=>{
+        h+=`<div style="page-break-before:always;break-before:page;margin-top:10px">
+          <div style="font-weight:700;font-size:12.5px;margin-bottom:4px">${esc(cb.blk.name)}　圖面 ${i+1}／${pls.length}${pl.name?`　<span style="font-weight:400;color:#555">${esc(pl.name)}</span>`:''}</div>
+          <img src="${pl.d}" style="width:100%;border:1px solid #c7d4e8;border-radius:4px">
+        </div>`;
+      });
     }
     const sigs=c.period.sigs||{};
     const roles=[['owner','業主（甲方）簽認'],['eng','現場工程師'],['vendor','承攬（乙方）']];
@@ -2508,6 +2611,7 @@ function printDoc(proj){
     <label style="color:var(--ink);font-size:13px"><input type="radio" name="ptax" value="incl"${taxMode==='incl'?' checked':''}> 外加 5% 營業稅（有公司牌開發票）</label>
     <span class="muted" style="font-size:11.5px">＊此設定會記在這個專案，下次列印沿用</span>
     <label style="color:var(--ink);font-size:13px"><input type="checkbox" id="pshowall"${showAll?' checked':''}> 連「沒進度」的項目一起印（不勾＝只印做過的）</label>
+    <button class="btn sub" id="plan-manage" title="附上圖面（只存這台，不會同步）">🖼 圖面${(()=>{const o=loadPlans();let n=0;(proj.blocks||[]).forEach(b=>n+=(o[proj.id+'::'+b.id]||[]).length);return n?`（${n}）`:'';})()}</button>
     ${jobs.length?`<span style="color:var(--ink);font-size:13px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;border-left:1px solid var(--line);padding-left:10px">
       <b style="font-size:12px">同一廠商在別處（併入本單）</b>
       ${jobs.map(x=>`<label style="font-size:12.5px;white-space:nowrap"><input type="checkbox" data-mergejob="${x.proj.id}"${mergeSel.has(x.proj.id)?' checked':''}> ${esc(x.label)} ${money(x.amt)}</label>`).join('')}
@@ -2524,6 +2628,7 @@ function printDoc(proj){
     cb.checked?mergeSel.add(cb.dataset.mergejob):mergeSel.delete(cb.dataset.mergejob);
     redraw();   // 只重畫預覽，資料不動
   });
+  ov.querySelector('#plan-manage').onclick=()=>openPlanModal(proj,()=>{ printDoc(proj); });
   ov.querySelector('#do-print').onclick=()=>{window.print();offerSettleAfterPrint(proj);};
   ov.querySelector('#close-print').onclick=()=>{document.body.classList.remove('printing');ov.innerHTML='';};
   ov.onclick=e2=>{
