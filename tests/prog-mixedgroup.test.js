@@ -161,6 +161,57 @@ const open=async(st,cur)=>{
   await pg.close();
 }
 
+// ⑧ ★ 子專案自己分的組不可以被「自動分開」拆掉（骨架／封板／二次封板 來自母的不同條，但沒有同名）
+{
+  const st=mk();
+  // 母專案：口袋牆那條沒有拆工序（單獨一條），另外兩條各自獨立
+  st.projects[0].blocks[0].items=[
+    {id:'p1',no:'6.7',name:'口袋牆雙面隔間-骨架',unit:'㎡',qty:4.93,price:300,amount:1479},
+    {id:'p2',no:'6.7',name:'口袋牆雙面隔間-封板',unit:'㎡',qty:4.93,price:300,amount:1479,groupId:'mgx',groupName:'口袋牆雙面隔間'},
+    {id:'p3',no:'6.7',name:'口袋牆雙面隔間-二次封板',unit:'㎡',qty:4.93,price:300,amount:1479,groupId:'mgx',groupName:'口袋牆雙面隔間'}];
+  // 子專案把三道收成一組（名稱沒有重複）
+  st.projects[2].blocks[0].items=['骨架','封板','二次封板'].map((n,i)=>({
+    id:'k'+i,no:'6.7',name:'口袋牆雙面隔間-'+n,unit:'㎡',qty:4.93,price:140,amount:690.2,
+    srcId:['p1','p2','p3'][i],cnt:6,groupId:'kg',groupName:'口袋牆雙面隔間',remark:'圖面編號H'}));
+  const {pg,errs}=await open(st,'C');
+  await pg.waitForTimeout(300);
+  t('⑧ ★ 沒有同名工序 → 不判定為混在一起', await pg.evaluate(()=>mixedGroupsOf(curProj()).length)===0);
+  t('⑧ 畫面上沒有紅字（不會叫你去拆掉自己分的組）',
+    !/混了不同的合約項目/.test(await pg.textContent('#app')));
+  t('⑧ 沒有 JS 錯誤', errs.length===0);
+  await pg.close();
+}
+
+// ⑨ 落單的工序要收得回去
+{
+  const st=mk();
+  st.projects[2].blocks[0].items=[
+    // 骨架落單（沒有 groupId），封板與二次封板是一組
+    {id:'s0',no:'6.7',name:'口袋牆雙面隔間-骨架',unit:'㎡',qty:4.93,price:140,amount:690.2,srcId:'m0骨架',cnt:6},
+    {id:'s1',no:'6.7',name:'口袋牆雙面隔間-封板',unit:'㎡',qty:4.93,price:140,amount:690.2,srcId:'m0封板',cnt:6,groupId:'kg',groupName:'口袋牆雙面隔間'},
+    {id:'s2',no:'6.7',name:'口袋牆雙面隔間-二次封板',unit:'㎡',qty:4.93,price:140,amount:690.2,srcId:'m0二次封板',cnt:6,groupId:'kg',groupName:'口袋牆雙面隔間'}];
+  const {pg,errs}=await open(st,'C');
+  await pg.evaluate(()=>{ openBlk.add('bC'); render(); }); await pg.waitForTimeout(350);
+  t('⑨ 偵測到 1 條落單', await pg.evaluate(()=>strayStagesOf(curProj().blocks[0]).length)===1);
+  t('⑨ 有收回按鈕', await pg.locator('[data-groupjoin="bC"]').count()===1);
+  const before=await pg.evaluate(()=>{const b=curProj().blocks[0];
+    return {amt:b.items.reduce((a,x)=>a+itemValue(x,b),0),cnts:b.items.map(x=>effCount(x,b))};});
+  await pg.click('[data-groupjoin="bC"]'); await pg.waitForTimeout(600);
+  const after=await pg.evaluate(()=>{const b=curProj().blocks[0];
+    return {gids:[...new Set(b.items.map(x=>x.groupId))],n:b.items.length,
+            amt:b.items.reduce((a,x)=>a+itemValue(x,b),0),cnts:b.items.map(x=>effCount(x,b)),
+            stray:strayStagesOf(b).length};});
+  t('⑩ 三道收成同一組', after.gids.length===1&&after.gids[0]==='kg');
+  t('⑩ 條數沒變', after.n===3);
+  t('⑩ ★ 金額完全沒動（'+before.amt+' → '+after.amt+'）', Math.abs(after.amt-before.amt)<0.5);
+  t('⑩ ★ 間數完全沒動', JSON.stringify(after.cnts)===JSON.stringify(before.cnts));
+  t('⑩ 收完按鈕消失', after.stray===0);
+  t('⑩ 收合行顯示 3 道工序',
+    /3 道工序/.test(await pg.evaluate(()=>{const r=document.getElementById('row-kg');return r?r.innerText:'';})));
+  t('⑩ 沒有 JS 錯誤', errs.length===0);
+  await pg.close();
+}
+
 await br.close();
 console.log(`\n${ok.length} passed, ${bad.length} failed`);
 if(bad.length){bad.forEach(b=>console.log(' FAIL '+b));process.exit(1);}
