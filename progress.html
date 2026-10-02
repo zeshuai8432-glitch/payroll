@@ -114,7 +114,7 @@ tr.hilite>td{animation:hlflash 1s ease-in-out 3}
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.10.02b-mixedgroup';
+const APP_VERSION='vG2026.10.02c-dupstage';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -191,6 +191,25 @@ function mixedGroupsOf(proj){
       const keyOf=it=>{ if(!it.srcId) return ''; const m=mOf(it.srcId); if(!m) return ''; return m.groupId||('#'+m.id); };
       const keys=[...new Set(its.map(keyOf).filter(Boolean))];
       if(keys.length>1) out.push({blk:b,gid,items:its,keys,keyOf,name:its[0].groupName||its[0].name});
+    });
+  });
+  return out;
+}
+// 同一個工序群組裡有兩道同名（多半是打字時少打「二次」）。這不只是看起來一樣：
+// 轉出／轉入是用「溯源＋名稱」認同一條的，同名的兩道會被併成一條，量相加、
+// 另一道整個消失，而且併完才發現已經來不及。先在源頭講出來。
+function dupStagesOf(proj){
+  const out=[];
+  (proj.blocks||[]).forEach(b=>{
+    const by={};
+    (b.items||[]).forEach(it=>{ if(it.groupId) (by[it.groupId]=by[it.groupId]||[]).push(it); });
+    Object.keys(by).forEach(gid=>{
+      const its=by[gid], seen={}, dups=[];
+      its.forEach(it=>{ const k=normName(stageOf(it.name,it.groupName));
+        if(!k) return; if(seen[k]) { if(dups.indexOf(k)<0) dups.push(k); } else seen[k]=it; });
+      if(dups.length) out.push({blk:b,gid,name:its[0].groupName||its[0].name,
+        stages:dups.map(k=>stageOf((its.find(x=>normName(stageOf(x.name,x.groupName))===k)||{}).name||'',its[0].groupName)),
+        n:its.length});
     });
   });
   return out;
@@ -992,6 +1011,12 @@ function render(){
     被併成一組之後各道的量和金額都對不起來。
     <div style="font-size:12px;margin-top:4px">${mixedG.map(x=>`${esc(x.blk.name)}／${esc(x.name)}（${x.items.length} 道、${x.keys.length} 條合約項目）`).join('；')}</div>
     <div style="margin-top:8px"><button class="btn sm" id="fix-mixedg">🔧 自動分開（照母專案那條分組）</button></div></div>`;
+  const dupS=dupStagesOf(proj);
+  if(dupS.length) h+=`<div class="notice" style="margin-bottom:10px;border-color:rgba(251,191,36,.55);background:rgba(251,191,36,.12);color:#fcd34d">
+    <b>⚠ 有 ${dupS.length} 組工序裡出現同名的兩道</b>——多半是打字時少打「二次」之類的字。
+    <div style="font-size:12px;margin-top:4px">${dupS.map(x=>`${esc(x.blk.name)}／${esc(x.name)}：同名的「${esc(x.stages.join('」「'))}」`).join('；')}</div>
+    <div style="font-size:11.5px;margin-top:4px"><b>請先把名字改開</b>（點收合行展開，按那一道的「改」）。
+    轉出／轉入是用「溯源＋名稱」認同一條的，<b>同名的兩道轉過去會被併成一條</b>，量相加、另一道消失。</div></div>`;
   const pRuns=projectSplitRuns(proj);
   if(pRuns) h+=`<div class="notice" style="margin-bottom:10px;border-color:#818cf8;background:rgba(99,102,241,.12);color:#c7d2fe">
     偵測到 <b>${pRuns}</b> 組以前拆開、還沒收在一起的工序（合約明細與進度請款都會攤平顯示）。

@@ -118,6 +118,49 @@ const open=async(st,cur)=>{
   await pg.close();
 }
 
+// ⑥ 同一組裡兩道同名（打字少打「二次」）：要在源頭就警告
+{
+  const st=mk();
+  // 東澤：圖面編號 H 那組，兩道都打成「封板」
+  st.projects[1].blocks[0].items=[
+    {id:'h1',no:'6.7',name:'口袋牆雙面隔間-骨架',unit:'㎡',qty:4.93,price:140,amount:690.2,
+     srcId:'m0骨架',groupId:'gh',groupName:'口袋牆雙面隔間',remark:'圖面編號H'},
+    {id:'h2',no:'6.7',name:'口袋牆雙面隔間-封板',unit:'㎡',qty:4.93,price:140,amount:690.2,
+     srcId:'m0封板',groupId:'gh',groupName:'口袋牆雙面隔間',remark:'圖面編號H'},
+    {id:'h3',no:'6.7',name:'口袋牆雙面隔間-封板',unit:'㎡',qty:4.93,price:140,amount:690.2,
+     srcId:'m0二次封板',groupId:'gh',groupName:'口袋牆雙面隔間',remark:'圖面編號H'}];
+  const {pg,errs}=await open(st,'T');
+  await pg.waitForTimeout(300);
+  const d=await pg.evaluate(()=>{const x=dupStagesOf(curProj());
+    return {n:x.length,stages:x[0]?x[0].stages:[]};});
+  t('⑥ 偵測到同名的工序', d.n===1&&d.stages.includes('封板'));
+  const txt=await pg.textContent('#app');
+  t('⑥ 畫面上警告並說明會被併成一條', /同名的兩道/.test(txt)&&/會被併成一條/.test(txt));
+  t('⑥ 並告訴你先去改名', /請先把名字改開/.test(txt));
+  t('⑥ 沒有 JS 錯誤', errs.length===0);
+
+  // 改開名字之後警告消失
+  const gone=await pg.evaluate(()=>{
+    curProj().blocks[0].items[2].name='口袋牆雙面隔間-二次封板'; save(); render();
+    return {n:dupStagesOf(curProj()).length,warn:/同名的兩道/.test(document.getElementById('app').innerText)};});
+  t('⑥ 改開名字後警告消失', gone.n===0&&!gone.warn);
+
+  // 改開之後轉過去才會是兩道
+  const r=await pg.evaluate(()=>{
+    const T=state.projects.find(p=>p.id==='T'), C=state.projects.find(p=>p.id==='C');
+    const sb=T.blocks[0];
+    sb.items.slice().forEach(it=>xferApply(T,sb,it,C,6,140));
+    save();
+    const cb=C.blocks[0];
+    return {n:cb.items.length,names:cb.items.map(x=>stageOf(x.name,x.groupName)),
+            cnts:cb.items.map(x=>effCount(x,cb))};});
+  t('⑦ 三道各自過去，沒有被併（3 條）', r.n===3);
+  t('⑦ 名稱分別是骨架／封板／二次封板：'+r.names.join('、'),
+    r.names.join(',')==='骨架,封板,二次封板');
+  t('⑦ 每道都是 6 間，沒有誰變成 12', r.cnts.every(c=>c===6));
+  await pg.close();
+}
+
 await br.close();
 console.log(`\n${ok.length} passed, ${bad.length} failed`);
 if(bad.length){bad.forEach(b=>console.log(' FAIL '+b));process.exit(1);}
