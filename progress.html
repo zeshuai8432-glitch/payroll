@@ -114,7 +114,7 @@ tr.hilite>td{animation:hlflash 1s ease-in-out 3}
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.10.02a-cnttag';
+const APP_VERSION='vG2026.10.02b-mixedgroup';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -175,6 +175,37 @@ function xlogTag(it){
   const a=Array.isArray(it&&it.xlog)?it.xlog:[];
   if(!a.length) return '';
   return `<span class="tag" style="background:rgba(148,163,184,.18);border-color:rgba(148,163,184,.45);color:#cbd5e1;cursor:help" title="轉出／轉入紀錄（不會印在請款單上）：&#10;${esc(a.join('\n'))}">⇄ ${a.length}</span>`;
+}
+// 一個工序群組裡混了不同的合約項目（上面那個以名稱併組的 bug 造成的）。
+// 判斷依據：每條工序照溯源回母專案，取「母那條所在的群組，沒群組就取母那條自己」。
+// 同一個本地群組裡出現兩種以上，就是混了。沒有溯源的條目跟著多數，不自己拆出去。
+function mixedGroupsOf(proj){
+  const par=parentProject(proj); if(!par) return [];
+  const mOf=id=>{ for(const mb of par.blocks||[]){ const m=(mb.items||[]).find(x=>x.id===id); if(m) return m; } return null; };
+  const out=[];
+  (proj.blocks||[]).forEach(b=>{
+    const by={};
+    (b.items||[]).forEach(it=>{ if(it.groupId) (by[it.groupId]=by[it.groupId]||[]).push(it); });
+    Object.keys(by).forEach(gid=>{
+      const its=by[gid];
+      const keyOf=it=>{ if(!it.srcId) return ''; const m=mOf(it.srcId); if(!m) return ''; return m.groupId||('#'+m.id); };
+      const keys=[...new Set(its.map(keyOf).filter(Boolean))];
+      if(keys.length>1) out.push({blk:b,gid,items:its,keys,keyOf,name:its[0].groupName||its[0].name});
+    });
+  });
+  return out;
+}
+function fixMixedGroups(proj){
+  const mixed=mixedGroupsOf(proj); let n=0;
+  mixed.forEach(({blk,items,keys,keyOf})=>{
+    // 第一種留在原本的 groupId，其餘各給新的
+    const main=keys[0], newId={};
+    items.forEach(it=>{
+      const k=keyOf(it); if(!k||k===main) return;
+      it.groupId=newId[k]||(newId[k]=uid()); n++;
+    });
+  });
+  return {groups:mixed.length,moved:n};
 }
 function normalizeGroups(){
   migrateXlog();
@@ -955,6 +986,12 @@ function render(){
       ${ba.stray.length?`<span style="color:#fcd34d">另有 ${ba.stray.length} 個子區塊對不到母合約（${money(ba.strayAmt)}），沒算進上面。</span>`:''}</div>`;
   }
   // 舊資料：整份專案還有沒收合的拆分時，各分頁都提示一次（不用鑽進區塊找）
+  const mixedG=proj.parentId?mixedGroupsOf(proj):[];
+  if(mixedG.length) h+=`<div class="notice" style="margin-bottom:10px;border-color:rgba(248,113,113,.55);background:rgba(248,113,113,.12);color:#fca5a5">
+    <b>⚠ 有 ${mixedG.length} 組工序混了不同的合約項目</b>——同名但其實是不同條（例如都叫「雙面隔間」，只差圖面編號），
+    被併成一組之後各道的量和金額都對不起來。
+    <div style="font-size:12px;margin-top:4px">${mixedG.map(x=>`${esc(x.blk.name)}／${esc(x.name)}（${x.items.length} 道、${x.keys.length} 條合約項目）`).join('；')}</div>
+    <div style="margin-top:8px"><button class="btn sm" id="fix-mixedg">🔧 自動分開（照母專案那條分組）</button></div></div>`;
   const pRuns=projectSplitRuns(proj);
   if(pRuns) h+=`<div class="notice" style="margin-bottom:10px;border-color:#818cf8;background:rgba(99,102,241,.12);color:#c7d2fe">
     偵測到 <b>${pRuns}</b> 組以前拆開、還沒收在一起的工序（合約明細與進度請款都會攤平顯示）。
@@ -1637,8 +1674,17 @@ function xferApply(srcProj,srcBlk,srcIt,dstProj,move,price,dstBlkHint){
     if(srcIt.printAs) ni.printAs=srcIt.printAs;
     if(srcIt.extra!==undefined) ni.extra=srcIt.extra;
     if(srcIt.groupName){
-      const gm={}; kb.items.forEach(x=>{ if(x.groupId&&x.groupName) gm[x.groupName]=x.groupId; });
-      ni.groupName=srcIt.groupName; ni.groupId=gm[srcIt.groupName]||uid();
+      // 群組原本是用「群組名稱」併的。但兩條不同的合約項目常常同名（都叫「雙面隔間」，
+      // 只差圖面編號），於是被融成一組——6 道工序混在一起，各道的量還不一樣。
+      // 依據要是「來自母專案哪一條」，不是名字。
+      // 同一組的工序在母專案是各自獨立的一條，所以不能比單一 srcId（會變成每道
+      // 自己一組，再被 normalizeGroups 當成「只剩一道」整批清掉）。
+      // 要比的是「來源這一組的所有工序」：接手方已經收過其中任何一道，就併進那一組。
+      const sibIds=new Set((srcBlk.items||[])
+        .filter(x=>x.groupId&&x.groupId===srcIt.groupId&&x.srcId).map(x=>x.srcId));
+      if(srcIt.srcId) sibIds.add(srcIt.srcId);
+      const twin=kb.items.find(x=>x.groupId&&x.srcId&&sibIds.has(x.srcId));
+      ni.groupName=srcIt.groupName; ni.groupId=twin?twin.groupId:uid();
     }
     if(move!==(Number(kb.count)||0)) ni.cnt=move;
     kb.items.push(ni);
@@ -3184,7 +3230,7 @@ function setProgInput(proj,blkId,itemId,kind,val){
 }
 
 document.addEventListener('click',async e=>{
-  const t=e.target.closest('[data-tab],[data-editblk],[data-delblk],[data-edititem],[data-delitem],[data-additem],[data-splititem],[data-sortitems],[data-grouptoggle],[data-groupmerge],[data-groupdetect],[data-whtoggle],[data-rttoggle],[data-whtax],[data-whtaxauto],[data-rtamt],[data-selfone],[data-selfrooms],[data-selfrest],[data-selfclear],[data-pado],[data-paclear],[data-delmode],[data-delcancel],[data-delall],[data-delnone],[data-delinv],[data-delzero],[data-deldo],#sub-toggle,#sub-close,#sub-go,[data-backfill],[data-backfillcancel],[data-backfillok],[data-addmissblk],#trash-toggle,#trash-clear,[data-trashrestore],[data-trashdrop],#drift-sync,#drift-sync-price,#drift-all,#drift-none,[data-xcopy],[data-xcopycancel],[data-xcopyall],[data-xcopyok],[data-xcdup],[data-xcfind],[data-xfer],[data-xfercancel],[data-xferok],[data-xferin],[data-xferincancel],[data-xferinall],[data-xferinok],[data-gedit],[data-batchedit],[data-batchok],[data-batchcancel],[data-batchalledit],[data-batchallok],[data-batchallcancel],[data-itemok],[data-itemcancel],[data-blkok],[data-blkcancel],[data-bapply],[data-gapply],#btn-invrecon,[data-editextra],[data-delextra],#btn-import,#btn-import2,#btn-unlock,#btn-retrycloud,#btn-clouddiag,#btn-newproj,#btn-newproj2,#btn-addblk,#btn-addblk-ok,#btn-addperiod,#btn-delperiod,#btn-addextra,#btn-roundup,#settle-toggle,#set-rebase,[data-gotoproj],#btn-print,#btn-setretain,#orphan-fix,#orphan-detach,#proj-groupall,#set-save,#set-taxmode,#proj-dup,#proj-detach,#backup-export,#backup-import-btn,#prev-restore,#prev-export,#proj-del,#cloud-push,#cloud-pull');
+  const t=e.target.closest('[data-tab],[data-editblk],[data-delblk],[data-edititem],[data-delitem],[data-additem],[data-splititem],[data-sortitems],[data-grouptoggle],[data-groupmerge],[data-groupdetect],[data-whtoggle],[data-rttoggle],[data-whtax],[data-whtaxauto],[data-rtamt],[data-selfone],[data-selfrooms],[data-selfrest],[data-selfclear],[data-pado],[data-paclear],[data-delmode],[data-delcancel],[data-delall],[data-delnone],[data-delinv],[data-delzero],[data-deldo],#sub-toggle,#sub-close,#sub-go,[data-backfill],[data-backfillcancel],[data-backfillok],[data-addmissblk],#fix-mixedg,#trash-toggle,#trash-clear,[data-trashrestore],[data-trashdrop],#drift-sync,#drift-sync-price,#drift-all,#drift-none,[data-xcopy],[data-xcopycancel],[data-xcopyall],[data-xcopyok],[data-xcdup],[data-xcfind],[data-xfer],[data-xfercancel],[data-xferok],[data-xferin],[data-xferincancel],[data-xferinall],[data-xferinok],[data-gedit],[data-batchedit],[data-batchok],[data-batchcancel],[data-batchalledit],[data-batchallok],[data-batchallcancel],[data-itemok],[data-itemcancel],[data-blkok],[data-blkcancel],[data-bapply],[data-gapply],#btn-invrecon,[data-editextra],[data-delextra],#btn-import,#btn-import2,#btn-unlock,#btn-retrycloud,#btn-clouddiag,#btn-newproj,#btn-newproj2,#btn-addblk,#btn-addblk-ok,#btn-addperiod,#btn-delperiod,#btn-addextra,#btn-roundup,#settle-toggle,#set-rebase,[data-gotoproj],#btn-print,#btn-setretain,#orphan-fix,#orphan-detach,#proj-groupall,#set-save,#set-taxmode,#proj-dup,#proj-detach,#backup-export,#backup-import-btn,#prev-restore,#prev-export,#proj-del,#cloud-push,#cloud-pull');
   if(!t)return;
   const proj=curProj();
   if(t.dataset.tab){state.tab=t.dataset.tab;save();render();return;}
@@ -3392,6 +3438,16 @@ document.addEventListener('click',async e=>{
     openBlk.add(nb.id); backfill=nb.id;      // 補完直接打開挑選清單，不用再找一次
     save(); render(); return;
   }
+  if(t.id==='fix-mixedg'){
+    const mixed=mixedGroupsOf(proj);
+    if(!mixed.length){ alert('沒有混在一起的工序群組了。'); return; }
+    if(!confirm(`把 ${mixed.length} 組混在一起的工序照母專案那條分開？\n\n`
+      +mixed.map(x=>`・${x.blk.name}／${x.name}：${x.items.length} 道 → ${x.keys.length} 組`).join('\n')
+      +`\n\n只改分組，數量、單價、金額、進度一律不動。`)) return;
+    const r=fixMixedGroups(proj); save(); render();
+    alert(`已分開 ${r.groups} 組（搬動 ${r.moved} 道工序）。\n\n數量與金額沒有變，請確認分組對不對。`);
+    return;
+  }
   if(t.id==='trash-toggle'){ trashOpen=!trashOpen; render(); return; }
   if(t.id==='trash-clear'){
     const n=trashList(proj).length;
@@ -3432,13 +3488,16 @@ document.addEventListener('click',async e=>{
     if(!confirm(`補 ${plan.length} 條進「${b.name}」？\n\n${plan.map(x=>`・${x.it.name}　${qfmt(x.it.qty)} × ${qfmt(x.price)}${(Number(x.it.price)||0)!==x.price?`（母單價 ${qfmt(x.it.price)}）`:''}`).join('\n')}\n\n間數 ${qfmt(b.count)} ${b.unit}，發包金額增加 ${money(Math.round(tot))}\n\n會自動接回母專案，發包分配算得到。`)) return;
     // 同名工序群組要併進這個區塊「已經有的那一組」，不要各自為政
     const gmap={};
-    b.items.forEach(x=>{ if(x.groupId&&x.groupName) gmap[x.groupName]=x.groupId; });
+    // 照母專案的群組對（同名但不同條的合約項目不能併成一組）
+    const mGrpOf=id=>{ const m=bf.mb.items.find(x=>x.id===id); return m?(m.groupId||('#'+m.id)):''; };
+    b.items.forEach(x=>{ if(x.groupId&&x.srcId){ const k=mGrpOf(x.srcId); if(k) gmap[k]=x.groupId; } });
     plan.forEach(({it,price,amount})=>{
       b.items.push({ id:uid(), no:it.no, tag:'', chapter:it.chapter||'', name:it.name, unit:it.unit,
         qty:it.qty, qtyExpr:'', price, priceExpr:'', amount,
         remark:it.remark||'', srcId:it.id,
         ...(it.printAs?{printAs:it.printAs}:{}),
-        ...(it.groupId&&it.groupName?{groupId:(gmap[it.groupName]||(gmap[it.groupName]=uid())),groupName:it.groupName}:{}) });
+        ...(it.groupId&&it.groupName?(()=>{ const k=it.groupId||('#'+it.id);
+            return {groupId:(gmap[k]||(gmap[k]=uid())),groupName:it.groupName}; })():{}) });
     });
     // 母專案的順序才是圖面順序，照著排回去
     const order=new Map(bf.mb.items.map((x,i)=>[x.id,i]));
@@ -3896,7 +3955,8 @@ document.addEventListener('click',async e=>{
     if(!confirm(`從「${S.sp.name}·${S.sb.name}」抓 ${plan.length} 條進「${b.name}」？\n\n${plan.map(x=>`・${x.it.name}　${qfmt(x.it.qty)} × ${qfmt(x.price)}${(Number(x.it.price)||0)!==x.price?`（來源單價 ${qfmt(x.it.price)}）`:''}`).join('\n')}\n\n間數 ${qfmt(b.count)} ${b.unit}，合約金額增加 ${money(Math.round(tot))}\n\n抓過來是新的一條，跟來源那份各改各的、不會互相影響。`)) return;
     // 同名工序群組要併進這個區塊已經有的那一組，不要各自為政
     const gmap={};
-    b.items.forEach(x=>{ if(x.groupId&&x.groupName) gmap[x.groupName]=x.groupId; });
+    // 抓過來的是新的一條、沒有溯源，所以照「來源那份的 groupId」各自成組。
+    // 不能併進這個區塊既有的同名群組——同名不代表同一條合約項目。
     plan.forEach(({it,price,amount})=>{
       // 項次／追加旗標照來源帶：這是把原本就該有的細項抓回來，不是追加工程。
       // 寫死 no:'增' 會被當成追加、跳出折讓的分母，簽約總價一設就算錯。
@@ -3907,7 +3967,8 @@ document.addEventListener('click',async e=>{
         qty:it.qty, qtyExpr:it.qtyExpr||'', price, priceExpr:'', amount, remark:printRemark(it.remark) };
       if(it.extra!==undefined) ni.extra=it.extra; else if(String(it.no||'')==='增') ni.extra=true;
       if(it.printAs) ni.printAs=it.printAs;
-      if(it.groupName){ ni.groupName=it.groupName; ni.groupId=gmap[it.groupName]||(gmap[it.groupName]=uid()); }
+      if(it.groupName){ const k=it.groupId||('#'+it.id);
+        ni.groupName=it.groupName; ni.groupId=gmap[k]||(gmap[k]=uid()); }
       b.items.push(ni);
     });
     xcopy=null; xcopyBlk=''; save(); render();
