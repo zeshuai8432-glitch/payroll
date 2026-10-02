@@ -296,6 +296,60 @@ const alloc=pg=>pg.evaluate(()=>{
   await pg.close();
 }
 
+// ⑮ 接手方那條是「複製」來的（沒有溯源）→ 再轉入同一條要累加，不可以多出一條同名的
+{
+  const st=seed();
+  st.projects[2].blocks=[{id:'bC',name:'TYPE-EXS',unit:'間',count:40,srcBlk:'bA',items:[
+    // 用「📥 複製細項」補回來的：名稱一樣，但沒有 srcId
+    {id:'cp1',no:'6.1',name:'雙面隔間',unit:'㎡',qty:10,price:140,amount:1400,cnt:6}]}];
+  const {pg,errs}=await open(st);
+  const r=await pg.evaluate(()=>{
+    const T=state.projects.find(p=>p.id==='T'), C=state.projects.find(p=>p.id==='C');
+    const sb=T.blocks[0];
+    xferApply(T,sb,sb.items.find(x=>x.id==='t1'),C,2,140);
+    save();
+    const cb=C.blocks[0];
+    return {n:cb.items.length,cnt:effCount(cb.items[0],cb),src:cb.items[0].srcId||'',
+            names:cb.items.map(x=>x.name)};
+  });
+  t('⑮ ★ 沒有多出第二條同名的（仍然 1 條）', r.n===1&&r.names.length===1);
+  t('⑮ ★ 量累加上去了（6＋2＝8，實際 '+r.cnt+'）', r.cnt===8);
+  t('⑮ 順手把溯源補上（之後對得回母專案、不再算成孤兒）', r.src==='m1');
+  t('⑮ 沒有 JS 錯誤', errs.length===0);
+
+  // 補上溯源之後，再轉一次照舊累加
+  const r2=await pg.evaluate(()=>{
+    const T=state.projects.find(p=>p.id==='T'), C=state.projects.find(p=>p.id==='C');
+    const sb=T.blocks[0];
+    xferApply(T,sb,sb.items.find(x=>x.id==='t1'),C,1,140);
+    save();
+    const cb=C.blocks[0];
+    return {n:cb.items.length,cnt:effCount(cb.items[0],cb)};
+  });
+  t('⑮ 第三次轉入也照舊累加（9）', r2.n===1&&r2.cnt===9);
+  await pg.close();
+}
+
+// ⑯ 兩邊都有溯源但不同＝真的是不同的合約項目，不可以因為同名就亂併
+{
+  const st=seed();
+  st.projects[2].blocks=[{id:'bC',name:'TYPE-EXS',unit:'間',count:40,srcBlk:'bA',items:[
+    {id:'o1',no:'6.9',name:'雙面隔間',unit:'㎡',qty:10,price:140,amount:1400,srcId:'m2',cnt:6}]}];
+  const {pg}=await open(st);
+  const r=await pg.evaluate(()=>{
+    const T=state.projects.find(p=>p.id==='T'), C=state.projects.find(p=>p.id==='C');
+    const sb=T.blocks[0];
+    xferApply(T,sb,sb.items.find(x=>x.id==='t1'),C,2,140);   // 來源 srcId=m1，接手方那條是 m2
+    save();
+    const cb=C.blocks[0];
+    return {n:cb.items.length,srcs:cb.items.map(x=>x.srcId),cnts:cb.items.map(x=>effCount(x,cb))};
+  });
+  t('⑯ 溯源不同就各自一條（2 條）', r.n===2);
+  t('⑯ 原本那條沒被動到（還是 6 間、srcId 還是 m2）', r.srcs[0]==='m2'&&r.cnts[0]===6);
+  t('⑯ 新的一條是 2 間、srcId m1', r.srcs[1]==='m1'&&r.cnts[1]===2);
+  await pg.close();
+}
+
 await br.close();
 console.log(`\n${ok.length} passed, ${bad.length} failed`);
 if(bad.length){bad.forEach(b=>console.log(' FAIL '+b));process.exit(1);}

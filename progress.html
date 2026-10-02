@@ -114,7 +114,7 @@ tr.hilite>td{animation:hlflash 1s ease-in-out 3}
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.10.02e-dupdetail';
+const APP_VERSION='vG2026.10.02f-xfermatch';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -1693,13 +1693,21 @@ function xcopyPanelHtml(proj,b){
 // 只有「來源不是拆開的工序，而且接手方剛好只有一條、也不是工序」時才放寬比對，
 // 讓接手方改過名字的單一條目仍然累加得起來（那是原本就有的行為）。
 function xferFindSame(kb,srcIt){
-  if(!srcIt.srcId) return null;
-  const same=(kb.items||[]).filter(x=>x.srcId===srcIt.srcId);
-  if(!same.length) return null;
+  const items=(kb.items||[]);
   const nk=normName(srcIt.name);
-  const hit=same.find(x=>normName(x.name)===nk);
-  if(hit) return hit;
-  if(!srcIt.groupId&&same.length===1&&!same[0].groupId) return same[0];
+  if(srcIt.srcId){
+    const same=items.filter(x=>x.srcId===srcIt.srcId);
+    const hit=same.find(x=>normName(x.name)===nk);
+    if(hit) return hit;
+    if(!srcIt.groupId&&same.length===1&&!same[0].groupId) return same[0];
+  }
+  // 溯源對不上，但名稱一模一樣。最常見的來路：接手方那條是用「📥 複製細項」
+  // 補回來的——複製出來是新的一條，刻意不綁來源，所以沒有溯源。
+  // 不認的話會多出一條同名的，量也沒加上去，而且立刻被「同一組裡兩道同名」
+  // 警告抓出來。只在「整個區塊只有一條同名」且其中一邊沒溯源時才認，
+  // 兩邊都有溯源卻不同＝真的是不同的合約項目，那就不要亂併。
+  const byName=items.filter(x=>normName(x.name)===nk);
+  if(byName.length===1&&(!byName[0].srcId||!srcIt.srcId)) return byName[0];
   return null;
 }
 function xferMaxOf(srcProj,srcBlk,srcIt){
@@ -1721,6 +1729,9 @@ function xferApply(srcProj,srcBlk,srcIt,dstProj,move,price,dstBlkHint){
                srcBlk:srcBlk.srcBlk||undefined,items:[]}; dstProj.blocks.push(kb); }
   const exist=xferFindSame(kb,srcIt);
   if(exist){
+    // 併進來的那條原本沒有溯源（複製來的），補上去：之後再轉入對得上，
+    // 發包分配也不會把它算成孤兒。
+    if(!exist.srcId&&srcIt.srcId) exist.srcId=srcIt.srcId;
     const was=effCount(exist,kb);
     const nc=+(was+move).toFixed(4);
     rescaleItemCount(dstProj,kb,exist,nc);
