@@ -114,7 +114,7 @@ tr.hilite>td{animation:hlflash 1s ease-in-out 3}
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.10.02c-dupstage';
+const APP_VERSION='vG2026.10.02d-groupjoin';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -190,7 +190,15 @@ function mixedGroupsOf(proj){
       const its=by[gid];
       const keyOf=it=>{ if(!it.srcId) return ''; const m=mOf(it.srcId); if(!m) return ''; return m.groupId||('#'+m.id); };
       const keys=[...new Set(its.map(keyOf).filter(Boolean))];
-      if(keys.length>1) out.push({blk:b,gid,items:its,keys,keyOf,name:its[0].groupName||its[0].name});
+      if(keys.length<2) return;
+      // 光是「來自不同母細項」還不夠——子專案本來就可以照自己的想法分組
+      // （例如把母的兩條合成一組工序來發包）。那是刻意的，不該被我拆掉。
+      // 系統「照名稱自動併錯」留下的痕跡是：同一組裡出現同名的工序
+      // （兩條同名的合約項目各自拆成骨架／封板／二次封板，併起來就會重複）。
+      // 沒有重複的名稱就不碰，寧可漏報也不要拆掉人家故意分的組。
+      const st=its.map(x=>normName(stageOf(x.name,x.groupName))).filter(Boolean);
+      if(new Set(st).size===st.length) return;
+      out.push({blk:b,gid,items:its,keys,keyOf,name:its[0].groupName||its[0].name});
     });
   });
   return out;
@@ -907,6 +915,23 @@ const openBlk=new Set();
 const openGroup=new Set(); // 拆開的工序群組：展開狀態
 // 舊資料回溯：找出「以前拆過但沒有群組標記」的細項（名稱同前綴＋相鄰＋單位數量一致）
 const projectSplitRuns = proj => proj.blocks.reduce((s,b)=>s+detectSplitRuns(b).length,0);
+// 沒有群組、但名稱前綴對得上這個區塊「已經存在的某一組」的條目。
+// 群組只剩一道時會被 normalizeGroups 解除，於是它就落單在一堆有群組的條目旁邊，
+// detectSplitRuns 只看「連續且都沒群組」的，永遠認不出它 —— 使用者沒有路把它收回去。
+function strayStagesOf(b){
+  const pre=n=>{ const i=String(n||'').lastIndexOf('-'); return i>0?String(n).slice(0,i):null; };
+  const groups={};
+  ((b&&b.items)||[]).forEach(x=>{ if(x.groupId&&x.groupName&&!groups[normName(x.groupName)])
+    groups[normName(x.groupName)]={gid:x.groupId,name:x.groupName}; });
+  const out=[];
+  ((b&&b.items)||[]).forEach(it=>{
+    if(it.groupId) return;
+    const p=pre(it.name); if(!p) return;
+    const g=groups[normName(p)]; if(!g) return;
+    out.push({it,gid:g.gid,name:g.name,stage:String(it.name).slice(p.length+1)});
+  });
+  return out;
+}
 function detectSplitRuns(b){
   const runs=[]; let cur=null;
   const pre=n=>{ const i=String(n||'').lastIndexOf('-'); return i>0?String(n).slice(0,i):null; };
@@ -1441,11 +1466,12 @@ function viewItems(proj){
     const allManual=b.items.every(it=>{ const n=String(it.no||'').trim(); return n===''||n==='增'; });
     const srcBlks=proj.blocks.filter(x=>x.id!==b.id&&x.items.length);
     const runs=detectSplitRuns(b);   // 以前拆過但還沒群組的
+    const strays=strayStagesOf(b);   // 落單在既有群組外面的工序
     h+=`</table><div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">`;
     if(batchAll){
       h+=`<span class="muted" style="font-size:12px">數量／單價可直接填算式（例 5.11*3.07）。改完請按上方「💾 全部儲存」。</span>`;
     }else if(batchEdit!==b.id){
-      h+=`${runs.length?`<button class="btn sub sm" data-groupdetect="${b.id}" style="border-color:#818cf8;color:#c7d2fe" title="把以前拆開、還沒收在一起的工序群組起來，之後就能展開／合回">🔗 收合舊的拆分（${runs.length} 組）</button>`:''}${itemAdd===b.id?'':`<button class="btn sub sm" data-additem="${b.id}">＋ 手動加細項</button>`}${(()=>{ if(!proj.parentId||backfill===b.id) return '';
+      h+=`${runs.length?`<button class="btn sub sm" data-groupdetect="${b.id}" style="border-color:#818cf8;color:#c7d2fe" title="把以前拆開、還沒收在一起的工序群組起來，之後就能展開／合回">🔗 收合舊的拆分（${runs.length} 組）</button>`:''}${strays.length?`<button class="btn sub sm" data-groupjoin="${b.id}" style="border-color:#818cf8;color:#c7d2fe" title="這幾條的名稱對得上同一個區塊已經有的工序群組，但自己落在外面。收回去之後收合行才看得到完整的幾道">🔗 收回落單的工序（${strays.length}）</button>`:''}${itemAdd===b.id?'':`<button class="btn sub sm" data-additem="${b.id}">＋ 手動加細項</button>`}${(()=>{ if(!proj.parentId||backfill===b.id) return '';
         const bf=backfillCandidates(proj,b);
         return (bf&&bf.items.length)?`<button class="btn sub sm" data-backfill="${b.id}" style="border-color:#60a5fa;color:#bfdbfe" title="當初建約時刪掉、後來又要做的細項，從這裡補回來">↩ 從母專案補細項（${bf.items.length}）</button>`:''; })()}${canSort?`<button class="btn sub sm" data-sortitems="${b.id}" title="照項次排回合約原本的順序（2.1 → 2.2 → 2.10 → 10.1）${allManual?'；這個區塊都沒有項次，會改照名稱排':'；手動加的沒項次，排最後'}">🔤 智慧排序${allManual?'<span style="opacity:.6">·照名稱</span>':'<span style="opacity:.6">·照項次</span>'}</button>`:''}${((srcBlks.length||state.projects.length>1)&&xcopy!==b.id)?`<button class="btn sub sm" data-xcopy="${b.id}" style="border-color:#a78bfa;color:#ddd6fe" title="從這一份的其他房型、或另一份標單（對業主那份、代工那份）把細項複製過來。可逐條勾、各自改單價，重複的會先提醒">📥 複製細項（其他房型／別的專案）</button>`:''}${(proj.parentId&&xferIn!==b.id&&xferInSources(proj))?`<button class="btn sub sm" data-xferin="${b.id}" style="border-color:#38bdf8;color:#7dd3fc" title="這個月對方分給你哪幾條、各幾間，一次填完。是搬量不是複製：來源會同步減掉，母專案的發包總量不變">↙ 從別家轉入</button>`:''}`;
     }
@@ -3255,7 +3281,7 @@ function setProgInput(proj,blkId,itemId,kind,val){
 }
 
 document.addEventListener('click',async e=>{
-  const t=e.target.closest('[data-tab],[data-editblk],[data-delblk],[data-edititem],[data-delitem],[data-additem],[data-splititem],[data-sortitems],[data-grouptoggle],[data-groupmerge],[data-groupdetect],[data-whtoggle],[data-rttoggle],[data-whtax],[data-whtaxauto],[data-rtamt],[data-selfone],[data-selfrooms],[data-selfrest],[data-selfclear],[data-pado],[data-paclear],[data-delmode],[data-delcancel],[data-delall],[data-delnone],[data-delinv],[data-delzero],[data-deldo],#sub-toggle,#sub-close,#sub-go,[data-backfill],[data-backfillcancel],[data-backfillok],[data-addmissblk],#fix-mixedg,#trash-toggle,#trash-clear,[data-trashrestore],[data-trashdrop],#drift-sync,#drift-sync-price,#drift-all,#drift-none,[data-xcopy],[data-xcopycancel],[data-xcopyall],[data-xcopyok],[data-xcdup],[data-xcfind],[data-xfer],[data-xfercancel],[data-xferok],[data-xferin],[data-xferincancel],[data-xferinall],[data-xferinok],[data-gedit],[data-batchedit],[data-batchok],[data-batchcancel],[data-batchalledit],[data-batchallok],[data-batchallcancel],[data-itemok],[data-itemcancel],[data-blkok],[data-blkcancel],[data-bapply],[data-gapply],#btn-invrecon,[data-editextra],[data-delextra],#btn-import,#btn-import2,#btn-unlock,#btn-retrycloud,#btn-clouddiag,#btn-newproj,#btn-newproj2,#btn-addblk,#btn-addblk-ok,#btn-addperiod,#btn-delperiod,#btn-addextra,#btn-roundup,#settle-toggle,#set-rebase,[data-gotoproj],#btn-print,#btn-setretain,#orphan-fix,#orphan-detach,#proj-groupall,#set-save,#set-taxmode,#proj-dup,#proj-detach,#backup-export,#backup-import-btn,#prev-restore,#prev-export,#proj-del,#cloud-push,#cloud-pull');
+  const t=e.target.closest('[data-tab],[data-editblk],[data-delblk],[data-edititem],[data-delitem],[data-additem],[data-splititem],[data-sortitems],[data-grouptoggle],[data-groupmerge],[data-groupdetect],[data-groupjoin],[data-whtoggle],[data-rttoggle],[data-whtax],[data-whtaxauto],[data-rtamt],[data-selfone],[data-selfrooms],[data-selfrest],[data-selfclear],[data-pado],[data-paclear],[data-delmode],[data-delcancel],[data-delall],[data-delnone],[data-delinv],[data-delzero],[data-deldo],#sub-toggle,#sub-close,#sub-go,[data-backfill],[data-backfillcancel],[data-backfillok],[data-addmissblk],#fix-mixedg,#trash-toggle,#trash-clear,[data-trashrestore],[data-trashdrop],#drift-sync,#drift-sync-price,#drift-all,#drift-none,[data-xcopy],[data-xcopycancel],[data-xcopyall],[data-xcopyok],[data-xcdup],[data-xcfind],[data-xfer],[data-xfercancel],[data-xferok],[data-xferin],[data-xferincancel],[data-xferinall],[data-xferinok],[data-gedit],[data-batchedit],[data-batchok],[data-batchcancel],[data-batchalledit],[data-batchallok],[data-batchallcancel],[data-itemok],[data-itemcancel],[data-blkok],[data-blkcancel],[data-bapply],[data-gapply],#btn-invrecon,[data-editextra],[data-delextra],#btn-import,#btn-import2,#btn-unlock,#btn-retrycloud,#btn-clouddiag,#btn-newproj,#btn-newproj2,#btn-addblk,#btn-addblk-ok,#btn-addperiod,#btn-delperiod,#btn-addextra,#btn-roundup,#settle-toggle,#set-rebase,[data-gotoproj],#btn-print,#btn-setretain,#orphan-fix,#orphan-detach,#proj-groupall,#set-save,#set-taxmode,#proj-dup,#proj-detach,#backup-export,#backup-import-btn,#prev-restore,#prev-export,#proj-del,#cloud-push,#cloud-pull');
   if(!t)return;
   const proj=curProj();
   if(t.dataset.tab){state.tab=t.dataset.tab;save();render();return;}
@@ -3717,6 +3743,17 @@ document.addEventListener('click',async e=>{
     if(!confirm('清除所有「自辦」標記？（只清標記，不影響任何金額與發包資料）'))return;
     proj.blocks.forEach(b=>b.items.forEach(it=>{ delete it.selfQty; }));
     save(); render(); return;
+  }
+  if(t.dataset.groupjoin){
+    const b=proj.blocks.find(x=>x.id===t.dataset.groupjoin); if(!b) return;
+    const st=strayStagesOf(b); if(!st.length){ alert('沒有落單的工序。'); return; }
+    if(!confirm(`把這 ${st.length} 條收回原本的工序群組？\n\n`
+      +st.map(x=>`・${x.stage} → 收回「${x.name}」`).join('\n')
+      +`\n\n只改分組，數量、單價、金額、進度一律不動。`)) return;
+    st.forEach(x=>{ x.it.groupId=x.gid; x.it.groupName=x.name; });
+    save(); render();
+    alert(`已收回 ${st.length} 條。點收合行左邊的 ▸ 可以展開確認。`);
+    return;
   }
   if(t.dataset.groupdetect){
     const b=proj.blocks.find(x=>x.id===t.dataset.groupdetect); if(!b) return;
