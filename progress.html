@@ -114,7 +114,7 @@ tr.hilite>td{animation:hlflash 1s ease-in-out 3}
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.10.02f-xfermatch';
+const APP_VERSION='vG2026.10.02g-dedupe';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -1037,6 +1037,20 @@ function render(){
     被併成一組之後各道的量和金額都對不起來。
     <div style="font-size:12px;margin-top:4px">${mixedG.map(x=>`${esc(x.blk.name)}／${esc(x.name)}（${x.items.length} 道、${x.keys.length} 條合約項目）`).join('；')}</div>
     <div style="margin-top:8px"><button class="btn sm" id="fix-mixedg">🔧 自動分開（照母專案那條分組）</button></div></div>`;
+  const dupI=dupItemsOf(proj);
+  if(dupI.length){
+    const nRow=dupI.reduce((a,x)=>a+x.items.length,0);
+    h+=`<div class="notice" style="margin-bottom:10px;border-color:rgba(248,113,113,.55);background:rgba(248,113,113,.12);color:#fca5a5">
+    <b>⚠ 有 ${dupI.length} 道工序重複出現（共 ${nRow} 條）</b>——同一條合約項目的同一道工序被拆成好幾條，
+    是之前比對失準留下的。按下面併回一條，<b>間數相加</b>（每一條的量本來都是各自轉進來的，所以總量不變）。
+    <div class="scroll" style="margin-top:6px"><table style="font-size:12px"><tr><th>房型</th><th>工序</th><th class="num">現在幾條</th><th class="num">各條間數</th><th class="num">併完</th></tr>
+    ${dupI.map(x=>`<tr><td>${esc(x.blk.name)}</td><td><b>${esc(x.stage)}</b></td>
+      <td class="num">${x.items.length}</td>
+      <td class="num">${x.items.map(i=>qfmt(effCount(i,x.blk))).join(' ＋ ')} ${esc(x.blk.unit)}</td>
+      <td class="num"><b>${qfmt(+x.items.reduce((a,i)=>a+effCount(i,x.blk),0).toFixed(4))} ${esc(x.blk.unit)}</b></td></tr>`).join('')}
+    </table></div>
+    <div style="margin-top:8px"><button class="btn sm" id="fix-dupitems">🔧 併回一條（間數相加）</button></div></div>`;
+  }
   const dupS=dupStagesOf(proj);
   if(dupS.length){
     const nPair=dupS.reduce((a,x)=>a+x.dups.length,0);
@@ -1692,12 +1706,16 @@ function xcopyPanelHtml(proj,b){
 // 規則改成：同一條母細項底下，名稱相同才算同一條。
 // 只有「來源不是拆開的工序，而且接手方剛好只有一條、也不是工序」時才放寬比對，
 // 讓接手方改過名字的單一條目仍然累加得起來（那是原本就有的行為）。
+// 比「工序名稱」而不是完整名稱。完整名稱含群組前綴，而群組名是各專案可以各自改的
+// presentation（在東澤改成「電視牆二次複牆」、接手方還是「電視牆二次隔間」），
+// 一改就對不上，於是同一道骨架在接手方又長出一條。工序名稱才是穩定的那一半。
+const stageKeyOf=it=>normName(it&&it.groupName?stageOf(it.name,it.groupName):(it&&it.name));
 function xferFindSame(kb,srcIt){
   const items=(kb.items||[]);
-  const nk=normName(srcIt.name);
+  const sk=stageKeyOf(srcIt);
   if(srcIt.srcId){
     const same=items.filter(x=>x.srcId===srcIt.srcId);
-    const hit=same.find(x=>normName(x.name)===nk);
+    const hit=same.find(x=>stageKeyOf(x)===sk);
     if(hit) return hit;
     if(!srcIt.groupId&&same.length===1&&!same[0].groupId) return same[0];
   }
@@ -1706,9 +1724,51 @@ function xferFindSame(kb,srcIt){
   // 不認的話會多出一條同名的，量也沒加上去，而且立刻被「同一組裡兩道同名」
   // 警告抓出來。只在「整個區塊只有一條同名」且其中一邊沒溯源時才認，
   // 兩邊都有溯源卻不同＝真的是不同的合約項目，那就不要亂併。
-  const byName=items.filter(x=>normName(x.name)===nk);
-  if(byName.length===1&&(!byName[0].srcId||!srcIt.srcId)) return byName[0];
+  // 已經有同名的就併進第一條。原本要求「只有一條同名」才認，結果資料一旦壞過一次，
+  // 之後每轉一次就再長一條，越改越多——寧可併錯一條（看得見、改得回來），
+  // 也不要無限增生。兩邊都有溯源卻不同＝真的不同的合約項目，不碰。
+  const byName=items.filter(x=>stageKeyOf(x)===sk&&(!x.srcId||!srcIt.srcId));
+  if(byName.length) return byName[0];
   return null;
+}
+// 同一個區塊裡「同一條母細項的同一道工序」重複出現＝之前比對失準留下的，
+// 可以安全地併回一條（量相加——每一條的量都是各自轉進來的）。
+// 工序名相同但溯源是兩個不同的母細項＝真的是不同的合約項目，不在這裡處理。
+function dupItemsOf(proj){
+  const out=[];
+  (proj.blocks||[]).forEach(b=>{
+    const by={};
+    (b.items||[]).forEach(it=>{ const k=stageKeyOf(it); if(k) (by[k]=by[k]||[]).push(it); });
+    Object.keys(by).forEach(k=>{
+      const g=by[k]; if(g.length<2) return;
+      const srcs=[...new Set(g.map(x=>x.srcId).filter(Boolean))];
+      if(srcs.length>1) return;
+      out.push({blk:b,items:g,src:srcs[0]||'',
+        stage:(g[0].groupName?stageOf(g[0].name,g[0].groupName):g[0].name)});
+    });
+  });
+  return out;
+}
+function mergeDupItems(proj){
+  let n=0,gone=0;
+  dupItemsOf(proj).forEach(({blk,items,src})=>{
+    const keep=items[0], rest=items.slice(1);
+    const tot=+items.reduce((a,x)=>a+effCount(x,blk),0).toFixed(4);
+    if(src&&!keep.srcId) keep.srcId=src;
+    rest.forEach(x=>{
+      (Array.isArray(x.xlog)?x.xlog:[]).forEach(l=>xlogPush(keep,l));
+      if(!keep.remark&&x.remark) keep.remark=x.remark;
+      trashPush(proj,blk,[x],'合併重複的工序');
+      for(const per of (proj.periods||[])) if(per.prog) delete per.prog[x.id];
+      gone++;
+    });
+    blk.items=blk.items.filter(x=>rest.indexOf(x)<0);
+    rescaleItemCount(proj,blk,keep,tot);
+    if(tot!==(Number(blk.count)||0)) keep.cnt=tot; else delete keep.cnt;
+    xlogPush(keep,`${today()} 合併重複的 ${items.length} 條，間數相加共 ${qfmt(tot)} ${blk.unit}`);
+    n++;
+  });
+  return {groups:n,removed:gone};
 }
 function xferMaxOf(srcProj,srcBlk,srcIt){
   const cur=effCount(srcIt,srcBlk), done=doneCountOf(srcProj,srcBlk,srcIt);
@@ -3306,7 +3366,7 @@ function setProgInput(proj,blkId,itemId,kind,val){
 }
 
 document.addEventListener('click',async e=>{
-  const t=e.target.closest('[data-tab],[data-editblk],[data-delblk],[data-edititem],[data-delitem],[data-additem],[data-splititem],[data-sortitems],[data-grouptoggle],[data-groupmerge],[data-groupdetect],[data-groupjoin],[data-whtoggle],[data-rttoggle],[data-whtax],[data-whtaxauto],[data-rtamt],[data-selfone],[data-selfrooms],[data-selfrest],[data-selfclear],[data-pado],[data-paclear],[data-delmode],[data-delcancel],[data-delall],[data-delnone],[data-delinv],[data-delzero],[data-deldo],#sub-toggle,#sub-close,#sub-go,[data-backfill],[data-backfillcancel],[data-backfillok],[data-addmissblk],#fix-mixedg,#trash-toggle,#trash-clear,[data-trashrestore],[data-trashdrop],#drift-sync,#drift-sync-price,#drift-all,#drift-none,[data-xcopy],[data-xcopycancel],[data-xcopyall],[data-xcopyok],[data-xcdup],[data-xcfind],[data-xfer],[data-xfercancel],[data-xferok],[data-xferin],[data-xferincancel],[data-xferinall],[data-xferinok],[data-gedit],[data-batchedit],[data-batchok],[data-batchcancel],[data-batchalledit],[data-batchallok],[data-batchallcancel],[data-itemok],[data-itemcancel],[data-blkok],[data-blkcancel],[data-bapply],[data-gapply],#btn-invrecon,[data-editextra],[data-delextra],#btn-import,#btn-import2,#btn-unlock,#btn-retrycloud,#btn-clouddiag,#btn-newproj,#btn-newproj2,#btn-addblk,#btn-addblk-ok,#btn-addperiod,#btn-delperiod,#btn-addextra,#btn-roundup,#settle-toggle,#set-rebase,[data-gotoproj],#btn-print,#btn-setretain,#orphan-fix,#orphan-detach,#proj-groupall,#set-save,#set-taxmode,#proj-dup,#proj-detach,#backup-export,#backup-import-btn,#prev-restore,#prev-export,#proj-del,#cloud-push,#cloud-pull');
+  const t=e.target.closest('[data-tab],[data-editblk],[data-delblk],[data-edititem],[data-delitem],[data-additem],[data-splititem],[data-sortitems],[data-grouptoggle],[data-groupmerge],[data-groupdetect],[data-groupjoin],[data-whtoggle],[data-rttoggle],[data-whtax],[data-whtaxauto],[data-rtamt],[data-selfone],[data-selfrooms],[data-selfrest],[data-selfclear],[data-pado],[data-paclear],[data-delmode],[data-delcancel],[data-delall],[data-delnone],[data-delinv],[data-delzero],[data-deldo],#sub-toggle,#sub-close,#sub-go,[data-backfill],[data-backfillcancel],[data-backfillok],[data-addmissblk],#fix-dupitems,#fix-mixedg,#trash-toggle,#trash-clear,[data-trashrestore],[data-trashdrop],#drift-sync,#drift-sync-price,#drift-all,#drift-none,[data-xcopy],[data-xcopycancel],[data-xcopyall],[data-xcopyok],[data-xcdup],[data-xcfind],[data-xfer],[data-xfercancel],[data-xferok],[data-xferin],[data-xferincancel],[data-xferinall],[data-xferinok],[data-gedit],[data-batchedit],[data-batchok],[data-batchcancel],[data-batchalledit],[data-batchallok],[data-batchallcancel],[data-itemok],[data-itemcancel],[data-blkok],[data-blkcancel],[data-bapply],[data-gapply],#btn-invrecon,[data-editextra],[data-delextra],#btn-import,#btn-import2,#btn-unlock,#btn-retrycloud,#btn-clouddiag,#btn-newproj,#btn-newproj2,#btn-addblk,#btn-addblk-ok,#btn-addperiod,#btn-delperiod,#btn-addextra,#btn-roundup,#settle-toggle,#set-rebase,[data-gotoproj],#btn-print,#btn-setretain,#orphan-fix,#orphan-detach,#proj-groupall,#set-save,#set-taxmode,#proj-dup,#proj-detach,#backup-export,#backup-import-btn,#prev-restore,#prev-export,#proj-del,#cloud-push,#cloud-pull');
   if(!t)return;
   const proj=curProj();
   if(t.dataset.tab){state.tab=t.dataset.tab;save();render();return;}
@@ -3513,6 +3573,16 @@ document.addEventListener('click',async e=>{
     proj.blocks.push(nb);
     openBlk.add(nb.id); backfill=nb.id;      // 補完直接打開挑選清單，不用再找一次
     save(); render(); return;
+  }
+  if(t.id==='fix-dupitems'){
+    const d=dupItemsOf(proj);
+    if(!d.length){ alert('沒有重複的工序了。'); return; }
+    if(!confirm(`把 ${d.length} 道重複的工序各自併回一條？\n\n`
+      +d.map(x=>`・${x.blk.name}／${x.stage}：${x.items.length} 條（${x.items.map(i=>qfmt(effCount(i,x.blk))).join('＋')}）→ ${qfmt(+x.items.reduce((a,i)=>a+effCount(i,x.blk),0).toFixed(4))} ${x.blk.unit}`).join('\n')
+      +`\n\n・間數相加，單價與數量照第一條\n・已請過的金額不會被追溯改掉\n・被併掉的那幾條會進回收桶，按錯救得回來`)) return;
+    const r=mergeDupItems(proj); save(); render();
+    alert(`已併回 ${r.groups} 道（移除 ${r.removed} 條重複的，都在回收桶裡）。\n\n請到母專案的「發包分配」確認總額。`);
+    return;
   }
   if(t.id==='fix-mixedg'){
     const mixed=mixedGroupsOf(proj);
