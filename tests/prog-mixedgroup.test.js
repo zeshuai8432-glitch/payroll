@@ -135,14 +135,16 @@ const open=async(st,cur)=>{
     return {n:x.length,stages:x[0]?x[0].stages:[]};});
   t('⑥ 偵測到同名的工序', d.n===1&&d.stages.includes('封板'));
   const txt=await pg.textContent('#app');
-  t('⑥ 畫面上警告並說明會被併成一條', /同名的兩道/.test(txt)&&/會被併成一條/.test(txt));
-  t('⑥ 並告訴你先去改名', /請先把名字改開/.test(txt));
+  t('⑥ 畫面上警告並說明會被併成一條', /兩道同名/.test(txt)&&/併成一條/.test(txt));
+  t('⑥ 把兩條排在一起並列出數量／單價／備註', /圖面編號H/.test(txt)&&/4\.93/.test(txt));
+  t('⑥ 教你怎麼判斷（都一樣就刪、不一樣就改名）', /刪掉一條/.test(txt)&&/改名字/.test(txt));
+  t('⑥ 每條都有「去改」直接跳過去', await pg.locator('[data-xcfind]').count()>=2);
   t('⑥ 沒有 JS 錯誤', errs.length===0);
 
   // 改開名字之後警告消失
   const gone=await pg.evaluate(()=>{
     curProj().blocks[0].items[2].name='口袋牆雙面隔間-二次封板'; save(); render();
-    return {n:dupStagesOf(curProj()).length,warn:/同名的兩道/.test(document.getElementById('app').innerText)};});
+    return {n:dupStagesOf(curProj()).length,warn:/兩道同名/.test(document.getElementById('app').innerText)};});
   t('⑥ 改開名字後警告消失', gone.n===0&&!gone.warn);
 
   // 改開之後轉過去才會是兩道

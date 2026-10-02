@@ -114,7 +114,7 @@ tr.hilite>td{animation:hlflash 1s ease-in-out 3}
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.10.02d-groupjoin';
+const APP_VERSION='vG2026.10.02e-dupdetail';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -212,12 +212,13 @@ function dupStagesOf(proj){
     const by={};
     (b.items||[]).forEach(it=>{ if(it.groupId) (by[it.groupId]=by[it.groupId]||[]).push(it); });
     Object.keys(by).forEach(gid=>{
-      const its=by[gid], seen={}, dups=[];
+      const its=by[gid], bucket={};
       its.forEach(it=>{ const k=normName(stageOf(it.name,it.groupName));
-        if(!k) return; if(seen[k]) { if(dups.indexOf(k)<0) dups.push(k); } else seen[k]=it; });
-      if(dups.length) out.push({blk:b,gid,name:its[0].groupName||its[0].name,
-        stages:dups.map(k=>stageOf((its.find(x=>normName(stageOf(x.name,x.groupName))===k)||{}).name||'',its[0].groupName)),
-        n:its.length});
+        if(k) (bucket[k]=bucket[k]||[]).push(it); });
+      const dups=Object.keys(bucket).filter(k=>bucket[k].length>1)
+        .map(k=>({stage:stageOf(bucket[k][0].name,bucket[k][0].groupName),items:bucket[k]}));
+      if(dups.length) out.push({blk:b,gid,name:its[0].groupName||its[0].name,dups,n:its.length,
+        stages:dups.map(d=>d.stage)});
     });
   });
   return out;
@@ -1037,11 +1038,24 @@ function render(){
     <div style="font-size:12px;margin-top:4px">${mixedG.map(x=>`${esc(x.blk.name)}／${esc(x.name)}（${x.items.length} 道、${x.keys.length} 條合約項目）`).join('；')}</div>
     <div style="margin-top:8px"><button class="btn sm" id="fix-mixedg">🔧 自動分開（照母專案那條分組）</button></div></div>`;
   const dupS=dupStagesOf(proj);
-  if(dupS.length) h+=`<div class="notice" style="margin-bottom:10px;border-color:rgba(251,191,36,.55);background:rgba(251,191,36,.12);color:#fcd34d">
-    <b>⚠ 有 ${dupS.length} 組工序裡出現同名的兩道</b>——多半是打字時少打「二次」之類的字。
-    <div style="font-size:12px;margin-top:4px">${dupS.map(x=>`${esc(x.blk.name)}／${esc(x.name)}：同名的「${esc(x.stages.join('」「'))}」`).join('；')}</div>
-    <div style="font-size:11.5px;margin-top:4px"><b>請先把名字改開</b>（點收合行展開，按那一道的「改」）。
-    轉出／轉入是用「溯源＋名稱」認同一條的，<b>同名的兩道轉過去會被併成一條</b>，量相加、另一道消失。</div></div>`;
+  if(dupS.length){
+    const nPair=dupS.reduce((a,x)=>a+x.dups.length,0);
+    h+=`<div class="notice" style="margin-bottom:10px;border-color:rgba(251,191,36,.55);background:rgba(251,191,36,.12);color:#fcd34d">
+    <b>⚠ 有 ${nPair} 處「同一組裡兩道同名」</b>（共 ${dupS.length} 組）。
+    <div style="font-size:11.5px;margin:4px 0 6px">下面把每一組同名的條目排在一起，<b>看數量／單價／備註就能判斷</b>：
+    數字都一樣＝同一份工被列了兩次（刪掉一條）；數字或圖面編號不同＝其實是不同的工（改名字）。
+    不處理的話，轉出／轉入會把同名的兩道<b>併成一條</b>——量相加、另一道消失。</div>
+    <div class="scroll"><table style="font-size:12px"><tr><th>房型</th><th>工序群組</th><th>同名的</th><th class="num">數量</th><th class="num">單價</th><th class="num">間數</th><th>備註</th><th></th></tr>
+    ${dupS.map(g=>g.dups.map(d=>d.items.map((it,i)=>`<tr>
+      ${i===0?`<td rowspan="${d.items.length}">${esc(g.blk.name)}</td><td rowspan="${d.items.length}">${esc(g.name)}</td>`:''}
+      <td><b>${esc(d.stage)}</b></td>
+      <td class="num">${qfmt(it.qty)} ${esc(it.unit)}</td>
+      <td class="num">${qfmt(it.price)}</td>
+      <td class="num">${qfmt(effCount(it,g.blk))} ${esc(g.blk.unit)}</td>
+      <td>${esc(printRemark(it.remark))||'<span style="opacity:.5">—</span>'}</td>
+      <td><button class="btn sub sm" data-xcfind="${g.blk.id}::${it.id}" style="padding:1px 6px;font-size:11px" title="跳到明細上那一條（會自動展開工序群組）">🔍 去改</button></td></tr>`).join('')).join('')).join('')}
+    </table></div></div>`;
+  }
   const pRuns=projectSplitRuns(proj);
   if(pRuns) h+=`<div class="notice" style="margin-bottom:10px;border-color:#818cf8;background:rgba(99,102,241,.12);color:#c7d2fe">
     偵測到 <b>${pRuns}</b> 組以前拆開、還沒收在一起的工序（合約明細與進度請款都會攤平顯示）。
