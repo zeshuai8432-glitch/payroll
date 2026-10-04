@@ -528,7 +528,7 @@ const FS_ROOT = 'https://firestore.googleapis.com/v1/projects/'+FS_PROJECT+'/dat
 const FS_DOC_BASE = FS_ROOT+'payroll/';
 const FS_SIG_BASE = FS_ROOT+'payrollSignatures/';
 const FS_REST_URL = FS_DOC_BASE+'main?key='+FS_KEY;
-const APP_VERSION = 'v2026.10.04d-measgrid';
+const APP_VERSION = 'v2026.10.04e-measwh';
 let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], tools:[], locations:[], assets:[], advances:[], accounts:[], ledger:[], deals:[], billings:[], measurements:[], contracts:{}, costs:[], textMemory:{clients:[],companies:[]}, parkAccId:'', oweBonus:{}, minFund:'', shareholderTx:[], myCompanies:[], payrollSnapshots:[], yearIncomeAdj:[], deletedIds:[], resurrected:{ids:[],at:0}, tab:'dash' };
 let cloudStatus='連線中…';
 let localDirty=false, lastCloudTs=0;
@@ -715,7 +715,7 @@ function parseMeasBatch(text,defUnit){
 }
 // 批次輸入表格：按「＋ 多一條」就多一列，欄位跟單筆一樣。
 // 案場與類型在上面的表單共用（整批同一個），其餘每列各自填。
-const measRowBlank=(unit,date)=>({item:'',unit:unit||'',count:'',qty:'',price:'',date:date||'',note:''});
+const measRowBlank=(unit,date)=>({item:'',unit:unit||'',count:'',w:'',h:'',qty:'',price:'',date:date||'',note:''});
 function measRowsEnsure(unit,date,n){
   if(!Array.isArray(measRows)) measRows=[];
   while(measRows.length<(n||3)) measRows.push(measRowBlank(unit,date));
@@ -724,20 +724,24 @@ function measRowsEnsure(unit,date,n){
 }
 function measRowCalc(r){
   const cnt=Math.max(1,parseInt(r.count)||1);
-  const q=evalPriceExpr(r.qty);
+  // 寬、高都填了就照 寬×高 算（跟單筆表單一樣），而且會存下來——
+  // 列印時「尺寸」那欄才看得到 3.2 × 2.6 m，廠商對圖面用的就是這個。
+  const w=parseFloat(r.w), h=parseFloat(r.h);
+  const auto=!isNaN(w)&&w>0&&!isNaN(h)&&h>0;
+  const q=auto?Math.round(w*h*100)/100:evalPriceExpr(r.qty);
   const noP=String(r.price||'').trim()==='';
   const p=noP?null:evalPriceExpr(r.price);
   const totQty=isNaN(q)?NaN:Math.round(q*cnt*100)/100;
   const amt=(noP||isNaN(q)||p==null||isNaN(p))?null:Math.round(totQty*p*100)/100;
   let err='';
-  const blank=!String(r.item||'').trim()&&!String(r.qty||'').trim();
+  const blank=!String(r.item||'').trim()&&!String(r.qty||'').trim()&&!auto;
   if(!blank){
     if(!String(r.item||'').trim()) err='缺項目';
-    else if(!String(r.qty||'').trim()) err='缺數量';
+    else if(!auto&&!String(r.qty||'').trim()) err='缺數量（或填寬×高）';
     else if(isNaN(q)||q<=0) err='數量看不懂';
     else if(!noP&&(isNaN(p)||p<0)) err='單價看不懂';
   }
-  return {cnt,q,p,noP,totQty,amt,err,blank};
+  return {cnt,q,p,noP,totQty,amt,err,blank,auto,w:auto?w:null,h:auto?h:null};
 }
 function measRowsGridHtml(unitLbl,dateLbl){
   const rows=measRowsEnsure(unitLbl,dateLbl);
@@ -749,8 +753,10 @@ function measRowsGridHtml(unitLbl,dateLbl){
       <td>${w('item','例：D1 床頭單面隔間','100%')}</td>
       <td>${w('unit','㎡','62px')}</td>
       <td>${w('count','1','54px','inputmode="numeric"')}</td>
-      <td>${w('qty','3.2*2.6+1.1*2.6','150px','inputmode="decimal"')}
-        <div data-mcalc="${i}" style="font-size:11px;color:var(--muted);height:14px">${(!c.blank&&!isNaN(c.q)&&(c.cnt>1||hasExprChars(r.qty)))?'＝ '+c.totQty:''}</div></td>
+      <td>${w('w','寬','62px','inputmode="decimal"')}</td>
+      <td>${w('h','高','62px','inputmode="decimal"')}</td>
+      <td>${w('qty','或直接填／算式','140px','inputmode="decimal"'+(c.auto?' readonly style="width:140px;font-size:13px;background:var(--bg);color:var(--muted)"':''))}
+        <div data-mcalc="${i}" style="font-size:11px;color:var(--muted);height:14px">${measRowCalcHint(r,c)}</div></td>
       <td>${w('price','留空','84px','inputmode="decimal"')}</td>
       <td class="num" data-mamt="${i}" style="font-weight:700;white-space:nowrap">${c.err?`<span style="color:#b91c1c;font-size:12px">${esc(c.err)}</span>`:(c.amt==null?'—':money(c.amt))}</td>
       <td>${w('date','','136px','type="date"')}</td>
@@ -760,12 +766,19 @@ function measRowsGridHtml(unitLbl,dateLbl){
   return `<div style="overflow:auto;border:1px solid var(--line);border-radius:8px">
     <table style="font-size:13px;min-width:900px"><tr>
       <th style="width:30px"></th><th style="min-width:200px">項目</th><th style="width:70px">單位</th>
-      <th style="width:62px">間數</th><th style="width:160px">數量/面積</th><th style="width:92px">單價</th>
+      <th style="width:62px">間數</th><th style="width:68px">寬度(m)</th><th style="width:68px">高度(m)</th>
+      <th style="width:150px">數量/面積</th><th style="width:92px">單價</th>
       <th style="width:92px">小計</th><th style="width:144px">日期</th><th style="width:128px">備註</th><th style="width:48px"></th></tr>
     ${cells}</table></div>
     <div id="meas-rows-stat" style="margin-top:8px;font-size:12.5px">${measRowsStatHtml()}</div>`;
 }
 // 打字時要跟著更新，所以抽出來；整列重繪會把游標踢掉，只換這一段。
+function measRowCalcHint(r,c){
+  if(c.blank||isNaN(c.q)) return '';
+  if(c.auto) return `${c.w} × ${c.h} ＝ ${Math.round(c.w*c.h*100)/100}${c.cnt>1?` × ${c.cnt} ＝ ${c.totQty}`:''}`;
+  if(c.cnt>1||hasExprChars(r.qty)) return '＝ '+c.totQty;
+  return '';
+}
 function measRowsStatHtml(){
   const rows=Array.isArray(measRows)?measRows:[];
   let okN=0,badN=0,tot=0;
@@ -4557,7 +4570,15 @@ function bind(){
       const r=measRows&&measRows[i]; if(!r) return;
       const c=measRowCalc(r);
       const cal=document.querySelector(`[data-mcalc="${i}"]`);
-      if(cal) cal.textContent=(!c.blank&&!isNaN(c.q)&&(c.cnt>1||hasExprChars(r.qty)))?('＝ '+c.totQty):'';
+      if(cal) cal.textContent=measRowCalcHint(r,c);
+      // 寬高填齊時數量欄改成唯讀並顯示算出來的面積（跟單筆表單一致）
+      const qEl=document.querySelector(`[data-mrow="${i}"][data-mkey="qty"]`);
+      if(qEl){
+        qEl.readOnly=c.auto;
+        qEl.style.background=c.auto?'var(--bg)':'';
+        qEl.style.color=c.auto?'var(--muted)':'';
+        if(c.auto) qEl.value=String(Math.round(c.w*c.h*100)/100);
+      }
       const amt=document.querySelector(`[data-mamt="${i}"]`);
       if(amt) amt.innerHTML=c.err?`<span style="color:#b91c1c;font-size:12px">${esc(c.err)}</span>`:(c.amt==null?'—':money(c.amt));
       const tr=amt&&amt.closest('tr'); if(tr) tr.style.background=c.err?'#fee2e2':'';
@@ -4606,13 +4627,14 @@ function bind(){
         +(tot>0?`\n\n有填單價的部分合計 ${money(tot)}`:`\n\n都沒填單價（只是整理清單）`))) return;
       good.forEach(({r,c})=>{
         state.measurements.push({id:uid(),item:String(r.item).trim(),
-          qty:c.totQty,qtyExpr:hasExprChars(r.qty)?String(r.qty).trim():'',qtyManual:true,
+          qty:c.totQty,qtyExpr:(!c.auto&&hasExprChars(r.qty))?String(r.qty).trim():'',
+          ...(c.auto?{}:{qtyManual:true}),
           unitPrice:c.noP?null:c.p,priceExpr:'',
+          width:c.w,height:c.h,
           date:String(r.date||'').trim()||sh.date,site:sh.site,
           unit:String(r.unit||'').trim()||sh.defUnit,
           note:String(r.note||'').trim(),measureType:sh.mt,
-          count:c.cnt,perQty:c.cnt>1?Math.round(c.q*100)/100:null,
-          sizeText:'',width:null,height:null});
+          count:c.cnt,perQty:c.cnt>1?Math.round(c.q*100)/100:null,sizeText:''});
       });
       measRows=null; measKeep={measureType:sh.mt,site:sh.site,date:sh.date};
       saveData(); render();
@@ -7382,6 +7404,9 @@ function exportMeasurementsPDF(selectedOnly=false){
   const sections=Object.keys(bysite).sort((a,b)=>a.localeCompare(b)).map(name=>{
     const rows=bysite[name];
     const subtotal=rows.reduce((s,m)=>s+(Number(m.qty)||0)*(Number(m.unitPrice)||0),0);
+    // 這個案場整份都沒填單價＝只是整理給廠商對圖面的清單：
+    // 單價、小計、各段小計、稅額、合計全部不要印，印一排「—」和 $0 只會讓人以為算錯。
+    const noMoney=rows.every(m=>measNoPrice(m));
     const rowHtml=m=>{
       const amt=(Number(m.qty)||0)*(Number(m.unitPrice)||0);
       const fk=measFlagKey(m); const ff=fk?MEAS_FLAGS[fk]:null;
@@ -7391,8 +7416,8 @@ function exportMeasurementsPDF(selectedOnly=false){
         <td>${esc(measurementSizeLabel(m))}</td>
         <td>${esc(m.unit||'')}</td>
         <td class="num">${(Number(m.qty)||0).toLocaleString()}${measShowExpr&&m.qtyExpr?`<div style="font-size:10px;color:#888">=${esc(m.qtyExpr)}</div>`:''}</td>
-        <td class="num">${measPriceCell(m)}${measShowExpr&&!measNoPrice(m)&&m.priceExpr?`<div style="font-size:10px;color:#888">=${esc(m.priceExpr)}</div>`:''}</td>
-        <td class="num">${measAmtCell(m)}</td>
+        ${noMoney?'':`<td class="num">${measPriceCell(m)}${measShowExpr&&!measNoPrice(m)&&m.priceExpr?`<div style="font-size:10px;color:#888">=${esc(m.priceExpr)}</div>`:''}</td>
+        <td class="num">${measAmtCell(m)}</td>`}
         <td>${escBr(m.note||'')}</td>
       </tr>`;
     };
@@ -7403,13 +7428,13 @@ function exportMeasurementsPDF(selectedOnly=false){
       const gg=g.filter(m=>measTypeKey(m)===k);
       if(!gg.length) return '';
       const sub=gg.reduce((s,m)=>s+(Number(m.qty)||0)*(Number(m.unitPrice)||0),0);
-      return `<tr class="type-head"><td colspan="8" style="padding:6px 8px">${label}（${gg.length}筆）　小計 ${money(sub)}</td></tr>`+gg.map(rowHtml).join('');
+      return `<tr class="type-head"><td colspan="${noMoney?6:8}" style="padding:6px 8px">${label}（${gg.length}筆）${noMoney?'':`　小計 ${money(sub)}`}</td></tr>`+gg.map(rowHtml).join('');
     }).join('');
     const trs=floors.length>1?floors.map(f=>{
       const g=rows.filter(m=>floorOf(m)===f);
       const sub=g.reduce((s,m)=>s+(Number(m.qty)||0)*(Number(m.unitPrice)||0),0);
       const out=subSiteType(name,f)==='外包'?` <span style="font-weight:600;color:#9a5b1a">〔外包${subSiteVendor(name,f)?'·'+esc(subSiteVendor(name,f)):''}〕</span>`:'';
-      return `<tr class="floor-head"><td colspan="8" style="padding:8px 10px">${f?esc(f):'（主案場）'}${out}（${g.length}筆）<span style="float:right">小計 ${money(sub)}</span></td></tr>`+typeSecs(g);
+      return `<tr class="floor-head"><td colspan="${noMoney?6:8}" style="padding:8px 10px">${f?esc(f):'（主案場）'}${out}（${g.length}筆）${noMoney?'':`<span style="float:right">小計 ${money(sub)}</span>`}</td></tr>`+typeSecs(g);
     }).join(''):typeSecs(rows);
     const vendors=[...new Set(rows.map(m=>{ const f=floorOf(m); return subSiteType(name,f)==='外包'?(subSiteVendor(name,f)||('外包·'+f)):''; }).filter(Boolean))];
     const vendorLine=vendors.length?`<div style="font-size:12px;color:#9a5b1a;margin:-4px 0 8px;font-weight:600">發包廠商／工班：${vendors.map(esc).join('、')}</div>`:'';
@@ -7417,8 +7442,9 @@ function exportMeasurementsPDF(selectedOnly=false){
     const headLine=(applyU||applyTax)?`<div style="font-size:12.5px;margin:-2px 0 8px;color:#1e3a8a">抬頭：${esc(applyU||'—')}${applyTax?`　統一編號：${esc(applyTax)}`:''}</div>`:'';
     const secTax=measTaxRows(subtotal,6);
     return `<h2>${esc(name)}</h2>${headLine}${vendorLine}
-      <table><thead><tr><th>日期</th><th>項目</th><th>尺寸</th><th>單位</th><th class="num">數量</th><th class="num">單價</th><th class="num">小計</th><th>備註</th></tr></thead>
-      <tbody>${trs}<tr class="total-row"><td colspan="6">案場合計</td><td class="num">${money(subtotal)}</td><td></td></tr>${secTax}</tbody></table>`;
+      <table><thead><tr><th>日期</th><th>項目</th><th>尺寸</th><th>單位</th><th class="num">數量</th>${noMoney?'':'<th class="num">單價</th><th class="num">小計</th>'}<th>備註</th></tr></thead>
+      <tbody>${trs}${noMoney?`<tr class="total-row"><td colspan="${noMoney?5:6}">共 ${rows.length} 筆</td><td></td></tr>`
+        :`<tr class="total-row"><td colspan="6">案場合計</td><td class="num">${money(subtotal)}</td><td></td></tr>${secTax}`}</tbody></table>`;
   }).join('<div style="height:16px"></div>');
   const total=list.reduce((s,m)=>s+(Number(m.qty)||0)*(Number(m.unitPrice)||0),0);
   const title='計量明細';
@@ -7426,12 +7452,16 @@ function exportMeasurementsPDF(selectedOnly=false){
   const inner=`<div class="bluedoc">
     <h1>${title}</h1>
     ${sections}
-    <table style="margin-top:18px"><tbody><tr class="total-row"><td>總計</td><td class="num">${money(total)}</td></tr>${measTaxRows(total,1)}</tbody></table>
+    ${total>0?`<table style="margin-top:18px"><tbody><tr class="total-row"><td>總計</td><td class="num">${money(total)}</td></tr>${measTaxRows(total,1)}</tbody></table>`
+      :`<div style="margin-top:14px;font-size:12.5px;color:#555">共 ${list.length} 筆（這份沒有填單價，所以不列金額）</div>`}
   </div>`;
   printHTML(title, inner);
 }
 // 計量明細稅金列（含稅外加5% / 內扣扣3%）；span＝金額前空欄的 colspan
 function measTaxRows(base, span){
+  // 整份都沒填單價（只是整理給廠商對圖面的清單）就不要出現稅額與合計——
+  // 印一排 $0 的營業稅只會讓人以為算錯了。
+  if(!(Number(base)>0)) return '';
   if(measTaxMode==='incl'){ const t=Math.round(base*0.05); return `<tr><td colspan="${span}">營業稅 5%</td><td class="num">${money(t)}</td>${span>1?'<td></td>':''}</tr><tr class="total-row"><td colspan="${span}">含稅合計</td><td class="num">${money(base+t)}</td>${span>1?'<td></td>':''}</tr>`; }
   if(measTaxMode==='ded'){ const t=Math.round(base*0.03); return `<tr><td colspan="${span}">代扣稅款 3%</td><td class="num">−${money(t)}</td>${span>1?'<td></td>':''}</tr><tr class="total-row"><td colspan="${span}">實付金額</td><td class="num">${money(base-t)}</td>${span>1?'<td></td>':''}</tr>`; }
   return '';

@@ -131,6 +131,74 @@ const cell=(i,k)=>`[data-mrow="${i}"][data-mkey="${k}"]`;
   await pg.close();
 }
 
+// ⑧ ★ 寬度／高度：跟單筆一樣填寬高自動算面積，而且存下來（列印時尺寸欄看得到）
+{
+  const {pg,errs}=await open();
+  await pg.selectOption('#meas-site','凱子飯店'); await pg.waitForTimeout(200);
+  t('⑧ 有寬度／高度欄位', await pg.locator(cell(0,'w')).count()===1&&await pg.locator(cell(0,'h')).count()===1);
+  await pg.fill(cell(0,'item'),'D1 床頭單面隔間');
+  await pg.fill(cell(0,'w'),'3.2'); await pg.fill(cell(0,'h'),'2.6'); await pg.waitForTimeout(300);
+  t('⑧ ★ 寬高填齊就自動算面積（8.32）', await pg.inputValue(cell(0,'qty'))==='8.32');
+  t('⑧ 旁邊寫出算法 3.2 × 2.6 ＝ 8.32', /3\.2 × 2\.6 ＝ 8\.32/.test(await pg.textContent('[data-mcalc="0"]')));
+  t('⑧ 數量欄變唯讀（避免跟寬高打對台）', await pg.getAttribute(cell(0,'qty'),'readonly')!==null);
+  await pg.fill(cell(0,'count'),'5'); await pg.waitForTimeout(300);
+  t('⑧ 間數一起算：3.2 × 2.6 ＝ 8.32 × 5 ＝ 41.6',
+    /8\.32 × 5 ＝ 41\.6/.test(await pg.textContent('[data-mcalc="0"]')));
+
+  // 第二列用算式（不填寬高）
+  await pg.fill(cell(1,'item'),'不規則牆'); await pg.fill(cell(1,'qty'),'2.1*2.6+0.8*1.2');
+  await pg.waitForTimeout(300);
+  t('⑧ 沒填寬高的那列照舊可以打算式', /＝ 6\.42/.test(await pg.textContent('[data-mcalc="1"]')));
+
+  await pg.click('#meas-rows-save'); await pg.waitForTimeout(650);
+  const r=await pg.evaluate(()=>state.measurements.map(m=>({i:m.item,q:m.qty,w:m.width,h:m.height,
+    e:m.qtyExpr||'',sz:measurementSizeLabel(m),c:m.count,per:m.perQty})));
+  t('⑨ ★ 寬高存下來了', r[0].w===3.2&&r[0].h===2.6);
+  t('⑨ ★ 尺寸欄顯示 3.2 × 2.6 m（廠商對圖面用的）', /3\.2 × 2\.6/.test(r[0].sz));
+  t('⑨ 總數量 41.6、每間 8.32、間數 5', r[0].q===41.6&&r[0].per===8.32&&r[0].c===5);
+  t('⑨ 算式那列：數量 6.42、算式留著、沒有寬高',
+    r[1].q===6.42&&r[1].e==='2.1*2.6+0.8*1.2'&&r[1].w===null);
+  t('⑨ 沒有 JS 錯誤', errs.length===0);
+  await pg.close();
+}
+
+// ⑩ ★ 整份沒填單價時，匯出 PDF 不要出現單價／小計／營業稅／合計
+{
+  const {pg,errs}=await open();
+  const doc=await pg.evaluate(()=>{
+    state.measurements=[
+      {id:'a',date:'2026-10-01',site:'凱子飯店',item:'D1 隔間',unit:'㎡',qty:8.32,unitPrice:null,
+       measureType:'partition',count:1,width:3.2,height:2.6},
+      {id:'b',date:'2026-10-01',site:'凱子飯店',item:'D2 隔間',unit:'㎡',qty:11.7,unitPrice:null,
+       measureType:'partition',count:1,width:4.5,height:2.6}];
+    measTaxMode='incl';   // 故意開外加 5%
+    let html='';
+    const real=window.printHTML; window.printHTML=(t,inner)=>{ html=inner; };
+    exportMeasurementsPDF(false); window.printHTML=real;
+    return html;
+  });
+  t('⑩ ★ 沒有「營業稅」', !/營業稅/.test(doc));
+  t('⑩ ★ 沒有「含稅合計」', !/含稅合計/.test(doc));
+  t('⑩ ★ 沒有「單價」「小計」欄', !/<th class="num">單價<\/th>/.test(doc)&&!/<th class="num">小計<\/th>/.test(doc));
+  t('⑩ ★ 沒有「案場合計」與「總計」', !/案場合計/.test(doc)&&!/總計/.test(doc));
+  t('⑩ 改講筆數', /共 2 筆/.test(doc));
+  t('⑩ 該留的都留著（項目、尺寸、數量）',
+    /D1 隔間/.test(doc)&&/3\.2 × 2\.6/.test(doc)&&/8\.32/.test(doc));
+  t('⑩ 沒有 JS 錯誤', errs.length===0);
+
+  // 有填單價時照舊要有稅額與合計
+  const doc2=await pg.evaluate(()=>{
+    state.measurements[0].unitPrice=280;
+    let html=''; const real=window.printHTML; window.printHTML=(t,inner)=>{ html=inner; };
+    exportMeasurementsPDF(false); window.printHTML=real;
+    return html;
+  });
+  t('⑪ 有金額時營業稅與合計照舊出現',
+    /營業稅 5%/.test(doc2)&&/含稅合計/.test(doc2)&&/案場合計/.test(doc2)&&/總計/.test(doc2));
+  t('⑪ 單價與小計欄回來', /單價/.test(doc2)&&/小計/.test(doc2));
+  await pg.close();
+}
+
 await br.close();
 console.log(`\n${ok.length} passed, ${bad.length} failed`);
 if(bad.length){bad.forEach(b=>console.log(' FAIL '+b));process.exit(1);}
