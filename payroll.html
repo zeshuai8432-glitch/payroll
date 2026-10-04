@@ -528,7 +528,7 @@ const FS_ROOT = 'https://firestore.googleapis.com/v1/projects/'+FS_PROJECT+'/dat
 const FS_DOC_BASE = FS_ROOT+'payroll/';
 const FS_SIG_BASE = FS_ROOT+'payrollSignatures/';
 const FS_REST_URL = FS_DOC_BASE+'main?key='+FS_KEY;
-const APP_VERSION = 'v2026.10.04c-measbatch';
+const APP_VERSION = 'v2026.10.04d-measgrid';
 let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], tools:[], locations:[], assets:[], advances:[], accounts:[], ledger:[], deals:[], billings:[], measurements:[], contracts:{}, costs:[], textMemory:{clients:[],companies:[]}, parkAccId:'', oweBonus:{}, minFund:'', shareholderTx:[], myCompanies:[], payrollSnapshots:[], yearIncomeAdj:[], deletedIds:[], resurrected:{ids:[],at:0}, tab:'dash' };
 let cloudStatus='連線中…';
 let localDirty=false, lastCloudTs=0;
@@ -712,6 +712,69 @@ function parseMeasBatch(text,defUnit){
     return {no:i+1,raw:line,item,qtyRaw,qty:isNaN(qty)?0:Math.round(qty*100)/100,
             qtyExpr:hasExprChars(qtyRaw)?qtyRaw:'',unit,price,note,err};
   }).filter(Boolean);
+}
+// 批次輸入表格：按「＋ 多一條」就多一列，欄位跟單筆一樣。
+// 案場與類型在上面的表單共用（整批同一個），其餘每列各自填。
+const measRowBlank=(unit,date)=>({item:'',unit:unit||'',count:'',qty:'',price:'',date:date||'',note:''});
+function measRowsEnsure(unit,date,n){
+  if(!Array.isArray(measRows)) measRows=[];
+  while(measRows.length<(n||3)) measRows.push(measRowBlank(unit,date));
+  measRows.forEach(r=>{ if(!r.unit) r.unit=unit||''; if(!r.date) r.date=date||''; });
+  return measRows;
+}
+function measRowCalc(r){
+  const cnt=Math.max(1,parseInt(r.count)||1);
+  const q=evalPriceExpr(r.qty);
+  const noP=String(r.price||'').trim()==='';
+  const p=noP?null:evalPriceExpr(r.price);
+  const totQty=isNaN(q)?NaN:Math.round(q*cnt*100)/100;
+  const amt=(noP||isNaN(q)||p==null||isNaN(p))?null:Math.round(totQty*p*100)/100;
+  let err='';
+  const blank=!String(r.item||'').trim()&&!String(r.qty||'').trim();
+  if(!blank){
+    if(!String(r.item||'').trim()) err='缺項目';
+    else if(!String(r.qty||'').trim()) err='缺數量';
+    else if(isNaN(q)||q<=0) err='數量看不懂';
+    else if(!noP&&(isNaN(p)||p<0)) err='單價看不懂';
+  }
+  return {cnt,q,p,noP,totQty,amt,err,blank};
+}
+function measRowsGridHtml(unitLbl,dateLbl){
+  const rows=measRowsEnsure(unitLbl,dateLbl);
+  const cells=rows.map((r,i)=>{
+    const c=measRowCalc(r);
+    const w=(k,ph,width,extra='')=>`<input data-mrow="${i}" data-mkey="${k}" value="${esc(String(r[k]||''))}" placeholder="${ph}" style="width:${width};font-size:13px" ${extra}>`;
+    return `<tr${c.err?' style="background:#fee2e2"':''}>
+      <td style="color:var(--muted);font-size:12px">${i+1}</td>
+      <td>${w('item','例：D1 床頭單面隔間','100%')}</td>
+      <td>${w('unit','㎡','62px')}</td>
+      <td>${w('count','1','54px','inputmode="numeric"')}</td>
+      <td>${w('qty','3.2*2.6+1.1*2.6','150px','inputmode="decimal"')}
+        <div data-mcalc="${i}" style="font-size:11px;color:var(--muted);height:14px">${(!c.blank&&!isNaN(c.q)&&(c.cnt>1||hasExprChars(r.qty)))?'＝ '+c.totQty:''}</div></td>
+      <td>${w('price','留空','84px','inputmode="decimal"')}</td>
+      <td class="num" data-mamt="${i}" style="font-weight:700;white-space:nowrap">${c.err?`<span style="color:#b91c1c;font-size:12px">${esc(c.err)}</span>`:(c.amt==null?'—':money(c.amt))}</td>
+      <td>${w('date','','136px','type="date"')}</td>
+      <td>${w('note','（選填）','120px')}</td>
+      <td><button class="act danger" data-mdel="${i}" style="padding:2px 8px;font-size:12px">刪</button></td></tr>`;
+  }).join('');
+  return `<div style="overflow:auto;border:1px solid var(--line);border-radius:8px">
+    <table style="font-size:13px;min-width:900px"><tr>
+      <th style="width:30px"></th><th style="min-width:200px">項目</th><th style="width:70px">單位</th>
+      <th style="width:62px">間數</th><th style="width:160px">數量/面積</th><th style="width:92px">單價</th>
+      <th style="width:92px">小計</th><th style="width:144px">日期</th><th style="width:128px">備註</th><th style="width:48px"></th></tr>
+    ${cells}</table></div>
+    <div id="meas-rows-stat" style="margin-top:8px;font-size:12.5px">${measRowsStatHtml()}</div>`;
+}
+// 打字時要跟著更新，所以抽出來；整列重繪會把游標踢掉，只換這一段。
+function measRowsStatHtml(){
+  const rows=Array.isArray(measRows)?measRows:[];
+  let okN=0,badN=0,tot=0;
+  rows.forEach(r=>{ const c=measRowCalc(r);
+    if(c.err){ badN++; return; }
+    if(c.blank) return;
+    okN++; if(c.amt!=null) tot+=c.amt; });
+  return `<span><b style="color:var(--accent)">${okN}</b> 筆可新增${badN?`　<b style="color:#b91c1c">${badN} 列有問題（會跳過）</b>`:''}</span>
+    <span style="color:var(--muted);margin-left:10px">有填單價的合計 <b>${money(tot)}</b></span>`;
 }
 function measBatchPreviewHtml(rows,unitLbl,cnt){
   if(!rows.length) return `<div class="sub" style="margin:6px 0 0">一行一筆，貼上或打字後這裡會顯示解析結果。</div>`;
@@ -4476,59 +4539,106 @@ function bind(){
     const f=document.getElementById('meas-item'); if(f) f.scrollIntoView({behavior:'smooth',block:'center'});
   });
   document.querySelectorAll('[data-edit-meas]').forEach(b=>b.onclick=()=>{ measEditId=b.dataset.editMeas; render(); });
-  // ── 批次輸入 ──
+  // ── 批次輸入（表格） ──
   const bt=document.getElementById('meas-batch-toggle');
-  if(bt) bt.onclick=()=>{ measBatchOpen=!measBatchOpen; if(!measBatchOpen) measBatchText=''; render(); };
+  if(bt) bt.onclick=()=>{ measBatchOpen=!measBatchOpen; if(!measBatchOpen){ measRows=null; measBatchText=''; measPasteOpen=false; } render(); };
   {
-    const ta=document.getElementById('meas-batch'), pv=document.getElementById('meas-batch-preview');
-    const common=()=>{
+    const shared=()=>{
       const siteSel=(document.getElementById('meas-site')||{}).value;
       const site=siteSel==='__manual__'
         ? String((document.getElementById('meas-site-manual')||{}).value||'').trim()
         : String(siteSel||'').trim();
       const mt=(document.getElementById('meas-type')||{}).value||'partition';
-      const defUnit=String((document.getElementById('meas-unit')||{}).value||'').trim()||(mt==='carry'?'式':'㎡');
-      const cnt=mt==='carry'?1:Math.max(1,parseInt((document.getElementById('meas-count')||{}).value)||1);
-      return {site,mt,defUnit,cnt,date:(document.getElementById('meas-date')||{}).value};
+      return {site,mt,defUnit:mt==='carry'?'式':'㎡',
+              date:((document.getElementById('meas-date')||{}).value)||localISODate()};
     };
-    const draw=()=>{
-      if(!ta||!pv) return;
-      measBatchText=ta.value;   // 記著，整頁重繪時不會不見
-      const c=common();
-      pv.innerHTML=measBatchPreviewHtml(parseMeasBatch(ta.value,c.defUnit),c.defUnit,c.cnt);
+    // 只更新那一列的「＝」與小計，不整頁重繪——重繪會把游標踢掉
+    const touch=i=>{
+      const r=measRows&&measRows[i]; if(!r) return;
+      const c=measRowCalc(r);
+      const cal=document.querySelector(`[data-mcalc="${i}"]`);
+      if(cal) cal.textContent=(!c.blank&&!isNaN(c.q)&&(c.cnt>1||hasExprChars(r.qty)))?('＝ '+c.totQty):'';
+      const amt=document.querySelector(`[data-mamt="${i}"]`);
+      if(amt) amt.innerHTML=c.err?`<span style="color:#b91c1c;font-size:12px">${esc(c.err)}</span>`:(c.amt==null?'—':money(c.amt));
+      const tr=amt&&amt.closest('tr'); if(tr) tr.style.background=c.err?'#fee2e2':'';
+      const st=document.getElementById('meas-rows-stat');
+      if(st) st.innerHTML=measRowsStatHtml();
     };
-    if(ta){ ta.oninput=draw; draw(); }
-    ['meas-unit','meas-count','meas-type'].forEach(id=>{
-      const el=document.getElementById(id); if(!el) return;
-      const prev=el.oninput, prevC=el.onchange;
-      el.oninput=e=>{ if(prev) prev.call(el,e); draw(); };
-      el.onchange=e=>{ if(prevC) prevC.call(el,e); draw(); };
+    document.querySelectorAll('[data-mrow]').forEach(el=>{
+      el.oninput=()=>{
+        const i=+el.dataset.mrow, k=el.dataset.mkey;
+        if(!measRows||!measRows[i]) return;
+        measRows[i][k]=el.value; touch(i);
+      };
     });
-    const bc=document.getElementById('meas-batch-clear');
-    if(bc) bc.onclick=()=>{ if(ta){ ta.value=''; measBatchText=''; draw(); ta.focus(); } };
+    document.querySelectorAll('[data-mdel]').forEach(b=>b.onclick=()=>{
+      const i=+b.dataset.mdel;
+      if(!measRows||!measRows[i]) return;
+      measRows.splice(i,1);
+      if(!measRows.length) measRows=null;
+      render();
+    });
+    const ra=document.getElementById('meas-row-add');
+    if(ra) ra.onclick=()=>{
+      const sh=shared();
+      // 新的一列沿用上一列的單位、間數與日期——連續記同一批時少打很多
+      const last=(measRows&&measRows[measRows.length-1])||null;
+      measRowsEnsure(sh.defUnit,sh.date,1);
+      measRows.push({...measRowBlank(last?last.unit:sh.defUnit,last?last.date:sh.date),
+                     count:last?last.count:''});
+      render();
+      const sel=document.querySelectorAll(`[data-mrow="${measRows.length-1}"][data-mkey="item"]`);
+      if(sel[0]){ sel[0].focus(); sel[0].scrollIntoView({block:'center',behavior:'smooth'}); }
+    };
+    const rc=document.getElementById('meas-rows-clear');
+    if(rc) rc.onclick=()=>{ if(!confirm('清空表格裡所有還沒新增的列？')) return; measRows=null; render(); };
+    const rs=document.getElementById('meas-rows-save');
+    if(rs) rs.onclick=()=>{
+      const sh=shared();
+      if(!sh.site){ alert('請先在上面選案場（或選「✎ 手動輸入…」自己打一個）。整批共用。'); return; }
+      const all=(measRows||[]).map(r=>({r,c:measRowCalc(r)}));
+      const good=all.filter(x=>!x.c.blank&&!x.c.err);
+      const bad=all.filter(x=>x.c.err).length;
+      if(!good.length){ alert(bad?'每一列都有問題，紅色那幾列先修一下。':'表格還沒填。'); return; }
+      const tot=good.reduce((a,x)=>a+(x.c.amt||0),0);
+      if(!confirm(`新增 ${good.length} 筆到「${sh.site}」？`
+        +(bad?`\n\n有 ${bad} 列看不懂，會跳過。`:'')
+        +(tot>0?`\n\n有填單價的部分合計 ${money(tot)}`:`\n\n都沒填單價（只是整理清單）`))) return;
+      good.forEach(({r,c})=>{
+        state.measurements.push({id:uid(),item:String(r.item).trim(),
+          qty:c.totQty,qtyExpr:hasExprChars(r.qty)?String(r.qty).trim():'',qtyManual:true,
+          unitPrice:c.noP?null:c.p,priceExpr:'',
+          date:String(r.date||'').trim()||sh.date,site:sh.site,
+          unit:String(r.unit||'').trim()||sh.defUnit,
+          note:String(r.note||'').trim(),measureType:sh.mt,
+          count:c.cnt,perQty:c.cnt>1?Math.round(c.q*100)/100:null,
+          sizeText:'',width:null,height:null});
+      });
+      measRows=null; measKeep={measureType:sh.mt,site:sh.site,date:sh.date};
+      saveData(); render();
+      alert(`已新增 ${good.length} 筆。`+(bad?`\n（跳過 ${bad} 列）`:''));
+    };
+  }
+  // ── 從 Excel 貼上（次要入口）：解析完倒進上面的表格，還能再改 ──
+  {
+    const pt=document.getElementById('meas-paste-toggle');
+    if(pt) pt.onclick=()=>{ measPasteOpen=!measPasteOpen; render(); };
+    const ta=document.getElementById('meas-batch'), pv=document.getElementById('meas-batch-preview');
+    const defUnit=((document.getElementById('meas-type')||{}).value==='carry')?'式':'㎡';
+    const draw=()=>{ if(!ta||!pv) return; measBatchText=ta.value;
+      pv.innerHTML=measBatchPreviewHtml(parseMeasBatch(ta.value,defUnit),defUnit,1); };
+    if(ta){ ta.oninput=draw; draw(); }
     const ba=document.getElementById('meas-batch-add');
     if(ba) ba.onclick=()=>{
-      const c=common();
-      if(!c.date||!c.site){ alert('請先在上面選好日期與案場（整批共用）。'); return; }
-      const rows=parseMeasBatch(ta?ta.value:'',c.defUnit);
-      const good=rows.filter(r=>!r.err), bad=rows.length-good.length;
-      if(!good.length){ alert(rows.length?'每一行都有問題，先照下面的提示修一下。':'還沒輸入內容。'); return; }
-      const total=good.reduce((a,r)=>a+(r.price==null?0:r.qty*(c.cnt>1?c.cnt:1)*r.price),0);
-      if(!confirm(`新增 ${good.length} 筆到「${c.site}」（${c.date}）？`
-        +(bad?`\n\n有 ${bad} 行看不懂，會跳過。`:'')
-        +(c.cnt>1?`\n\n間數 ${c.cnt}：每行的數量會 ×${c.cnt}`:'')
-        +(total>0?`\n\n有填單價的部分合計 ${money(total)}`:`\n\n都沒填單價（只是整理清單）`))) return;
-      good.forEach(r=>{
-        const per=c.cnt>1?r.qty:null;
-        state.measurements.push({id:uid(),item:r.item,
-          qty:c.cnt>1?Math.round(r.qty*c.cnt*100)/100:r.qty,
-          qtyExpr:r.qtyExpr,qtyManual:true,unitPrice:r.price,priceExpr:'',
-          date:c.date,site:c.site,unit:r.unit,note:r.note,measureType:c.mt,
-          count:c.cnt,perQty:per,sizeText:'',width:null,height:null});
-      });
-      measBatchText=''; measKeep={measureType:c.mt,site:c.site,date:c.date};
-      saveData(); render();
-      alert(`已新增 ${good.length} 筆。`+(bad?`\n（跳過 ${bad} 行）`:''));
+      const rows=parseMeasBatch(ta?ta.value:'',defUnit).filter(r=>!r.err);
+      if(!rows.length){ alert('沒有可以加進表格的行。'); return; }
+      const date=((document.getElementById('meas-date')||{}).value)||localISODate();
+      if(!Array.isArray(measRows)) measRows=[];
+      measRows=measRows.filter(r=>String(r.item||'').trim()||String(r.qty||'').trim()); // 丟掉空白列
+      rows.forEach(r=>measRows.push({item:r.item,unit:r.unit||defUnit,count:'',
+        qty:r.qtyRaw,price:r.price==null?'':String(r.price),date,note:r.note||''}));
+      measBatchText=''; measPasteOpen=false; render();
+      alert(`已加 ${rows.length} 列到表格，可以再改再按「✓ 全部新增」。`);
     };
   }
   // 這兩個要獨立綁：bindMeasSubtotal 在「新增表單」收合時會提早 return，
@@ -4538,6 +4648,23 @@ function bind(){
     if(!sel||!man) return;
     sel.onchange=()=>{ const on=sel.value==='__manual__'; man.style.display=on?'block':'none'; if(on) man.focus(); };
   });
+  // 新增表單的案場／類型／日期要記住：批次表格按一次「＋ 多一條」就整頁重繪一次，
+  // 不記的話選好的案場會被清掉，填完一堆列才被說「請先選案場」。
+  {
+    const sel=document.getElementById('meas-site'), man=document.getElementById('meas-site-manual');
+    const ty=document.getElementById('meas-type'), dt=document.getElementById('meas-date');
+    const hold=()=>{
+      if(!sel) return;
+      const site=sel.value==='__manual__'?String((man||{}).value||'').trim():String(sel.value||'').trim();
+      measKeep={...(measKeep||{}),site,
+        measureType:(ty&&ty.value)||((measKeep||{}).measureType)||'partition',
+        date:(dt&&dt.value)||((measKeep||{}).date)||localISODate()};
+    };
+    if(sel){ const prev=sel.onchange; sel.onchange=e=>{ if(prev) prev.call(sel,e); hold(); }; }
+    if(man) man.oninput=hold;
+    if(ty){ const prev=ty.onchange; ty.onchange=e=>{ if(prev) prev.call(ty,e); hold(); }; }
+    if(dt) dt.onchange=hold;
+  }
   const mec=document.getElementById('meas-edit-cancel'); if(mec) mec.onclick=()=>{ measEditId=null; render(); };
   const meo=document.getElementById('meas-edit-ok');
   if(meo) meo.onclick=()=>{
@@ -6415,7 +6542,9 @@ let measFloorSel={}; // 計量明細：每個母案場目前只看哪個子案�
 let measEditId=null, measDraft=null; // 計量明細：編輯中的紀錄 / 複製帶入新增表單的草稿
 let measKeep=null; // 計量明細：記住上次新增的類型/案場/日期，送出後不歸零
 let measShowExpr=false; // 匯出 PDF 時是否顯示單價算式（預設關）
-let measBatchOpen=false, measBatchText=''; // 批次輸入：一行一筆
+let measBatchOpen=false, measBatchText=''; // 批次貼上（從 Excel）：一行一筆
+let measPasteOpen=false;                   // 貼上區（次要入口，預設收起）
+let measRows=null;                         // 批次輸入表格：每個元素一列
 let measHideBilled=false; try{ measHideBilled=localStorage.getItem('pm_meas_hidebilled')==='1'; }catch(e){} // 隱藏已帶入請款的計量（預設關）
 let measTaxMode='none'; try{ measTaxMode=localStorage.getItem('pm_meas_taxmode')||'none'; }catch(e){} // 計量明細 PDF 稅別：none/incl(外加5%)/ded(內扣3%)
 const measIsBilled = m => !!(m&&m.billedTo&&state.billings.some(b=>b.id===m.billedTo));
@@ -7218,18 +7347,28 @@ function viewMeasurements(){
       <button class="btn" id="meas-add">＋ 新增</button>
       <button class="act" id="meas-batch-toggle" style="cursor:pointer;height:40px;padding:0 14px">${measBatchOpen?'✕ 收起批次輸入':'📋 批次輸入（一次很多筆）'}</button>
     </div>
-    ${measBatchOpen?`<div style="margin-top:10px;padding:12px;border:1px solid var(--line);border-radius:10px;background:var(--bg)">
-      <div style="font-size:12.5px;font-weight:700;margin-bottom:4px">一行一筆</div>
-      <div class="sub" style="margin:0 0 6px">每行：<b>項目</b>　<b>數量（可算式）</b>　單位（選填）　單價（選填）　備註（選填）。
-      分欄用 <b>Tab</b>、<b>逗號</b>或<b>兩個以上空白</b>（從 Excel 貼過來直接可用）。
-      <b>案場、日期、類型、間數照上面的欄位</b>，整批共用。</div>
-      <textarea id="meas-batch" rows="7" placeholder="D1 床頭單面隔間, 3.2*2.6+1.1*2.6&#10;D2 走道牆, 4.5*2.6&#10;G 區天花, 12.5, 式&#10;H 區壁龕, 2.5, ㎡, 280, 圖面編號H" style="width:100%;font-family:ui-monospace,monospace;font-size:13px">${esc(measBatchText)}</textarea>
-      <div id="meas-batch-preview"></div>
-      <div style="margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-        <button class="btn" id="meas-batch-add">＋ 全部新增</button>
-        <button class="act muted" id="meas-batch-clear" style="cursor:pointer;height:40px;padding:0 14px">清空</button>
+    ${measBatchOpen?(()=>{
+      const mt=(measKeep&&measKeep.measureType)||mdType;
+      const defUnit=mt==='carry'?'式':'㎡';
+      const defDate=(measKeep&&measKeep.date)||localISODate();
+      return `<div style="margin-top:10px;padding:12px;border:1px solid var(--line);border-radius:10px;background:var(--bg)">
+      <div class="sub" style="margin:0 0 8px"><b>案場</b>與<b>類型</b>照上面的欄位（整批共用），其餘每一列各自填。
+      數量可填算式（例 <b>3.2*2.6+1.1*2.6</b>），單價留空＝不計價。</div>
+      <div id="meas-rows">${measRowsGridHtml(defUnit,defDate)}</div>
+      <div style="margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <button class="act" id="meas-row-add" style="cursor:pointer;height:40px;padding:0 16px;font-weight:700">＋ 多一條</button>
+        <button class="btn" id="meas-rows-save">✓ 全部新增</button>
+        <button class="act muted" id="meas-rows-clear" style="cursor:pointer;height:40px;padding:0 14px">全部清空</button>
+        <span style="flex:1"></span>
+        <button class="act" id="meas-paste-toggle" style="cursor:pointer;height:36px;padding:0 12px;font-size:12px">${measPasteOpen?'✕ 收起貼上':'📋 從 Excel 貼上'}</button>
       </div>
-    </div>`:''}`:''}
+      ${measPasteOpen?`<div style="margin-top:10px;padding-top:10px;border-top:1px dashed var(--line)">
+        <div class="sub" style="margin:0 0 6px">一行一筆：<b>項目</b>　<b>數量</b>　單位　單價　備註，分欄用 Tab／逗號／兩個以上空白。按「加到上面的表格」會變成一列一列，還可以再改。</div>
+        <textarea id="meas-batch" rows="5" placeholder="D1 床頭單面隔間, 3.2*2.6+1.1*2.6&#10;D2 走道牆, 4.5*2.6" style="width:100%;font-family:ui-monospace,monospace;font-size:13px">${esc(measBatchText)}</textarea>
+        <div id="meas-batch-preview"></div>
+        <div style="margin-top:8px"><button class="act" id="meas-batch-add" style="cursor:pointer;height:38px;padding:0 14px">↓ 加到上面的表格</button></div>
+      </div>`:''}
+    </div>`; })():''}`:''}
   </div>
   ${list.length===0?'<div class="card"><div class="empty">尚無計量明細。點上方「新增」開始登記。</div></div>':(siteCards.trim()===''&&measHideBilled?'<div class="card"><div class="empty">目前所有計量都已帶入請款（已隱藏）。取消勾選「隱藏已請款」可查看。</div></div>':siteCards)}`;
 }
