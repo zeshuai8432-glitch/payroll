@@ -45,6 +45,7 @@ NODE_PATH=/opt/node22/lib/node_modules /opt/node22/bin/node prog-smoke2.test.js
 | `wage-measlist.test.js` | payroll 計量明細當廠商對圖面的清單：單價可留空、案場可手動輸入、數量可填算式且算式留著（`payroll.html`） |
 | `wage-measgrid.test.js` | payroll 計量明細批次輸入表格：按一下多一列、寬×高自動算面積並存下尺寸、即時小計、壞的列跳過、案場不被重繪清掉、整份沒單價時匯出不印金額與稅額（`payroll.html`） |
 | `wage-measbatch.test.js` | 從 Excel 貼上：三種分欄、壞行說明、倒進批次表格接在後面不覆蓋（`payroll.html`） |
+| `wage-measgroup.test.js` | payroll 計量明細照項目編號開頭分組小計（A／B／C…）：以實際一份 TYPE-EXS 30 筆驗 A 70.09／B 23.05／C 7.59／D 29.94（`payroll.html`） |
 
 ## 為什麼放這裡
 
