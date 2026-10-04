@@ -43,6 +43,7 @@ NODE_PATH=/opt/node22/lib/node_modules /opt/node22/bin/node prog-smoke2.test.js
 | `prog-mergeprint.test.js` | 同一廠商在別的案場／零星工程的金額，可併入同一張請款單列印（帳不混） |
 | `wage-measqty.test.js` | payroll 計量明細：隔間㎡ 的數量可切手動輸入（`payroll.html`） |
 | `wage-measlist.test.js` | payroll 計量明細當廠商對圖面的清單：單價可留空、案場可手動輸入、數量可填算式且算式留著（`payroll.html`） |
+| `wage-measbatch.test.js` | payroll 計量明細批次輸入：一行一筆、Tab／逗號／多空白分欄、壞的行跳過並說明、間數乘進去（`payroll.html`） |
 
 ## 為什麼放這裡
 

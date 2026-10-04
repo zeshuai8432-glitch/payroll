@@ -528,7 +528,7 @@ const FS_ROOT = 'https://firestore.googleapis.com/v1/projects/'+FS_PROJECT+'/dat
 const FS_DOC_BASE = FS_ROOT+'payroll/';
 const FS_SIG_BASE = FS_ROOT+'payrollSignatures/';
 const FS_REST_URL = FS_DOC_BASE+'main?key='+FS_KEY;
-const APP_VERSION = 'v2026.10.04b-meassite';
+const APP_VERSION = 'v2026.10.04c-measbatch';
 let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], tools:[], locations:[], assets:[], advances:[], accounts:[], ledger:[], deals:[], billings:[], measurements:[], contracts:{}, costs:[], textMemory:{clients:[],companies:[]}, parkAccId:'', oweBonus:{}, minFund:'', shareholderTx:[], myCompanies:[], payrollSnapshots:[], yearIncomeAdj:[], deletedIds:[], resurrected:{ids:[],at:0}, tab:'dash' };
 let cloudStatus='連線中…';
 let localDirty=false, lastCloudTs=0;
@@ -687,6 +687,46 @@ function openStageSplitModal(itemName, terms, onSplit, onKeep){
     m.remove();
     onSplit(terms.map((t,i)=>({name:names[i]||('工序'+(i+1)),val:t})));
   };
+}
+// 批次輸入：一行一筆。分欄用 Tab、逗號（半／全角）或兩個以上空白——
+// 從 Excel 貼過來是 Tab，手打多半是空白或逗號，三種都收。
+//   項目 ｜ 數量（可算式） ｜ 單位（選填） ｜ 單價（選填） ｜ 備註（選填）
+// 案場、日期、類型、間數照上面的表單，整批共用。
+function parseMeasBatch(text,defUnit){
+  return String(text||'').split(/\r?\n/).map((raw,i)=>{
+    const line=raw.trim();
+    if(!line) return null;
+    const cols=line.split(/\t|[，,]|\s{2,}/).map(x=>x.trim()).filter((x,j,a)=>!(x===''&&j===a.length-1));
+    const item=cols[0]||'';
+    const qtyRaw=cols[1]||'';
+    const unit=(cols[2]||'').trim()||defUnit;
+    const priceRaw=(cols[3]||'').trim();
+    const note=cols.slice(4).join(' ').trim();
+    const qty=evalPriceExpr(qtyRaw);
+    const price=priceRaw===''?null:evalPriceExpr(priceRaw);
+    let err='';
+    if(!item) err='沒有項目名稱';
+    else if(!qtyRaw) err='沒有數量';
+    else if(isNaN(qty)||qty<=0) err='數量看不懂：'+qtyRaw;
+    else if(price!=null&&(isNaN(price)||price<0)) err='單價看不懂：'+priceRaw;
+    return {no:i+1,raw:line,item,qtyRaw,qty:isNaN(qty)?0:Math.round(qty*100)/100,
+            qtyExpr:hasExprChars(qtyRaw)?qtyRaw:'',unit,price,note,err};
+  }).filter(Boolean);
+}
+function measBatchPreviewHtml(rows,unitLbl,cnt){
+  if(!rows.length) return `<div class="sub" style="margin:6px 0 0">一行一筆，貼上或打字後這裡會顯示解析結果。</div>`;
+  const okN=rows.filter(r=>!r.err).length, badN=rows.length-okN;
+  return `<div style="margin-top:8px;font-size:12px">
+    <div style="margin-bottom:4px">解析到 <b>${rows.length}</b> 行：<b style="color:var(--accent)">${okN} 筆可新增</b>${badN?`，<b style="color:#b91c1c">${badN} 行有問題（會跳過）</b>`:''}${cnt>1?`　<span style="color:var(--muted)">間數 ${cnt}：每行的數量會 ×${cnt}</span>`:''}</div>
+    <div style="max-height:260px;overflow:auto;border:1px solid var(--line);border-radius:8px">
+    <table style="font-size:12px"><tr><th style="width:34px">#</th><th>項目</th><th class="num">數量</th><th>單位</th><th class="num">單價</th><th>備註</th></tr>
+    ${rows.map(r=>r.err
+      ?`<tr style="background:#fee2e2"><td>${r.no}</td><td colspan="5" style="color:#b91c1c">${esc(r.err)}　<span style="color:#777">原文：${esc(r.raw)}</span></td></tr>`
+      :`<tr><td>${r.no}</td><td style="white-space:normal;word-break:break-word">${esc(r.item)}</td>
+        <td class="num">${r.qty*(cnt>1?cnt:1)}${r.qtyExpr?`<div style="font-size:10px;color:#888">=${esc(r.qtyExpr)}${cnt>1?` ×${cnt}`:''}</div>`:''}</td>
+        <td>${esc(r.unit||unitLbl)}</td><td class="num">${r.price==null?'—':money(r.price)}</td>
+        <td style="color:var(--muted)">${esc(r.note||'')}</td></tr>`).join('')}
+    </table></div></div>`;
 }
 function bindMeasSubtotal(){
   const type=document.getElementById('meas-type'), width=document.getElementById('meas-width'), height=document.getElementById('meas-height');
@@ -4436,6 +4476,61 @@ function bind(){
     const f=document.getElementById('meas-item'); if(f) f.scrollIntoView({behavior:'smooth',block:'center'});
   });
   document.querySelectorAll('[data-edit-meas]').forEach(b=>b.onclick=()=>{ measEditId=b.dataset.editMeas; render(); });
+  // ── 批次輸入 ──
+  const bt=document.getElementById('meas-batch-toggle');
+  if(bt) bt.onclick=()=>{ measBatchOpen=!measBatchOpen; if(!measBatchOpen) measBatchText=''; render(); };
+  {
+    const ta=document.getElementById('meas-batch'), pv=document.getElementById('meas-batch-preview');
+    const common=()=>{
+      const siteSel=(document.getElementById('meas-site')||{}).value;
+      const site=siteSel==='__manual__'
+        ? String((document.getElementById('meas-site-manual')||{}).value||'').trim()
+        : String(siteSel||'').trim();
+      const mt=(document.getElementById('meas-type')||{}).value||'partition';
+      const defUnit=String((document.getElementById('meas-unit')||{}).value||'').trim()||(mt==='carry'?'式':'㎡');
+      const cnt=mt==='carry'?1:Math.max(1,parseInt((document.getElementById('meas-count')||{}).value)||1);
+      return {site,mt,defUnit,cnt,date:(document.getElementById('meas-date')||{}).value};
+    };
+    const draw=()=>{
+      if(!ta||!pv) return;
+      measBatchText=ta.value;   // 記著，整頁重繪時不會不見
+      const c=common();
+      pv.innerHTML=measBatchPreviewHtml(parseMeasBatch(ta.value,c.defUnit),c.defUnit,c.cnt);
+    };
+    if(ta){ ta.oninput=draw; draw(); }
+    ['meas-unit','meas-count','meas-type'].forEach(id=>{
+      const el=document.getElementById(id); if(!el) return;
+      const prev=el.oninput, prevC=el.onchange;
+      el.oninput=e=>{ if(prev) prev.call(el,e); draw(); };
+      el.onchange=e=>{ if(prevC) prevC.call(el,e); draw(); };
+    });
+    const bc=document.getElementById('meas-batch-clear');
+    if(bc) bc.onclick=()=>{ if(ta){ ta.value=''; measBatchText=''; draw(); ta.focus(); } };
+    const ba=document.getElementById('meas-batch-add');
+    if(ba) ba.onclick=()=>{
+      const c=common();
+      if(!c.date||!c.site){ alert('請先在上面選好日期與案場（整批共用）。'); return; }
+      const rows=parseMeasBatch(ta?ta.value:'',c.defUnit);
+      const good=rows.filter(r=>!r.err), bad=rows.length-good.length;
+      if(!good.length){ alert(rows.length?'每一行都有問題，先照下面的提示修一下。':'還沒輸入內容。'); return; }
+      const total=good.reduce((a,r)=>a+(r.price==null?0:r.qty*(c.cnt>1?c.cnt:1)*r.price),0);
+      if(!confirm(`新增 ${good.length} 筆到「${c.site}」（${c.date}）？`
+        +(bad?`\n\n有 ${bad} 行看不懂，會跳過。`:'')
+        +(c.cnt>1?`\n\n間數 ${c.cnt}：每行的數量會 ×${c.cnt}`:'')
+        +(total>0?`\n\n有填單價的部分合計 ${money(total)}`:`\n\n都沒填單價（只是整理清單）`))) return;
+      good.forEach(r=>{
+        const per=c.cnt>1?r.qty:null;
+        state.measurements.push({id:uid(),item:r.item,
+          qty:c.cnt>1?Math.round(r.qty*c.cnt*100)/100:r.qty,
+          qtyExpr:r.qtyExpr,qtyManual:true,unitPrice:r.price,priceExpr:'',
+          date:c.date,site:c.site,unit:r.unit,note:r.note,measureType:c.mt,
+          count:c.cnt,perQty:per,sizeText:'',width:null,height:null});
+      });
+      measBatchText=''; measKeep={measureType:c.mt,site:c.site,date:c.date};
+      saveData(); render();
+      alert(`已新增 ${good.length} 筆。`+(bad?`\n（跳過 ${bad} 行）`:''));
+    };
+  }
   // 這兩個要獨立綁：bindMeasSubtotal 在「新增表單」收合時會提早 return，
   // 但編輯表單可以單獨開著，案場的手動切換不能跟著失效。
   [['meas-site','meas-site-manual'],['me-site','me-site-manual']].forEach(([a,b])=>{
@@ -6320,6 +6415,7 @@ let measFloorSel={}; // 計量明細：每個母案場目前只看哪個子案�
 let measEditId=null, measDraft=null; // 計量明細：編輯中的紀錄 / 複製帶入新增表單的草稿
 let measKeep=null; // 計量明細：記住上次新增的類型/案場/日期，送出後不歸零
 let measShowExpr=false; // 匯出 PDF 時是否顯示單價算式（預設關）
+let measBatchOpen=false, measBatchText=''; // 批次輸入：一行一筆
 let measHideBilled=false; try{ measHideBilled=localStorage.getItem('pm_meas_hidebilled')==='1'; }catch(e){} // 隱藏已帶入請款的計量（預設關）
 let measTaxMode='none'; try{ measTaxMode=localStorage.getItem('pm_meas_taxmode')||'none'; }catch(e){} // 計量明細 PDF 稅別：none/incl(外加5%)/ded(內扣3%)
 const measIsBilled = m => !!(m&&m.billedTo&&state.billings.some(b=>b.id===m.billedTo));
@@ -7118,7 +7214,22 @@ function viewMeasurements(){
       <div class="field"><label>日期</label><input type="date" id="meas-date" value="${measKeep&&measKeep.date?esc(measKeep.date):localISODate()}"></div>
       <div class="field" style="flex:1;min-width:150px"><label>備注（可換行）</label><textarea id="meas-note" rows="2" placeholder="（選填）">${measDraft?esc(measDraft.note||''):''}</textarea></div>
     </div>
-    <div class="row" style="margin-top:10px"><button class="btn" id="meas-add">＋ 新增</button></div>`:''}
+    <div class="row" style="margin-top:10px;align-items:center;gap:8px">
+      <button class="btn" id="meas-add">＋ 新增</button>
+      <button class="act" id="meas-batch-toggle" style="cursor:pointer;height:40px;padding:0 14px">${measBatchOpen?'✕ 收起批次輸入':'📋 批次輸入（一次很多筆）'}</button>
+    </div>
+    ${measBatchOpen?`<div style="margin-top:10px;padding:12px;border:1px solid var(--line);border-radius:10px;background:var(--bg)">
+      <div style="font-size:12.5px;font-weight:700;margin-bottom:4px">一行一筆</div>
+      <div class="sub" style="margin:0 0 6px">每行：<b>項目</b>　<b>數量（可算式）</b>　單位（選填）　單價（選填）　備註（選填）。
+      分欄用 <b>Tab</b>、<b>逗號</b>或<b>兩個以上空白</b>（從 Excel 貼過來直接可用）。
+      <b>案場、日期、類型、間數照上面的欄位</b>，整批共用。</div>
+      <textarea id="meas-batch" rows="7" placeholder="D1 床頭單面隔間, 3.2*2.6+1.1*2.6&#10;D2 走道牆, 4.5*2.6&#10;G 區天花, 12.5, 式&#10;H 區壁龕, 2.5, ㎡, 280, 圖面編號H" style="width:100%;font-family:ui-monospace,monospace;font-size:13px">${esc(measBatchText)}</textarea>
+      <div id="meas-batch-preview"></div>
+      <div style="margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <button class="btn" id="meas-batch-add">＋ 全部新增</button>
+        <button class="act muted" id="meas-batch-clear" style="cursor:pointer;height:40px;padding:0 14px">清空</button>
+      </div>
+    </div>`:''}`:''}
   </div>
   ${list.length===0?'<div class="card"><div class="empty">尚無計量明細。點上方「新增」開始登記。</div></div>':(siteCards.trim()===''&&measHideBilled?'<div class="card"><div class="empty">目前所有計量都已帶入請款（已隱藏）。取消勾選「隱藏已請款」可查看。</div></div>':siteCards)}`;
 }
