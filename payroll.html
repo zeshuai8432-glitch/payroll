@@ -528,7 +528,7 @@ const FS_ROOT = 'https://firestore.googleapis.com/v1/projects/'+FS_PROJECT+'/dat
 const FS_DOC_BASE = FS_ROOT+'payroll/';
 const FS_SIG_BASE = FS_ROOT+'payrollSignatures/';
 const FS_REST_URL = FS_DOC_BASE+'main?key='+FS_KEY;
-const APP_VERSION = 'v2026.10.04e-measwh';
+const APP_VERSION = 'v2026.10.04f-measgrp';
 let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], tools:[], locations:[], assets:[], advances:[], accounts:[], ledger:[], deals:[], billings:[], measurements:[], contracts:{}, costs:[], textMemory:{clients:[],companies:[]}, parkAccId:'', oweBonus:{}, minFund:'', shareholderTx:[], myCompanies:[], payrollSnapshots:[], yearIncomeAdj:[], deletedIds:[], resurrected:{ids:[],at:0}, tab:'dash' };
 let cloudStatus='連線中…';
 let localDirty=false, lastCloudTs=0;
@@ -638,6 +638,41 @@ function bindSiteClientAutofill(siteId, clientId){
 }
 // 單價欄支援算式：只允許數字與 + - * / ( ) 小數點，×÷ 自動轉換
 // 計量明細拿來整理給廠商對圖面時，常常只要「哪道牆、怎麼算的」，單價不一定有。
+// 項目名稱開頭的字母就是圖面上的「系統」編號（A、A1、A2… / B、B1…）。
+// 同一個字母是同一個系統，所以照字母分組算總和。
+const measPrefixOf=it=>{
+  const m=String((it&&it.item)||'').trim().match(/^([A-Za-z]{1,3})(?=\d|\b|[^A-Za-z0-9])/);
+  return m?m[1].toUpperCase():'';
+};
+// 回傳 [{key, n, units:{單位:數量}, amt, anyPrice}]，照字母排序
+function measPrefixSummary(rows){
+  const g={};
+  (rows||[]).forEach(m=>{
+    const k=measPrefixOf(m); if(!k) return;
+    const e=g[k]||(g[k]={key:k,n:0,units:{},amt:0,anyPrice:false});
+    e.n++;
+    const u=String(m.unit||'').trim()||'式';
+    e.units[u]=Math.round(((e.units[u]||0)+(Number(m.qty)||0))*100)/100;
+    if(!measNoPrice(m)){ e.anyPrice=true; e.amt+=(Number(m.qty)||0)*(Number(m.unitPrice)||0); }
+  });
+  return Object.values(g).sort((a,b)=>a.key.localeCompare(b.key,undefined,{numeric:true}));
+}
+const measPrefixQtyText=e=>Object.keys(e.units).sort()
+  .map(u=>`${e.units[u].toLocaleString()} ${u}`).join(' ＋ ');
+function measPrefixStripHtml(rows){
+  const sum=measPrefixSummary(rows);
+  if(sum.length<2) return '';   // 只有一組就不用小計了
+  const anyMoney=sum.some(e=>e.anyPrice);
+  return `<div data-measprefix="1" style="padding:8px 18px;border-top:1px solid var(--line);background:#f4f7ff">
+    <div style="font-size:11.5px;color:#64748b;margin-bottom:4px">照編號開頭分組（同一個字母＝同一個系統）</div>
+    <div style="display:flex;flex-wrap:wrap;gap:6px">
+      ${sum.map(e=>`<span style="display:inline-flex;align-items:baseline;gap:5px;padding:4px 10px;background:#fff;border:1px solid #c7d7f5;border-radius:8px;font-size:12.5px">
+        <b style="color:#1d4ed8;font-size:14px">${esc(e.key)}</b>
+        <span style="color:#64748b">${e.n} 筆</span>
+        <b>${esc(measPrefixQtyText(e))}</b>
+        ${anyMoney&&e.anyPrice?`<span style="color:var(--accent)">${money(e.amt)}</span>`:''}</span>`).join('')}
+    </div></div>`;
+}
 const measNoPrice=m=>!m||m.unitPrice===null||m.unitPrice===undefined||m.unitPrice==='';
 const measPriceCell=m=>measNoPrice(m)?'—':money(Number(m.unitPrice)||0);
 const measAmtCell=m=>measNoPrice(m)?'—':money((Number(m.qty)||0)*(Number(m.unitPrice)||0));
@@ -7309,6 +7344,7 @@ function viewMeasurements(){
           <span style="font-size:12px;color:var(--muted)">${open?'▲':'▼'}</span>
         </div>
       </div>
+      ${measPrefixStripHtml(rows)}
       ${open?`<div style="padding:8px 18px;border-top:1px solid var(--line);background:var(--bg)">${diffLines}</div>`:''}
       ${chipBar}
       ${open?`<div class="scroll" style="border-top:1px solid var(--line)">
@@ -7441,7 +7477,14 @@ function exportMeasurementsPDF(selectedOnly=false){
     const applyU=siteApplyUnit(name), applyTax=siteApplyTaxId(name);
     const headLine=(applyU||applyTax)?`<div style="font-size:12.5px;margin:-2px 0 8px;color:#1e3a8a">抬頭：${esc(applyU||'—')}${applyTax?`　統一編號：${esc(applyTax)}`:''}</div>`:'';
     const secTax=measTaxRows(subtotal,6);
-    return `<h2>${esc(name)}</h2>${headLine}${vendorLine}
+    // 照編號開頭的小計：給廠商對圖面時，先看「A 系統共幾㎡」再逐條核對
+    const pre=measPrefixSummary(rows);
+    const preTable=pre.length>=2?`<table style="margin:2px 0 10px;width:auto"><thead><tr>
+      <th>編號</th><th class="num">筆數</th><th class="num">數量合計</th>${(!noMoney&&pre.some(e=>e.anyPrice))?'<th class="num">金額</th>':''}</tr></thead><tbody>
+      ${pre.map(e=>`<tr><td style="font-weight:700">${esc(e.key)}</td><td class="num">${e.n}</td>
+        <td class="num">${esc(measPrefixQtyText(e))}</td>${(!noMoney&&pre.some(x=>x.anyPrice))?`<td class="num">${e.anyPrice?money(e.amt):'—'}</td>`:''}</tr>`).join('')}
+      </tbody></table>`:'';
+    return `<h2>${esc(name)}</h2>${headLine}${vendorLine}${preTable}
       <table><thead><tr><th>日期</th><th>項目</th><th>尺寸</th><th>單位</th><th class="num">數量</th>${noMoney?'':'<th class="num">單價</th><th class="num">小計</th>'}<th>備註</th></tr></thead>
       <tbody>${trs}${noMoney?`<tr class="total-row"><td colspan="${noMoney?5:6}">共 ${rows.length} 筆</td><td></td></tr>`
         :`<tr class="total-row"><td colspan="6">案場合計</td><td class="num">${money(subtotal)}</td><td></td></tr>${secTax}`}</tbody></table>`;
