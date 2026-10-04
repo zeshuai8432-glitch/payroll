@@ -119,6 +119,67 @@ const open=async st=>{
   await pg.close();
 }
 
+// ⑥ ★ 複製出來的重複列（間數都是「照區塊」）絕對不可以相加——那會變成房型間數的好幾倍
+{
+  const st=seed();
+  // TYPE-EXS 5 間；同一條（項次 3.1）被複製成三份，每份都沒有個別間數
+  st.projects[2].blocks[0]={id:'bC',name:'TYPE-EXS 行政套房',unit:'間',count:5,srcBlk:'bA',items:[
+    {id:'q1',no:'3.1',name:'平頂暗架天花板；含面封9mm/THK矽酸鈣板(CH:2600mm)',unit:'㎡',qty:30,price:140,amount:4200},
+    {id:'q2',no:'3.1',name:'平頂暗架天花板；含面封9mm/THK矽酸鈣板(CH:2600mm)',unit:'㎡',qty:30,price:140,amount:4200},
+    {id:'q3',no:'3.1',name:'平頂暗架天花板；含面封9mm/THK矽酸鈣板(CH:2600mm)',unit:'㎡',qty:30,price:140,amount:4200}]};
+  const {pg,errs}=await open(st);
+  await pg.waitForTimeout(300);
+  const d=await pg.evaluate(()=>{const x=dupItemsOf(curProj());
+    return {n:x.length,mode:x[0]?x[0].mode:'',total:x[0]?x[0].total:0,rows:x[0]?x[0].items.length:0};});
+  t('⑥ 偵測到 1 項、3 條', d.n===1&&d.rows===3);
+  t('⑥ ★ 判定為「照區塊」→ 留一條不相加（處理後 5 間，不是 15）', d.mode==='keep'&&d.total===5);
+  const txt=await pg.textContent('#app');
+  t('⑥ 畫面上講明間數來源與處理方式', /照區塊 5 間 → 留一條/.test(txt));
+  t('⑥ 畫面上顯示項次', /3\.1/.test(txt));
+
+  await pg.click('#fix-dupitems'); await pg.waitForTimeout(700);
+  const r=await pg.evaluate(()=>{const b=curProj().blocks[0];
+    return {n:b.items.length,cnt:effCount(b.items[0],b),own:hasOwnCount(b.items[0]),
+            amt:b.items.reduce((a,x)=>a+itemValue(x,b),0),trash:(curProj().trash||[]).length};});
+  t('⑦ ★ 只剩 1 條', r.n===1);
+  t('⑦ ★ 間數還是 5（照區塊），沒有被加成 15', r.cnt===5&&!r.own);
+  t('⑦ ★ 金額是一份的量（4,200 × 5 間 ＝ 21,000）', Math.abs(r.amt-21000)<0.5);
+  t('⑦ 移除的 2 條在回收桶', r.trash===2);
+  t('⑦ 沒有 JS 錯誤', errs.length===0);
+  await pg.close();
+}
+
+// ⑧ ★ 項次不同就不是重複（名稱一樣也不碰）
+{
+  const st=seed();
+  st.projects[2].blocks[0]={id:'bC',name:'TYPE-EXS',unit:'間',count:5,srcBlk:'bA',items:[
+    {id:'w1',no:'3.1',name:'平頂暗架天花板',unit:'㎡',qty:30,price:140,amount:4200},
+    {id:'w2',no:'3.5',name:'平頂暗架天花板',unit:'㎡',qty:12,price:140,amount:1680}]};
+  const {pg}=await open(st);
+  await pg.waitForTimeout(300);
+  t('⑧ ★ 項次 3.1 與 3.5 不當成重複', await pg.evaluate(()=>dupItemsOf(curProj()).length)===0);
+  t('⑧ 畫面上沒有那張紅字', !/項重複出現/.test(await pg.textContent('#app')));
+  await pg.close();
+}
+
+// ⑨ 每條都有個別間數（真的各自轉進來的）才相加
+{
+  const st=seed();
+  st.projects[2].blocks[0]={id:'bC',name:'TYPE-EXS',unit:'間',count:40,srcBlk:'bA',items:[
+    {id:'v1',no:'3.1',name:'天花板',unit:'㎡',qty:30,price:140,amount:4200,srcId:'m1',cnt:6,xlog:['a']},
+    {id:'v2',no:'3.1',name:'天花板',unit:'㎡',qty:30,price:140,amount:4200,srcId:'m1',cnt:3,xlog:['b']}]};
+  const {pg}=await open(st);
+  await pg.waitForTimeout(300);
+  const d=await pg.evaluate(()=>{const x=dupItemsOf(curProj());return x[0]?{mode:x[0].mode,total:x[0].total}:null;});
+  t('⑨ 兩條都有個別間數 → 相加（6＋3＝9）', !!d&&d.mode==='sum'&&d.total===9);
+  await pg.click('#fix-dupitems'); await pg.waitForTimeout(700);
+  const r=await pg.evaluate(()=>{const b=curProj().blocks[0];
+    return {n:b.items.length,cnt:effCount(b.items[0],b),log:(b.items[0].xlog||[]).join('|')};});
+  t('⑨ 併成一條 9 間', r.n===1&&r.cnt===9);
+  t('⑨ 兩邊紀錄都留著，並記下相加', /a/.test(r.log)&&/b/.test(r.log)&&/間數相加共 9/.test(r.log));
+  await pg.close();
+}
+
 await br.close();
 console.log(`\n${ok.length} passed, ${bad.length} failed`);
 if(bad.length){bad.forEach(b=>console.log(' FAIL '+b));process.exit(1);}

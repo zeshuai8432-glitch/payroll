@@ -114,7 +114,7 @@ tr.hilite>td{animation:hlflash 1s ease-in-out 3}
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.10.04a-groupbyno';
+const APP_VERSION='vG2026.10.04b-dupmode';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -1036,16 +1036,28 @@ function render(){
   const dupI=dupItemsOf(proj);
   if(dupI.length){
     const nRow=dupI.reduce((a,x)=>a+x.items.length,0);
-    h+=`<div class="notice" style="margin-bottom:10px;border-color:rgba(248,113,113,.55);background:rgba(248,113,113,.12);color:#fca5a5">
-    <b>⚠ 有 ${dupI.length} 道工序重複出現（共 ${nRow} 條）</b>——同一條合約項目的同一道工序被拆成好幾條，
-    是之前比對失準留下的。按下面併回一條，<b>間數相加</b>（每一條的量本來都是各自轉進來的，所以總量不變）。
-    <div class="scroll" style="margin-top:6px"><table style="font-size:12px"><tr><th>房型</th><th>工序</th><th class="num">現在幾條</th><th class="num">各條間數</th><th class="num">併完</th></tr>
-    ${dupI.map(x=>`<tr><td>${esc(x.blk.name)}</td><td><b>${esc(x.stage)}</b></td>
+    let h2='';
+    h+=`<div class="notice" style="margin-bottom:10px;border-color:rgba(248,113,113,.55);background:rgba(248,113,113,.12);color:#fca5a5">`;
+    const nSum=dupI.filter(x=>x.mode==='sum').length, nKeep=dupI.length-nSum;
+    h2=`<b>⚠ 有 ${dupI.length} 項重複出現（共 ${nRow} 條）</b>——同一個項次、同一個名稱的細項在同一個房型裡出現好幾次。
+    <div style="font-size:11.5px;margin:4px 0 6px">怎麼處理<b>看間數是哪裡來的</b>：
+    <b>個別間數</b>＝各自分配到的量，會<b>相加</b>；
+    <b>照區塊</b>＝沒有個別設定，那不是分配只是重複的列，<b>留一條、刪其餘（不相加）</b>——
+    相加會變成房型間數的好幾倍。
+    ${nKeep?`這裡有 <b>${nKeep}</b> 項是後者。`:''}</div>
+    <div class="scroll"><table style="font-size:12px"><tr><th style="width:56px">項次</th><th>房型</th><th>名稱</th><th class="num">幾條</th><th class="num">各條間數</th><th>間數來源</th><th class="num">處理後</th></tr>
+    ${dupI.map(x=>`<tr><td class="muted" style="font-size:11.5px">${esc(x.no||'—')}</td>
+      <td>${esc(x.blk.name)}</td><td><b>${esc(x.stage)}</b></td>
       <td class="num">${x.items.length}</td>
-      <td class="num">${x.items.map(i=>qfmt(effCount(i,x.blk))).join(' ＋ ')} ${esc(x.blk.unit)}</td>
-      <td class="num"><b>${qfmt(+x.items.reduce((a,i)=>a+effCount(i,x.blk),0).toFixed(4))} ${esc(x.blk.unit)}</b></td></tr>`).join('')}
+      <td class="num">${x.cnts.map(c=>qfmt(c)).join(x.mode==='sum'?' ＋ ':' ／ ')} ${esc(x.blk.unit)}</td>
+      <td style="font-size:11.5px">${x.mode==='sum'
+        ?'<span style="color:#6ee7b7">個別間數 → 相加</span>'
+        :'<span style="color:#fcd34d">照區塊 '+qfmt(Number(x.blk.count)||0)+' '+esc(x.blk.unit)+' → 留一條</span>'}</td>
+      <td class="num"><b>${qfmt(x.total)} ${esc(x.blk.unit)}</b></td></tr>`).join('')}
     </table></div>
-    <div style="margin-top:8px"><button class="btn sm" id="fix-dupitems">🔧 併回一條（間數相加）</button></div></div>`;
+    <div style="margin-top:8px"><button class="btn sm" id="fix-dupitems">🔧 併回一條</button>
+    <span class="muted" style="font-size:11.5px;margin-left:6px">被移除的都進回收桶，救得回來</span></div>`;
+    h+=h2+`</div>`;
   }
   const dupS=dupStagesOf(proj);
   if(dupS.length){
@@ -1735,6 +1747,7 @@ function xferFindSame(kb,srcIt){
 // 可以安全地併回一條（量相加——每一條的量都是各自轉進來的）。
 // 工序名相同但溯源是兩個不同的母細項＝真的是不同的合約項目，不在這裡處理。
 function dupItemsOf(proj){
+  const noOf=it=>{ const n=String(it&&it.no||'').trim(); return (n===''||n==='增')?'':n; };
   const out=[];
   (proj.blocks||[]).forEach(b=>{
     const by={};
@@ -1743,7 +1756,16 @@ function dupItemsOf(proj){
       const g=by[k]; if(g.length<2) return;
       const srcs=[...new Set(g.map(x=>x.srcId).filter(Boolean))];
       if(srcs.length>1) return;
-      out.push({blk:b,items:g,src:srcs[0]||'',
+      // 項次不同＝不同條合約項目，名稱一樣也不是重複（跟分組用的是同一個依據）
+      if([...new Set(g.map(noOf).filter(Boolean))].length>1) return;
+      // 怎麼併，看間數是哪裡來的：
+      //   每一條都有「個別間數」→ 那是各自分配到的量，要相加
+      //   有任何一條是「照區塊」→ 那不是分配，只是重複的列。相加會變成房型間數的
+      //     好幾倍（5 間的房型三條各 5 間，相加成 15 間＝三倍合約）。留一條、刪其餘。
+      const allOwn=g.every(hasOwnCount);
+      const cnts=g.map(x=>effCount(x,b));
+      out.push({blk:b,items:g,src:srcs[0]||'',no:noOf(g[0]),mode:allOwn?'sum':'keep',
+        cnts,total:allOwn?+cnts.reduce((a,c)=>a+c,0).toFixed(4):Math.max(...cnts),
         stage:(g[0].groupName?stageOf(g[0].name,g[0].groupName):g[0].name)});
     });
   });
@@ -1751,9 +1773,9 @@ function dupItemsOf(proj){
 }
 function mergeDupItems(proj){
   let n=0,gone=0;
-  dupItemsOf(proj).forEach(({blk,items,src})=>{
+  dupItemsOf(proj).forEach(({blk,items,src,mode,total})=>{
     const keep=items[0], rest=items.slice(1);
-    const tot=+items.reduce((a,x)=>a+effCount(x,blk),0).toFixed(4);
+    const tot=total;
     if(src&&!keep.srcId) keep.srcId=src;
     rest.forEach(x=>{
       (Array.isArray(x.xlog)?x.xlog:[]).forEach(l=>xlogPush(keep,l));
@@ -1764,8 +1786,12 @@ function mergeDupItems(proj){
     });
     blk.items=blk.items.filter(x=>rest.indexOf(x)<0);
     rescaleItemCount(proj,blk,keep,tot);
-    if(tot!==(Number(blk.count)||0)) keep.cnt=tot; else delete keep.cnt;
-    xlogPush(keep,`${today()} 合併重複的 ${items.length} 條，間數相加共 ${qfmt(tot)} ${blk.unit}`);
+    if(mode==='sum'&&tot!==(Number(blk.count)||0)) keep.cnt=tot;
+    else if(mode!=='sum'&&!hasOwnCount(keep)) delete keep.cnt;
+    else if(tot!==(Number(blk.count)||0)) keep.cnt=tot; else delete keep.cnt;
+    xlogPush(keep,mode==='sum'
+      ? `${today()} 合併重複的 ${items.length} 條，間數相加共 ${qfmt(tot)} ${blk.unit}`
+      : `${today()} 移除 ${items.length-1} 條重複的列（間數照區塊 ${qfmt(tot)} ${blk.unit}，沒有相加）`);
     n++;
   });
   return {groups:n,removed:gone};
@@ -3584,11 +3610,13 @@ document.addEventListener('click',async e=>{
   if(t.id==='fix-dupitems'){
     const d=dupItemsOf(proj);
     if(!d.length){ alert('沒有重複的工序了。'); return; }
-    if(!confirm(`把 ${d.length} 道重複的工序各自併回一條？\n\n`
-      +d.map(x=>`・${x.blk.name}／${x.stage}：${x.items.length} 條（${x.items.map(i=>qfmt(effCount(i,x.blk))).join('＋')}）→ ${qfmt(+x.items.reduce((a,i)=>a+effCount(i,x.blk),0).toFixed(4))} ${x.blk.unit}`).join('\n')
-      +`\n\n・間數相加，單價與數量照第一條\n・已請過的金額不會被追溯改掉\n・被併掉的那幾條會進回收桶，按錯救得回來`)) return;
+    if(!confirm(`處理 ${d.length} 項重複？\n\n`
+      +d.map(x=>`・${x.blk.name}／${x.no?x.no+' ':''}${x.stage.slice(0,18)}${x.stage.length>18?'…':''}\n`
+        +`　 ${x.items.length} 條（${x.cnts.map(qfmt).join(x.mode==='sum'?'＋':'／')}）→ ${qfmt(x.total)} ${x.blk.unit}`
+        +(x.mode==='sum'?'（個別間數，相加）':'（照區塊，留一條不相加）')).join('\n')
+      +`\n\n・單價與數量照第一條\n・已請過的金額不會被追溯改掉\n・被移除的都進回收桶，按錯救得回來`)) return;
     const r=mergeDupItems(proj); save(); render();
-    alert(`已併回 ${r.groups} 道（移除 ${r.removed} 條重複的，都在回收桶裡）。\n\n請到母專案的「發包分配」確認總額。`);
+    alert(`已處理 ${r.groups} 項（移除 ${r.removed} 條，都在回收桶裡）。\n\n請到母專案的「發包分配」確認總額。`);
     return;
   }
   if(t.id==='fix-mixedg'){
