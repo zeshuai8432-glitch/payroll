@@ -114,7 +114,7 @@ tr.hilite>td{animation:hlflash 1s ease-in-out 3}
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.10.02g-dedupe';
+const APP_VERSION='vG2026.10.04a-groupbyno';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -179,26 +179,22 @@ function xlogTag(it){
 // 一個工序群組裡混了不同的合約項目（上面那個以名稱併組的 bug 造成的）。
 // 判斷依據：每條工序照溯源回母專案，取「母那條所在的群組，沒群組就取母那條自己」。
 // 同一個本地群組裡出現兩種以上，就是混了。沒有溯源的條目跟著多數，不自己拆出去。
+// 一個工序群組裡混了不同的合約項目。判斷依據是「項次」——那是合約給的，
+// 使用者不會去改它；同一條合約項目拆出來的幾道工序，項次一定一樣。
+// （之前拿名稱、溯源、母專案的群組去猜，每一種都有失準的情況：名稱可以各自改、
+// 複製來的沒有溯源、而子專案本來就可以照自己的想法分組。項次才是穩的。）
+// 沒有項次的（手動加的、「增」）跟著走，不自己拆出去。
 function mixedGroupsOf(proj){
-  const par=parentProject(proj); if(!par) return [];
-  const mOf=id=>{ for(const mb of par.blocks||[]){ const m=(mb.items||[]).find(x=>x.id===id); if(m) return m; } return null; };
+  const noOf=it=>{ const n=String(it&&it.no||'').trim(); return (n===''||n==='增')?'':n; };
   const out=[];
   (proj.blocks||[]).forEach(b=>{
     const by={};
     (b.items||[]).forEach(it=>{ if(it.groupId) (by[it.groupId]=by[it.groupId]||[]).push(it); });
     Object.keys(by).forEach(gid=>{
       const its=by[gid];
-      const keyOf=it=>{ if(!it.srcId) return ''; const m=mOf(it.srcId); if(!m) return ''; return m.groupId||('#'+m.id); };
-      const keys=[...new Set(its.map(keyOf).filter(Boolean))];
+      const keys=[...new Set(its.map(noOf).filter(Boolean))];
       if(keys.length<2) return;
-      // 光是「來自不同母細項」還不夠——子專案本來就可以照自己的想法分組
-      // （例如把母的兩條合成一組工序來發包）。那是刻意的，不該被我拆掉。
-      // 系統「照名稱自動併錯」留下的痕跡是：同一組裡出現同名的工序
-      // （兩條同名的合約項目各自拆成骨架／封板／二次封板，併起來就會重複）。
-      // 沒有重複的名稱就不碰，寧可漏報也不要拆掉人家故意分的組。
-      const st=its.map(x=>normName(stageOf(x.name,x.groupName))).filter(Boolean);
-      if(new Set(st).size===st.length) return;
-      out.push({blk:b,gid,items:its,keys,keyOf,name:its[0].groupName||its[0].name});
+      out.push({blk:b,gid,items:its,keys,keyOf:noOf,name:its[0].groupName||its[0].name});
     });
   });
   return out;
@@ -1033,10 +1029,10 @@ function render(){
   // 舊資料：整份專案還有沒收合的拆分時，各分頁都提示一次（不用鑽進區塊找）
   const mixedG=proj.parentId?mixedGroupsOf(proj):[];
   if(mixedG.length) h+=`<div class="notice" style="margin-bottom:10px;border-color:rgba(248,113,113,.55);background:rgba(248,113,113,.12);color:#fca5a5">
-    <b>⚠ 有 ${mixedG.length} 組工序混了不同的合約項目</b>——同名但其實是不同條（例如都叫「雙面隔間」，只差圖面編號），
-    被併成一組之後各道的量和金額都對不起來。
-    <div style="font-size:12px;margin-top:4px">${mixedG.map(x=>`${esc(x.blk.name)}／${esc(x.name)}（${x.items.length} 道、${x.keys.length} 條合約項目）`).join('；')}</div>
-    <div style="margin-top:8px"><button class="btn sm" id="fix-mixedg">🔧 自動分開（照母專案那條分組）</button></div></div>`;
+    <b>⚠ 有 ${mixedG.length} 組工序混了不同的合約項目</b>——同一組裡出現<b>不同的項次</b>，
+    那就是不同條合約項目（名稱可能一樣，只差圖面編號），被併成一組之後各道的量和金額都對不起來。
+    <div style="font-size:12px;margin-top:4px">${mixedG.map(x=>`${esc(x.blk.name)}／${esc(x.name)}：項次 ${x.keys.map(k=>esc(k)).join('、')}（共 ${x.items.length} 道）`).join('；')}</div>
+    <div style="margin-top:8px"><button class="btn sm" id="fix-mixedg">🔧 照項次分開</button></div></div>`;
   const dupI=dupItemsOf(proj);
   if(dupI.length){
     const nRow=dupI.reduce((a,x)=>a+x.items.length,0);
@@ -1447,7 +1443,7 @@ function viewItems(proj){
         if(open){
           for(const s of subs){
             if(itemEdit===b.id+'::'+s.id){ h+=itemForm(b,s); continue; }
-            h+=`<tr id="row-${s.id}" class="${hiliteItem===s.id?'hilite':''}">${picking?`<td><input type="checkbox" data-delpick="${s.id}" ${delSel.has(s.id)?'checked':''} style="width:16px;height:16px"></td>`:''}<td></td>
+            h+=`<tr id="row-${s.id}" class="${hiliteItem===s.id?'hilite':''}">${picking?`<td><input type="checkbox" data-delpick="${s.id}" ${delSel.has(s.id)?'checked':''} style="width:16px;height:16px"></td>`:''}<td class="muted" style="font-size:11.5px;white-space:nowrap">${esc(s.no==='增'?'':s.no||'')}</td>
               <td style="padding-left:26px;color:var(--muted)">↳ ${stageHtml(s.name,it.groupName)}${cntTag(s,b,proj)}${xlogTag(s)}</td>
               <td>${esc(s.unit)}</td>
               <td class="num">${qfmt(s.qty)}${s.qtyExpr?`<div style="font-size:11px;color:var(--muted)">=${esc(s.qtyExpr)}</div>`:''}</td>
@@ -1717,7 +1713,11 @@ function xferFindSame(kb,srcIt){
     const same=items.filter(x=>x.srcId===srcIt.srcId);
     const hit=same.find(x=>stageKeyOf(x)===sk);
     if(hit) return hit;
-    if(!srcIt.groupId&&same.length===1&&!same[0].groupId) return same[0];
+    // 原本這裡還有一條「溯源相同、接手方剛好只有一條」就算同一條的規則，
+    // 本意是讓接手方改過名字的條目仍然累加得起來。但它分不出「改過名」和
+    // 「根本是別道工序」——同一條母細項拆出的二次骨架會被併進塞棉，量和單價全錯。
+    // 拿掉。名稱不同就各自一條：多一條看得見、有「併回一條」可以收，
+    // 併錯了卻完全看不出來。
   }
   // 溯源對不上，但名稱一模一樣。最常見的來路：接手方那條是用「📥 複製細項」
   // 補回來的——複製出來是新的一條，刻意不綁來源，所以沒有溯源。
@@ -1819,7 +1819,14 @@ function xferApply(srcProj,srcBlk,srcIt,dstProj,move,price,dstBlkHint){
       const sibIds=new Set((srcBlk.items||[])
         .filter(x=>x.groupId&&x.groupId===srcIt.groupId&&x.srcId).map(x=>x.srcId));
       if(srcIt.srcId) sibIds.add(srcIt.srcId);
-      const twin=kb.items.find(x=>x.groupId&&x.srcId&&sibIds.has(x.srcId));
+      // 項次優先：同一條合約項目的工序項次一定一樣，所以先找項次相同的那一組。
+      // 找不到才退回溯源比對（手動加的細項沒有項次）。
+      const myNo=String(srcIt.no||'').trim();
+      const twin=(myNo&&myNo!=='增'
+          ? kb.items.find(x=>x.groupId&&String(x.no||'').trim()===myNo)
+          : null)
+        || kb.items.find(x=>x.groupId&&x.srcId&&sibIds.has(x.srcId)
+            && !(myNo&&String(x.no||'').trim()&&String(x.no||'').trim()!==myNo));
       ni.groupName=srcIt.groupName; ni.groupId=twin?twin.groupId:uid();
     }
     if(move!==(Number(kb.count)||0)) ni.cnt=move;
@@ -3587,8 +3594,8 @@ document.addEventListener('click',async e=>{
   if(t.id==='fix-mixedg'){
     const mixed=mixedGroupsOf(proj);
     if(!mixed.length){ alert('沒有混在一起的工序群組了。'); return; }
-    if(!confirm(`把 ${mixed.length} 組混在一起的工序照母專案那條分開？\n\n`
-      +mixed.map(x=>`・${x.blk.name}／${x.name}：${x.items.length} 道 → ${x.keys.length} 組`).join('\n')
+    if(!confirm(`把 ${mixed.length} 組混在一起的工序照項次分開？\n\n`
+      +mixed.map(x=>`・${x.blk.name}／${x.name}：${x.items.length} 道 → ${x.keys.length} 組（項次 ${x.keys.join('、')}）`).join('\n')
       +`\n\n只改分組，數量、單價、金額、進度一律不動。`)) return;
     const r=fixMixedGroups(proj); save(); render();
     alert(`已分開 ${r.groups} 組（搬動 ${r.moved} 道工序）。\n\n數量與金額沒有變，請確認分組對不對。`);
