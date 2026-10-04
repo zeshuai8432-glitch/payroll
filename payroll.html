@@ -528,7 +528,7 @@ const FS_ROOT = 'https://firestore.googleapis.com/v1/projects/'+FS_PROJECT+'/dat
 const FS_DOC_BASE = FS_ROOT+'payroll/';
 const FS_SIG_BASE = FS_ROOT+'payrollSignatures/';
 const FS_REST_URL = FS_DOC_BASE+'main?key='+FS_KEY;
-const APP_VERSION = 'v2026.10.04-measlist';
+const APP_VERSION = 'v2026.10.04b-meassite';
 let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], tools:[], locations:[], assets:[], advances:[], accounts:[], ledger:[], deals:[], billings:[], measurements:[], contracts:{}, costs:[], textMemory:{clients:[],companies:[]}, parkAccId:'', oweBonus:{}, minFund:'', shareholderTx:[], myCompanies:[], payrollSnapshots:[], yearIncomeAdj:[], deletedIds:[], resurrected:{ids:[],at:0}, tab:'dash' };
 let cloudStatus='連線中…';
 let localDirty=false, lastCloudTs=0;
@@ -745,14 +745,6 @@ function bindMeasSubtotal(){
     calc();
     if(manual) qty.focus();
   };
-  const siteSel=document.getElementById('meas-site'), siteMan=document.getElementById('meas-site-manual');
-  if(siteSel&&siteMan){
-    siteSel.onchange=()=>{
-      const on=siteSel.value==='__manual__';
-      siteMan.style.display=on?'block':'none';
-      if(on) siteMan.focus();
-    };
-  }
   if(type) type.onchange=calc;
   if(width) width.oninput=calc;
   if(height) height.oninput=calc;
@@ -4444,6 +4436,13 @@ function bind(){
     const f=document.getElementById('meas-item'); if(f) f.scrollIntoView({behavior:'smooth',block:'center'});
   });
   document.querySelectorAll('[data-edit-meas]').forEach(b=>b.onclick=()=>{ measEditId=b.dataset.editMeas; render(); });
+  // 這兩個要獨立綁：bindMeasSubtotal 在「新增表單」收合時會提早 return，
+  // 但編輯表單可以單獨開著，案場的手動切換不能跟著失效。
+  [['meas-site','meas-site-manual'],['me-site','me-site-manual']].forEach(([a,b])=>{
+    const sel=document.getElementById(a), man=document.getElementById(b);
+    if(!sel||!man) return;
+    sel.onchange=()=>{ const on=sel.value==='__manual__'; man.style.display=on?'block':'none'; if(on) man.focus(); };
+  });
   const mec=document.getElementById('meas-edit-cancel'); if(mec) mec.onclick=()=>{ measEditId=null; render(); };
   const meo=document.getElementById('meas-edit-ok');
   if(meo) meo.onclick=()=>{
@@ -4463,7 +4462,12 @@ function bind(){
     const noteV=((document.getElementById('me-note')||{}).value||'').trim();
     const w=parseFloat((document.getElementById('me-width')||{}).value);
     const h=parseFloat((document.getElementById('me-height')||{}).value);
+    const siteSelV=((document.getElementById('me-site')||{}).value);
+    const siteV=siteSelV===undefined?undefined:(siteSelV==='__manual__'
+      ? String((document.getElementById('me-site-manual')||{}).value||'').trim()
+      : String(siteSelV||'').trim());
     if(!date||!item){ alert('請填日期與項目'); return; }
+    if(siteV!==undefined&&!siteV){ alert('請選案場，或選「✎ 手動輸入…」自己打一個。'); return; }
     if(!noPriceV&&(isNaN(priceV)||priceV<0)){ alert('單價看不懂：'+priceRawV+'\n\n可以留空（不計價），或填數字／算式。'); return; }
     const isPart=(m.measureType||'partition')==='partition'||(!m.measureType&&m.width&&m.height);
     if(isPart&&unitV==='㎡'&&!isNaN(w)&&w>0&&!isNaN(h)&&h>0){
@@ -4477,6 +4481,7 @@ function bind(){
     const sz=document.getElementById('me-size'); if(sz) m.sizeText=sz.value.trim();
     m.priceExpr=(!noPriceV&&hasExprChars(priceRawV))?priceRawV:'';
     m.qtyExpr=hasExprChars(qtyRawV)?qtyRawV:'';
+    if(siteV!==undefined) m.site=siteV;
     m.date=date; m.item=item; m.unit=unitV||m.unit; m.count=cnt; m.qty=qtyV; m.unitPrice=priceV; m.note=noteV;
     measEditId=null; saveData(); render();
   };
@@ -6979,6 +6984,10 @@ function viewMeasurements(){
           <div style="font-size:12px;font-weight:700;color:#6366f1;margin-bottom:8px">編輯此筆</div>
           <div class="row" style="align-items:flex-end">
             <div class="field"><label>日期</label><input type="date" id="me-date" value="${esc(m.date||'')}"></div>
+            ${(()=>{ const man=!!m.site&&!siteIsKnown(m.site);
+              return `<div class="field" style="flex:1;min-width:150px"><label>案場</label>
+                <select id="me-site">${siteSelectOptions(man?'':(m.site||''))}<option value="__manual__" ${man?'selected':''}>✎ 手動輸入…</option></select>
+                <input id="me-site-manual" value="${man?esc(m.site||''):''}" placeholder="直接打案場名稱" style="width:100%;margin-top:4px;display:${man?'block':'none'}"></div>`; })()}
             <div class="field" style="flex:1;min-width:200px"><label>項目（可換行）</label><textarea id="me-item" rows="2">${esc(m.item||'')}</textarea></div>
             <div class="field"><label>單位</label><input id="me-unit" value="${esc(m.unit||'')}" style="width:80px"></div>
             ${isPart?`<div class="field"><label>寬(m)</label><input type="number" id="me-width" value="${m.width!=null?m.width:''}" min="0" step="0.01" style="width:85px"></div>

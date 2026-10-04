@@ -129,6 +129,42 @@ const expandAll=async pg=>{
   await pg.close();
 }
 
+// ⑧ ★ 編輯既有的一筆也要能改案場（原本編輯表單完全沒有這個欄位）
+{
+  const {pg,errs}=await open();
+  await pg.evaluate(()=>{
+    state.measurements=[{id:'m1',date:'2026-10-01',site:'凱子飯店',item:'D1 隔間',unit:'㎡',
+      qty:8.32,unitPrice:null,measureType:'partition',count:1,width:3.2,height:2.6}];
+    state.tab='meas'; formOpen['meas-site-凱子飯店']=true; measEditId='m1'; render();
+  }); await pg.waitForTimeout(500);
+  t('⑧ ★ 編輯表單有案場欄位', await pg.locator('#me-site').count()===1);
+  t('⑧ 帶出原本的案場', await pg.inputValue('#me-site')==='凱子飯店');
+  t('⑧ 下拉也有手動輸入選項', (await pg.textContent('#me-site')).includes('手動輸入'));
+  t('⑧ 手動欄位預設隱藏', !(await pg.locator('#me-site-manual').isVisible()));
+
+  await pg.selectOption('#me-site','__manual__'); await pg.waitForTimeout(300);
+  t('⑨ 選了手動才出現（新增表單是收合的，這裡仍要能切）',
+    await pg.locator('#me-site-manual').isVisible());
+  await pg.fill('#me-site-manual','廣昕 B1');
+  await pg.click('#meas-edit-ok'); await pg.waitForTimeout(500);
+  const r=await pg.evaluate(()=>({site:state.measurements[0].site,q:state.measurements[0].qty,
+    p:state.measurements[0].unitPrice,grp:parentSiteName(state.measurements[0].site)}));
+  t('⑨ ★ 案場改成手動打的值', r.site==='廣昕 B1');
+  t('⑨ 歸到新的案場組', r.grp==='廣昕 B1');
+  t('⑨ 數量與單價沒被動到（8.32／留空）', r.q===8.32&&r.p===null);
+  t('⑨ 沒有 JS 錯誤', errs.length===0);
+
+  // 再改回現成案場
+  await pg.evaluate(()=>{ formOpen['meas-site-廣昕 B1']=true; measEditId='m1'; render(); });
+  await pg.waitForTimeout(450);
+  t('⑩ 原本是手動的，重開編輯時自動停在手動模式並帶回原值',
+    await pg.inputValue('#me-site')==='__manual__'&&await pg.inputValue('#me-site-manual')==='廣昕 B1');
+  await pg.selectOption('#me-site','凱子飯店'); await pg.waitForTimeout(250);
+  await pg.click('#meas-edit-ok'); await pg.waitForTimeout(500);
+  t('⑩ 改回現成案場也可以', await pg.evaluate(()=>state.measurements[0].site)==='凱子飯店');
+  await pg.close();
+}
+
 await br.close();
 console.log(`\n${ok.length} passed, ${bad.length} failed`);
 if(bad.length){bad.forEach(b=>console.log(' FAIL '+b));process.exit(1);}
