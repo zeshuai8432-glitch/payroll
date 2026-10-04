@@ -114,7 +114,7 @@ tr.hilite>td{animation:hlflash 1s ease-in-out 3}
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.10.04b-dupmode';
+const APP_VERSION='vG2026.10.04c-roomalloc';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -235,7 +235,10 @@ function normalizeGroups(){
   migrateXlog();
   (state.projects||[]).forEach(p=>(p.blocks||[]).forEach(b=>{
     const n={}; (b.items||[]).forEach(x=>{ if(x.groupId) n[x.groupId]=(n[x.groupId]||0)+1; });
-    (b.items||[]).forEach(x=>{ if(x.groupId&&n[x.groupId]<2){ delete x.groupId; delete x.groupName; } });
+    // 只解除 groupId（不再當成群組顯示），groupName 留著。
+    // 以前連 groupName 一起刪，於是「骨架」這個工序名退化成完整名稱
+    // 「雙面隔間-骨架」——認同一道工序、比對重複、統計各家間數全部跟著失準。
+    (b.items||[]).forEach(x=>{ if(x.groupId&&n[x.groupId]<2) delete x.groupId; });
   }));
 }
 function save(){
@@ -2310,6 +2313,69 @@ function blockAllocationOf(parent){
   return {rows,stray,strayAmt,totMother,totAlloc,totLeft:totMother-totAlloc,
           over:rows.filter(r=>r.over).length};
 }
+// 母專案「每一條發給誰、各幾間」。
+// 間數比金額直覺，而且是他在工地實際講的單位。拆成工序的要分道列——
+// 同一條底下骨架發給一家、封板發給另一家是常態，混成一個數字就看不出缺口。
+function roomAllocOf(parent){
+  const map={};   // 母細項 id -> {rows:[{vendor,stage,n}], stages:[...]}
+  childProjects(parent.id).forEach(k=>{
+    const vn=k.vendor||k.name;
+    (k.blocks||[]).forEach(b=>(b.items||[]).forEach(it=>{
+      if(!it.srcId) return;
+      const e=map[it.srcId]||(map[it.srcId]={rows:[]});
+      e.rows.push({vendor:vn,projId:k.id,
+        stage:(it.groupName?stageOf(it.name,it.groupName):it.name),
+        n:effCount(it,b)});
+    }));
+  });
+  Object.keys(map).forEach(id=>{
+    map[id].stages=[...new Set(map[id].rows.map(r=>normName(r.stage)))];
+  });
+  return map;
+}
+function roomAllocHtml(proj){
+  const map=roomAllocOf(proj);
+  const u=b=>esc(b.unit||'間');
+  let h=`<details open style="margin-top:14px"><summary style="cursor:pointer;font-size:13px;color:var(--accent)">📋 每一條發給誰、各幾間</summary>
+    <div class="muted" style="font-size:12px;margin:6px 0 8px">照<b>間數</b>看，不是金額。拆成工序的分道列——同一條底下骨架發一家、封板發另一家很常見，混成一個數字就看不出缺口。<b>還沒發</b>＝這條的合約間數減掉各家已經拿到的。</div>`;
+  (proj.blocks||[]).forEach(b=>{
+    const its=(b.items||[]).filter(it=>!(proj.hideZero&&Number(it.amount)===0));
+    if(!its.length) return;
+    h+=`<div style="font-weight:700;font-size:13px;margin:10px 0 4px">${esc(b.name)}　<span class="muted" style="font-weight:400">合約 ${qfmt(b.count)} ${u(b)}</span></div>
+      <div class="scroll"><table style="font-size:12.5px"><tr><th style="width:56px">項次</th><th>名稱</th><th class="num" style="width:62px">合約</th><th>發給誰／各幾${u(b)}</th></tr>`;
+    its.forEach(it=>{
+      const cap=effCount(it,b), e=map[it.id];
+      const selfN=(Number(it.qty)||0)>0?+((Number(it.selfQty)||0)/(Number(it.qty)||1)).toFixed(2):0;
+      const tag=(txt,c)=>`<span class="tag" style="background:${c}22;border-color:${c}88;color:${c};margin:0 3px 3px 0">${txt}</span>`;
+      let cell='';
+      if(!e||!e.rows.length){
+        cell=selfN>0?tag(`自辦 ${qfmt(selfN)} ${u(b)}`,'#34d399')+tag(`還沒發 ${qfmt(+(cap-selfN).toFixed(2))} ${u(b)}`,'#94a3b8')
+                    :`<span class="muted">尚未發包</span>`;
+      }else if(e.stages.length<=1){
+        const byV={}; e.rows.forEach(r=>{ byV[r.vendor]=(byV[r.vendor]||0)+r.n; });
+        const used=Object.values(byV).reduce((a,n)=>a+n,0)+selfN;
+        cell=Object.keys(byV).map(v=>tag(`${esc(v)} ${qfmt(byV[v])}`,'#7dd3fc')).join('')
+          +(selfN>0?tag(`自辦 ${qfmt(selfN)}`,'#34d399'):'')
+          +(cap-used>0.009?tag(`還沒發 ${qfmt(+(cap-used).toFixed(2))}`,'#94a3b8')
+            :(used-cap>0.009?tag(`⚠ 超出 ${qfmt(+(used-cap).toFixed(2))}`,'#f87171'):''));
+      }else{
+        cell=e.stages.map(sk=>{
+          const rs=e.rows.filter(r=>normName(r.stage)===sk);
+          const byV={}; rs.forEach(r=>{ byV[r.vendor]=(byV[r.vendor]||0)+r.n; });
+          const used=Object.values(byV).reduce((a,n)=>a+n,0);
+          return `<div style="margin-bottom:2px"><span class="muted" style="font-size:11.5px;display:inline-block;min-width:68px">${esc(rs[0].stage)}</span>`
+            +Object.keys(byV).map(v=>tag(`${esc(v)} ${qfmt(byV[v])}`,'#7dd3fc')).join('')
+            +(cap-used>0.009?tag(`還沒發 ${qfmt(+(cap-used).toFixed(2))}`,'#94a3b8')
+              :(used-cap>0.009?tag(`⚠ 超出 ${qfmt(+(used-cap).toFixed(2))}`,'#f87171'):''))+`</div>`;
+        }).join('')+(selfN>0?tag(`自辦 ${qfmt(selfN)} ${u(b)}`,'#34d399'):'');
+      }
+      h+=`<tr><td class="muted" style="font-size:11.5px;white-space:nowrap">${esc(it.no==='增'?'增':it.no||'')}</td>
+        <td>${esc(it.name)}</td><td class="num">${qfmt(cap)} ${u(b)}</td><td>${cell}</td></tr>`;
+    });
+    h+=`</table></div>`;
+  });
+  return h+`</details>`;
+}
 function viewAlloc(proj){
   const al=allocationOf(proj);
   const ba=blockAllocationOf(proj);
@@ -2353,6 +2419,7 @@ function viewAlloc(proj){
   <tr class="chapter"><td>合計</td><td class="num"><b>${money(ba.totMother)}</b></td>
     <td class="num"><b style="color:${ba.totAlloc>ba.totMother?'#fca5a5':'inherit'}">${money(ba.totAlloc)}</b></td>
     <td class="num"><b>${money(ba.totLeft)}</b></td><td></td></tr></table></div>
+  ${roomAllocHtml(proj)}
   <details style="margin-top:14px"><summary style="cursor:pointer;font-size:13px;color:var(--accent)">🔎 逐條核對（細項層級：量、自辦、發包分配）</summary><div style="margin-top:8px">
   <div class="muted" style="font-size:12px;margin-bottom:8px">只有「從母專案補細項」帶著連結的條目才算得到。你如果重寫過子合約，這裡的數字會對不起來是正常的，以上面的房型金額為準。</div>
   <div class="grid" style="margin-bottom:12px">
