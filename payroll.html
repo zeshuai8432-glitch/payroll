@@ -528,7 +528,7 @@ const FS_ROOT = 'https://firestore.googleapis.com/v1/projects/'+FS_PROJECT+'/dat
 const FS_DOC_BASE = FS_ROOT+'payroll/';
 const FS_SIG_BASE = FS_ROOT+'payrollSignatures/';
 const FS_REST_URL = FS_DOC_BASE+'main?key='+FS_KEY;
-const APP_VERSION = 'v2026.09.30-measqty';
+const APP_VERSION = 'v2026.10.04-measlist';
 let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], tools:[], locations:[], assets:[], advances:[], accounts:[], ledger:[], deals:[], billings:[], measurements:[], contracts:{}, costs:[], textMemory:{clients:[],companies:[]}, parkAccId:'', oweBonus:{}, minFund:'', shareholderTx:[], myCompanies:[], payrollSnapshots:[], yearIncomeAdj:[], deletedIds:[], resurrected:{ids:[],at:0}, tab:'dash' };
 let cloudStatus='連線中…';
 let localDirty=false, lastCloudTs=0;
@@ -637,6 +637,19 @@ function bindSiteClientAutofill(siteId, clientId){
   fill();
 }
 // 單價欄支援算式：只允許數字與 + - * / ( ) 小數點，×÷ 自動轉換
+// 計量明細拿來整理給廠商對圖面時，常常只要「哪道牆、怎麼算的」，單價不一定有。
+const measNoPrice=m=>!m||m.unitPrice===null||m.unitPrice===undefined||m.unitPrice==='';
+const measPriceCell=m=>measNoPrice(m)?'—':money(Number(m.unitPrice)||0);
+const measAmtCell=m=>measNoPrice(m)?'—':money((Number(m.qty)||0)*(Number(m.unitPrice)||0));
+const measPriceInput=m=>measNoPrice(m)?'':String(m.priceExpr||m.unitPrice);
+// 數量算式：「3.2*2.6+1.1*2.6」這種要留著，廠商才對得出每道牆是怎麼算的
+const measQtyInput=m=>String((m&&m.qtyExpr)||(m&&m.qty!=null?m.qty:''));
+const hasExprChars=v=>/[+*/()×÷]|\d\s*-/.test(String(v||''));
+function siteIsKnown(v){
+  const raw=String(v||'').trim(); if(!raw) return false;
+  return state.sites.some(x=>x.name===raw)
+    || state.sites.some(x=>subSitesOf(x).some(sub=>siteOptionValue(x.name,sub)===raw));
+}
 function evalPriceExpr(s){
   if(s==null) return NaN;
   s=String(s).trim().replace(/×/g,'*').replace(/÷/g,'/').replace(/[，,]/g,'');
@@ -719,9 +732,12 @@ function bindMeasSubtotal(){
       const w=parseFloat(width&&width.value), h=parseFloat(height&&height.value);
       qty.value=(!isNaN(w)&&w>0&&!isNaN(h)&&h>0)?roundArea(w*h*cnt):'';
     }
-    const q=parseFloat(qty.value),p=evalPriceExpr(price.value);
+    const q=evalPriceExpr(qty.value),p=evalPriceExpr(price.value);
     const mult=(isCarry||isAutoArea)?1:cnt; // 手動輸入時：每間數量 × 間數（自動面積已含間數）
-    out.textContent=(!isNaN(q)&&!isNaN(p))?money(q*mult*p):money(0);
+    // 單價留空＝不計價（只整理清單給廠商對圖面），小計顯示「—」而不是 $0
+    out.textContent=String(price.value||'').trim()===''?'—':((!isNaN(q)&&!isNaN(p))?money(q*mult*p):money(0));
+    const hint=document.getElementById('meas-qty-hint');
+    if(hint) hint.textContent=(!isAutoArea&&hasExprChars(qty.value)&&!isNaN(q))?('＝ '+(Math.round(q*100)/100)):'';
   };
   if(manualBtn) manualBtn.onclick=()=>{
     manual=!manual;
@@ -729,6 +745,14 @@ function bindMeasSubtotal(){
     calc();
     if(manual) qty.focus();
   };
+  const siteSel=document.getElementById('meas-site'), siteMan=document.getElementById('meas-site-manual');
+  if(siteSel&&siteMan){
+    siteSel.onchange=()=>{
+      const on=siteSel.value==='__manual__';
+      siteMan.style.display=on?'block':'none';
+      if(on) siteMan.focus();
+    };
+  }
   if(type) type.onchange=calc;
   if(width) width.oninput=calc;
   if(height) height.oninput=calc;
@@ -4356,28 +4380,36 @@ function bind(){
   const measAdd=document.getElementById('meas-add');
   if(measAdd) measAdd.onclick=()=>{
     const date=document.getElementById('meas-date').value;
-    const site=document.getElementById('meas-site').value.trim();
+    const siteSel=document.getElementById('meas-site').value;
+    const site=(siteSel==='__manual__'
+      ? String((document.getElementById('meas-site-manual')||{}).value||'').trim()
+      : String(siteSel||'').trim());
     const item=document.getElementById('meas-item').value.trim();
     const measureType=(document.getElementById('meas-type')||{}).value||'partition';
     const unitRaw=document.getElementById('meas-unit').value.trim();
     const unit=unitRaw||(measureType==='carry'?'':'㎡');
     const width=parseFloat((document.getElementById('meas-width')||{}).value);
     const height=parseFloat((document.getElementById('meas-height')||{}).value);
-    let qty=parseFloat(document.getElementById('meas-qty').value);
+    const qtyRaw=String(document.getElementById('meas-qty').value||'').trim();
+    let qty=evalPriceExpr(qtyRaw);
+    if(!isNaN(qty)) qty=Math.round(qty*100)/100;
     const priceRaw=String(document.getElementById('meas-price').value||'').trim();
-    let price=evalPriceExpr(priceRaw);
-    if(!isNaN(price)) price=Math.round(price*100)/100;
+    const noPrice=priceRaw===''; // 留空＝不計價，只是整理清單給廠商對圖面
+    let price=noPrice?null:evalPriceExpr(priceRaw);
+    if(price!=null&&!isNaN(price)) price=Math.round(price*100)/100;
     const priceExpr=/[+*/()×÷]|\d-/.test(priceRaw)?priceRaw:''; // 有運算符才記算式
     const note=document.getElementById('meas-note').value.trim();
     const count=measureType==='carry'?1:Math.max(1,parseInt((document.getElementById('meas-count')||{}).value)||1); // 間數選填，留空=1
     const qtyManual=((document.getElementById('meas-qty')||{}).dataset||{}).manual==='1'; // 使用者按了「✎ 手動輸入」
     const isAutoArea=measureType==='partition'&&unit==='㎡'&&!qtyManual; // 只有隔間＋㎡「且沒改手動」才強制寬高、自動算面積
     if(isAutoArea&&(isNaN(width)||width<=0||isNaN(height)||height<=0)){ alert('隔間（㎡）請填寬度與高度（公尺）。\n\n寬×高算不出來的話（不規則、現場直接量到面積），按「數量/面積」旁邊的「✎ 手動輸入」自己打；\n若以工、M 等其他單位計價，改單位後也可以直接輸入數量。'); return; }
-    if(!date||!site||!item||isNaN(qty)||qty<=0||isNaN(price)||price<0){ alert('請填日期、案場、項目/材料名稱、數量與單價'); return; }
+    if(!date||!site||!item||isNaN(qty)||qty<=0){ alert('請填日期、案場、項目/材料名稱與數量。\n\n（單價可以留空——只是要整理一份給廠商對圖面的清單時不用填。）'); return; }
+    if(!noPrice&&(isNaN(price)||price<0)){ alert('單價看不懂：'+priceRaw+'\n\n可以留空（不計價），或填數字／算式（1200、1200*1.1）。'); return; }
     const sizeText=(document.getElementById('meas-size')||{}).value||'';
     let perQty=null;
     if(count>1&&!isAutoArea&&measureType!=='carry'){ perQty=qty; qty=Math.round(qty*count*100)/100; } // 手動輸入：每間數量 × 間數 = 總數量（自動面積已含間數）
-    const common={date,site,unit,note,measureType,count,perQty,sizeText:measureType==='carry'?sizeText.trim():'',width:measureType==='partition'&&!isNaN(width)&&width>0?width:null,height:measureType==='partition'&&!isNaN(height)&&height>0?height:null,
+    const qtyExpr=hasExprChars(qtyRaw)?qtyRaw:'';   // 有運算符才留算式，廠商才對得出每道牆怎麼算的
+    const common={date,site,unit,note,measureType,count,perQty,qtyExpr,sizeText:measureType==='carry'?sizeText.trim():'',width:measureType==='partition'&&!isNaN(width)&&width>0?width:null,height:measureType==='partition'&&!isNaN(height)&&height>0?height:null,
       ...(qtyManual?{qtyManual:true}:{})};   // 記著這筆是自己打的，之後編輯／複製不會又被自動算掉
     const pushOne=(itm,pr,pexpr)=>state.measurements.push({id:uid(),item:itm,qty,unitPrice:pr,priceExpr:pexpr,...common});
     const done=()=>{ measDraft=null; measKeep={measureType,site,date}; saveData(); render(); };
@@ -4421,14 +4453,18 @@ function bind(){
     const unitV=((document.getElementById('me-unit')||{}).value||'').trim();
     const cntEl=document.getElementById('me-count');
     const cnt=cntEl?Math.max(1,parseInt(cntEl.value)||1):(Number(m.count)||1);
-    let qtyV=parseFloat((document.getElementById('me-qty')||{}).value);
+    const qtyRawV=String(((document.getElementById('me-qty')||{}).value||'')).trim();
+    let qtyV=evalPriceExpr(qtyRawV);
+    if(!isNaN(qtyV)) qtyV=Math.round(qtyV*100)/100;
     const priceRawV=String(((document.getElementById('me-price')||{}).value||'')).trim();
-    let priceV=evalPriceExpr(priceRawV);
-    if(!isNaN(priceV)) priceV=Math.round(priceV*100)/100;
+    const noPriceV=priceRawV==='';
+    let priceV=noPriceV?null:evalPriceExpr(priceRawV);
+    if(priceV!=null&&!isNaN(priceV)) priceV=Math.round(priceV*100)/100;
     const noteV=((document.getElementById('me-note')||{}).value||'').trim();
     const w=parseFloat((document.getElementById('me-width')||{}).value);
     const h=parseFloat((document.getElementById('me-height')||{}).value);
-    if(!date||!item||isNaN(priceV)||priceV<0){ alert('請填日期、項目與單價'); return; }
+    if(!date||!item){ alert('請填日期與項目'); return; }
+    if(!noPriceV&&(isNaN(priceV)||priceV<0)){ alert('單價看不懂：'+priceRawV+'\n\n可以留空（不計價），或填數字／算式。'); return; }
     const isPart=(m.measureType||'partition')==='partition'||(!m.measureType&&m.width&&m.height);
     if(isPart&&unitV==='㎡'&&!isNaN(w)&&w>0&&!isNaN(h)&&h>0){
       m.width=w; m.height=h; qtyV=Math.round(w*h*cnt*100)/100; m.perQty=null; // ㎡隔間：寬×高×間數重算
@@ -4439,7 +4475,8 @@ function bind(){
       m.perQty=cnt>1?Math.round(qtyV/cnt*100)/100:null;
     }
     const sz=document.getElementById('me-size'); if(sz) m.sizeText=sz.value.trim();
-    m.priceExpr=/[+*/()×÷]|\d-/.test(priceRawV)?priceRawV:'';
+    m.priceExpr=(!noPriceV&&hasExprChars(priceRawV))?priceRawV:'';
+    m.qtyExpr=hasExprChars(qtyRawV)?qtyRawV:'';
     m.date=date; m.item=item; m.unit=unitV||m.unit; m.count=cnt; m.qty=qtyV; m.unitPrice=priceV; m.note=noteV;
     measEditId=null; saveData(); render();
   };
@@ -6911,10 +6948,13 @@ function measurementSizeLabel(m){
   return cnt>1?`每間 ${Number(m.perQty)||''} ×${cnt}間`:'—';
 }
 function viewMeasurements(){
-  const siteSelOpts=siteSelectOptions(measDraft?measDraft.site:(measKeep?measKeep.site:''));
+  const mdSite=measDraft?(measDraft.site||''):((measKeep&&measKeep.site)||'');
+  // 案場沒在清單裡（上次手動打的、或還沒建的案場）就自動切到手動模式並帶回原值
+  const measSiteManual=!!mdSite&&!siteIsKnown(mdSite);
+  const siteSelOpts=siteSelectOptions(measSiteManual?'':mdSite);
   const mdType=measDraft?(measDraft.measureType||'partition'):(measKeep?measKeep.measureType:'partition');
   const mdAutoArea=measDraft&&mdType==='partition'&&measDraft.unit==='㎡'&&!measDraft.qtyManual;
-  const mdQty=measDraft?(mdAutoArea?'':(Number(measDraft.count)>1&&measDraft.perQty?measDraft.perQty:measDraft.qty)):'';
+  const mdQty=measDraft?(mdAutoArea?'':(measDraft.qtyExpr||(Number(measDraft.count)>1&&measDraft.perQty?measDraft.perQty:measDraft.qty))):'';
   const list=[...state.measurements].sort((a,b)=>(b.date||'').localeCompare(a.date||'')||(a.site||'').localeCompare(b.site||''));
   const grandTotal=list.reduce((s,m)=>s+(Number(m.qty)||0)*(Number(m.unitPrice)||0),0);
 
@@ -6945,8 +6985,8 @@ function viewMeasurements(){
             <div class="field"><label>高(m)</label><input type="number" id="me-height" value="${m.height!=null?m.height:''}" min="0" step="0.01" style="width:85px"></div>`:''}
             ${m.measureType==='carry'?`<div class="field"><label>尺寸</label><input id="me-size" value="${esc(m.sizeText||'')}" style="width:130px"></div>`:''}
             ${m.measureType!=='carry'?`<div class="field"><label>間數</label><input type="number" id="me-count" value="${Number(m.count)||1}" min="1" step="1" style="width:75px"></div>`:''}
-            <div class="field"><label>總數量</label><input type="number" id="me-qty" value="${m.qty}" min="0" step="0.01" style="width:95px"></div>
-            <div class="field"><label>單價（可算式）</label><input id="me-price" value="${esc(m.priceExpr||String(m.unitPrice))}" style="width:110px"></div>
+            <div class="field"><label>總數量（可算式）</label><input id="me-qty" inputmode="decimal" value="${esc(measQtyInput(m))}" placeholder="3.2*2.6+1.1*2.6" style="width:130px"></div>
+            <div class="field"><label>單價（可留空）</label><input id="me-price" value="${esc(measPriceInput(m))}" placeholder="留空＝不計價" style="width:110px"></div>
             <div class="field" style="flex:1;min-width:140px"><label>備注（可換行）</label><textarea id="me-note" rows="2">${esc(m.note||'')}</textarea></div>
           </div>
           <div style="display:flex;gap:8px;margin-top:8px;align-items:center">
@@ -6963,9 +7003,9 @@ function viewMeasurements(){
         <td style="max-width:280px;white-space:normal;word-break:break-word">${ff?`<span style="color:${ff.ink};font-weight:700;font-size:11px">★${ff.label}</span> `:''}${escBr(m.item||'')}${m.billedTo&&state.billings.some(b=>b.id===m.billedTo)?'<span class="tag" style="background:#e3efe9;color:var(--accent)">已帶入請款</span>':''}</td>
         <td style="text-align:right">${esc(sizeLabel)}</td>
         <td style="text-align:center">${esc(m.unit||'')}</td>
-        <td style="text-align:right">${(Number(m.qty)||0).toLocaleString()}</td>
-        <td style="text-align:right">${money(Number(m.unitPrice)||0)}${m.priceExpr?`<div style="font-size:11px;color:var(--muted)">=${esc(m.priceExpr)}</div>`:''}</td>
-        <td style="text-align:right;font-weight:700">${money(amt)}</td>
+        <td style="text-align:right">${(Number(m.qty)||0).toLocaleString()}${m.qtyExpr?`<div style="font-size:11px;color:var(--muted)">=${esc(m.qtyExpr)}</div>`:''}</td>
+        <td style="text-align:right">${measPriceCell(m)}${!measNoPrice(m)&&m.priceExpr?`<div style="font-size:11px;color:var(--muted)">=${esc(m.priceExpr)}</div>`:''}</td>
+        <td style="text-align:right;font-weight:700">${measAmtCell(m)}</td>
         <td style="max-width:140px;color:var(--muted);font-size:12px">${escBr(m.note||'')}</td>
         <td style="white-space:nowrap"><button class="act" data-flag-meas="${m.id}" title="重點標記：點擊循環 追加→待確認→業主指定→取消" style="padding:2px 8px;font-size:12px;${ff?`color:${ff.ink};background:${ff.bg}`:''}">★</button> <button class="act" data-copy-meas="${m.id}" title="用這筆的項目/單價再記一批（同項目、只改日期與數量）＝做多少算多少" style="padding:2px 10px;font-size:12px">再記一批</button> <button class="act" data-edit-meas="${m.id}" style="padding:2px 10px;font-size:12px">改</button> <button class="act danger" data-del-meas="${m.id}" style="padding:2px 10px;font-size:12px">刪</button></td>
       </tr>`;
@@ -7047,22 +7087,24 @@ function viewMeasurements(){
     <button class="act" id="meas-tobill" style="height:36px;padding:0 14px;border:1px solid var(--accent);color:var(--accent)" ${list.some(m=>measSel[m.id])?'':'disabled style="opacity:.5"'}>勾選帶入請款單 →</button>
     <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--muted);cursor:pointer;white-space:nowrap"><input type="checkbox" id="meas-hide-billed" ${measHideBilled?'checked':''} style="width:15px;height:15px">隱藏已請款${(()=>{const n=list.filter(measIsBilled).length;return n?`（${n}）`:'';})()}</label>
     <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--muted);white-space:nowrap">稅別 <select id="meas-tax-mode" style="height:30px;border:1px solid var(--line);border-radius:6px;font-size:12px"><option value="none" ${measTaxMode==='none'?'selected':''}>無</option><option value="incl" ${measTaxMode==='incl'?'selected':''}>含稅（外加5%）</option><option value="ded" ${measTaxMode==='ded'?'selected':''}>內扣（扣3%）</option></select></label>
-    <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--muted);cursor:pointer;white-space:nowrap"><input type="checkbox" id="meas-show-expr" ${measShowExpr?'checked':''} style="width:15px;height:15px">PDF 顯示算式</label>
+    <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--muted);cursor:pointer;white-space:nowrap"><input type="checkbox" id="meas-show-expr" ${measShowExpr?'checked':''} style="width:15px;height:15px">PDF 顯示算式（數量／單價）</label>
     <span class="sub" style="margin:0">可展開案場後勾選指定明細匯出。</span>
   </div>
   <div class="card">
     ${foldBtn('meas','新增計量明細')}
     ${formOpen.meas?`<div class="row" style="margin-top:8px">
       <div class="field"><label>類型</label><select id="meas-type" style="width:110px"><option value="partition" ${mdType==='partition'?'selected':''}>隔間</option><option value="ceiling" ${mdType==='ceiling'?'selected':''}>天花板</option><option value="carry" ${mdType==='carry'?'selected':''}>搬運</option></select></div>
-      <div class="field" style="flex:1;min-width:150px"><label>案場</label><select id="meas-site">${siteSelOpts}</select></div>
+      <div class="field" style="flex:1;min-width:150px"><label>案場</label>
+        <select id="meas-site">${siteSelOpts}<option value="__manual__" ${measSiteManual?'selected':''}>✎ 手動輸入…</option></select>
+        <input id="meas-site-manual" value="${measSiteManual?esc(mdSite):''}" placeholder="直接打案場名稱" style="width:100%;margin-top:4px;display:${measSiteManual?'block':'none'}"></div>
       <div class="field" style="flex:1;min-width:220px"><label id="meas-item-label">項目（可換行）</label><textarea id="meas-item" rows="2" placeholder="例：貼磁磚、矽酸鈣板（長說明可按 Enter 換行）">${measDraft?esc(measDraft.item||''):''}</textarea></div>
       <div class="field"><label>單位</label><input id="meas-unit" value="${measDraft?esc(measDraft.unit||'㎡'):'㎡'}" placeholder="㎡、坪、才、式" style="width:90px"></div>
       <div class="field" id="meas-width-field"><label>寬度（m）</label><input type="number" id="meas-width" value="${measDraft&&measDraft.width!=null?measDraft.width:''}" min="0" step="0.01" style="width:95px"></div>
       <div class="field" id="meas-height-field"><label>高度（m）</label><input type="number" id="meas-height" value="${measDraft&&measDraft.height!=null?measDraft.height:''}" min="0" step="0.01" style="width:95px"></div>
       <div class="field" id="meas-size-field" style="display:none;flex:1 1 220px;min-width:220px"><label>尺寸</label><input id="meas-size" value="${measDraft?esc(measDraft.sizeText||''):''}" placeholder="例：4尺×8尺、120×240" style="width:100%"></div>
       <div class="field" id="meas-count-field"><label>間數（選填）</label><input type="number" id="meas-count" value="${measDraft&&Number(measDraft.count)>1?Number(measDraft.count):''}" min="1" step="1" placeholder="1" style="width:90px"></div>
-      <div class="field" style="flex:0 0 150px;min-width:150px"><label style="display:flex;align-items:center;gap:6px"><span id="meas-qty-label">數量/面積</span><button type="button" id="meas-qty-manual" style="display:none;font-size:11px;padding:1px 6px;border-radius:6px;border:1px solid var(--line,#ccc);background:transparent;color:var(--muted,#666);cursor:pointer"></button></label><input type="number" id="meas-qty" value="${mdQty}" min="0" step="0.01" style="width:100%"></div>
-      <div class="field"><label>單價（可算式）</label><input id="meas-price" value="${measDraft?esc(measDraft.priceExpr||String(measDraft.unitPrice)):''}" placeholder="1200 或 1200*1.1" style="width:130px"></div>
+      <div class="field" style="flex:0 0 150px;min-width:150px"><label style="display:flex;align-items:center;gap:6px"><span id="meas-qty-label">數量/面積</span><button type="button" id="meas-qty-manual" style="display:none;font-size:11px;padding:1px 6px;border-radius:6px;border:1px solid var(--line,#ccc);background:transparent;color:var(--muted,#666);cursor:pointer"></button></label><input id="meas-qty" inputmode="decimal" value="${mdQty}" placeholder="可算式 3.2*2.6+1.1*2.6" style="width:100%"><div id="meas-qty-hint" style="font-size:11px;color:var(--muted);height:14px"></div></div>
+      <div class="field"><label>單價（可留空）</label><input id="meas-price" value="${measDraft?esc(measPriceInput(measDraft)):''}" placeholder="留空＝不計價" style="width:130px"><div style="font-size:11px;color:var(--muted);height:14px">可算式 1200*1.1</div></div>
       <div class="field"><label>小計</label><div id="meas-subtotal" class="num" style="height:36px;display:flex;align-items:center;font-weight:700">$0</div></div>
       <div class="field"><label>日期</label><input type="date" id="meas-date" value="${measKeep&&measKeep.date?esc(measKeep.date):localISODate()}"></div>
       <div class="field" style="flex:1;min-width:150px"><label>備注（可換行）</label><textarea id="meas-note" rows="2" placeholder="（選填）">${measDraft?esc(measDraft.note||''):''}</textarea></div>
@@ -7089,9 +7131,9 @@ function exportMeasurementsPDF(selectedOnly=false){
         <td style="white-space:normal;word-break:break-word">${ff?`<span style="color:${ff.ink};font-weight:700;font-size:10px">★${ff.label}</span> `:''}${escBr(m.item||'')}</td>
         <td>${esc(measurementSizeLabel(m))}</td>
         <td>${esc(m.unit||'')}</td>
-        <td class="num">${(Number(m.qty)||0).toLocaleString()}</td>
-        <td class="num">${money(Number(m.unitPrice)||0)}${measShowExpr&&m.priceExpr?`<div style="font-size:10px;color:#888">=${esc(m.priceExpr)}</div>`:''}</td>
-        <td class="num">${money(amt)}</td>
+        <td class="num">${(Number(m.qty)||0).toLocaleString()}${measShowExpr&&m.qtyExpr?`<div style="font-size:10px;color:#888">=${esc(m.qtyExpr)}</div>`:''}</td>
+        <td class="num">${measPriceCell(m)}${measShowExpr&&!measNoPrice(m)&&m.priceExpr?`<div style="font-size:10px;color:#888">=${esc(m.priceExpr)}</div>`:''}</td>
+        <td class="num">${measAmtCell(m)}</td>
         <td>${escBr(m.note||'')}</td>
       </tr>`;
     };
