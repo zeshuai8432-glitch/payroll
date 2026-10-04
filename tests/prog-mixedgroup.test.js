@@ -7,8 +7,9 @@ const t=(n,c)=>{(c?ok:bad).push(n);console.log((c?'✓ ':'✗ ')+n);};
 // 母專案兩條都叫「雙面隔間」，只差圖面編號；各自拆成 3 道工序
 const mk=()=>{
   const mItems=[];
+  // 兩條不同的合約項目＝不同項次（同一個房型不會有兩條同項次），只差圖面編號
   ['D/F','C'].forEach((plan,i)=>['骨架','封板','二次封板'].forEach(st=>{
-    mItems.push({id:`m${i}${st}`,no:'6.3',name:`雙面隔間-${st}`,unit:'㎡',qty:9.15,price:300,
+    mItems.push({id:`m${i}${st}`,no:i===0?'6.3':'6.4',name:`雙面隔間-${st}`,unit:'㎡',qty:9.15,price:300,
       amount:2745,remark:`圖面編號${plan}`,groupId:`mg${i}`,groupName:'雙面隔間'});
   }));
   return {savedAt:Date.now(),tab:'items',cur:'T',projects:[
@@ -85,7 +86,7 @@ const open=async(st,cur)=>{
   await pg.waitForTimeout(300);
   const found=await pg.evaluate(()=>{const m=mixedGroupsOf(curProj());
     return {n:m.length,items:m[0]?m[0].items.length:0,keys:m[0]?m[0].keys.length:0};});
-  t('③ 偵測到 1 組混在一起（6 道、2 條合約項目）',
+  t('③ 偵測到 1 組混在一起（6 道、項次 6.3 與 6.4）',
     found.n===1&&found.items===6&&found.keys===2);
   t('③ 畫面上有紅字警告', /混了不同的合約項目/.test(await pg.textContent('#app')));
   t('③ 有一鍵修復按鈕', await pg.locator('#fix-mixedg').count()===1);
@@ -171,13 +172,15 @@ const open=async(st,cur)=>{
     {id:'p1',no:'6.7',name:'口袋牆雙面隔間-骨架',unit:'㎡',qty:4.93,price:300,amount:1479},
     {id:'p2',no:'6.7',name:'口袋牆雙面隔間-封板',unit:'㎡',qty:4.93,price:300,amount:1479,groupId:'mgx',groupName:'口袋牆雙面隔間'},
     {id:'p3',no:'6.7',name:'口袋牆雙面隔間-二次封板',unit:'㎡',qty:4.93,price:300,amount:1479,groupId:'mgx',groupName:'口袋牆雙面隔間'}];
+  // 子專案三道的項次一致＝同一條合約項目，刻意分組，不該被拆
   // 子專案把三道收成一組（名稱沒有重複）
   st.projects[2].blocks[0].items=['骨架','封板','二次封板'].map((n,i)=>({
     id:'k'+i,no:'6.7',name:'口袋牆雙面隔間-'+n,unit:'㎡',qty:4.93,price:140,amount:690.2,
     srcId:['p1','p2','p3'][i],cnt:6,groupId:'kg',groupName:'口袋牆雙面隔間',remark:'圖面編號H'}));
   const {pg,errs}=await open(st,'C');
   await pg.waitForTimeout(300);
-  t('⑧ ★ 沒有同名工序 → 不判定為混在一起', await pg.evaluate(()=>mixedGroupsOf(curProj()).length)===0);
+  t('⑧ ★ 項次一致 → 不判定為混在一起（即使溯源來自母的不同條）',
+    await pg.evaluate(()=>mixedGroupsOf(curProj()).length)===0);
   t('⑧ 畫面上沒有紅字（不會叫你去拆掉自己分的組）',
     !/混了不同的合約項目/.test(await pg.textContent('#app')));
   t('⑧ 沒有 JS 錯誤', errs.length===0);
