@@ -114,7 +114,7 @@ tr.hilite>td{animation:hlflash 1s ease-in-out 3}
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.10.05b-showall';
+const APP_VERSION='vG2026.10.05c-xfernofix';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -1751,9 +1751,15 @@ const stageKeyOf=it=>normName(it&&it.groupName?stageOf(it.name,it.groupName):(it
 function xferFindSame(kb,srcIt){
   const items=(kb.items||[]);
   const sk=stageKeyOf(srcIt);
+  // 項次不同就是不同條合約項目，名稱一樣也不准併。
+  // （6.1 與 6.2 常常同名，只差圖面編號；接手方的 6.1 若是複製來的、沒有溯源，
+  //  下面的名稱回退就會把轉進來的 6.2 加到 6.1 上——量和帳全錯，而且看不出來。）
+  const noOf=it=>{ const n=String(it&&it.no||'').trim(); return (n===''||n==='增')?'':n; };
+  const myNo=noOf(srcIt);
+  const noClash=x=>!(myNo&&noOf(x)&&noOf(x)!==myNo);
   if(srcIt.srcId){
     const same=items.filter(x=>x.srcId===srcIt.srcId);
-    const hit=same.find(x=>stageKeyOf(x)===sk);
+    const hit=same.find(x=>stageKeyOf(x)===sk&&noClash(x));
     if(hit) return hit;
     // 原本這裡還有一條「溯源相同、接手方剛好只有一條」就算同一條的規則，
     // 本意是讓接手方改過名字的條目仍然累加得起來。但它分不出「改過名」和
@@ -1769,7 +1775,7 @@ function xferFindSame(kb,srcIt){
   // 已經有同名的就併進第一條。原本要求「只有一條同名」才認，結果資料一旦壞過一次，
   // 之後每轉一次就再長一條，越改越多——寧可併錯一條（看得見、改得回來），
   // 也不要無限增生。兩邊都有溯源卻不同＝真的不同的合約項目，不碰。
-  const byName=items.filter(x=>stageKeyOf(x)===sk&&(!x.srcId||!srcIt.srcId));
+  const byName=items.filter(x=>stageKeyOf(x)===sk&&(!x.srcId||!srcIt.srcId)&&noClash(x));
   if(byName.length) return byName[0];
   return null;
 }

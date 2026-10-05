@@ -431,6 +431,47 @@ const alloc=pg=>pg.evaluate(()=>{
   await pg.close();
 }
 
+// ㉒ ★ 轉 6.2 進來不可以跑到 6.1（同名、不同項次）
+{
+  const st=seed();
+  st.projects[0].blocks[0].items=[
+    {id:'m1',no:'6.1',name:'雙面隔間',unit:'㎡',qty:14.71,price:300,amount:4413},
+    {id:'m2',no:'6.2',name:'雙面隔間',unit:'㎡',qty:2.41,price:300,amount:723}];
+  st.projects[1].blocks[0].items=[
+    {id:'t2',no:'6.2',name:'雙面隔間',unit:'㎡',qty:2.41,price:140,amount:337.4,srcId:'m2',cnt:6}];
+  // 接手方原本的 6.1 是「複製細項」來的：名稱一樣，但沒有溯源
+  st.projects[2].blocks=[{id:'bC',name:'TYPE-EXS',unit:'間',count:40,srcBlk:'bA',items:[
+    {id:'c1',no:'6.1',name:'雙面隔間',unit:'㎡',qty:14.71,price:140,amount:2059.4,cnt:3}]}];
+  const {pg,errs}=await open(st);
+  const r=await pg.evaluate(()=>{
+    const T=state.projects.find(p=>p.id==='T'), C=state.projects.find(p=>p.id==='C');
+    xferApply(T,T.blocks[0],T.blocks[0].items[0],C,2,140);
+    save();
+    const b=C.blocks[0];
+    return {n:b.items.length,rows:b.items.map(x=>({no:x.no,cnt:effCount(x,b),src:x.srcId||''}))};
+  });
+  t('㉒ ★ 變成兩條（6.1 與 6.2），不是併成一條', r.n===2);
+  t('㉒ ★ 原本的 6.1 完全沒被動到（還是 3 間、還是沒溯源）',
+    r.rows[0].no==='6.1'&&r.rows[0].cnt===3&&r.rows[0].src==='');
+  t('㉒ ★ 新的那條是 6.2、2 間、溯源 m2',
+    r.rows[1].no==='6.2'&&r.rows[1].cnt===2&&r.rows[1].src==='m2');
+  t('㉒ 沒有 JS 錯誤', errs.length===0);
+
+  // 同項次才併
+  const r2=await pg.evaluate(()=>{
+    const T=state.projects.find(p=>p.id==='T'), C=state.projects.find(p=>p.id==='C');
+    T.blocks[0].items.push({id:'t2b',no:'6.2',name:'雙面隔間',unit:'㎡',qty:2.41,price:140,amount:337.4,srcId:'m2',cnt:4});
+    xferApply(T,T.blocks[0],T.blocks[0].items.find(x=>x.id==='t2b'),C,1,140);
+    save();
+    const b=C.blocks[0];
+    return {n:b.items.length,cnt62:effCount(b.items.find(x=>x.no==='6.2'),b),
+            cnt61:effCount(b.items.find(x=>x.no==='6.1'),b)};
+  });
+  t('㉓ 同一個項次再轉進來才累加（6.2：2＋1＝3）', r2.n===2&&r2.cnt62===3);
+  t('㉓ 6.1 始終沒被碰到（3 間）', r2.cnt61===3);
+  await pg.close();
+}
+
 await br.close();
 console.log(`\n${ok.length} passed, ${bad.length} failed`);
 if(bad.length){bad.forEach(b=>console.log(' FAIL '+b));process.exit(1);}
