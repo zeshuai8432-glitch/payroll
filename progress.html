@@ -114,7 +114,7 @@ tr.hilite>td{animation:hlflash 1s ease-in-out 3}
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.10.04c-roomalloc';
+const APP_VERSION='vG2026.10.05a-xferinfix';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -460,6 +460,16 @@ const hideEmptyOf=proj=>{
   const anyItem=(proj.blocks||[]).some(b=>(b.items||[]).length);
   if(!anyItem) return false;
   return proj.hideEmptyBlk!==undefined?!!proj.hideEmptyBlk:!!proj.parentId;
+};
+// 「隱藏沒有細項的區塊」要看的是「有沒有細項」，不是「有沒有金額」。
+// blkSpan().empty 的判斷是「沒有 amount>0 的細項」，拿它來隱藏區塊的話，
+// 一個只有 0 元細項的區塊會整個消失——轉入進來的量明明在裡面，畫面上卻什麼都沒有。
+// 真正該隱藏的只有兩種：一條細項都沒有，或是勾了「隱藏 0 元項目」而且整區都是 0 元
+// （那種情況本來就一列都印不出來）。
+const blkHideable=(proj,blk)=>{
+  const its=(blk&&blk.items)||[];
+  if(!its.length) return true;
+  return !!(proj&&proj.hideZero)&&its.every(i=>Number(i.amount)===0);
 };
 function blkSpan(blk){
   const live=((blk&&blk.items)||[]).filter(i=>Number(i.amount)>0);
@@ -1327,12 +1337,12 @@ function viewItems(proj){
     <div class="stat"><div class="l">細項</div><div class="v">${nItems}</div></div>
   </div>
   <div class="rowline"><label class="muted" style="font-size:13px;cursor:pointer"><input type="checkbox" id="hide-zero"${proj.hideZero?' checked':''}> 隱藏 0 元項目（非我方施作範圍）</label>${(()=>{
-    const n=proj.blocks.filter(b=>blkSpan(b).empty).length;
+    const n=proj.blocks.filter(b=>blkHideable(proj,b)).length;
     if(!n) return '';
     const on=hideEmptyOf(proj);
     return `<label class="muted" style="font-size:13px;cursor:pointer;margin-left:14px" title="發包出去的子專案通常只做其中幾條，沒細項的區塊留著只是干擾"><input type="checkbox" id="hide-empty-blk"${on?' checked':''}> 隱藏沒有細項的區塊（${n} 個）</label>`;
   })()}</div>
-  ${(()=>{ const n=proj.blocks.filter(b=>blkSpan(b).empty).length;
+  ${(()=>{ const n=proj.blocks.filter(b=>blkHideable(proj,b)).length;
     return (n&&hideEmptyOf(proj))?`<div class="muted" style="font-size:12px;margin-bottom:6px">已隱藏 <b>${n}</b> 個沒有細項的區塊（<b>沒有刪掉</b>，取消上面的勾選就看得到）。</div>`:''; })()}
   <datalist id="crewlist">${[...new Set(childProjects(proj.id).map(k=>String(k.vendor||'').trim()).filter(Boolean))].map(c=>`<option value="${esc(c)}">`).join('')}</datalist>`;
   if(nItems){
@@ -1358,7 +1368,7 @@ function viewItems(proj){
     </div></td></tr>`;
   for(const b of proj.blocks){
     const bv=b.items.reduce((s,i)=>s+itemValue(i,b),0);
-    if(hideEmptyOf(proj)&&blkSpan(b).empty&&blkEdit!==b.id&&itemAdd!==b.id&&xferIn!==b.id&&backfill!==b.id&&xcopy!==b.id) continue;
+    if(hideEmptyOf(proj)&&blkHideable(proj,b)&&blkEdit!==b.id&&itemAdd!==b.id&&xferIn!==b.id&&backfill!==b.id&&xcopy!==b.id) continue;
     const hid=proj.hideZero?b.items.filter(i=>i.amount===0).length:0;
     const sp=blkSpan(b), bCnt=Number(b.count)||0;
     const spanTag=sp.empty
@@ -1870,7 +1880,7 @@ function xferApply(srcProj,srcBlk,srcIt,dstProj,move,price,dstBlkHint){
     if(keep!==(Number(srcBlk.count)||0)) srcIt.cnt=keep; else delete srcIt.cnt;
     xlogPush(srcIt,`${day} 原 ${qfmt(cur)} ${srcBlk.unit}，轉 ${qfmt(move)} ${srcBlk.unit} 給 ${destName}`);
   }
-  return {ok:true,who,destName,cur,keep,gone:keep<=0,blk:kb};
+  return {ok:true,who,destName,cur,keep,gone:keep<=0,blk:kb,item:exist||kb.items[kb.items.length-1],merged:!!exist};
 }
 // ↙ 從別家轉入：站在接手方這邊把量抓過來。跟「轉出」是同一個搬量動作
 // （共用 xferApply），只是從另一頭發動，而且一次可以勾好幾條 —— 月結時
@@ -2079,7 +2089,7 @@ function viewProg(proj){
     ${proj.periods.length?`<button class="btn sub sm" id="settle-toggle" title="記下這一期實際請了多少。鎖住後改數量／單價／折讓都不會動到它；直接打字就能改，不用去動數量">${c.settled?`🔒 已鎖 ${money(proj.periods[proj.curPeriod||0].settled)}（點我改）`:'🔒 結算鎖定本期'}</button>`:''}
     <span style="flex:1"></span>
     <label class="muted" style="font-size:13px;cursor:pointer"><input type="checkbox" id="hide-zero"${proj.hideZero?' checked':''}> 隱藏 0 元項目</label>${(()=>{
-      const n=proj.blocks.filter(b=>blkSpan(b).empty).length;
+      const n=proj.blocks.filter(b=>blkHideable(proj,b)).length;
       return n?`<label class="muted" style="font-size:13px;cursor:pointer;margin-left:12px"><input type="checkbox" id="hide-empty-blk"${hideEmptyOf(proj)?' checked':''}> 隱藏沒細項的區塊（${n} 個）</label>`:'';
     })()}
     <button class="btn" id="btn-print">🖨 列印請款單</button>
@@ -2183,7 +2193,7 @@ function viewProg(proj){
   for(const cb of c.blocks){
     const b=cb.blk;
     // 跟合約明細同一套：沒細項的區塊在進度頁一樣沒東西可填，收起來
-    if(hideEmptyOf(proj)&&blkSpan(b).empty) continue;
+    if(hideEmptyOf(proj)&&blkHideable(proj,b)) continue;
     const sp=blkSpan(b), bCnt=Number(b.count)||0;
     const spanTag=sp.empty
       ? `<span class="tag">${qfmt(bCnt)} ${esc(b.unit)}</span><span class="tag" style="background:rgba(148,163,184,.18);border-color:rgba(148,163,184,.45);color:#cbd5e1">沒有細項</span>`
@@ -4074,7 +4084,24 @@ document.addEventListener('click',async e=>{
       if(move>max+1e-9){ alert(`「${it.name}」最多只能轉 ${qfmt(max)} ${b.unit}（對方已經做掉的量不能轉）。\n\n你填了 ${qfmt(move)}。`); el.focus(); return; }
       const pr=document.querySelector(`[data-xiprice="${it.id}"]`);
       const praw=pr?String(pr.value||'').trim():'';
-      plan.push({it,move,price:praw?(evalExpr(praw)||0):(Number(it.price)||0)});
+      // evalExpr 解析失敗原本會變成 0：那條的金額就是 0，接著被「隱藏 0 元項目」
+      // 藏起來——來源真的扣掉了、這邊也真的建了，但畫面上看不到，就像「沒有進來」。
+      let price=Number(it.price)||0;
+      if(praw){
+        // evalExpr 對看不懂的東西會回 0（parseFloat 失敗就 0），不是 NaN——
+        // 所以不能只檢查 isNaN。要自己判斷「這串到底像不像數字」：
+        // 沒有任何數字（abc、元）就是打錯；算完是 0 但原文不是 0 也是打錯。
+        const v=evalExpr(praw);
+        const digits=(String(praw).match(/[\d.]+/)||[''])[0];
+        const realZero=digits!==''&&/^0*(\.0*)?$/.test(digits);
+        if(!(v>=0)||!/\d/.test(praw)||(v===0&&!realZero)){
+          alert(`「${it.name}」的單價看不懂：${praw}\n\n留空＝照對方的單價 ${qfmt(it.price)}，或填數字／算式（140、140*1.05）。`);
+          if(pr) pr.focus();
+          return;
+        }
+        price=v;
+      }
+      plan.push({it,move,price});
     }
     if(!plan.length){ alert(`請在「要轉入幾${b.unit}」填上數字，或按「全部填滿上限」。`); return; }
     const who=sp.vendor||sp.name, me=proj.vendor||proj.name;
@@ -4084,15 +4111,29 @@ document.addEventListener('click',async e=>{
       +`\n\n・${me} 的合約金額增加 ${money(Math.round(addAmt))}\n`
       +`・${who} 那邊會同步減掉同樣的量（所以母專案的發包總量不變）\n`
       +`・${who} 已經請過的錢不會變\n・母專案的合約明細完全不動`)) return;
-    let n=0,gone=0; const errs=[];
+    let n=0,gone=0; const errs=[], landed=[];
     plan.forEach(({it,move,price})=>{
       const r=xferApply(sp,sb,it,proj,move,price,b);
-      if(r.err) errs.push(`${it.name}：${r.err}`); else { n++; if(r.gone) gone++; }
+      if(r.err){ errs.push(`${it.name}：${r.err}`); return; }
+      n++; if(r.gone) gone++;
+      if(r.item) landed.push({it:r.item,blk:r.blk,merged:r.merged});
     });
+    // 轉完一定要看得到：區塊展開、0 元的別被藏起來、第一條標黃閃一下。
+    // 不然來源扣了、這邊也建了，畫面上卻什麼都沒變，看起來就像沒進來。
+    openBlk.add(b.id);
+    const zeroHidden=landed.filter(x=>Number(x.it.amount)===0).length;
+    if(zeroHidden&&proj.hideZero) proj.hideZero=false;
+    landed.forEach(x=>{ if(x.it.groupId) openGroup.add(x.it.groupId); });
+    if(landed[0]) hiliteItem=landed[0].it.id;
     xferIn=null; save(); render();
-    alert(`已從「${who}」轉入 ${n} 條。\n\n`
-      +(gone?`其中 ${gone} 條對方整個轉光了，已從他的合約移除（他那邊的回收桶可以復原）。\n\n`:'')
-      +`數量與單價可以再進去改。`+(errs.length?`\n\n有 ${errs.length} 條沒轉成功：\n`+errs.join('\n'):''));
+    const el=landed[0]&&document.getElementById('row-'+landed[0].it.id);
+    if(el) el.scrollIntoView({block:'center',behavior:'smooth'});
+    setTimeout(()=>{ hiliteItem=''; render(); },4000);
+    alert(`已從「${who}」轉入 ${n} 條到「${b.name}」。\n\n`
+      +landed.map(x=>`・${x.it.name}　${x.merged?'併進原本那條，現在共':'拿到'} ${qfmt(effCount(x.it,x.blk))} ${b.unit}`).join('\n')
+      +(gone?`\n\n其中 ${gone} 條對方整個轉光了，已從他的合約移除（他那邊的回收桶可以復原）。`:'')
+      +(zeroHidden?`\n\n有 ${zeroHidden} 條單價是 0（金額 0）。已暫時取消「隱藏 0 元項目」，不然你會看不到它。`:'')
+      +`\n\n數量與單價可以再進去改。`+(errs.length?`\n\n有 ${errs.length} 條沒轉成功：\n`+errs.join('\n'):''));
     return;
   }
   if(t.dataset.xfercancel){ xfer=null; render(); return; }
