@@ -114,7 +114,7 @@ tr.hilite>td{animation:hlflash 1s ease-in-out 3}
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.10.05a-xferinfix';
+const APP_VERSION='vG2026.10.05b-showall';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -1342,8 +1342,25 @@ function viewItems(proj){
     const on=hideEmptyOf(proj);
     return `<label class="muted" style="font-size:13px;cursor:pointer;margin-left:14px" title="發包出去的子專案通常只做其中幾條，沒細項的區塊留著只是干擾"><input type="checkbox" id="hide-empty-blk"${on?' checked':''}> 隱藏沒有細項的區塊（${n} 個）</label>`;
   })()}</div>
-  ${(()=>{ const n=proj.blocks.filter(b=>blkHideable(proj,b)).length;
-    return (n&&hideEmptyOf(proj))?`<div class="muted" style="font-size:12px;margin-bottom:6px">已隱藏 <b>${n}</b> 個沒有細項的區塊（<b>沒有刪掉</b>，取消上面的勾選就看得到）。</div>`:''; })()}
+  ${(()=>{
+    // 「東西明明轉進來了卻看不到」最後都是這兩個開關造成的，但原本只提示其中一個，
+    // 而且提示很淡。這裡把兩種加起來算，講清楚有幾條沒顯示，並給一顆全部顯示。
+    const hidBlks=hideEmptyOf(proj)?proj.blocks.filter(b=>blkHideable(proj,b)):[];
+    const inHidBlk=hidBlks.reduce((a,b)=>a+((b.items||[]).length),0);
+    const zeroRows=proj.hideZero
+      ? proj.blocks.filter(b=>hidBlks.indexOf(b)<0)
+          .reduce((a,b)=>a+(b.items||[]).filter(i=>Number(i.amount)===0).length,0)
+      : 0;
+    const tot=inHidBlk+zeroRows;
+    if(!tot&&!hidBlks.length) return '';
+    const why=[];
+    if(zeroRows) why.push(`<b>${zeroRows}</b> 條 0 元的細項`);
+    if(hidBlks.length) why.push(`已隱藏 <b>${hidBlks.length}</b> 個沒有細項的區塊${inHidBlk?`（共 ${inHidBlk} 條）`:''}`);
+    return `<div class="notice" style="margin-bottom:8px;border-color:rgba(251,191,36,.55);background:rgba(251,191,36,.12);color:#fcd34d">
+      <b>👁 這一頁有東西沒顯示出來</b>：${why.join('、')}。<b>沒有刪掉</b>，只是被上面的勾勾藏起來。
+      <div style="font-size:11.5px;margin-top:3px">剛轉入或發包進來的量如果金額是 0（單價還沒填），就會落在這裡——這是「明明轉進來了卻看不到」最常見的原因。</div>
+      <div style="margin-top:8px"><button class="btn sm" id="show-all-items">👁 全部顯示（取消兩個隱藏）</button></div></div>`;
+  })()}
   <datalist id="crewlist">${[...new Set(childProjects(proj.id).map(k=>String(k.vendor||'').trim()).filter(Boolean))].map(c=>`<option value="${esc(c)}">`).join('')}</datalist>`;
   if(nItems){
     h+=batchAll
@@ -3476,7 +3493,7 @@ function setProgInput(proj,blkId,itemId,kind,val){
 }
 
 document.addEventListener('click',async e=>{
-  const t=e.target.closest('[data-tab],[data-editblk],[data-delblk],[data-edititem],[data-delitem],[data-additem],[data-splititem],[data-sortitems],[data-grouptoggle],[data-groupmerge],[data-groupdetect],[data-groupjoin],[data-whtoggle],[data-rttoggle],[data-whtax],[data-whtaxauto],[data-rtamt],[data-selfone],[data-selfrooms],[data-selfrest],[data-selfclear],[data-pado],[data-paclear],[data-delmode],[data-delcancel],[data-delall],[data-delnone],[data-delinv],[data-delzero],[data-deldo],#sub-toggle,#sub-close,#sub-go,[data-backfill],[data-backfillcancel],[data-backfillok],[data-addmissblk],#fix-dupitems,#fix-mixedg,#trash-toggle,#trash-clear,[data-trashrestore],[data-trashdrop],#drift-sync,#drift-sync-price,#drift-all,#drift-none,[data-xcopy],[data-xcopycancel],[data-xcopyall],[data-xcopyok],[data-xcdup],[data-xcfind],[data-xfer],[data-xfercancel],[data-xferok],[data-xferin],[data-xferincancel],[data-xferinall],[data-xferinok],[data-gedit],[data-batchedit],[data-batchok],[data-batchcancel],[data-batchalledit],[data-batchallok],[data-batchallcancel],[data-itemok],[data-itemcancel],[data-blkok],[data-blkcancel],[data-bapply],[data-gapply],#btn-invrecon,[data-editextra],[data-delextra],#btn-import,#btn-import2,#btn-unlock,#btn-retrycloud,#btn-clouddiag,#btn-newproj,#btn-newproj2,#btn-addblk,#btn-addblk-ok,#btn-addperiod,#btn-delperiod,#btn-addextra,#btn-roundup,#settle-toggle,#set-rebase,[data-gotoproj],#btn-print,#btn-setretain,#orphan-fix,#orphan-detach,#proj-groupall,#set-save,#set-taxmode,#proj-dup,#proj-detach,#backup-export,#backup-import-btn,#prev-restore,#prev-export,#proj-del,#cloud-push,#cloud-pull');
+  const t=e.target.closest('[data-tab],[data-editblk],[data-delblk],[data-edititem],[data-delitem],[data-additem],[data-splititem],[data-sortitems],[data-grouptoggle],[data-groupmerge],[data-groupdetect],[data-groupjoin],[data-whtoggle],[data-rttoggle],[data-whtax],[data-whtaxauto],[data-rtamt],[data-selfone],[data-selfrooms],[data-selfrest],[data-selfclear],[data-pado],[data-paclear],[data-delmode],[data-delcancel],[data-delall],[data-delnone],[data-delinv],[data-delzero],[data-deldo],#sub-toggle,#sub-close,#sub-go,[data-backfill],[data-backfillcancel],[data-backfillok],[data-addmissblk],#show-all-items,#fix-dupitems,#fix-mixedg,#trash-toggle,#trash-clear,[data-trashrestore],[data-trashdrop],#drift-sync,#drift-sync-price,#drift-all,#drift-none,[data-xcopy],[data-xcopycancel],[data-xcopyall],[data-xcopyok],[data-xcdup],[data-xcfind],[data-xfer],[data-xfercancel],[data-xferok],[data-xferin],[data-xferincancel],[data-xferinall],[data-xferinok],[data-gedit],[data-batchedit],[data-batchok],[data-batchcancel],[data-batchalledit],[data-batchallok],[data-batchallcancel],[data-itemok],[data-itemcancel],[data-blkok],[data-blkcancel],[data-bapply],[data-gapply],#btn-invrecon,[data-editextra],[data-delextra],#btn-import,#btn-import2,#btn-unlock,#btn-retrycloud,#btn-clouddiag,#btn-newproj,#btn-newproj2,#btn-addblk,#btn-addblk-ok,#btn-addperiod,#btn-delperiod,#btn-addextra,#btn-roundup,#settle-toggle,#set-rebase,[data-gotoproj],#btn-print,#btn-setretain,#orphan-fix,#orphan-detach,#proj-groupall,#set-save,#set-taxmode,#proj-dup,#proj-detach,#backup-export,#backup-import-btn,#prev-restore,#prev-export,#proj-del,#cloud-push,#cloud-pull');
   if(!t)return;
   const proj=curProj();
   if(t.dataset.tab){state.tab=t.dataset.tab;save();render();return;}
@@ -3683,6 +3700,12 @@ document.addEventListener('click',async e=>{
     proj.blocks.push(nb);
     openBlk.add(nb.id); backfill=nb.id;      // 補完直接打開挑選清單，不用再找一次
     save(); render(); return;
+  }
+  if(t.id==='show-all-items'){
+    proj.hideZero=false; proj.hideEmptyBlk=false;
+    proj.blocks.forEach(b=>{ if((b.items||[]).length) openBlk.add(b.id); });
+    save(); render();
+    return;
   }
   if(t.id==='fix-dupitems'){
     const d=dupItemsOf(proj);
@@ -4551,6 +4574,7 @@ document.addEventListener('change',e=>{
   if(t.id==='period-date'){const per=proj.periods[proj.periods.length-1];if(per){per.date=t.value;save();}return;}
   if(t.id==='hide-zero'){proj.hideZero=t.checked;save();render();return;}
   if(t.id==='hide-empty-blk'){proj.hideEmptyBlk=t.checked;save();render();return;}
+
   // 批次刪除的勾選：只更新計數，不整頁重繪（1500+ 條才不會卡）
   if(t.dataset.rtamt){
     const pp=proj.periods[+t.dataset.rtamt]; if(!pp) return;
