@@ -350,6 +350,87 @@ const alloc=pg=>pg.evaluate(()=>{
   await pg.close();
 }
 
+// ⑰ ★「轉入了卻沒進來」：單價打錯原本會悄悄變 0，那條被「隱藏 0 元項目」藏起來
+{
+  const st=seed();
+  st.projects[0].hideZero=true;
+  st.projects[2].blocks=[{id:'bC',name:'TYPE-EXS',unit:'間',count:40,srcBlk:'bA',items:[]}];
+  const {pg,errs}=await open(st);
+  await pg.evaluate(()=>{ state.cur='C'; state.projects[2].hideZero=true; openBlk.add('bC'); render(); });
+  await pg.waitForTimeout(400);
+  await pg.click('[data-xferin="bC"]'); await pg.waitForTimeout(350);
+  let msg=''; pg.removeAllListeners('dialog');
+  pg.on('dialog',async d=>{ msg=d.message(); await d.dismiss(); });
+  await pg.fill('[data-ximove="t1"]','2');
+  await pg.fill('[data-xiprice="t1"]','壹肆零');          // 打錯：完全不是數字
+  await pg.click('[data-xferinok="bC"]'); await pg.waitForTimeout(500);
+  t('⑰ ★ 單價看不懂會擋下來，不會默默變 0', /單價看不懂：壹肆零/.test(msg)&&/留空＝照對方的單價/.test(msg));
+  const r=await pg.evaluate(()=>({c:state.projects[2].blocks[0].items.length,
+    t:effCount(state.projects[1].blocks[0].items.find(x=>x.id==='t1'),state.projects[1].blocks[0])}));
+  t('⑰ 被擋時一條都沒搬（來源也沒被扣）', r.c===0&&r.t===6);
+  t('⑰ 沒有 JS 錯誤', errs.length===0);
+
+  // 真的是 0 元的來源 → 轉進來要自動解除隱藏並講出來
+  pg.removeAllListeners('dialog');
+  const msgs=[]; pg.on('dialog',async d=>{ msgs.push(d.message()); await d.accept(); });
+  await pg.fill('[data-xiprice="t1"]','0');
+  await pg.click('[data-xferinok="bC"]'); await pg.waitForTimeout(700);
+  const r2=await pg.evaluate(()=>({n:state.projects[2].blocks[0].items.length,
+    hide:!!state.projects[2].hideZero,
+    row:!!document.getElementById('row-'+(state.projects[2].blocks[0].items[0]||{}).id)}));
+  t('⑱ 0 元也轉得進來', r2.n===1);
+  t('⑱ ★ 自動取消「隱藏 0 元項目」，不然看不到它', r2.hide===false);
+  t('⑱ ★ 而且畫面上真的看得到那一列', r2.row===true);
+  t('⑱ 訊息講明進到哪個區塊、現在幾間、以及為什麼取消隱藏',
+    msgs.some(m=>/轉入 1 條到「TYPE-EXS」/.test(m)&&/拿到 2 間/.test(m)&&/取消「隱藏 0 元項目」/.test(m)));
+  await pg.close();
+}
+
+// ⑲ 正常轉入：訊息要講出進到哪一條、現在共幾間（累加時講「併進原本那條」）
+{
+  const st=seed();
+  st.projects[2].blocks=[{id:'bC',name:'TYPE-EXS',unit:'間',count:40,srcBlk:'bA',items:[
+    {id:'c1',no:'6.1',name:'雙面隔間',unit:'㎡',qty:10,price:140,amount:1400,srcId:'m1',cnt:3}]}];
+  const {pg}=await open(st);
+  await pg.evaluate(()=>{ state.cur='C'; openBlk.add('bC'); render(); }); await pg.waitForTimeout(400);
+  await pg.click('[data-xferin="bC"]'); await pg.waitForTimeout(350);
+  const msgs=[]; pg.removeAllListeners('dialog');
+  pg.on('dialog',async d=>{ msgs.push(d.message()); await d.accept(); });
+  await pg.fill('[data-ximove="t1"]','2');
+  await pg.click('[data-xferinok="bC"]'); await pg.waitForTimeout(700);
+  t('⑲ 累加時講「併進原本那條，現在共 5 間」',
+    msgs.some(m=>/併進原本那條，現在共 5 間/.test(m)));
+  t('⑲ 間數真的變 5', await pg.evaluate(()=>effCount(state.projects[2].blocks[0].items[0],state.projects[2].blocks[0]))===5);
+  t('⑲ 區塊自動展開（看得到結果）', await pg.evaluate(()=>openBlk.has('bC')));
+  await pg.close();
+}
+
+// ⑳ ★ 根因：只有 0 元細項的區塊整個被當成空區塊隱藏（連區塊都不見）
+{
+  const st=seed();
+  st.projects[2].blocks=[{id:'bC',name:'TYPE-EXS',unit:'間',count:6,srcBlk:'bA',items:[
+    {id:'z1',no:'6.1',name:'雙面隔間',unit:'㎡',qty:10,price:0,amount:0,srcId:'m1',cnt:2}]}];
+  const {pg,errs}=await open(st);
+  await pg.evaluate(()=>{ state.cur='C'; openBlk.add('bC'); render(); }); await pg.waitForTimeout(400);
+  t('⑳ ★ 有細項（即使 0 元）區塊就要顯示出來', await pg.locator('details.blk').count()===1);
+  t('⑳ ★ 那一列看得到', await pg.locator('#row-z1').count()===1);
+  t('⑳ 不會被算進「已隱藏的區塊」', !/已隱藏 1 個沒有細項的區塊/.test(await pg.textContent('#app')));
+
+  // 勾了「隱藏 0 元項目」而且整區都是 0 元 → 那才該隱藏（一列都印不出來）
+  const r=await pg.evaluate(()=>{ curProj().hideZero=true; save(); render();
+    return {blks:document.querySelectorAll('details.blk').length,
+            hid:/已隱藏 1 個沒有細項的區塊/.test(document.getElementById('app').innerText)}; });
+  t('㉑ 整區都 0 元又勾了隱藏 0 元 → 隱藏，而且計數對得上', r.blks===0&&r.hid===true);
+
+  // 真正空的區塊照舊隱藏
+  const r2=await pg.evaluate(()=>{ const p=curProj(); p.hideZero=false;
+    p.blocks.push({id:'bE',name:'TYPE-L',unit:'間',count:3,items:[]}); save(); render();
+    return {blks:document.querySelectorAll('details.blk').length}; });
+  t('㉑ 真正一條細項都沒有的區塊照舊隱藏', r2.blks===1);
+  t('⑳ 沒有 JS 錯誤', errs.length===0);
+  await pg.close();
+}
+
 await br.close();
 console.log(`\n${ok.length} passed, ${bad.length} failed`);
 if(bad.length){bad.forEach(b=>console.log(' FAIL '+b));process.exit(1);}
