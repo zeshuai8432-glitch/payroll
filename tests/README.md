@@ -19,6 +19,7 @@ NODE_PATH=/opt/node22/lib/node_modules /opt/node22/bin/node prog-smoke2.test.js
 | `prog-smoke2.test.js` | 四個分頁渲染、填進度、工序子列轉出、發包分配、期別鎖定，全程無 JS 錯誤 |
 | `prog-donelast.test.js` | 「已完成幾間」讀最新一期（舊期填錯、新期改正後要轉得出去） |
 | `prog-xferin.test.js` | ↙ 從別家轉入（搬量守恆、擋對方已做掉的量）＋ 同一條母細項拆出的工序不得被併成一條 |
+| `prog-showall.test.js` | 「轉進來了卻看不到」：把被兩個隱藏開關藏起來的細項與區塊數講出來，一鍵全部顯示 |
 | `prog-dedupe.test.js` | 群組名各自改過也要認得同一道工序、重複的條目怎麼併（個別間數相加／照區塊留一條不相加）、項次不同與溯源不同的不得被併 |
 | `prog-groupno.test.js` | 工序分組一律照「項次」：不同項次在同一組要偵測得到並分開、項次一致不得被拆、工序子列要顯示項次、轉入照項次併組 |
 | `prog-roomalloc.test.js` | 母專案「每一條發給誰、各幾間」：拆成工序要分道列、還沒發要扣掉自辦、超出合約要標紅 |
