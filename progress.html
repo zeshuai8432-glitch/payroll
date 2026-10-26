@@ -114,7 +114,7 @@ tr.hilite>td{animation:hlflash 1s ease-in-out 3}
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.10.26b-onlynew';
+const APP_VERSION='vG2026.10.26c-newamt';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -3150,6 +3150,9 @@ function printDoc(proj){
     // 大項的合約金額／完成計價也要逐條分開算，不能整包乘 f
     const blkAmt=cb=>cb.items.reduce((s2,x)=>s2+Math.round(x.v*fOf(x.it)),0);
     const blkCum=cb=>cb.items.reduce((s2,x)=>s2+Math.round(x.cumAmt*fOf(x.it)),0);
+    // 本期＝折讓後的累計 − 折讓後的前期（兩邊都先四捨五入才相減，才跟列上的數字一致）
+    const ciThis=ci=>Ri(ci.cumAmt,ci.it)-Ri(ci.preAmt,ci.it);
+    const blkThis=cb=>cb.items.reduce((s2,x)=>s2+ciThis(x),0);
     let h=`<div class="pdoc">
       <h2>工程估驗請款單</h2>
       <div class="sub">${esc(c.period.date)}</div>
@@ -3159,15 +3162,16 @@ function printDoc(proj){
       ${c.discount?`<tr><td style="background:#e8f0fb;color:#1e3a8a;font-weight:600">簽約總價</td><td><b>${money(c.signedTotal)}</b>　<span style="font-size:10px;color:#555">（議價後總價；本單原合約各項金額已按此比例分攤${c.Vext?'，追加工程另計不折讓':''}）</span></td></tr>`:''}
       ${c.Vext?`<tr><td style="background:#fff7e6;color:#92400e;font-weight:600">追加工程</td><td><b>${money(c.Vext)}</b>　<span style="font-size:10px;color:#555">（合約外追加，照明細單價計，不受議價折讓）</span></td></tr>`:''}</table>
       <div style="font-weight:700;font-size:12.5px;margin:8px 0 3px">一、各大項完成計價${showAll?'':(onlyNew?'（僅列本期有施作之大項）':'（僅列有進度之大項）')}</div>
-      <table><tr><th>大項</th><th class="num">合約金額</th><th class="num">累計完成計價</th><th class="num">完成%</th></tr>`;
+      <table><tr><th>大項</th><th class="num">合約金額</th><th class="num">累計完成計價</th><th class="num">完成%</th>${onlyNew?`<th class="num">本期計價</th>`:''}</tr>`;
     let hidBlk=0;
     for(const cb of c.blocks){
       if(onlyNew?!blkMoved(cb):(!showAll&&cb.cum===0)){ hidBlk++; continue; }   // 還沒進度／本期沒動 → 不印
-      h+=`<tr><td>${esc(cb.blk.name)}（${qfmt(cb.blk.count)} ${esc(cb.blk.unit)}）</td><td class="num">${money(blkAmt(cb))}</td><td class="num">${money(blkCum(cb))}</td><td class="num">${pfmt(cb.pct)}</td></tr>`;
+      h+=`<tr><td>${esc(cb.blk.name)}（${qfmt(cb.blk.count)} ${esc(cb.blk.unit)}）</td><td class="num">${money(blkAmt(cb))}</td><td class="num">${money(blkCum(cb))}</td><td class="num">${pfmt(cb.pct)}</td>${onlyNew?`<td class="num"><b>${money(blkThis(cb))}</b></td>`:''}</tr>`;
     }
     // 點工加項印出「12 工 × $2,800」，對方才看得懂這筆怎麼來的
-    for(const e of c.chargeList) h+=`<tr><td>${esc(e.label)}（加項${e.date?'，'+esc(e.date):''}）${e.days?`<span style="font-size:10px;color:#555">　${qfmt(e.days)} 工 × ${money(e.rate)}</span>`:''}</td><td class="num">${e.days?`${qfmt(e.days)} 工`:'—'}</td><td class="num">${money(e.amount)}</td><td class="num">—</td></tr>`;
-    h+=`<tr class="tot"><td>累計完成計價 合計</td><td class="num">${money((c.signedTotal||c.Vbase)+c.Vext)}</td><td class="num">${money(c.cumApplied)}</td><td class="num">${pfmt(c.V?c.itemCum/c.V:0)}</td></tr></table>`;
+    for(const e of c.chargeList) h+=`<tr><td>${esc(e.label)}（加項${e.date?'，'+esc(e.date):''}）${e.days?`<span style="font-size:10px;color:#555">　${qfmt(e.days)} 工 × ${money(e.rate)}</span>`:''}</td><td class="num">${e.days?`${qfmt(e.days)} 工`:'—'}</td><td class="num">${money(e.amount)}</td><td class="num">—</td>${onlyNew?`<td class="num">${e.periodNo===c.period.no?`<b>${money(e.amount)}</b>`:'—'}</td>`:''}</tr>`;
+    h+=`<tr class="tot"><td>累計完成計價 合計</td><td class="num">${money((c.signedTotal||c.Vbase)+c.Vext)}</td><td class="num">${money(c.cumApplied)}</td><td class="num">${pfmt(c.V?c.itemCum/c.V:0)}</td>${onlyNew?`<td class="num"><b>${money(c.blocks.reduce((s,cb)=>s+blkThis(cb),0)+c.chargeList.filter(e=>e.periodNo===c.period.no).reduce((s,e)=>s+e.amount,0))}</b></td>`:''}</tr></table>`;
+    if(onlyNew) h+=`<div style="font-size:10px;color:#666;margin:-6px 0 8px">＊「本期計價」＝本期完成計價增加數，與第四表各大項的本期小計相同。<b>「本次實請金額」請以第三表為準</b>——另有訂金扣抵、湊整等調整。</div>`;
     if(hidBlk) h+=`<div style="font-size:10px;color:#666;margin:-6px 0 8px">＊另有 ${hidBlk} 個大項${onlyNew?'本期未施作':'尚未施作（完成 0%）'}，本單未列；合計欄仍為全案合約金額。</div>`;
     // 二、已收款明細（有資料才顯示）
     if(c.receivedList.length||c.noteList.length){
@@ -3279,7 +3283,7 @@ function printDoc(proj){
       h+=`<div style="font-size:10.5px;color:#555;margin:-4px 0 8px">＊${notes.join('；')}。</div>`;
     }
     h+=`<div style="font-weight:700;font-size:12.5px;margin:10px 0 4px">四、${onlyNew?`本期施作明細（第 ${c.period.no} 期新增部分）`:`完成進度明細${showAll?'（全部項目）':'（僅列有進度之項目）'}`}</div>`;
-    if(onlyNew) h+=`<div style="font-size:10px;color:#666;margin:-2px 0 4px">＊本表僅列第 ${c.period.no} 期有施作的項目；「累計完成計價」一欄仍為各該項目自開工起之累計數。各大項與全案累計請見第一表。</div>`;
+    if(onlyNew) h+=`<div style="font-size:10px;color:#666;margin:-2px 0 4px">＊本表僅列第 ${c.period.no} 期有施作的項目，<b>完成數量、％與計價金額均為本期增加數</b>（累計數請見第一表）。</div>`;
     for(const cb of c.blocks){
       const base=proj.hideZero?cb.items.filter(ci=>ci.v>0):cb.items;
       const keep=onlyNew?movedIdsOf(cb):null;
@@ -3287,7 +3291,9 @@ function printDoc(proj){
       if(!rows.length)continue;
       const hasR=cb.blk.count>1;
       h+=`<table><tr class="bhead"><td colspan="9">${esc(cb.blk.name)}（${qfmt(cb.blk.count)} ${esc(cb.blk.unit)}）</td></tr>
-      <tr><th>項次</th><th>名稱及規格</th><th>單位</th><th class="num">數量</th><th class="num">單價</th><th class="num">總價</th><th class="num">${hasR?`完成${esc(cb.blk.unit)}數<br>（共 ${qfmt(cb.blk.count)}）`:'累計完成量'}</th><th class="num">完成%</th><th class="num">累計完成計價</th></tr>`;
+      <tr><th>項次</th><th>名稱及規格</th><th>單位</th><th class="num">數量</th><th class="num">單價</th><th class="num">總價</th><th class="num">${onlyNew
+        ?(hasR?`本期完成${esc(cb.blk.unit)}數<br>（共 ${qfmt(cb.blk.count)}）`:'本期完成量')
+        :(hasR?`完成${esc(cb.blk.unit)}數<br>（共 ${qfmt(cb.blk.count)}）`:'累計完成量')}</th><th class="num">${onlyNew?'本期%':'完成%'}</th><th class="num">${onlyNew?'本期計價金額':'累計完成計價'}</th></tr>`;
       let ch='';
       // 「列印合併名稱」：填一樣的幾條，印給工班時併成一行。
       // 資料還是逐條，發包分配照樣逐條對母專案，所以不會有哪一條假超額。
@@ -3303,7 +3309,12 @@ function printDoc(proj){
             if(it.chapter!==ch){ch=it.chapter;if(ch)h+=`<tr class="bchap"><td colspan="9">${esc(ch)}</td></tr>`;}
             const gAmt=g.reduce((a,x)=>a+Ri(x.it.amount,x.it),0);
             const gCum=g.reduce((a,x)=>a+Ri(x.cumAmt,x.it),0);
+            const gThis=g.reduce((a,x)=>a+ciThis(x),0);
             const gVal=g.reduce((a,x)=>a+x.v,0);
+            // 只印本期的時候，三個進度欄一律改成「本期增加」，否則小計跟列上的數字對不起來
+            const gShowAmt=onlyNew?gThis:gCum;
+            const gShowPct=gVal?(onlyNew?g.reduce((a,x)=>a+(x.p-x.pp)*x.v,0):gCum)/gVal:0;
+            const gShowN=gVal?g.reduce((a,x)=>a+(onlyNew?x.p-x.pp:x.p)*x.v,0)/gVal:0;
             const units=[...new Set(g.map(x=>x.it.unit))];
             const sameUnit=units.length===1;
             const gQty=sameUnit?g.reduce((a,x)=>a+(Number(x.it.qty)||0),0):null;
@@ -3315,9 +3326,9 @@ function printDoc(proj){
               <td>${sameUnit?esc(units[0]):'式'}</td>
               <td class="num">${sameUnit?qfmt(+gQty.toFixed(2)):'—'}${cnts.length===1&&hasOwnCount(g[0].it)?`<div style="font-size:9px;color:#555">× ${qfmt(cnts[0])} ${esc(cb.blk.unit)}</div>`:''}</td>
               <td class="num">—</td><td class="num">${qfmt(gAmt)}</td>
-              <td class="num">${cnts.length===1&&hasR?qfmt(+(gVal?g.reduce((a,x)=>a+x.p*x.v,0)/gVal*cnts[0]:0).toFixed(2)):'—'}</td>
-              <td class="num">${pfmt(gVal?gCum/gVal:0)}</td>
-              <td class="num">${money(gCum)}</td></tr>`;
+              <td class="num">${cnts.length===1&&hasR?qfmt(+(gShowN*cnts[0]).toFixed(2)):'—'}</td>
+              <td class="num">${pfmt(gShowPct)}</td>
+              <td class="num">${money(gShowAmt)}</td></tr>`;
             continue;
           }
         }
@@ -3334,10 +3345,12 @@ function printDoc(proj){
         const rk=printRemark(it.remark);
         h+=`<tr><td>${esc(it.no)}</td><td>${nm}${rk?`<div style="font-size:9.5px;color:#555;margin-top:1px">${esc(rk)}</div>`:''}</td><td>${esc(it.unit)}</td>
           <td class="num">${qfmt(it.qty)}${hasOwnCount(it)?`<div style="font-size:9px;color:#555">× ${qfmt(it.cnt)} ${esc(cb.blk.unit)}</div>`:''}</td><td class="num">${it.price?qfmt(+(it.price*fOf(it)).toFixed(2)):''}</td><td class="num">${qfmt(Ri(it.amount,it))}</td>
-          <td class="num">${hasR?qfmt(+(ci.p*effCount(it,cb.blk)).toFixed(2)):qfmt(pr.q||tq*ci.p)}</td><td class="num">${pfmt(ci.p)}</td>
-          <td class="num">${money(Ri(ci.cumAmt,it))}</td></tr>`;
+          <td class="num">${onlyNew
+            ?(hasR?qfmt(+((ci.p-ci.pp)*effCount(it,cb.blk)).toFixed(2)):qfmt(+(tq*(ci.p-ci.pp)).toFixed(2)))
+            :(hasR?qfmt(+(ci.p*effCount(it,cb.blk)).toFixed(2)):qfmt(pr.q||tq*ci.p))}</td><td class="num">${pfmt(onlyNew?ci.p-ci.pp:ci.p)}</td>
+          <td class="num">${money(onlyNew?ciThis(ci):Ri(ci.cumAmt,it))}</td></tr>`;
       }
-      h+=`<tr class="tot"><td colspan="8">小計</td><td class="num">${money(blkCum(cb))}</td></tr></table>`;
+      h+=`<tr class="tot"><td colspan="8">${onlyNew?'本期小計':'小計'}</td><td class="num">${money(onlyNew?blkThis(cb):blkCum(cb))}</td></tr></table>`;
       // 圖面接在這個房型的明細後面，一張一頁滿版，工班可以直接攤開對編號
       const pls=planList(proj.id,cb.blk.id);
       pls.forEach((pl,i)=>{

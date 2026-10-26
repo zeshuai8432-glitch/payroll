@@ -111,8 +111,8 @@ const nosOn=async pg=>await pg.evaluate(()=>[...new Set(
   t('④ ★ 只有本期新增的：第四表只有 6.2 與 7.1',
     /6\.2/.test(newDoc)&&/7\.1/.test(newDoc)&&!/6\.1<\/td>/.test(newDoc)&&!/8\.1/.test(newDoc));
   t('④ ★ 標題寫明是第 3 期新增部分', /本期施作明細（第 3 期新增部分）/.test(newDoc));
-  t('④ ★ 有註明累計金額欄仍是累計數（免得業主誤會）',
-    /累計完成計價」一欄仍為各該項目自開工起之累計數/.test(newDoc));
+  t('④ ★ 有註明數量與金額都是本期增加數（免得業主誤會）',
+    /完成數量、％與計價金額均為本期增加數/.test(newDoc));
   t('④ ★ 第一表只列本期有施作的大項（TYPE-S 不列）',
     /僅列本期有施作之大項/.test(newDoc)&&/TYPE-EXS/.test(newDoc)&&/TYPE-L/.test(newDoc)&&!/TYPE-S/.test(newDoc));
   t('④ 有寫出另有幾個大項本期未施作', /另有 1 個大項本期未施作/.test(newDoc));
@@ -163,6 +163,58 @@ const nosOn=async pg=>await pg.evaluate(()=>[...new Set(
   const {pg}=await open(st);
   const ids=await pg.evaluate(()=>[...movedIdsOf(calc(curProj(),1).blocks[0])]);
   t('⑥ ★ 往下修正的 6.1 算本期有動', ids.includes('i1'));
+  await pg.close();
+}
+
+// ⑦ ★ 只印本期新增時，數量／％／金額／小計都要是「本期增加數」，不是累計
+//    6.1：合約 10 間 × $300/間（qty 10㎡ × $300 = $3,000/間，共 $30,000）
+//    第1期做 4 間（40%）、第2期做到 7 間（70%）→ 本期 3 間、本期計價 $9,000
+{
+  const st={savedAt:Date.now(),tab:'prog',cur:'P',projects:[
+    {id:'P',name:'凱子-代工',taxMode:'excl',signedTotal:0,curPeriod:1,blocks:[
+      {id:'bA',name:'TYPE-EXS',unit:'間',count:10,items:[
+        {id:'i1',no:'6.1',name:'雙面隔間',unit:'㎡',qty:10,price:300,amount:3000}]}],
+     periods:[
+       {no:1,date:'2026-09-30',prog:{i1:{p:0.4}}},
+       {no:2,date:'2026-10-26',prog:{i1:{p:0.7}}}]}]};
+  const {pg,errs}=await open(st);
+  await pg.evaluate(()=>printDoc(curProj())); await pg.waitForTimeout(400);
+
+  await pg.selectOption('#pscope','done'); await pg.waitForTimeout(300);
+  const doneTxt=await pg.textContent('.pcontent');
+  t('⑦ 累計模式：欄位是「累計完成計價」、小計 $21,000（7 間）',
+    /累計完成計價/.test(doneTxt)&&/\$21,000/.test(doneTxt));
+
+  await pg.selectOption('#pscope','new'); await pg.waitForTimeout(300);
+  const newTxt=await pg.textContent('.pcontent');
+  t('⑦ ★ 欄位標題改成本期（本期完成間數／本期%／本期計價金額）',
+    /本期完成間數/.test(newTxt)&&/本期%/.test(newTxt)&&/本期計價金額/.test(newTxt));
+  const sub=await pg.evaluate(()=>{
+    const tbs=[...document.querySelectorAll('.pcontent table')];
+    const tb=tbs[tbs.length-1];
+    const tr=[...tb.querySelectorAll('tr.tot')].pop();
+    return [...tr.children].map(td=>td.textContent.trim());
+  });
+  t('⑦ ★ 第四表小計是本期的 $9,000，不是累計的 $21,000',
+    sub[0]==='本期小計'&&sub[1]==='$9,000');
+  const cells=await pg.evaluate(()=>{
+    const tbs=[...document.querySelectorAll('.pcontent table')];
+    const tb=tbs[tbs.length-1];
+    const tr=[...tb.querySelectorAll('tr')].find(r=>r.children[0]&&r.children[0].textContent.trim()==='6.1');
+    return [...tr.children].map(td=>td.textContent.trim());
+  });
+  t('⑦ ★ 本期完成間數＝3（10 間裡這期做 3 間）', cells[6]==='3');
+  t('⑦ ★ 本期%＝30%（70%−40%）', /^30(\.0)?%$/.test(cells[7]));
+  t('⑦ ★ 本期計價金額＝$9,000', cells[8]==='$9,000');
+  t('⑦ 合約的數量／單價／總價三欄沒被動到（10／300／3,000 每間）',
+    cells[3].startsWith('10')&&cells[4]==='300'&&cells[5]==='3,000');
+  t('⑦ ★ 第一表多一欄「本期計價」且金額相同（$9,000）',
+    /本期計價/.test(newTxt)&&(newTxt.match(/\$9,000/g)||[]).length>=2);
+  t('⑦ ★ 有註明「本次實請金額請以第三表為準」',
+    /「本次實請金額」請以第三表為準/.test(newTxt));
+  t('⑦ 累計那欄還在（$21,000 仍列在第一表）',
+    /累計完成計價/.test(newTxt)&&/21,000/.test(newTxt));
+  t('⑦ 沒有 JS 錯誤', errs.length===0);
   await pg.close();
 }
 
