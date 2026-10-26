@@ -43,6 +43,7 @@ NODE_PATH=/opt/node22/lib/node_modules /opt/node22/bin/node prog-smoke2.test.js
 | `prog-printas.test.js` | 多條細項在請款單上併成一行（資料仍逐條，發包分配不受影響） |
 | `prog-printas2.test.js` | 印作要跟著發包走、單條當純改名用、批次設定（代工母專案一條對一條不動結構） |
 | `prog-mergeprint.test.js` | 同一廠商在別的案場／零星工程的金額，可併入同一張請款單列印（帳不混） |
+| `prog-onlynew.test.js` | 進度請款「只看本期有動的」：畫面篩選（講出藏了幾條、一鍵顯示全部、要填新的得先關掉）、拆開的工序整組留著、往下修正也算有動、列印三段式「印哪些項目」且金額照舊累計（`progress.html`） |
 | `wage-measqty.test.js` | payroll 計量明細：隔間㎡ 的數量可切手動輸入（`payroll.html`） |
 | `wage-measlist.test.js` | payroll 計量明細當廠商對圖面的清單：單價可留空、案場可手動輸入、數量可填算式且算式留著（`payroll.html`） |
 | `wage-measgrid.test.js` | payroll 計量明細批次輸入表格：按一下多一列、寬×高自動算面積並存下尺寸、即時小計、壞的列跳過、案場不被重繪清掉、整份沒單價時匯出不印金額與稅額（`payroll.html`） |
