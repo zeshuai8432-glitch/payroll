@@ -114,7 +114,7 @@ tr.hilite>td{animation:hlflash 1s ease-in-out 3}
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.10.05c-xfernofix';
+const APP_VERSION='vG2026.10.26a-stagename';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -930,15 +930,25 @@ const projectSplitRuns = proj => proj.blocks.reduce((s,b)=>s+detectSplitRuns(b).
 // detectSplitRuns 只看「連續且都沒群組」的，永遠認不出它 —— 使用者沒有路把它收回去。
 function strayStagesOf(b){
   const pre=n=>{ const i=String(n||'').lastIndexOf('-'); return i>0?String(n).slice(0,i):null; };
-  const groups={};
-  ((b&&b.items)||[]).forEach(x=>{ if(x.groupId&&x.groupName&&!groups[normName(x.groupName)])
-    groups[normName(x.groupName)]={gid:x.groupId,name:x.groupName}; });
+  const noOf=it=>{ const n=String(it&&it.no||'').trim(); return (n===''||n==='增')?'':n; };
+  const groups={}, byNo={};
+  ((b&&b.items)||[]).forEach(x=>{
+    if(!x.groupId||!x.groupName) return;
+    const k=normName(x.groupName);
+    if(!groups[k]) groups[k]={gid:x.groupId,name:x.groupName};
+    const n=noOf(x); if(n&&!byNo[n]) byNo[n]={gid:x.groupId,name:x.groupName};
+  });
   const out=[];
   ((b&&b.items)||[]).forEach(it=>{
     if(it.groupId) return;
-    const p=pre(it.name); if(!p) return;
-    const g=groups[normName(p)]; if(!g) return;
-    out.push({it,gid:g.gid,name:g.name,stage:String(it.name).slice(p.length+1)});
+    const p=pre(it.name);
+    // 先比名稱前綴；對不上就比項次——名稱被疊過一次的（「群組名；…-骨架」）
+    // 前綴永遠對不上，但項次是合約給的，一定還對得上。
+    const g=(p&&groups[normName(p)])||byNo[noOf(it)];
+    if(!g) return;
+    let stage=p?String(it.name).slice(p.length+1):String(it.name||'');
+    if(!stage) stage=String(it.name||'');
+    out.push({it,gid:g.gid,name:g.name,stage});
   });
   return out;
 }
@@ -3984,9 +3994,12 @@ document.addEventListener('click',async e=>{
     const b=proj.blocks.find(x=>x.id===t.dataset.groupjoin); if(!b) return;
     const st=strayStagesOf(b); if(!st.length){ alert('沒有落單的工序。'); return; }
     if(!confirm(`把這 ${st.length} 條收回原本的工序群組？\n\n`
-      +st.map(x=>`・${x.stage} → 收回「${x.name}」`).join('\n')
-      +`\n\n只改分組，數量、單價、金額、進度一律不動。`)) return;
-    st.forEach(x=>{ x.it.groupId=x.gid; x.it.groupName=x.name; });
+      +st.map(x=>`・${x.stage} → 收回「${x.name}」${x.it.name!==`${x.name}-${x.stage}`?`\n　 名稱順便修正成「${x.name}-${x.stage}」`:''}`).join('\n')
+      +`\n\n只改分組與名稱，數量、單價、金額、進度一律不動。`)) return;
+    // 名稱也一起修正成「群組名-工序名」：只設 groupName 不改 name 會留下不一致，
+    // 下次從收合行改名時 stageOf 又對不上，名稱就再疊一次。
+    st.forEach(x=>{ x.it.groupId=x.gid; x.it.groupName=x.name;
+      x.it.name=x.stage?`${x.name}-${x.stage}`:x.name; });
     save(); render();
     alert(`已收回 ${st.length} 條。點收合行左邊的 ▸ 可以展開確認。`);
     return;
@@ -4660,9 +4673,17 @@ document.addEventListener('change',e=>{
     if(nv===old){ return; }
     const changes=subs.map(x=>({it:x,before:{name:x.name,unit:x.unit,qty:x.qty,price:x.price}}));
     subs.forEach(x=>{
-      const st=stageOf(x.name,old);          // 原本的工序名（骨架／封板…）
+      // stageOf 要求名稱完全以舊群組名開頭；對不上時它會回傳「整個名稱」，
+      // 於是新名變成「新群組名-舊整串」——名稱整段疊兩次，而且之後連
+      // 「收回落單的工序」都對不上（它比的是名稱前綴），就再也合不回去。
+      // 對不上時退而取最後一個「-」後面那段當工序名。
+      let st=stageOf(x.name,old);
+      if(st===x.name){
+        const i=String(x.name||'').lastIndexOf('-');
+        if(i>0) st=String(x.name).slice(i+1);
+      }
       x.groupName=nv;
-      x.name=st?`${nv}-${st}`:nv;
+      x.name=st&&st!==x.name?`${nv}-${st}`:nv;
     });
     syncKidsAfterEdit(proj,changes);
     save(); render(); return;
