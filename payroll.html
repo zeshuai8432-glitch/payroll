@@ -528,7 +528,7 @@ const FS_ROOT = 'https://firestore.googleapis.com/v1/projects/'+FS_PROJECT+'/dat
 const FS_DOC_BASE = FS_ROOT+'payroll/';
 const FS_SIG_BASE = FS_ROOT+'payrollSignatures/';
 const FS_REST_URL = FS_DOC_BASE+'main?key='+FS_KEY;
-const APP_VERSION = 'v2026.10.04f-measgrp';
+const APP_VERSION = 'v2026.10.04g-meassort';
 let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], tools:[], locations:[], assets:[], advances:[], accounts:[], ledger:[], deals:[], billings:[], measurements:[], contracts:{}, costs:[], textMemory:{clients:[],companies:[]}, parkAccId:'', oweBonus:{}, minFund:'', shareholderTx:[], myCompanies:[], payrollSnapshots:[], yearIncomeAdj:[], deletedIds:[], resurrected:{ids:[],at:0}, tab:'dash' };
 let cloudStatus='連線中…';
 let localDirty=false, lastCloudTs=0;
@@ -657,6 +657,29 @@ function measPrefixSummary(rows){
   });
   return Object.values(g).sort((a,b)=>a.key.localeCompare(b.key,undefined,{numeric:true}));
 }
+// 項目開頭那段圖面編號（A、A1、A12、B3、D1-2…）。排序用，抓不出來的回空字串。
+const measCodeOf=it=>{
+  const pre=measPrefixOf(it); if(!pre) return '';
+  const s=String((it&&it.item)||'').trim();
+  const m=s.slice(pre.length).match(/^\s*(\d+(?:[-.]\d+)*)/);
+  return pre+(m?m[1]:'');
+};
+// 照編號自然排序：A < A1 < A2 < A10 < A11 < B。
+// numeric 的 localeCompare 會把 A2 排在 A10 前面（純字串比是反的），
+// 純字母的「A」也自然排在「A1」前面。沒有編號的排最後。
+const measCodeCompare=(a,b)=>{
+  const ca=measCodeOf(a), cb=measCodeOf(b);
+  if(!ca!==!cb) return ca?-1:1;
+  return (ca&&cb?ca.localeCompare(cb,undefined,{numeric:true}):0)
+    || String(a.item||'').localeCompare(String(b.item||''))
+    || String(a.date||'').localeCompare(String(b.date||''));
+};
+// 明細排序：'code'＝照編號（給廠商對圖面用，預設），'date'＝照日期新的在上
+const measListCompare=(a,b)=>measSortMode==='date'
+  ? (String(b.date||'').localeCompare(String(a.date||''))
+     ||String(a.site||'').localeCompare(String(b.site||''))
+     ||measCodeCompare(a,b))
+  : measCodeCompare(a,b);
 const measPrefixQtyText=e=>Object.keys(e.units).sort()
   .map(u=>`${e.units[u].toLocaleString()} ${u}`).join(' ＋ ');
 function measPrefixStripHtml(rows){
@@ -4832,6 +4855,7 @@ function bind(){
   const mse=document.getElementById('meas-show-expr'); if(mse) mse.onchange=()=>{ measShowExpr=mse.checked; };
   const mhb=document.getElementById('meas-hide-billed'); if(mhb) mhb.onchange=()=>{ measHideBilled=mhb.checked; try{localStorage.setItem('pm_meas_hidebilled',measHideBilled?'1':'0');}catch(e){} render(); };
   const mtm=document.getElementById('meas-tax-mode'); if(mtm) mtm.onchange=()=>{ measTaxMode=mtm.value; try{localStorage.setItem('pm_meas_taxmode',measTaxMode);}catch(e){} };
+  const msr=document.getElementById('meas-sort'); if(msr) msr.onchange=()=>{ measSortMode=msr.value; try{localStorage.setItem('pm_meas_sort',measSortMode);}catch(e){} render(); };
   bindBillingSubtotal('bnr'); bindBillingSubtotal('bna'); bindBillingSubtotal('bae'); bindMeasSubtotal();
   bindSiteClientAutofill('bnr-site','bnr-client');
   bindSiteClientAutofill('bna-site','bna-client');
@@ -6604,6 +6628,8 @@ let measPasteOpen=false;                   // 貼上區（次要入口，預設�
 let measRows=null;                         // 批次輸入表格：每個元素一列
 let measHideBilled=false; try{ measHideBilled=localStorage.getItem('pm_meas_hidebilled')==='1'; }catch(e){} // 隱藏已帶入請款的計量（預設關）
 let measTaxMode='none'; try{ measTaxMode=localStorage.getItem('pm_meas_taxmode')||'none'; }catch(e){} // 計量明細 PDF 稅別：none/incl(外加5%)/ded(內扣3%)
+// 計量明細排序：預設照編號——這份清單是拿來給廠商對圖面的，A1 之後就要接 A2
+let measSortMode='code'; try{ const v=localStorage.getItem('pm_meas_sort'); if(v==='date'||v==='code') measSortMode=v; }catch(e){}
 const measIsBilled = m => !!(m&&m.billedTo&&state.billings.some(b=>b.id===m.billedTo));
 let costEditId=null; // 手動成本編輯中
 let siteSettingsOpen={}; // 案場設定展開狀態
@@ -7242,7 +7268,7 @@ function viewMeasurements(){
   const mdType=measDraft?(measDraft.measureType||'partition'):(measKeep?measKeep.measureType:'partition');
   const mdAutoArea=measDraft&&mdType==='partition'&&measDraft.unit==='㎡'&&!measDraft.qtyManual;
   const mdQty=measDraft?(mdAutoArea?'':(measDraft.qtyExpr||(Number(measDraft.count)>1&&measDraft.perQty?measDraft.perQty:measDraft.qty))):'';
-  const list=[...state.measurements].sort((a,b)=>(b.date||'').localeCompare(a.date||'')||(a.site||'').localeCompare(b.site||''));
+  const list=[...state.measurements].sort(measListCompare);
   const grandTotal=list.reduce((s,m)=>s+(Number(m.qty)||0)*(Number(m.unitPrice)||0),0);
 
   const bysite={};
@@ -7378,6 +7404,7 @@ function viewMeasurements(){
     <button class="act" id="export-meas-sel" style="height:36px;padding:0 14px" ${list.some(m=>measSel[m.id])?'':'disabled style="opacity:.5"'}>匯出勾選 PDF</button>
     <button class="act" id="meas-tobill" style="height:36px;padding:0 14px;border:1px solid var(--accent);color:var(--accent)" ${list.some(m=>measSel[m.id])?'':'disabled style="opacity:.5"'}>勾選帶入請款單 →</button>
     <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--muted);cursor:pointer;white-space:nowrap"><input type="checkbox" id="meas-hide-billed" ${measHideBilled?'checked':''} style="width:15px;height:15px">隱藏已請款${(()=>{const n=list.filter(measIsBilled).length;return n?`（${n}）`:'';})()}</label>
+    <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--muted);white-space:nowrap">排序 <select id="meas-sort" style="height:30px;border:1px solid var(--line);border-radius:6px;font-size:12px"><option value="code" ${measSortMode==='code'?'selected':''}>照編號 A→A1→A2→B</option><option value="date" ${measSortMode==='date'?'selected':''}>照日期（新的在上）</option></select></label>
     <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--muted);white-space:nowrap">稅別 <select id="meas-tax-mode" style="height:30px;border:1px solid var(--line);border-radius:6px;font-size:12px"><option value="none" ${measTaxMode==='none'?'selected':''}>無</option><option value="incl" ${measTaxMode==='incl'?'selected':''}>含稅（外加5%）</option><option value="ded" ${measTaxMode==='ded'?'selected':''}>內扣（扣3%）</option></select></label>
     <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--muted);cursor:pointer;white-space:nowrap"><input type="checkbox" id="meas-show-expr" ${measShowExpr?'checked':''} style="width:15px;height:15px">PDF 顯示算式（數量／單價）</label>
     <span class="sub" style="margin:0">可展開案場後勾選指定明細匯出。</span>
@@ -7432,7 +7459,11 @@ function viewMeasurements(){
 }
 
 function exportMeasurementsPDF(selectedOnly=false){
-  let list=[...state.measurements].sort((a,b)=>(a.site||'').localeCompare(b.site||'')||(a.date||'').localeCompare(b.date||''));
+  // 匯出跟畫面同一個排序開關；日期模式維持原本的「案場→日期」
+  let list=[...state.measurements].sort((a,b)=>
+    String(a.site||'').localeCompare(String(b.site||''))
+    ||(measSortMode==='date'?String(a.date||'').localeCompare(String(b.date||'')):0)
+    ||measCodeCompare(a,b));
   if(selectedOnly) list=list.filter(m=>measSel[m.id]);
   if(list.length===0){ alert(selectedOnly?'尚未勾選任何計量明細':'尚無可匯出的計量明細'); return; }
   const bysite={};
