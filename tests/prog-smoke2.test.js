@@ -62,7 +62,7 @@ const seed={ projects:[
   await p.waitForTimeout(500);
   ok(!!(await p.$('[data-xfer="ab1::ag1"]')),'拆開的工序子列有「轉出」');
   await p.click('[data-xfer="ab1::ag1"]'); await p.waitForTimeout(500);
-  await p.fill('#xf-move','4'); await p.selectOption('#xf-to','kB');
+  await p.fill('#xf-rooms','4'); await p.selectOption('#xf-to','kB');
   await p.click('[data-xferok="ab1::ag1"]'); await p.waitForTimeout(900);
   const x=await p.evaluate(()=>{const A=state.projects.find(v=>v.id==='kA'),B=state.projects.find(v=>v.id==='kB');
     return {a:effCount(A.blocks[0].items.find(i=>i.id==='ag1'),A.blocks[0]),

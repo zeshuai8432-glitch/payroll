@@ -59,7 +59,8 @@ const alloc=pg=>pg.evaluate(()=>{
   t('① 接手方拿到 2 間、單價照填的 280', r.it.cnt===2&&r.it.price===280);
   t('① 溯源跟著走（發包分配對得回母專案）', r.it.srcId==='m1');
   t('① 列印合併名稱也跟著走', r.it.printAs==='雙面隔間');
-  t('① 留痕在 xlog，不在備註', /自 東澤 接手 2 間/.test((r.it.xlog||[]).join('；'))&&!/接手/.test(r.it.remark||''));
+  t('① 留痕在 xlog，不在備註（量為主、間數在括號）',
+    /自 東澤 接手 20 ㎡（約 2 間）/.test((r.it.xlog||[]).join('；'))&&!/接手/.test(r.it.remark||''));
   t('① 來源同步減成 4 間（是搬量不是複製）', r.tcnt===4);
   t('① 沒有 JS 錯誤', errs.length===0);
   await pg.close();
@@ -79,9 +80,10 @@ const alloc=pg=>pg.evaluate(()=>{
   t('② 三條都列出來', await pg.locator('[data-ximove]').count()===3);
   t('② 顯示最多可轉 6 間', /最多可轉/.test(p));
 
-  // 只轉兩條：雙面隔間 2 間、壁龕 6 間（整條轉光）
-  await pg.fill('[data-ximove="t1"]','2');
-  await pg.fill('[data-ximove="t2"]','6');
+  // 只轉兩條。畫面現在照「這條自己的單位」填：
+  // 雙面隔間 2 間 ＝ 20 ㎡（每間 10）、壁龕 6 間 ＝ 15 ㎡（每間 2.5，整條轉光）
+  await pg.fill('[data-ximove="t1"]','20');
+  await pg.fill('[data-ximove="t2"]','15');
   await pg.click('[data-xferinok="bC"]'); await pg.waitForTimeout(700);
 
   const r=await pg.evaluate(()=>{
@@ -95,11 +97,11 @@ const alloc=pg=>pg.evaluate(()=>{
       trash:(T.trash||[]).length};
   });
   t('③ 只搬了勾的兩條，走道天花沒動（6 間）', r.t3===6);
-  t('③ 雙面隔間：東澤剩 4', r.t1===4);
+  t('③ 雙面隔間：東澤剩 4', Math.abs(r.t1-4)<1e-6);
   t('③ 壁龕整條轉光 → 從東澤移除', !r.tIds.includes('t2'));
   t('③ 而且丟進東澤的回收桶（按錯救得回來）', r.trash===1);
   t('③ 阿華拿到兩條', r.cItems.length===2);
-  t('③ 間數正確（2 ／ 6）', r.cItems[0].cnt===2&&r.cItems[1].cnt===6);
+  t('③ 間數正確（2 ／ 6）', Math.abs(r.cItems[0].cnt-2)<1e-6&&Math.abs(r.cItems[1].cnt-6)<1e-6);
 
   // 最關鍵：母專案的發包總額不能變（搬量守恆）
   const after=await alloc(pg);
@@ -123,27 +125,27 @@ const alloc=pg=>pg.evaluate(()=>{
   const p=await pg.textContent('.card[style*="56,189,248"]');
   t('⑤ 面板上就顯示對方已做 5 間', /\b5\b/.test(p));
   const mx=await pg.getAttribute('[data-ximove="t1"]','data-ximax');
-  t('⑤ 最多可轉只剩 1 間（6 − 已做 5）：'+mx, Math.abs(Number(mx)-1)<0.001);
+  t('⑤ 最多可轉只剩 1 間＝10 ㎡（6 − 已做 5）：'+mx, Math.abs(Number(mx)-10)<0.001);
 
   // 試著轉 3 間 → 必須被擋，而且什麼都不能動
   let msg='';
   pg.removeAllListeners('dialog');
   pg.on('dialog',async d=>{ msg=d.message(); await d.dismiss(); });
-  await pg.fill('[data-ximove="t1"]','3');
+  await pg.fill('[data-ximove="t1"]','30');   // 30 ㎡ ＝ 3 間，超過上限 10 ㎡
   await pg.click('[data-xferinok="bC"]'); await pg.waitForTimeout(500);
-  t('⑥ 擋下來並說清楚上限：'+msg.slice(0,34).replace(/\n/g,' '), /最多只能轉 1 間/.test(msg));
+  t('⑥ 擋下來並說清楚上限：'+msg.slice(0,40).replace(/\n/g,' '), /最多只能轉 10 ㎡（約 1 間）/.test(msg));
   const r=await pg.evaluate(()=>{
     const T=state.projects.find(p=>p.id==='T'), C=state.projects.find(p=>p.id==='C');
     return {t1:effCount(T.blocks[0].items.find(x=>x.id==='t1'),T.blocks[0]),
             c:C.blocks[0].items.length};
   });
-  t('⑥ 被擋時一條都沒搬（不會搬一半）', r.t1===6&&r.c===0);
+  t('⑥ 被擋時一條都沒搬（不會搬一半）', Math.abs(r.t1-6)<1e-6&&r.c===0);
 
   // 「全部填滿上限」只會填到合法上限
   pg.removeAllListeners('dialog');
   pg.on('dialog',async d=>{ await d.accept(); });
   await pg.click('[data-xferinall="bC"]'); await pg.waitForTimeout(200);
-  t('⑦ 全部填滿上限：雙面隔間填 1，不是 6', await pg.inputValue('[data-ximove="t1"]')==='1');
+  t('⑦ 全部填滿上限：雙面隔間填 10 ㎡（＝1 間），不是 60', await pg.inputValue('[data-ximove="t1"]')==='10');
   await pg.click('[data-xferinok="bC"]'); await pg.waitForTimeout(700);
   const r2=await pg.evaluate(()=>{
     const T=state.projects.find(p=>p.id==='T');
@@ -173,9 +175,9 @@ const alloc=pg=>pg.evaluate(()=>{
   });
   t('⑧ 累加成一條，不會變成兩條', twice.n===1);
   t('⑧ 間數累加正確（6）', twice.cnt===6);
-  t('⑧ xlog 記了第一次', /自 東澤 接手 3 間/.test(twice.rk));
+  t('⑧ xlog 記了第一次', /自 東澤 接手 30 ㎡（約 3 間）/.test(twice.rk));
   t('⑧ 也記了第二次與累計總數：'+twice.rk.split('；').pop(),
-    /再接手 3 間（原 3，共 6 間）/.test(twice.rk));
+    /再接手 30 ㎡（約 3 間）（原 30 ㎡，共 60 ㎡（約 6 間））/.test(twice.rk));
   t('⑧ 備註完全乾淨（所以列印也看不到）', twice.printed==='');
   await pg.close();
 }
@@ -268,9 +270,9 @@ const alloc=pg=>pg.evaluate(()=>{
     return {srcRk:src.remark||'',srcLog:src.xlog||[],dstRk:dst.remark||'',dstLog:dst.xlog||[]};
   });
   t('⑫ 來源備註只剩自己寫的（圖面編號）：'+r.srcRk, r.srcRk==='圖面編號D1/F1');
-  t('⑫ 轉出紀錄存在 xlog（2 筆）', r.srcLog.length===2&&/轉 2 間 給 阿華/.test(r.srcLog[0]));
+  t('⑫ 轉出紀錄存在 xlog（2 筆）', r.srcLog.length===2&&/轉 20 ㎡（約 2 間） 給 阿華/.test(r.srcLog[0]));
   t('⑫ 接手方備註帶自己寫的、不帶系統紀錄', r.dstRk==='圖面編號D1/F1'&&!/接手/.test(r.dstRk));
-  t('⑫ 接手方 xlog 有建立與累加兩筆', r.dstLog.length===2&&/再接手 1 間（原 2，共 3 間）/.test(r.dstLog[1]));
+  t('⑫ 接手方 xlog 有建立與累加兩筆', r.dstLog.length===2&&/再接手 10 ㎡（約 1 間）（原 20 ㎡，共 30 ㎡（約 3 間））/.test(r.dstLog[1]));
 
   // 畫面上：備註欄沒有系統文字，名稱旁有 ⇄ 小標籤
   await pg.evaluate(()=>{ state.cur='T'; state.tab='items'; openBlk.add('bT'); render(); });
@@ -361,7 +363,7 @@ const alloc=pg=>pg.evaluate(()=>{
   await pg.click('[data-xferin="bC"]'); await pg.waitForTimeout(350);
   let msg=''; pg.removeAllListeners('dialog');
   pg.on('dialog',async d=>{ msg=d.message(); await d.dismiss(); });
-  await pg.fill('[data-ximove="t1"]','2');
+  await pg.fill('[data-ximove="t1"]','20');               // 20 ㎡ ＝ 2 間
   await pg.fill('[data-xiprice="t1"]','壹肆零');          // 打錯：完全不是數字
   await pg.click('[data-xferinok="bC"]'); await pg.waitForTimeout(500);
   t('⑰ ★ 單價看不懂會擋下來，不會默默變 0', /單價看不懂：壹肆零/.test(msg)&&/留空＝照對方的單價/.test(msg));
@@ -382,7 +384,7 @@ const alloc=pg=>pg.evaluate(()=>{
   t('⑱ ★ 自動取消「隱藏 0 元項目」，不然看不到它', r2.hide===false);
   t('⑱ ★ 而且畫面上真的看得到那一列', r2.row===true);
   t('⑱ 訊息講明進到哪個區塊、現在幾間、以及為什麼取消隱藏',
-    msgs.some(m=>/轉入 1 條到「TYPE-EXS」/.test(m)&&/拿到 2 間/.test(m)&&/取消「隱藏 0 元項目」/.test(m)));
+    msgs.some(m=>/轉入 1 條到「TYPE-EXS」/.test(m)&&/拿到 20 ㎡（約 2 間）/.test(m)&&/取消「隱藏 0 元項目」/.test(m)));
   await pg.close();
 }
 
@@ -396,11 +398,11 @@ const alloc=pg=>pg.evaluate(()=>{
   await pg.click('[data-xferin="bC"]'); await pg.waitForTimeout(350);
   const msgs=[]; pg.removeAllListeners('dialog');
   pg.on('dialog',async d=>{ msgs.push(d.message()); await d.accept(); });
-  await pg.fill('[data-ximove="t1"]','2');
+  await pg.fill('[data-ximove="t1"]','20');   // 20 ㎡ ＝ 2 間
   await pg.click('[data-xferinok="bC"]'); await pg.waitForTimeout(700);
-  t('⑲ 累加時講「併進原本那條，現在共 5 間」',
-    msgs.some(m=>/併進原本那條，現在共 5 間/.test(m)));
-  t('⑲ 間數真的變 5', await pg.evaluate(()=>effCount(state.projects[2].blocks[0].items[0],state.projects[2].blocks[0]))===5);
+  t('⑲ 累加時講「併進原本那條，現在共 50 ㎡（約 5 間）」',
+    msgs.some(m=>/併進原本那條，現在共 50 ㎡（約 5 間）/.test(m)));
+  t('⑲ 間數真的變 5', Math.abs(await pg.evaluate(()=>effCount(state.projects[2].blocks[0].items[0],state.projects[2].blocks[0]))-5)<1e-6);
   t('⑲ 區塊自動展開（看得到結果）', await pg.evaluate(()=>openBlk.has('bC')));
   await pg.close();
 }

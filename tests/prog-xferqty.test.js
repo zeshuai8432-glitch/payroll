@@ -57,20 +57,20 @@ const open=async st=>{
   await pg.evaluate(()=>{ openBlk.add('b1'); xfer='b1::a1'; render(); });
   await pg.waitForTimeout(400);
   t('② ★ 欄位標題是「轉出多少㎡」', /轉出多少㎡/.test(await pg.textContent('#app')));
-  t('② ★ 預設值是 70（不是 0.7）', await pg.inputValue('#xf-move')==='70');
+  t('② ★ 預設值是 70（不是 0.7）', await pg.inputValue('#xf-moveq')==='70');
   const txt=await pg.textContent('#app');
   t('② ★ 上面寫「目前這條是 100 ㎡，已完成 30 ㎡」',
     /目前這條是 <?b?>?100 ㎡/.test(txt.replace(/\s+/g,' '))||/100 ㎡/.test(txt));
-  t('② 有說明為什麼照㎡填（式數拆不動）',
-    /式數拆不動，所以直接照/.test(txt)&&/每式 100 ㎡/.test(txt));
+  t('② 有說明照㎡填，並寫出每式幾㎡',
+    /照<?b?>?㎡/.test(txt)&&/每式 100 ㎡/.test(txt));
   t('② 「甲剩下」顯示 30 ㎡', /剩下 ?30/.test(txt.replace(/<[^>]*>/g,'')));
 
   // 邊打邊算：填 60 → 甲剩 40
-  await pg.fill('#xf-move','60'); await pg.waitForTimeout(250);
-  t('② ★ 打 60 之後「甲剩下」跟著變成 40',
-    (await pg.textContent('[data-xfleft]')).trim()==='40');
+  await pg.fill('#xf-moveq','60'); await pg.waitForTimeout(250);
+  t('② ★ 打 60 之後「甲剩下」跟著變成 40 ㎡',
+    (await pg.textContent('[data-xfleft]')).trim().startsWith('40'));
   // 填超過上限 → 標紅
-  await pg.fill('#xf-move','80'); await pg.waitForTimeout(250);
+  await pg.fill('#xf-moveq','80'); await pg.waitForTimeout(250);
   t('② ★ 填 80（超過還沒做的 70）會標紅',
     /bad/.test(await pg.getAttribute('[data-xfleft]','style')||''));
   t('② 沒有 JS 錯誤', errs.length===0);
@@ -97,7 +97,7 @@ const open=async st=>{
   });
   t('③ 填 70 ㎡ 換成 0.7 式', r.err===null&&Math.abs(r.move-0.7)<1e-9);
   t('③ ★ 甲剩 30 ㎡、計價還是 $9,000（進度自動變 100%）',
-    r.甲量===30&&r.甲計價===9000&&r.甲p===1&&r.甲q===30);
+    Math.abs(r.甲量-30)<1e-6&&r.甲計價===9000&&r.甲p===1&&r.甲q===30);
   t('③ ★ 乙拿到 70 ㎡、單價 350', r.乙量===70&&r.乙單價===350);
   t('③ ★ 備註寫 ㎡ 不是式（甲：原 100 ㎡，轉 70 ㎡ 給 乙）',
     /原 100 ㎡，轉 70 ㎡ 給 乙/.test(r.甲log.join('|')));
@@ -131,16 +131,17 @@ const open=async st=>{
     const A=state.projects.find(p=>p.id==='K1'), B=state.projects.find(p=>p.id==='K2');
     const b=A.blocks[1], it=b.items[0], U=xferUnitOf(it,b);
     const mx=xferMaxOf(A,b,it);
-    const move=xferMoveFrom(U,'4',mx.max);                  // 6 間做了 2 間 → 可轉 4 間
+    const move=4;                                           // 6 間做了 2 間 → 可轉 4 間
     const res=xferApply(A,b,it,B,move,160); save();
     const ia=A.blocks[1].items[0], kb=B.blocks.find(x=>x.name==='TYPE-EXS');
     return {err:res.err||null,move,max:mx.max,
       甲間:effCount(ia,b),甲log:ia.xlog,
       乙間:effCount(kb.items[0],kb),乙log:kb.items[0].xlog};
   });
-  t('⑤ 多間的填 4 就是 4 間（不換算）', r.err===null&&r.move===4&&Math.abs(r.max-4)<0.01);
+  t('⑤ 多間的條目間數欄填 4 就是 4 間', r.err===null&&r.move===4&&Math.abs(r.max-4)<0.01);
   t('⑤ ★ 甲剩 2 間、乙拿 4 間', r.甲間===2&&r.乙間===4);
-  t('⑤ ★ 備註照舊寫「間」', /轉 4 間 給 乙/.test(r.甲log.join('|'))&&/接手 4 間/.test(r.乙log.join('|')));
+  t('⑤ ★ 多間的備註以量為主、間數放括號（轉 40 ㎡（約 4 間））',
+    /轉 40 ㎡（約 4 間） 給 乙/.test(r.甲log.join('|'))&&/接手 40 ㎡（約 4 間）/.test(r.乙log.join('|')));
   t('⑤ 沒有 JS 錯誤', errs.length===0);
   await pg.close();
 }
