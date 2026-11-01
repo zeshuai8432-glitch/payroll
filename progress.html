@@ -114,7 +114,7 @@ tr.hilite>td{animation:hlflash 1s ease-in-out 3}
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.11.01f-qtyfirst';
+const APP_VERSION='vG2026.11.01g-qtyonly';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -2391,8 +2391,11 @@ function viewProg(proj){
         <button class="btn sm" data-gapply="${b.id}" style="background:#059669;border-color:#059669">＋ 加進來並記為完成</button>
         <span class="muted" style="font-size:12px">合約${esc(b.unit)}數 ${qfmt(b.count)} → 加完變 <b data-gnew="${b.id}">${qfmt(b.count)}</b>，本期累計完成也一併補到滿。舊期已請的金額不動。</span></div>`;
     }
-    const hasR=b.count>1;const cols=hasR?9:9;
-    h+=`<table><tr><th>項次</th><th>名稱及規格</th><th>單位</th><th class="num">數量</th><th class="num">單價</th><th class="num">前期%</th><th class="num" title="${hasR?`這個區塊有 ${qfmt(b.count)} ${b.unit}，填「做完幾${b.unit}」比較快；系統換算成％`:`這個區塊只有 1 ${b.unit}，沒有間數可填，所以直接填累計完成的量（${esc(b.items[0]&&b.items[0].unit||'量')}）`}">${hasR?`完成${esc(b.unit)}數<br><span style="font-weight:400;text-transform:none;letter-spacing:0">（${sp.mixed||sp.empty?`共 ${qfmt(bCnt)} ${esc(b.unit)}`:`共 ${qfmt(sp.n)} ${esc(b.unit)}${sp.n!==bCnt?`，合約 ${qfmt(bCnt)}`:''}`}${ownCountItems(b).length?`，另計的看 <b style="color:#6ee7b7">/N</b>`:''}）</span>`:`累計完成量<br><span style="font-weight:400;text-transform:none;letter-spacing:0">（照單位填）</span>`}</th><th class="num">累計%</th><th class="num">本期金額</th></tr>`;
+    // 一律填「累計完成量」（照每一條自己的單位：㎡、孔、式…）。
+    // 原本多間的區塊是填「做完幾間」，但那只適用客房；而且一間只做一半時就得填
+    // 0.4545 這種除不盡的比例。量才是他在工地量得出來的數字。
+    const cols=9;
+    h+=`<table><tr><th>項次</th><th>名稱及規格</th><th>單位</th><th class="num">數量</th><th class="num">單價</th><th class="num">前期%</th><th class="num" title="填累計做到多少（照這一條自己的單位）；系統自己換算成％">累計完成量<br><span style="font-weight:400;text-transform:none;letter-spacing:0">（照單位填${bCnt>1?`；這個區塊${sp.mixed||sp.empty?`共 ${qfmt(bCnt)} ${esc(b.unit)}`:`共 ${qfmt(sp.n)} ${esc(b.unit)}${sp.n!==bCnt?`，合約 ${qfmt(bCnt)}`:''}`}`:''}）</span></th><th class="num">累計%</th><th class="num">本期金額</th></tr>`;
     let ch='', gDone=new Set();
     for(const ci of cb.items){
       const it=ci.it;
@@ -2420,14 +2423,13 @@ function viewProg(proj){
         if(open){
           for(const s of g){
             const si=s.it, sz=s.v===0, stq=itemTotalQty(si,b), spr=progOf(period,si.id);
-            const srVal=(spr.exprKind==='r'&&spr.expr)?spr.expr:(spr.p?+(spr.p*effCount(si,b)).toFixed(2):'');
             h+=`<tr class="${sz?'zero':''}"><td></td>
               <td style="padding-left:26px;color:var(--muted)">↳ ${stageHtml(si.name,it.groupName)}</td>
               <td>${esc(si.unit)}</td><td class="num">${qfmt(si.qty)}</td><td class="num">${si.price?qfmt(si.price):''}</td>
               <td class="num muted">${pfmt(s.pp)}</td>
-              <td class="num">${hasR
-                ?(editable&&!sz?`<input class="pin pct" data-r="${b.id}::${si.id}" inputmode="decimal" value="${srVal}" placeholder="0">${hasOwnCount(si)?`<span class="muted" style="font-size:11px"> / ${qfmt(effCount(si,b))}</span>`:''}`:(srVal||'—')+(hasOwnCount(si)?`<span class="muted" style="font-size:11px"> / ${qfmt(effCount(si,b))}</span>`:''))
-                :(editable&&!sz?`<input class="pin" data-q="${b.id}::${si.id}" inputmode="decimal" value="${(spr.exprKind==='q'&&spr.expr)?esc(spr.expr):(spr.p?qfmt(spr.q||stq*spr.p):'')}" placeholder="0">`:qfmt(spr.q||stq*spr.p))}</td>
+              <td class="num">${editable&&!sz
+                ?`<input class="pin" data-q="${b.id}::${si.id}" inputmode="decimal" value="${(spr.exprKind==='q'&&spr.expr)?esc(spr.expr):(spr.p?qfmt(spr.q||stq*spr.p):'')}" placeholder="0" title="共 ${qfmt(stq)} ${esc(si.unit)}">`
+                :qfmt(spr.q||stq*spr.p)}<span class="muted" style="font-size:11px"> / ${qfmt(stq)}</span></td>
               <td class="num">${editable&&!sz?`<input class="pin pct" data-p="${b.id}::${si.id}" inputmode="decimal" value="${spr.p?+(spr.p*100).toFixed(1):''}" placeholder="0">`:pfmt(s.p)}</td>
               <td class="num" data-c="ti-${si.id}">${s.thisAmt?money(s.thisAmt):'—'}</td></tr>`;
           }
@@ -2437,13 +2439,12 @@ function viewProg(proj){
       const zero=ci.v===0;
       const tq=itemTotalQty(it,b);
       const pr=progOf(period,it.id);
-      const rVal=(pr.exprKind==='r'&&pr.expr)?pr.expr:(pr.p?+(pr.p*effCount(it,b)).toFixed(2):'');
       h+=`<tr class="${zero?'zero':''}"><td>${esc(it.no)}</td><td>${esc(it.name)}${isExtraItem(it)?'<span class="tag" style="background:rgba(251,191,36,.2);border-color:rgba(251,191,36,.5);color:#fcd34d" title="追加工程：不受簽約總價折讓，照明細單價計">追加</span>':''}${hasOwnCount(it)?`<span class="tag" style="background:rgba(52,211,153,.2);border-color:rgba(52,211,153,.55);color:#6ee7b7" title="這條的實作量跟合約不同：區塊是 ${qfmt(b.count)} ${esc(b.unit)}，這條算 ${qfmt(it.cnt)} ${esc(b.unit)}">${qfmt(it.cnt)} ${esc(b.unit)}</span>`:''}</td><td>${esc(it.unit)}</td>
         <td class="num">${qfmt(it.qty)}</td><td class="num">${it.price?qfmt(it.price):''}</td>
         <td class="num muted">${pfmt(ci.pp)}</td>
-        <td class="num">${hasR
-          ?(editable&&!zero?`<input class="pin pct" data-r="${b.id}::${it.id}" inputmode="decimal" value="${rVal}" placeholder="0">${hasOwnCount(it)?`<span class="muted" style="font-size:11px"> / ${qfmt(effCount(it,b))}</span>`:''}`:(rVal||'—')+(hasOwnCount(it)?`<span class="muted" style="font-size:11px"> / ${qfmt(effCount(it,b))}</span>`:''))
-          :(editable&&!zero?`<input class="pin" data-q="${b.id}::${it.id}" inputmode="decimal" value="${(pr.exprKind==='q'&&pr.expr)?esc(pr.expr):(pr.p?qfmt(pr.q||tq*pr.p):'')}" placeholder="0">`:qfmt(pr.q||tq*pr.p))}</td>
+        <td class="num">${editable&&!zero
+          ?`<input class="pin" data-q="${b.id}::${it.id}" inputmode="decimal" value="${(pr.exprKind==='q'&&pr.expr)?esc(pr.expr):(pr.p?qfmt(pr.q||tq*pr.p):'')}" placeholder="0" title="共 ${qfmt(tq)} ${esc(it.unit)}">`
+          :qfmt(pr.q||tq*pr.p)}<span class="muted" style="font-size:11px"> / ${qfmt(tq)}</span></td>
         <td class="num">${editable&&!zero?`<input class="pin pct" data-p="${b.id}::${it.id}" inputmode="decimal" value="${pr.p?+(pr.p*100).toFixed(1):''}" placeholder="0">`:pfmt(ci.p)}</td>
         <td class="num" data-c="ti-${it.id}">${ci.thisAmt?money(ci.thisAmt):'—'}</td></tr>`;
     }
@@ -3392,11 +3393,11 @@ function printDoc(proj){
       const keep=onlyNew?movedIdsOf(cb):null;
       const rows=onlyNew?base.filter(ci=>keep.has(ci.it.id)):(showAll?base:base.filter(ci=>ci.p>0));
       if(!rows.length)continue;
-      const hasR=cb.blk.count>1;
+      // 列印也一律印「量」。間數只適用客房，而且一間做一半就印不出整數。
       h+=`<table><tr class="bhead"><td colspan="9">${esc(cb.blk.name)}（${qfmt(cb.blk.count)} ${esc(cb.blk.unit)}）</td></tr>
       <tr><th>項次</th><th>名稱及規格</th><th>單位</th><th class="num">數量</th><th class="num">單價</th><th class="num">總價</th><th class="num">${onlyNew
-        ?(hasR?`本期完成${esc(cb.blk.unit)}數<br>（共 ${qfmt(cb.blk.count)}）`:'本期完成量')
-        :(hasR?`完成${esc(cb.blk.unit)}數<br>（共 ${qfmt(cb.blk.count)}）`:'累計完成量')}</th><th class="num">${onlyNew?'本期%':'完成%'}</th><th class="num">${onlyNew?'本期計價金額':'累計完成計價'}</th></tr>`;
+        ?'本期完成量'
+        :'累計完成量'}</th><th class="num">${onlyNew?'本期%':'完成%'}</th><th class="num">${onlyNew?'本期計價金額':'累計完成計價'}</th></tr>`;
       let ch='';
       // 「列印合併名稱」：填一樣的幾條，印給工班時併成一行。
       // 資料還是逐條，發包分配照樣逐條對母專案，所以不會有哪一條假超額。
@@ -3429,7 +3430,7 @@ function printDoc(proj){
               <td>${sameUnit?esc(units[0]):'式'}</td>
               <td class="num">${sameUnit?qfmt(+gQty.toFixed(2)):'—'}${cnts.length===1&&hasOwnCount(g[0].it)?`<div style="font-size:9px;color:#555">× ${qfmt(cnts[0])} ${esc(cb.blk.unit)}</div>`:''}</td>
               <td class="num">—</td><td class="num">${qfmt(gAmt)}</td>
-              <td class="num">${cnts.length===1&&hasR?qfmt(+(gShowN*cnts[0]).toFixed(2)):'—'}</td>
+              <td class="num">${sameUnit?qfmt(+(gShowN*gQty).toFixed(2)):'—'}</td>
               <td class="num">${pfmt(gShowPct)}</td>
               <td class="num">${money(gShowAmt)}</td></tr>`;
             continue;
@@ -3449,8 +3450,8 @@ function printDoc(proj){
         h+=`<tr><td>${esc(it.no)}</td><td>${nm}${rk?`<div style="font-size:9.5px;color:#555;margin-top:1px">${esc(rk)}</div>`:''}</td><td>${esc(it.unit)}</td>
           <td class="num">${qfmt(it.qty)}${hasOwnCount(it)?`<div style="font-size:9px;color:#555">× ${qfmt(it.cnt)} ${esc(cb.blk.unit)}</div>`:''}</td><td class="num">${it.price?qfmt(+(it.price*fOf(it)).toFixed(2)):''}</td><td class="num">${qfmt(Ri(it.amount,it))}</td>
           <td class="num">${onlyNew
-            ?(hasR?qfmt(+((ci.p-ci.pp)*effCount(it,cb.blk)).toFixed(2)):qfmt(+(tq*(ci.p-ci.pp)).toFixed(2)))
-            :(hasR?qfmt(+(ci.p*effCount(it,cb.blk)).toFixed(2)):qfmt(pr.q||tq*ci.p))}</td><td class="num">${pfmt(onlyNew?ci.p-ci.pp:ci.p)}</td>
+            ?qfmt(+(tq*(ci.p-ci.pp)).toFixed(2))
+            :qfmt(pr.q||tq*ci.p)}</td><td class="num">${pfmt(onlyNew?ci.p-ci.pp:ci.p)}</td>
           <td class="num">${money(onlyNew?ciThis(ci):Ri(ci.cumAmt,it))}</td></tr>`;
       }
       h+=`<tr class="tot"><td colspan="8">${onlyNew?'本期小計':'小計'}</td><td class="num">${money(onlyNew?blkThis(cb):blkCum(cb))}</td></tr></table>`;

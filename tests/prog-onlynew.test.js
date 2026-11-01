@@ -187,8 +187,8 @@ const nosOn=async pg=>await pg.evaluate(()=>[...new Set(
 
   await pg.selectOption('#pscope','new'); await pg.waitForTimeout(300);
   const newTxt=await pg.textContent('.pcontent');
-  t('⑦ ★ 欄位標題改成本期（本期完成間數／本期%／本期計價金額）',
-    /本期完成間數/.test(newTxt)&&/本期%/.test(newTxt)&&/本期計價金額/.test(newTxt));
+  t('⑦ ★ 欄位標題改成本期（本期完成量／本期%／本期計價金額）',
+    /本期完成量/.test(newTxt)&&/本期%/.test(newTxt)&&/本期計價金額/.test(newTxt));
   const sub=await pg.evaluate(()=>{
     const tbs=[...document.querySelectorAll('.pcontent table')];
     const tb=tbs[tbs.length-1];
@@ -203,7 +203,7 @@ const nosOn=async pg=>await pg.evaluate(()=>[...new Set(
     const tr=[...tb.querySelectorAll('tr')].find(r=>r.children[0]&&r.children[0].textContent.trim()==='6.1');
     return [...tr.children].map(td=>td.textContent.trim());
   });
-  t('⑦ ★ 本期完成間數＝3（10 間裡這期做 3 間）', cells[6]==='3');
+  t('⑦ ★ 本期完成量＝30 ㎡（10 間裡這期做 3 間，每間 10㎡）', cells[6]==='30');
   t('⑦ ★ 本期%＝30%（70%−40%）', /^30(\.0)?%$/.test(cells[7]));
   t('⑦ ★ 本期計價金額＝$9,000', cells[8]==='$9,000');
   t('⑦ 合約的數量／單價／總價三欄沒被動到（10／300／3,000 每間）',
