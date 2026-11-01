@@ -114,7 +114,7 @@ tr.hilite>td{animation:hlflash 1s ease-in-out 3}
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.11.01g-qtyonly';
+const APP_VERSION='vG2026.11.01h-totqty';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -1412,7 +1412,21 @@ function viewItems(proj){
     <div class="rowline" style="flex-wrap:wrap;gap:8px;align-items:flex-end">
       ${fld('名稱及規格',`<input id="if-name" value="${esc(it?it.name:'')}" style="${ist};min-width:200px" placeholder="例：骨架、封板">`)}
       ${fld('單位',`<input id="if-unit" value="${esc(it?it.unit:'式')}" style="${ist};width:70px">`)}
-      ${fld(`單${esc(b.unit)}數量`,`<input id="if-qty" value="${it?esc(String(it.qtyExpr||it.qty)):'1'}" style="${ist};width:120px" placeholder="可算式 5.11*3.07">`)}
+      ${(()=>{
+        // 數量一律以「總量」為主。原本只有「單間數量」可改，而總量＝單間數量 × 間數——
+        // 轉出之後間數會變成 1.59 這種比例，把總量當成單間數量去改，量就整個錯掉
+        // （他真的踩過：轉走一部分又改了數量，比例就不對了）。
+        const cnt=it?effCount(it,b):(Number(b.count)||1);
+        const q0=it?(Number(it.qty)||0):1;
+        const tot=+(q0*(cnt||1)).toFixed(4);
+        const frac=Math.abs(cnt-Math.round(cnt))>1e-9;
+        return fld(`總數量${frac?'（這條轉出過，請改這裡）':''}`,
+            `<input id="if-qtytot" data-ifcnt="${cnt||1}" value="${it?qfmt(tot):''}" style="${ist};width:${frac?150:120}px${frac?';border-color:var(--warn)':''}" placeholder="可算式 5.11*3.07" title="整條的總量（＝每${esc(b.unit)}數量 × ${qfmt(cnt)} ${esc(b.unit)}）。存檔是以這一欄為準。">`)
+          +(Math.abs((cnt||1)-1)>1e-9
+            ? fld(`每${esc(b.unit)}數量 ×${qfmt(cnt)}`,
+                `<input id="if-qty" data-ifcnt="${cnt||1}" value="${it?esc(String(it.qtyExpr||it.qty)):'1'}" style="${ist};width:110px;opacity:.85" placeholder="可算式" title="改這裡上面的總數量會跟著算（×${qfmt(cnt)}）">`)
+            : `<input type="hidden" id="if-qty" value="${it?esc(String(it.qtyExpr||it.qty)):'1'}">`);
+      })()}
       ${fld('單價',`<input id="if-price" value="${it?esc(String(it.priceExpr||it.price||'')):''}" placeholder="可算式" style="${ist};width:110px">`)}
       ${fld('列印合併名稱（選填）',`<input id="if-printas" value="${it?esc(it.printAs||''):''}" style="${ist};min-width:180px" placeholder="例：牆面工程" title="填一樣的幾條，印請款單給工班時會併成一行（金額加總、底下列出含哪幾條）。資料還是逐條，發包分配照樣逐條對母專案，不會有假超額。">`)}
       ${fld(`這條做幾${esc(b.unit)}`,`<input id="if-cnt" value="${it&&hasOwnCount(it)?esc(String(it.cnt)):''}" style="${ist};width:110px" placeholder="照區塊 ${qfmt(b.count)}" title="實作量比合約多的時候才填（例：合約 ${qfmt(b.count)} ${b.unit}，這條實際做了 24 ${b.unit}）。空白＝照區塊的 ${qfmt(b.count)} ${b.unit}。">`)}
@@ -1541,7 +1555,7 @@ function viewItems(proj){
       }
       if(inBatch){
         h+=`<tr>${picking?'<td></td>':''}<td>${esc(it.no)}</td><td>${esc(it.name)}${it.tag?`<span class="tag">${esc(it.tag)}</span>`:''}</td><td>${esc(it.unit)}</td>
-          <td class="num"><input class="pin" id="be-qty-${it.id}" inputmode="decimal" value="${esc(String(it.qtyExpr||it.qty))}" style="width:110px;text-align:right" placeholder="可算式"></td>
+          <td class="num"><input class="pin" id="be-qty-${it.id}" data-ifcnt="${effCount(it,b)||1}" inputmode="decimal" value="${qfmt(+((Number(it.qty)||0)*(effCount(it,b)||1)).toFixed(4))}" style="width:110px;text-align:right" placeholder="可算式" title="整條的總量（＝每${esc(b.unit)}數量 × ${qfmt(effCount(it,b))} ${esc(b.unit)}）"></td>
           <td class="num"><input class="pin" id="be-price-${it.id}" inputmode="decimal" value="${esc(String(it.priceExpr||it.price||''))}" style="width:100px;text-align:right" placeholder="可算式"></td>
           <td class="num" style="color:var(--muted)">${qfmt(it.amount)}</td><td class="muted" style="font-size:12px">${esc(it.remark)}</td><td></td></tr>`;
         continue;
@@ -3735,12 +3749,26 @@ document.addEventListener('click',async e=>{
     const name=g('if-name').value.trim(); if(!name){ alert('請填名稱'); return; }
     const unit=g('if-unit').value.trim()||'式', remark=g('if-remark').value.trim();
     const exEl=g('if-extra'), isExt=exEl?exEl.checked:false;
-    const qtyRaw=g('if-qty').value.trim(), priceRaw=g('if-price').value.trim();
-    const qty=evalExpr(qtyRaw)||0, price=evalExpr(priceRaw);
-    const qtyExpr=hasExpr(qtyRaw)?qtyRaw:'', priceExpr=hasExpr(priceRaw)?priceRaw:'';
+    const priceRaw=g('if-price').value.trim();
+    const price=evalExpr(priceRaw);
+    const priceExpr=hasExpr(priceRaw)?priceRaw:'';
+    // 數量以「總數量」那一欄為準，再除以間數回推成單間數量（內部一律存單間數量）。
+    // 算式只有在整條就是 1 間時才留得住——總量算式除以 1.59 之後那串字已經不成立了。
+    const totEl=g('if-qtytot'), qtyEl=g('if-qty');
+    const cntNow=Math.max(1e-9,Number((totEl||qtyEl||{}).dataset&&(totEl||qtyEl).dataset.ifcnt)||1);
+    const totRaw=totEl?totEl.value.trim():'';
+    const qtyRaw=qtyEl?qtyEl.value.trim():'';
+    const qty=totEl&&totRaw!==''
+      ? +((evalExpr(totRaw)||0)/cntNow).toFixed(6)
+      : (evalExpr(qtyRaw)||0);
+    const qtyExpr=(Math.abs(cntNow-1)<1e-9&&totEl&&hasExpr(totRaw))?totRaw:(hasExpr(qtyRaw)?qtyRaw:'');
     // 「這條做幾間」：空白＝照區塊；跟區塊一樣也當成沒指定，免得區塊間數之後改了它卻卡住
     const cntRaw=(g('if-cnt')?g('if-cnt').value:'').trim();
-    const cntVal=cntRaw===''?null:(evalExpr(cntRaw)||0);
+    let cntVal=cntRaw===''?null:(evalExpr(cntRaw)||0);
+    // evalExpr 會修到小數第 4 位。轉出過的間數是除不盡的比例（1.5901639…），
+    // 原封不動按一下儲存也會被修短，總量就跟著跑掉 0.002。沒改就沿用原值。
+    (()=>{ const it0=parts[1]?b.items.find(x=>x.id===parts[1]):null;
+      if(it0&&hasOwnCount(it0)&&cntVal!==null&&Math.abs(cntVal-Number(it0.cnt))<5e-5) cntVal=Number(it0.cnt); })();
     const ownCnt=(cntVal!==null&&cntVal>0&&cntVal!==(Number(b.count)||0))?cntVal:null;
     if(parts[1]){ const it=b.items.find(x=>x.id===parts[1]);
       if(it){
@@ -3975,7 +4003,9 @@ document.addEventListener('click',async e=>{
       if(!qEl&&!pEl)continue;
       changes.push({it,before:{name:it.name,unit:it.unit,qty:it.qty,price:it.price}});
       if(pEl){ const raw=pEl.value.trim(); it.price=evalExpr(raw); it.priceExpr=hasExpr(raw)?raw:''; }
-      if(qEl){ const raw=qEl.value.trim(); plan.push({b,it,q:evalExpr(raw)||0,expr:hasExpr(raw)?raw:''}); }
+      if(qEl){ const raw=qEl.value.trim(); const cn=Math.max(1e-9,Number(qEl.dataset.ifcnt)||1);
+        // 填的是整條總量，內部存的是單間數量
+        plan.push({b,it,q:+((evalExpr(raw)||0)/cn).toFixed(6),expr:(Math.abs(cn-1)<1e-9&&hasExpr(raw))?raw:''}); }
     }
     // 數量有動、又已經登錄過進度的，先問一次要照哪一種算（整批共用同一個選擇）
     const hot=plan.filter(x=>Math.abs((Number(x.it.qty)||0)-x.q)>1e-9 && doneQtyOf(proj,x.b,x.it)>0);
@@ -3996,7 +4026,9 @@ document.addEventListener('click',async e=>{
       if(!qEl&&!pEl)continue; // 被隱藏的 0 元項目維持原樣
       changes.push({it,before:{name:it.name,unit:it.unit,qty:it.qty,price:it.price}});
       if(pEl){ const raw=pEl.value.trim(); it.price=evalExpr(raw); it.priceExpr=hasExpr(raw)?raw:''; }
-      if(qEl){ const raw=qEl.value.trim(); plan.push({b,it,q:evalExpr(raw)||0,expr:hasExpr(raw)?raw:''}); }
+      if(qEl){ const raw=qEl.value.trim(); const cn=Math.max(1e-9,Number(qEl.dataset.ifcnt)||1);
+        // 填的是整條總量，內部存的是單間數量
+        plan.push({b,it,q:+((evalExpr(raw)||0)/cn).toFixed(6),expr:(Math.abs(cn-1)<1e-9&&hasExpr(raw))?raw:''}); }
     }
     // 數量有動、又已經登錄過進度的，先問一次要照哪一種算（整批共用同一個選擇）
     const hot=plan.filter(x=>Math.abs((Number(x.it.qty)||0)-x.q)>1e-9 && doneQtyOf(proj,x.b,x.it)>0);
@@ -4965,6 +4997,17 @@ document.addEventListener('input',e=>{
   const t=e.target; if(!t||!t.dataset) return;
   if(!t.dataset.xfmoveq&&!t.dataset.xfrooms) return;
   xfSync(t);
+});
+// 細項編輯：總數量 ⇄ 每間數量 連動。只回寫另外那一欄（回寫自己會吃掉小數點）。
+document.addEventListener('input',e=>{
+  const t=e.target; if(!t||!t.id) return;
+  if(t.id!=='if-qtytot'&&t.id!=='if-qty') return;
+  const cnt=Math.max(1e-9,Number(t.dataset.ifcnt)||1);
+  const tot=document.getElementById('if-qtytot'), per=document.getElementById('if-qty');
+  if(!tot||!per||per.type==='hidden') return;
+  const v=evalExpr(t.value)||0;
+  if(t.id==='if-qtytot') per.value=qfmt(+(v/cnt).toFixed(4));
+  else tot.value=qfmt(+(v*cnt).toFixed(4));
 });
 // 轉出面板：量 ⇄ 間數兩欄連動，外加「這家剩下」即時重算。
 // 「量」是真相（他量的就是㎡／孔），間數只是換算給人看的參考，所以只留兩位；
