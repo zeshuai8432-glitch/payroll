@@ -114,7 +114,7 @@ tr.hilite>td{animation:hlflash 1s ease-in-out 3}
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.11.01c-whamt';
+const APP_VERSION='vG2026.11.01d-halfroom';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -1801,6 +1801,9 @@ function xferUnitOf(it,blk){
     inv:v=>byQty?((Number(v)||0)/q):(Number(v)||0),  // 畫面上的數字 → 間數
     txt:n=>`${qfmt(out(n))} ${byQty?(it.unit||''):((blk&&blk.unit)||'間')}`};
 }
+// 「量」換成間數：多間的條目旁邊那個欄位用的。
+// 不能用 U.inv——多間時畫面填的就是間數，U.inv 是原值。
+const xferRoomsFromQty=(it,v)=>{ const q=Number(it&&it.qty)||0; return q>0?(Math.max(0,Number(v)||0)/q):0; };
 // 填的數字換回間數。跟上限只差一點點（四捨五入的零頭）就直接用精確的上限，
 // 免得 甲 那邊留下 0.003 ㎡ 這種搬不乾淨的尾數。
 function xferMoveFrom(U,raw,max){
@@ -2004,7 +2007,7 @@ function xferInPanelHtml(proj,b){
       <td>${esc(it.name)}<div class="muted" style="font-size:11px">${qfmt(it.qty)} ${esc(it.unit)} × ${qfmt(it.price)}</div></td>
       <td class="num">${qfmt(U.out(cur))}</td>
       <td class="num"${done>0?' style="color:#fcd34d"':''}>${done>0?qfmt(U.out(done)):'—'}</td>
-      <td class="num"><b>${qfmt(U.out(max))}</b> <span class="muted" style="font-size:11px">${esc(U.unit)}</span></td>
+      <td class="num"><b>${qfmt(U.out(max))}</b> <span class="muted" style="font-size:11px">${esc(U.unit)}</span>${U.byQty?'':`<div class="muted" style="font-size:10.5px">＝ ${qfmt(+(max*U.q).toFixed(2))} ${esc(it.unit)}</div>`}</td>
       <td class="num"><input class="pin" data-ximove="${it.id}" data-ximax="${qfmt(U.out(max))}" inputmode="decimal" placeholder="0" style="width:84px;text-align:right" title="照「${esc(U.unit)}」填${U.byQty?`（這條只有 ${qfmt(cur)} ${esc(sb.unit)}，${esc(sb.unit)}數拆不動）`:''}"></td>
       <td class="num"><input class="pin" data-xiprice="${it.id}" inputmode="decimal" placeholder="${qfmt(it.price)}" style="width:84px;text-align:right"></td></tr>`).join('')}
     </table></div>
@@ -2024,12 +2027,16 @@ function xferPanelHtml(proj,b,it){
     <div class="rowline" style="align-items:center;margin-bottom:6px"><b style="font-size:13.5px">↗ 把「${esc(it.name)}」轉一部分出去</b><span style="flex:1"></span><button class="btn sub sm" data-xfercancel="1">取消</button></div>
     <div class="muted" style="font-size:12px;margin-bottom:8px">目前這條是 <b>${U.txt(cur)}</b>，已完成 <b>${U.txt(done)}</b><span title="讀最新一期填的完成度。數字不對的話先到「進度請款」最新一期改，再回來轉">（第 ${(proj.periods[proj.periods.length-1]||{}).no||'-'} 期填的）</span>。
       填要轉出多少${esc(U.unit)}，預設帶「<b>他還沒做的量</b>」（${qfmt(U.out(cur))} − ${qfmt(U.out(done))} ＝ ${qfmt(U.out(+(cur-done).toFixed(4)))} ${esc(U.unit)}）。
-      <b>他已經請過的錢不會變</b>；母專案完全不動。${U.byQty?`<br>＊這條只有 ${qfmt(cur)} ${esc(b.unit)}，${esc(b.unit)}數拆不動，所以直接照<b>${esc(U.unit)}</b>填（每${esc(b.unit)} ${qfmt(U.q)} ${esc(it.unit)}）。`:''}</div>
+      <b>他已經請過的錢不會變</b>；母專案完全不動。${U.byQty
+        ?`<br>＊這條只有 ${qfmt(cur)} ${esc(b.unit)}，${esc(b.unit)}數拆不動，所以直接照<b>${esc(U.unit)}</b>填（每${esc(b.unit)} ${qfmt(U.q)} ${esc(it.unit)}）。`
+        :`<br>＊<b>一間只做一半</b>的話填右邊的「${esc(it.unit)}」就好（每${esc(b.unit)} ${qfmt(U.q)} ${esc(it.unit)}），兩欄會自己連動。`}</div>
     <div class="rowline" style="gap:10px;flex-wrap:wrap;align-items:flex-end">
       <div class="field" style="display:flex;flex-direction:column;gap:2px"><label style="font-size:11px;color:var(--muted)">轉出多少${esc(U.unit)}</label>
         <input class="pin" id="xf-move" data-xfmove="${b.id}::${it.id}" inputmode="decimal" value="${qfmt(U.out(+(cur-done).toFixed(4)))}" style="height:32px;width:110px;text-align:right" title="預設是他還沒做的量（${qfmt(U.out(cur))} − 已完成 ${qfmt(U.out(done))}）"></div>
+      ${U.byQty?'':`<div class="field" style="display:flex;flex-direction:column;gap:2px"><label style="font-size:11px;color:var(--muted)">＝ 多少${esc(it.unit)}</label>
+        <input class="pin" id="xf-moveq" data-xfmoveq="${b.id}::${it.id}" inputmode="decimal" value="${qfmt(+((cur-done)*U.q).toFixed(2))}" style="height:32px;width:110px;text-align:right" title="一間只做一半就填這裡（每${esc(b.unit)} ${qfmt(U.q)} ${esc(it.unit)}）；左邊的${esc(b.unit)}數會自己跟著算"></div>`}
       <div class="field" style="display:flex;flex-direction:column;gap:2px"><label style="font-size:11px;color:var(--muted)">　</label>
-        <div style="height:32px;line-height:32px;font-size:12.5px;color:var(--muted);white-space:nowrap">${esc(proj.vendor||'這家')}剩下 <b data-xfleft="1" style="color:var(--accent)">${qfmt(U.out(done))}</b> ${esc(U.unit)}</div></div>
+        <div style="height:32px;line-height:32px;font-size:12.5px;color:var(--muted);white-space:nowrap">${esc(proj.vendor||'這家')}剩下 <b data-xfleft="1" style="color:var(--accent)">${qfmt(U.out(done))}</b> ${esc(U.unit)}${U.byQty?'':`（<b data-xfleftq="1">${qfmt(+(done*U.q).toFixed(2))}</b> ${esc(it.unit)}）`}</div></div>
       <div class="field" style="display:flex;flex-direction:column;gap:2px"><label style="font-size:11px;color:var(--muted)">轉給誰</label>
         <select id="xf-to" style="height:32px;min-width:190px">
           <option value="__self__">收回自辦（母專案自己做）</option>
@@ -4929,7 +4936,23 @@ document.getElementById('backup-import')?.addEventListener('change',()=>{});
 // 「本期又做好 N 間」：邊打邊顯示加完會變幾間，按下去前就看得到
 // 轉出面板：邊打邊算「這家剩下幾間」，不用自己心算
 document.addEventListener('input',e=>{
-  const t=e.target; if(!t||!t.dataset||!t.dataset.xfmove) return;
+  const t=e.target; if(!t||!t.dataset) return;
+  // 「量」那一欄：換算成間數寫回左邊，再讓下面的共用邏輯重算一次
+  if(t.dataset.xfmoveq){
+    const proj0=curProj(); if(!proj0) return;
+    const [bid,iid]=t.dataset.xfmoveq.split('::');
+    const b0=proj0.blocks.find(x=>x.id===bid); if(!b0) return;
+    const it0=b0.items.find(x=>x.id===iid); if(!it0) return;
+    const q=Number(it0.qty)||0, mv=document.getElementById('xf-move');
+    if(!mv||!(q>0)) return;
+    const v=Math.max(0,evalExpr(t.value)||0);
+    // 填的量剛好是「還沒做的量」時用精確的間數，免得四捨五入留下搬不乾淨的尾數
+    const max=+(effCount(it0,b0)-doneCountOf(proj0,b0,it0)).toFixed(4);
+    mv.value=(Math.abs(v-(+(max*q).toFixed(2)))<0.005)?String(max):String(+xferRoomsFromQty(it0,v).toFixed(4));
+    mv.dispatchEvent(new Event('input',{bubbles:true}));
+    return;
+  }
+  if(!t.dataset.xfmove) return;
   const proj=curProj(); if(!proj) return;
   const [blkId,itemId]=t.dataset.xfmove.split('::');
   const b=proj.blocks.find(x=>x.id===blkId); if(!b) return;
@@ -4940,6 +4963,13 @@ document.addEventListener('input',e=>{
   const U=xferUnitOf(it,b);
   const mv=xferMoveFrom(U,t.value,+(cur-done).toFixed(4)), left=+(cur-mv).toFixed(4);
   el.textContent=qfmt(U.out(left));
+  // 多間的條目：旁邊那個「量」的欄位與「剩下幾㎡」跟著算（一間只做一半時填那邊比較直覺）
+  if(!U.byQty){
+    const q2=document.getElementById('xf-moveq');
+    if(q2&&q2!==t) q2.value=qfmt(+(mv*U.q).toFixed(2));
+    const lq=document.querySelector('[data-xfleftq]');
+    if(lq) lq.textContent=qfmt(+(left*U.q).toFixed(2));
+  }
   // 轉超過他還沒做的量＝把人家做掉的活也轉走了，先標紅
   el.style.color=(mv>cur||left<done-1e-9)?'var(--bad)':'var(--accent)';
 });
