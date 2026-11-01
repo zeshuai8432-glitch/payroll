@@ -174,6 +174,31 @@ const openPanel=async pg=>{
   await pg.close();
 }
 
+// ⑨ ★ 小數點要打得出來：連動不可以回寫使用者正在打的那一欄
+//    打到「4.」時若把欄位改寫成「4」，小數點就被吃掉，再打 5 會變成「45」
+{
+  const {pg,errs}=await open(seed());
+  await openPanel(pg);
+  const typeInto=async(sel,txt)=>{
+    await pg.click(sel); await pg.keyboard.press('Control+a'); await pg.keyboard.press('Delete');
+    for(const ch of txt){ await pg.keyboard.type(ch); await pg.waitForTimeout(90); }
+    return await pg.inputValue(sel);
+  };
+  t('⑨ ★ 在「量」欄一個字一個字打 4.5，欄位就是 4.5（不會變 45）',
+    await typeInto('#xf-moveq','4.5')==='4.5');
+  t('⑨ ★ 間數欄跟著算成 0.45（4.5 ÷ 每間 10）', await pg.inputValue('#xf-move')==='0.45');
+  t('⑨ ★ 在間數欄打 0.35 也打得出小數點', await typeInto('#xf-move','0.35')==='0.35');
+  t('⑨ ★ 量欄跟著算成 3.5', await pg.inputValue('#xf-moveq')==='3.5');
+  t('⑨ 小數也算得出「剩下」（2 − 0.35 ＝ 1.65 間／16.5 ㎡）',
+    (await pg.textContent('[data-xfleft]')).trim()==='1.65'
+    &&(await pg.textContent('[data-xfleftq]')).trim()==='16.5');
+  t('⑨ 打帶小數的算式也可以（1.5+2 ＝ 3.5 ㎡ → 0.35 間）',
+    await typeInto('#xf-moveq','1.5+2')==='1.5+2'
+    &&await pg.inputValue('#xf-move')==='0.35');
+  t('⑨ 沒有 JS 錯誤', errs.length===0);
+  await pg.close();
+}
+
 await br.close();
 console.log(`\n${ok.length} passed, ${bad.length} failed`);
 if(bad.length){bad.forEach(b=>console.log(' FAIL '+b));process.exit(1);}

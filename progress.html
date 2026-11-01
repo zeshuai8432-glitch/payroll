@@ -114,7 +114,7 @@ tr.hilite>td{animation:hlflash 1s ease-in-out 3}
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.11.01d-halfroom';
+const APP_VERSION='vG2026.11.01e-dotfix';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -4937,42 +4937,42 @@ document.getElementById('backup-import')?.addEventListener('change',()=>{});
 // 轉出面板：邊打邊算「這家剩下幾間」，不用自己心算
 document.addEventListener('input',e=>{
   const t=e.target; if(!t||!t.dataset) return;
-  // 「量」那一欄：換算成間數寫回左邊，再讓下面的共用邏輯重算一次
-  if(t.dataset.xfmoveq){
-    const proj0=curProj(); if(!proj0) return;
-    const [bid,iid]=t.dataset.xfmoveq.split('::');
-    const b0=proj0.blocks.find(x=>x.id===bid); if(!b0) return;
-    const it0=b0.items.find(x=>x.id===iid); if(!it0) return;
-    const q=Number(it0.qty)||0, mv=document.getElementById('xf-move');
-    if(!mv||!(q>0)) return;
-    const v=Math.max(0,evalExpr(t.value)||0);
-    // 填的量剛好是「還沒做的量」時用精確的間數，免得四捨五入留下搬不乾淨的尾數
-    const max=+(effCount(it0,b0)-doneCountOf(proj0,b0,it0)).toFixed(4);
-    mv.value=(Math.abs(v-(+(max*q).toFixed(2)))<0.005)?String(max):String(+xferRoomsFromQty(it0,v).toFixed(4));
-    mv.dispatchEvent(new Event('input',{bubbles:true}));
-    return;
-  }
-  if(!t.dataset.xfmove) return;
+  if(!t.dataset.xfmove&&!t.dataset.xfmoveq) return;
+  xfSync(t);
+});
+// 轉出面板：間數 ⇄ 量 兩欄連動，外加「這家剩下」即時重算。
+// 關鍵：絕對不要回寫使用者正在打的那一欄。打到「4.」時把它改寫成「4」，
+// 小數點就被吃掉了，再打 5 就變成「45」——打不出小數點就是這樣來的。
+function xfSync(src){
   const proj=curProj(); if(!proj) return;
-  const [blkId,itemId]=t.dataset.xfmove.split('::');
+  const key=src.dataset.xfmove||src.dataset.xfmoveq; if(!key) return;
+  const [blkId,itemId]=key.split('::');
   const b=proj.blocks.find(x=>x.id===blkId); if(!b) return;
   const it=b.items.find(x=>x.id===itemId); if(!it) return;
-  const el=document.querySelector('[data-xfleft]'); if(!el) return;
-  const cur=effCount(it,b), done=doneCountOf(proj,b,it);
-  // 畫面填的可能是「量」（只有一式的那種條目），一律換回間數再算剩下多少
   const U=xferUnitOf(it,b);
-  const mv=xferMoveFrom(U,t.value,+(cur-done).toFixed(4)), left=+(cur-mv).toFixed(4);
-  el.textContent=qfmt(U.out(left));
-  // 多間的條目：旁邊那個「量」的欄位與「剩下幾㎡」跟著算（一間只做一半時填那邊比較直覺）
-  if(!U.byQty){
-    const q2=document.getElementById('xf-moveq');
-    if(q2&&q2!==t) q2.value=qfmt(+(mv*U.q).toFixed(2));
-    const lq=document.querySelector('[data-xfleftq]');
-    if(lq) lq.textContent=qfmt(+(left*U.q).toFixed(2));
+  const cur=effCount(it,b), done=doneCountOf(proj,b,it);
+  const max=+(cur-done).toFixed(4);
+  const mv=document.getElementById('xf-move'), q2=document.getElementById('xf-moveq');
+  let rooms;
+  if(src.dataset.xfmoveq){
+    // 量 → 間數。剛好等於「還沒做的量」就用精確上限，免得四捨五入留下搬不乾淨的尾數
+    const v=Math.max(0,evalExpr(src.value)||0);
+    rooms=(Math.abs(v-(+(max*U.q).toFixed(2)))<0.005)?max:xferRoomsFromQty(it,v);
+    if(mv) mv.value=String(+rooms.toFixed(4));
+  } else {
+    rooms=xferMoveFrom(U,src.value,max);
+    if(q2&&!U.byQty) q2.value=qfmt(+(rooms*U.q).toFixed(2));
   }
-  // 轉超過他還沒做的量＝把人家做掉的活也轉走了，先標紅
-  el.style.color=(mv>cur||left<done-1e-9)?'var(--bad)':'var(--accent)';
-});
+  const left=+(cur-rooms).toFixed(4);
+  const el=document.querySelector('[data-xfleft]');
+  if(el){
+    el.textContent=qfmt(U.out(left));
+    // 轉超過他還沒做的量＝把人家做掉的活也轉走了，先標紅
+    el.style.color=(rooms>cur||left<done-1e-9)?'var(--bad)':'var(--accent)';
+  }
+  const lq=document.querySelector('[data-xfleftq]');
+  if(lq) lq.textContent=qfmt(+(left*U.q).toFixed(2));
+}
 document.addEventListener('input',e=>{
   const t=e.target; if(!t||!t.dataset||!t.dataset.gfill) return;
   const proj=curProj(); if(!proj) return;
