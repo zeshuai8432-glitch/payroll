@@ -46,14 +46,14 @@ const seed={ projects:[
 
   // 填進度（局部更新路徑）
   await p.evaluate(()=>{curProj().blocks.forEach(b=>openBlk.add(b.id));render();}); await p.waitForTimeout(400);
-  await p.fill('[data-r="ab1::aa"]','4');
-  await p.evaluate(()=>document.querySelector('[data-r="ab1::aa"]').dispatchEvent(new Event('change',{bubbles:true})));
+  await p.fill('[data-q="ab1::aa"]','160');   // 每間 40㎡ × 4 間 ＝ 160㎡（進度一律填量）
+  await p.evaluate(()=>document.querySelector('[data-q="ab1::aa"]').dispatchEvent(new Event('change',{bubbles:true})));
   await p.waitForTimeout(700);
   const pr=await p.evaluate(()=>({p:curProj().periods[1].prog.aa?curProj().periods[1].prog.aa.p:null,
-    cur:state.cur, val:document.querySelector('[data-r="ab1::aa"]')?document.querySelector('[data-r="ab1::aa"]').value:null,
+    cur:state.cur, val:document.querySelector('[data-q="ab1::aa"]')?document.querySelector('[data-q="ab1::aa"]').value:null,
     curPeriod:curProj().curPeriod, nper:curProj().periods.length}));
   console.log('   debug:',JSON.stringify(pr));
-  ok(Math.abs(pr.p-4/12)<1e-6,'填完成間數 4 → 4/12');
+  ok(Math.abs(pr.p-4/12)<1e-6,'填累計完成量 160㎡ → 4/12（＝做完 4 間）');
   ok(await p.evaluate(()=>calc(curProj(),0).billActual)===168000,'★ 第 1 期已鎖定，填進度不會動到它');
 
   // 工序子列轉出（拆開的也要有）
