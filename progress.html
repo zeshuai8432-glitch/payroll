@@ -114,7 +114,7 @@ tr.hilite>td{animation:hlflash 1s ease-in-out 3}
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.11.01h-totqty';
+const APP_VERSION='vG2026.11.01i-newstrict';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -477,11 +477,14 @@ const blkHideable=(proj,blk)=>{
 const ciMoved=ci=>!!ci&&(Math.abs((Number(ci.p)||0)-(Number(ci.pp)||0))>1e-9
   ||Math.round(Number(ci.thisAmt)||0)!==0);
 const blkMoved=cb=>(((cb&&cb.items)||[]).some(ciMoved));
-// 拆開的工序整組一起判斷：有一道動過就整組留著，否則展開後看不出這條整體做到哪。
+// 一律逐條判斷。原本是「同一組工序有一道動過就整組留著」，想讓人看得出這條
+// 整體做到哪——但列印時那規則會印出 0 ／ 0% ／ $0 的列，而使用者選的明明是
+// 「只有本期新增的」，那種列就是雜訊。
+// 逐條篩也不會少看到什麼：畫面上收合行本來就把整組的工序標籤與累計一起顯示，
+// 展開時也照樣列全組。
 const movedIdsOf=cb=>{
-  const gm=new Set(), s=new Set();
-  ((cb&&cb.items)||[]).forEach(ci=>{ if(ci.it.groupId&&ciMoved(ci)) gm.add(ci.it.groupId); });
-  ((cb&&cb.items)||[]).forEach(ci=>{ if(ci.it.groupId?gm.has(ci.it.groupId):ciMoved(ci)) s.add(ci.it.id); });
+  const s=new Set();
+  ((cb&&cb.items)||[]).forEach(ci=>{ if(ciMoved(ci)) s.add(ci.it.id); });
   return s;
 };
 function blkSpan(blk){
