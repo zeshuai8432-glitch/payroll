@@ -114,7 +114,7 @@ tr.hilite>td{animation:hlflash 1s ease-in-out 3}
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.11.01a-xferqty';
+const APP_VERSION='vG2026.11.01b-wherefrom';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -2125,12 +2125,41 @@ function reconPanelHtml(proj,c,perIdx){
       <div style="margin-top:6px">${verdict}</div>
     </div></div></details>`;
 }
+// 「本期什麼都還沒填，怎麼會有錢可以請」——把本次應請拆成三塊給他看。
+//   本期進度增加 ＋ 本期加項 ＋ 前期結轉（前面該請但還沒請到的）＝ 本次應請
+// 前期結轉是最會嚇到人的那一塊：舊期一旦結算鎖定，之後改數量／單價／間數／折讓
+// 都不會回頭改舊期，差額一律累到本期。不講的話就是「突然跑出兩萬七」。
+function billWhereFromHtml(proj,period,c,perIdx){
+  const prevApplied=perIdx>0?Math.round(calc(proj,perIdx-1).cumApplied):0;
+  const thisAdd=Math.round(c.cumApplied)-prevApplied;          // 本期新增（進度＋加項）
+  const carry=Math.round(c.billComputed)-thisAdd;              // 前期結轉
+  const chgThis=extrasOf(period).filter(e=>!e.deduct&&!e.auto).reduce((s,e)=>s+(+e.amount||0),0);
+  const progThis=thisAdd-chgThis;
+  if(Math.abs(carry)<0.5) return '';                           // 對得起來就不用囉嗦
+  const recvPrev=Math.round(prevApplied-carry);                // 前面實際收到的（訂金＋前幾期實請）
+  const row=(l,v,strong)=>`<div style="display:flex;justify-content:space-between${strong?';font-weight:700':''}"><span>${l}</span><span>${moneyS(v)}</span></div>`;
+  return `<div style="margin-top:8px;padding:8px 10px;border:1px solid ${carry>0?'rgba(96,165,250,.5)':'rgba(248,113,113,.5)'};border-radius:8px;background:${carry>0?'rgba(59,130,246,.10)':'rgba(248,113,113,.10)'};font-size:12.5px">
+    <div style="font-weight:700;margin-bottom:4px">這筆錢是哪來的？</div>
+    ${row('本期進度增加',progThis)}
+    ${chgThis?row('本期加項',chgThis):''}
+    ${row(`前期結轉（第 1–${(proj.periods[perIdx-1]||{}).no||perIdx} 期該請但還沒請到）`,carry)}
+    <div style="border-top:1px dashed var(--line);margin:4px 0 3px"></div>
+    ${row('本次應請',Math.round(c.billComputed),true)}
+    <div class="muted" style="font-size:11.5px;margin-top:5px;line-height:1.6">
+      前面幾期<b>該請 ${money(prevApplied)}</b>，實際只請（含訂金）<b>${money(recvPrev)}</b>，差額 <b>${moneyS(carry)}</b> 累到本期。
+      ${carry>0?`常見原因：舊期<b>結算鎖定之後</b>你又改了數量／單價／間數／折讓，或當初鎖定的金額比系統算的少。
+        <b>舊期的金額不會被追溯改掉</b>，差額一律跑到本期——這是設計，不是算錯。`
+        :`這是<b>前面多請了</b>，所以本期要沖銷回來。`}
+      逐期對照看下面的「對帳檢查」；不想這期一次請完，就用「🔒 結算鎖定本期」填你實際要請的金額，剩下的會再往下一期走。
+    </div></div>`;
+}
 function billSummaryHtml(proj,period,c,perIdx,editable){
   return `
     <div style="display:flex;justify-content:space-between"><span>累計完成計價${c.discount?'（依簽約總價分攤）':''}</span><b>${money(c.cumApplied)}</b></div>
     ${c.discount?`<div class="muted" style="font-size:11px;margin-top:2px">＊原合約已按簽約總價 ${money(c.signedTotal)} 比例分攤（原合約明細 ${money(c.Vbase)}）${c.Vext?`；<b style="color:var(--warn)">追加工程 ${money(c.Vext)} 另計不折讓</b>`:''}</div>`:''}
     ${c.billPre?`<div style="display:flex;justify-content:space-between;color:var(--muted)"><span>減 前期累計已收</span><span>−${money(c.billPre).slice(1)}</span></div>
     <div style="display:flex;justify-content:space-between"><span>本次應請（計算）</span><b>${money(c.billComputed)}</b></div>`:''}
+    ${billWhereFromHtml(proj,period,c,perIdx)}
     ${c.billRound?`<div style="display:flex;justify-content:space-between;color:var(--muted)"><span>尾差調整（湊整）</span><span>${moneyS(c.billRound)}</span></div>`:''}
     <div style="display:flex;justify-content:space-between;font-size:16px;margin-top:4px;color:var(--accent2)"><span><b>本次實請金額</b></span><b data-c="g-actual">${money(c.billActual)}</b></div>
     ${(()=>{ const wp=Math.max(0,Number(proj.withholdPct)||0), rp=Math.max(0,Number(proj.retainPct)||0);
