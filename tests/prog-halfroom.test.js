@@ -37,15 +37,16 @@ const openPanel=async pg=>{
 {
   const {pg,errs}=await open(seed());
   await openPanel(pg);
-  t('① 間數欄還在，預設 0.4 間（還沒做的）', await pg.inputValue('#xf-move')==='0.4');
-  t('① ★ 旁邊多一個「量」的欄位，預設 4 ㎡', await pg.locator('#xf-moveq').count()===1
+  t('① 間數欄變成參考欄，預設 0.4 間', await pg.inputValue('#xf-rooms')==='0.4');
+  t('① ★ 主要欄位就是「量」，預設 4 ㎡', await pg.locator('#xf-moveq').count()===1
     &&await pg.inputValue('#xf-moveq')==='4');
   const txt=await pg.textContent('#app');
-  t('① 欄位標題寫「＝ 多少㎡」', /＝ 多少㎡/.test(txt));
-  t('① ★ 有提示「一間只做一半的話填右邊的㎡就好」',
-    /一間只做一半<\/b>?的話填右邊的「㎡」就好|一間只做一半.{0,20}填右邊/.test(txt.replace(/\s+/g,'')+txt));
-  t('① 「甲剩下」兩個單位都寫（1.6 間、16 ㎡）',
-    /剩下 ?1\.6/.test(txt.replace(/<[^>]*>/g,''))&&/16/.test(txt));
+  t('① 主欄位標題寫「轉出多少㎡」，間數那欄標明是參考',
+    /轉出多少㎡/.test(txt)&&/＝ 約幾間（參考）/.test(txt));
+  t('① ★ 有提示照㎡填、間數只是參考',
+    /照<?b?>?㎡<?\/?b?>?填就好/.test(txt)&&/只是換算給你看的參考/.test(txt));
+  t('① 「甲剩下」以量為主、間數在括號（16 ㎡（約 1.6 間））',
+    /剩下 ?16 ㎡（約 1\.6 間）/.test(txt.replace(/<[^>]*>/g,'')));
   t('① 沒有 JS 錯誤', errs.length===0);
   await pg.close();
 }
@@ -55,15 +56,14 @@ const openPanel=async pg=>{
   const {pg,errs}=await open(seed());
   await openPanel(pg);
   await pg.fill('#xf-moveq','3'); await pg.waitForTimeout(300);
-  t('② ★ 填 3 ㎡ → 間數變 0.3', await pg.inputValue('#xf-move')==='0.3');
-  t('② ★ 甲剩下 1.7 間', (await pg.textContent('[data-xfleft]')).trim()==='1.7');
-  t('② ★ 甲剩下 17 ㎡', (await pg.textContent('[data-xfleftq]')).trim()==='17');
+  t('② ★ 填 3 ㎡ → 間數變 0.3', await pg.inputValue('#xf-rooms')==='0.3');
+  t('② ★ 甲剩下 17 ㎡（約 1.7 間）',
+    (await pg.textContent('[data-xfleft]')).trim()==='17 ㎡（約 1.7 間）');
 
   await pg.fill('#xf-moveq','4'); await pg.waitForTimeout(300);
-  t('② 填回 4 ㎡ → 間數 0.4、剩 1.6 間／16 ㎡',
-    await pg.inputValue('#xf-move')==='0.4'
-    &&(await pg.textContent('[data-xfleft]')).trim()==='1.6'
-    &&(await pg.textContent('[data-xfleftq]')).trim()==='16');
+  t('② 填回 4 ㎡ → 間數 0.4、剩 16 ㎡（約 1.6 間）',
+    await pg.inputValue('#xf-rooms')==='0.4'
+    &&(await pg.textContent('[data-xfleft]')).trim()==='16 ㎡（約 1.6 間）');
   t('② 沒有 JS 錯誤', errs.length===0);
   await pg.close();
 }
@@ -72,11 +72,10 @@ const openPanel=async pg=>{
 {
   const {pg}=await open(seed());
   await openPanel(pg);
-  await pg.fill('#xf-move','0.25'); await pg.waitForTimeout(300);
+  await pg.fill('#xf-rooms','0.25'); await pg.waitForTimeout(300);
   t('③ ★ 填 0.25 間 → 量欄變 2.5 ㎡', await pg.inputValue('#xf-moveq')==='2.5');
-  t('③ 甲剩下 1.75 間／17.5 ㎡',
-    (await pg.textContent('[data-xfleft]')).trim()==='1.75'
-    &&(await pg.textContent('[data-xfleftq]')).trim()==='17.5');
+  t('③ 甲剩下 17.5 ㎡（約 1.75 間）',
+    (await pg.textContent('[data-xfleft]')).trim()==='17.5 ㎡（約 1.75 間）');
   await pg.close();
 }
 
@@ -112,7 +111,7 @@ const openPanel=async pg=>{
   t('⑤ ★ 已結算的請款金額也沒動', r.實請===before.實請&&r.實請===4800);
   t('⑤ ★ 進度自動變 100%（做掉的 16 ㎡ 是既成事實）', r.p===1&&r.q===16);
   t('⑤ ★ 母專案那條自辦量 +4 ㎡', Math.abs(r.自辦-4)<1e-9);
-  t('⑤ 備註留痕', /轉 0\.4 間 給 自辦/.test((r.log||[]).join('|')));
+  t('⑤ 備註留痕（量為主）', /轉 4 ㎡（約 0\.4 間） 給 自辦/.test((r.log||[]).join('|')));
   t('⑤ 沒有 JS 錯誤', errs.length===0);
   await pg.close();
 }
@@ -133,8 +132,8 @@ const openPanel=async pg=>{
   });
   t('⑥ 轉成功', r.err===null);
   t('⑥ ★ 甲 16 ㎡、乙 4 ㎡', Math.abs(r.甲量-16)<1e-9&&Math.abs(r.乙量-4)<1e-9);
-  t('⑥ 備註照「間」寫（這條是多間的條目）',
-    /轉 0\.4 間 給 乙/.test(r.甲log.join('|'))&&/接手 0\.4 間/.test(r.乙log.join('|')));
+  t('⑥ 備註以量為主、間數在括號（轉 4 ㎡（約 0.4 間））',
+    /轉 4 ㎡（約 0\.4 間） 給 乙/.test(r.甲log.join('|'))&&/接手 4 ㎡（約 0\.4 間）/.test(r.乙log.join('|')));
   t('⑥ ★ 發包分配：母 20 ㎡、已發 20 ㎡、剩 0、不超發',
     r.發包.母===20&&Math.abs(r.發包.已發-20)<0.01&&Math.abs(r.發包.剩)<0.01&&r.發包.超===false);
   t('⑥ 沒有 JS 錯誤', errs.length===0);
@@ -150,10 +149,10 @@ const openPanel=async pg=>{
   st.projects[1].periods[0].prog.a1={p:0.3,q:30};
   const {pg,errs}=await open(st);
   await openPanel(pg);
-  t('⑦ 一式的條目只有一個欄位，單位就是 ㎡',
-    await pg.locator('#xf-moveq').count()===0
-    &&await pg.inputValue('#xf-move')==='70');
-  t('⑦ 還是有「式數拆不動」的說明', /式數拆不動/.test(await pg.textContent('#app')));
+  t('⑦ 一式的條目只有一個欄位（量），沒有間數參考欄',
+    await pg.locator('#xf-rooms').count()===0
+    &&await pg.inputValue('#xf-moveq')==='70');
+  t('⑦ 說明寫出每式幾㎡', /每式 100 ㎡/.test(await pg.textContent('#app')));
   t('⑦ 沒有 JS 錯誤', errs.length===0);
   await pg.close();
 }
@@ -169,7 +168,8 @@ const openPanel=async pg=>{
   });
   await pg.waitForTimeout(400);
   const txt=(await pg.textContent('#app')).replace(/\s+/g,' ');
-  t('⑧ ★ 最多可轉兩個單位都寫（0.4 間＝4 ㎡）', /0\.4 間ã?＝ ?4 ㎡/.test(txt)||/0\.4 間＝ 4 ㎡/.test(txt));
+  t('⑧ ★ 最多可轉以量為主、間數當參考（4 ㎡、約 0.4 間）',
+    /4 ㎡/.test(txt)&&/約 0\.4 間/.test(txt));
   t('⑧ 沒有 JS 錯誤', errs.length===0);
   await pg.close();
 }
@@ -186,15 +186,14 @@ const openPanel=async pg=>{
   };
   t('⑨ ★ 在「量」欄一個字一個字打 4.5，欄位就是 4.5（不會變 45）',
     await typeInto('#xf-moveq','4.5')==='4.5');
-  t('⑨ ★ 間數欄跟著算成 0.45（4.5 ÷ 每間 10）', await pg.inputValue('#xf-move')==='0.45');
-  t('⑨ ★ 在間數欄打 0.35 也打得出小數點', await typeInto('#xf-move','0.35')==='0.35');
+  t('⑨ ★ 間數欄跟著算成 0.45（4.5 ÷ 每間 10）', await pg.inputValue('#xf-rooms')==='0.45');
+  t('⑨ ★ 在間數欄打 0.35 也打得出小數點', await typeInto('#xf-rooms','0.35')==='0.35');
   t('⑨ ★ 量欄跟著算成 3.5', await pg.inputValue('#xf-moveq')==='3.5');
-  t('⑨ 小數也算得出「剩下」（2 − 0.35 ＝ 1.65 間／16.5 ㎡）',
-    (await pg.textContent('[data-xfleft]')).trim()==='1.65'
-    &&(await pg.textContent('[data-xfleftq]')).trim()==='16.5');
+  t('⑨ 小數也算得出「剩下」（2 − 0.35 ＝ 16.5 ㎡（約 1.65 間））',
+    (await pg.textContent('[data-xfleft]')).trim()==='16.5 ㎡（約 1.65 間）');
   t('⑨ 打帶小數的算式也可以（1.5+2 ＝ 3.5 ㎡ → 0.35 間）',
     await typeInto('#xf-moveq','1.5+2')==='1.5+2'
-    &&await pg.inputValue('#xf-move')==='0.35');
+    &&await pg.inputValue('#xf-rooms')==='0.35');
   t('⑨ 沒有 JS 錯誤', errs.length===0);
   await pg.close();
 }

@@ -41,9 +41,9 @@ async function open(br,p2){
     ok(done===3,'★★ 已完成讀第 2 期（改正後）的 3 間，不是第 1 期那個 3.14（實際 '+done+'）');
 
     await p.click('[data-xfer="ab1::aa"]'); await p.waitForTimeout(500);
-    const mv=await p.evaluate(()=>document.querySelector('#xf-move').value);
+    const mv=await p.evaluate(()=>document.querySelector('#xf-rooms').value);
     ok(mv==='3','★ 轉出面板預設就帶還沒做的 3 間（6−3）');
-    await p.fill('#xf-move','3');
+    await p.fill('#xf-rooms','3');
     await p.selectOption('#xf-to','kB');
     await p.click('[data-xferok="ab1::aa"]'); await p.waitForTimeout(900);
     ok(!said.some(m=>/轉太多了/.test(m)),'★★ 沒有被擋下來');
@@ -59,7 +59,7 @@ async function open(br,p2){
   {
     const {p,said}=await open(br,3.14);
     await p.click('[data-xfer="ab1::aa"]'); await p.waitForTimeout(500);
-    await p.fill('#xf-move','3');
+    await p.fill('#xf-rooms','3');
     await p.selectOption('#xf-to','kB');
     await p.click('[data-xferok="ab1::aa"]'); await p.waitForTimeout(800);
     ok(said.some(m=>/轉太多了/.test(m)),'② 真的做了 3.14 間時照樣擋（保護還在）');
@@ -78,7 +78,8 @@ async function open(br,p2){
     const {p}=await open(br,3);
     await p.click('[data-xfer="ab1::aa"]'); await p.waitForTimeout(500);
     const t=await p.evaluate(()=>document.body.innerText);
-    ok(/已完成 3 間（第 2 期填的）/.test(t),'③ 面板直接標「（第 2 期填的）」，數字不對知道去哪改');
+    // 面板現在以「量」為主、間數放括號當參考，所以字樣是「已完成 N ㎡（約 3 間）（第 2 期填的）」
+    ok(/已完成 [\d,.]+ ㎡（約 3 間）（第 2 期填的）/.test(t),'③ 面板直接標「（第 2 期填的）」，數字不對知道去哪改');
     await p.close();
   }
 
@@ -88,7 +89,7 @@ async function open(br,p2){
     const done=await p.evaluate(()=>{const pr=curProj(),b=pr.blocks[0];return doneCountOf(pr,b,b.items[0]);});
     ok(done===0,'④ 最新一期歸零＝已完成 0（舊期的 3.14 不會再卡著）');
     await p.click('[data-xfer="ab1::aa"]'); await p.waitForTimeout(500);
-    await p.fill('#xf-move','6');
+    await p.fill('#xf-rooms','6');
     await p.selectOption('#xf-to','kB');
     await p.click('[data-xferok="ab1::aa"]'); await p.waitForTimeout(900);
     ok(!said.some(m=>/轉太多了/.test(m)),'★★ 整條 6 間轉得出去');

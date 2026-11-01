@@ -114,7 +114,7 @@ tr.hilite>td{animation:hlflash 1s ease-in-out 3}
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.11.01e-dotfix';
+const APP_VERSION='vG2026.11.01f-qtyfirst';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -564,10 +564,10 @@ function doneCountOf(proj,blk,it){
   const per=(proj&&proj.periods)||[];
   const last=per[per.length-1];
   const pr=last&&last.prog&&last.prog[it.id];
-  // 留 4 位小數。原本只留 2 位，但一式的條目「間數」是比例——0.01 式 在
-  // 100㎡ 的條目上就是 1 ㎡，四捨五入掉的是真的量（做了 33.5㎡ 會變成 34㎡，
-  // 可轉的量跟著少半米）。顯示一律走 xferUnitOf().out()，所以這裡不需要先修短。
-  return +(((pr&&Number(pr.p))||0)*effCount(it,blk)).toFixed(4);
+  // 不要先修短小數位。間數是「量 ÷ 每間的量」，常常除不盡（850 孔 ÷ 22 ＝ 38.6363…），
+  // 修到小數第 4 位就會在量上留下零頭：轉完變成 850.0008 孔、對方 29.9992 孔。
+  // 顯示一律走 qfmt／xferUnitOf，所以這裡留原值才對。
+  return ((pr&&Number(pr.p))||0)*effCount(it,blk);
 }
 function rescaleBlockProgress(proj,blk,newCount){
   if(!proj||!blk||!Array.isArray(proj.periods)) return 0;
@@ -1795,11 +1795,22 @@ function xferUnitOf(it,blk){
   const cnt=effCount(it,blk), q=Number(it&&it.qty)||0;
   const byQty=!(cnt>1)&&q>0;
   const out=n=>byQty?Math.floor((Number(n)||0)*q*100)/100:+(Number(n)||0).toFixed(4);
+  const bu=(blk&&blk.unit)||'間';
   return {byQty,cnt,q,
-    unit:byQty?(it.unit||'量'):((blk&&blk.unit)||'間'),
+    unit:byQty?(it.unit||'量'):bu,
+    qUnit:it.unit||'量',                     // 這條自己的單位（㎡、孔、式…）
+    blkUnit:bu,
+    hasQty:q>0,
+    showRooms:cnt>1&&q>0,                    // 多間又有單位＝畫面以「量」為主，間數當參考
     out,                                     // 間數 → 畫面上的數字
+    qty:n=>+((Number(n)||0)*q).toFixed(2),   // 間數 → 量
     inv:v=>byQty?((Number(v)||0)/q):(Number(v)||0),  // 畫面上的數字 → 間數
-    txt:n=>`${qfmt(out(n))} ${byQty?(it.unit||''):((blk&&blk.unit)||'間')}`};
+    txt:n=>`${qfmt(out(n))} ${byQty?(it.unit||''):bu}`,
+    // 給人看的文字：有單位就以「量」為主。間數常常是除不盡的比例（30 孔 ÷ 22 ＝ 1.3636 間），
+    // 寫那個數字沒人看得懂，所以放在括號裡當參考，而且只留兩位。
+    txtQ:n=>q>0
+      ? `${qfmt(+((Number(n)||0)*q).toFixed(2))} ${it.unit||''}${cnt>1?`（約 ${qfmt(+Number(n).toFixed(2))} ${bu}）`:''}`
+      : `${qfmt(+Number(n).toFixed(4))} ${bu}`};
 }
 // 「量」換成間數：多間的條目旁邊那個欄位用的。
 // 不能用 U.inv——多間時畫面填的就是間數，U.inv 是原值。
@@ -1898,7 +1909,9 @@ function mergeDupItems(proj){
 }
 function xferMaxOf(srcProj,srcBlk,srcIt){
   const cur=effCount(srcIt,srcBlk), done=doneCountOf(srcProj,srcBlk,srcIt);
-  return {cur,done,max:+Math.max(0,cur-done).toFixed(4)};
+  // 留 10 位小數：足以殺掉浮點雜訊（0.30000000000000004 → 0.3），
+  // 又遠小於任何真實的量（1e-10 間 × 22 孔 ＝ 2e-9 孔）。
+  return {cur,done,max:+Math.max(0,cur-done).toFixed(10)};
 }
 function xferApply(srcProj,srcBlk,srcIt,dstProj,move,price,dstBlkHint){
   const {cur,done}=xferMaxOf(srcProj,srcBlk,srcIt);
@@ -1906,9 +1919,9 @@ function xferApply(srcProj,srcBlk,srcIt,dstProj,move,price,dstBlkHint){
   // 要寫「轉 70 ㎡」才查得出來這 70 是怎麼來的。
   const SU=xferUnitOf(srcIt,srcBlk);
   if(!(move>0)) return {err:'要轉的量必須大於 0。'};
-  if(move>cur+1e-9) return {err:`最多只能轉 ${SU.txt(cur)}（這條目前的量）。`};
-  const keep=+(cur-move).toFixed(4);
-  if(keep<done-1e-9) return {err:`${srcProj.vendor||srcProj.name}已經做了 ${SU.txt(done)}，最多只能轉 ${SU.txt(+(cur-done).toFixed(4))}。已經做掉的量不能轉給別人——那是他該請的錢。`};
+  if(move>cur+1e-9) return {err:`最多只能轉 ${SU.txtQ(cur)}（這條目前的量）。`};
+  const keep=+(cur-move).toFixed(10);   // 同上：清掉浮點雜訊，別讓 100% 變成 99.99999999%
+  if(keep<done-1e-9) return {err:`${srcProj.vendor||srcProj.name}已經做了 ${SU.txtQ(done)}，最多只能轉 ${SU.txtQ(cur-done)}。已經做掉的量不能轉給別人——那是他該請的錢。`};
   const who=srcProj.vendor||srcProj.name, destName=dstProj.vendor||dstProj.name, day=today();
   // 接手方有沒有同一個區塊？沒有就照來源的架構建一個
   let kb=dstBlkHint
@@ -1929,13 +1942,13 @@ function xferApply(srcProj,srcBlk,srcIt,dstProj,move,price,dstBlkHint){
     // 間數卻是累加後的總數（轉 3 再轉 6，顯示 9 間但備註說「接手 3 間」）。
     // 每次都補一行，才查得出這 9 間是怎麼來的。printRemark 會在列印時濾掉。
     const DU=xferUnitOf(exist,kb);
-    xlogPush(exist,`${day} 自 ${who} 再接手 ${DU.txt(move)}（原 ${qfmt(DU.out(was))}，共 ${DU.txt(nc)}）`);
+    xlogPush(exist,`${day} 自 ${who} 再接手 ${DU.txtQ(move)}（原 ${qfmt(DU.qty(was))} ${DU.qUnit}，共 ${DU.txtQ(nc)}）`);
     if(!exist.printAs&&srcIt.printAs) exist.printAs=srcIt.printAs;
   } else {
     const ni={id:uid(),no:srcIt.no,tag:'',chapter:srcIt.chapter||'',name:srcIt.name,unit:srcIt.unit,
       qty:srcIt.qty,qtyExpr:srcIt.qtyExpr||'',price,priceExpr:'',amount:(Number(srcIt.qty)||0)*price,
       remark:printRemark(srcIt.remark),
-      xlog:[`${day} 自 ${who} 接手 ${SU.txt(move)}`]};
+      xlog:[`${day} 自 ${who} 接手 ${SU.txtQ(move)}`]};
     if(srcIt.srcId) ni.srcId=srcIt.srcId;
     if(srcIt.printAs) ni.printAs=srcIt.printAs;
     if(srcIt.extra!==undefined) ni.extra=srcIt.extra;
@@ -1962,14 +1975,14 @@ function xferApply(srcProj,srcBlk,srcIt,dstProj,move,price,dstBlkHint){
     if(move!==(Number(kb.count)||0)) ni.cnt=move;
     kb.items.push(ni);
   }
-  if(keep<=0){
-    trashPush(srcProj,srcBlk,[srcIt],`全部 ${SU.txt(move)} 轉給${destName}`);
+  if(keep<=1e-9){   // 浮點數可能留下 1e-16，不能直接比 0
+    trashPush(srcProj,srcBlk,[srcIt],`全部 ${SU.txtQ(move)} 轉給${destName}`);
     for(const per of (srcProj.periods||[])) if(per.prog) delete per.prog[srcIt.id];
     srcBlk.items=srcBlk.items.filter(x=>x!==srcIt);
   } else {
     rescaleItemCount(srcProj,srcBlk,srcIt,keep);
-    if(keep!==(Number(srcBlk.count)||0)) srcIt.cnt=keep; else delete srcIt.cnt;
-    xlogPush(srcIt,`${day} 原 ${SU.txt(cur)}，轉 ${SU.txt(move)} 給 ${destName}`);
+    if(Math.abs(keep-(Number(srcBlk.count)||0))>1e-9) srcIt.cnt=keep; else delete srcIt.cnt;
+    xlogPush(srcIt,`${day} 原 ${SU.txtQ(cur)}，轉 ${SU.txtQ(move)} 給 ${destName}`);
   }
   return {ok:true,who,destName,cur,keep,gone:keep<=0,blk:kb,item:exist||kb.items[kb.items.length-1],merged:!!exist};
 }
@@ -1991,7 +2004,7 @@ function xferInPanelHtml(proj,b){
         ||(sp.blocks||[]).find(x=>String(x.name||'').trim()===String(b.name||'').trim());
   let h=`<div class="card" style="margin-top:8px;border-color:rgba(56,189,248,.55);background:rgba(14,165,233,.09)">
     <div class="rowline" style="align-items:center;margin-bottom:6px"><b style="font-size:13.5px">↙ 從別家轉入到「${esc(b.name)}」</b><span style="flex:1"></span><button class="btn sub sm" data-xferincancel="1">取消</button></div>
-    <div class="muted" style="font-size:12px;margin-bottom:8px">這個月對方分給你哪幾條、各多少，一次填完（單位看每一列的「最多可轉」後面）。<b>這是搬量不是複製</b>：來源會同步減掉，所以母專案的發包總量不變。<b>對方已經做掉、請過款的量不會被搬走</b>。</div>
+    <div class="muted" style="font-size:12px;margin-bottom:8px">這個月對方分給你哪幾條、各多少，一次填完（照每一條自己的單位填，看「最多可轉」後面）。<b>這是搬量不是複製</b>：來源會同步減掉，所以母專案的發包總量不變。<b>對方已經做掉、請過款的量不會被搬走</b>。</div>
     <div class="rowline" style="gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px">
       <span class="muted" style="font-size:12px">從哪一家：</span>
       <select data-xferinfrom="1" style="height:30px;max-width:260px">${sibs.map(k=>`<option value="${k.id}"${k.id===sp.id?' selected':''}>${esc(k.vendor||k.name)}</option>`).join('')}</select>
@@ -1999,16 +2012,17 @@ function xferInPanelHtml(proj,b){
   if(!sb) return h+`<div class="muted" style="font-size:12px">「${esc(sp.vendor||sp.name)}」沒有對應「${esc(b.name)}」的區塊，沒有東西可以轉入。換一家看看。</div></div>`;
   const rows=sb.items.map(it=>Object.assign({it,U:xferUnitOf(it,sb)},xferMaxOf(sp,sb,it))).filter(r=>r.max>0.0001);
   if(!rows.length) return h+`<div class="muted" style="font-size:12px">「${esc(sp.vendor||sp.name)}」這個區塊沒有可以轉出的量了（都已經做掉或已經轉走）。</div></div>`;
-  // 每一條的單位可能不一樣（多間的填間數、一式的填量），所以單位寫在每一列上
+  // 一律照「這條自己的單位」（㎡、孔…）填。間數是除不盡的比例，沒人看得懂，
+  // 所以只在底下寫一行換算參考。沒有單位數量的條目才退回填間數。
   h+=`<div class="scroll"><table style="font-size:13px"><tr><th style="width:64px">項次</th><th>細項</th>
     <th class="num">對方目前</th><th class="num">已做</th><th class="num">最多可轉</th><th class="num">要轉入多少</th><th class="num">單價</th></tr>
     ${rows.map(({it,cur,done,max,U})=>`<tr>
       <td class="muted" style="font-size:12px;white-space:nowrap">${esc(it.no||'')}</td>
       <td>${esc(it.name)}<div class="muted" style="font-size:11px">${qfmt(it.qty)} ${esc(it.unit)} × ${qfmt(it.price)}</div></td>
-      <td class="num">${qfmt(U.out(cur))}</td>
-      <td class="num"${done>0?' style="color:#fcd34d"':''}>${done>0?qfmt(U.out(done)):'—'}</td>
-      <td class="num"><b>${qfmt(U.out(max))}</b> <span class="muted" style="font-size:11px">${esc(U.unit)}</span>${U.byQty?'':`<div class="muted" style="font-size:10.5px">＝ ${qfmt(+(max*U.q).toFixed(2))} ${esc(it.unit)}</div>`}</td>
-      <td class="num"><input class="pin" data-ximove="${it.id}" data-ximax="${qfmt(U.out(max))}" inputmode="decimal" placeholder="0" style="width:84px;text-align:right" title="照「${esc(U.unit)}」填${U.byQty?`（這條只有 ${qfmt(cur)} ${esc(sb.unit)}，${esc(sb.unit)}數拆不動）`:''}"></td>
+      <td class="num">${qfmt(U.hasQty?U.qty(cur):U.out(cur))}</td>
+      <td class="num"${done>0?' style="color:#fcd34d"':''}>${done>0?qfmt(U.hasQty?U.qty(done):U.out(done)):'—'}</td>
+      <td class="num"><b>${qfmt(U.hasQty?U.qty(max):U.out(max))}</b> <span class="muted" style="font-size:11px">${esc(U.hasQty?U.qUnit:U.blkUnit)}</span>${U.showRooms?`<div class="muted" style="font-size:10.5px">約 ${qfmt(+max.toFixed(2))} ${esc(U.blkUnit)}</div>`:''}</td>
+      <td class="num"><input class="pin" data-ximove="${it.id}" data-ximax="${qfmt(U.hasQty?U.qty(max):U.out(max))}" inputmode="decimal" placeholder="0" style="width:84px;text-align:right" title="照「${esc(U.hasQty?U.qUnit:U.blkUnit)}」填"></td>
       <td class="num"><input class="pin" data-xiprice="${it.id}" inputmode="decimal" placeholder="${qfmt(it.price)}" style="width:84px;text-align:right"></td></tr>`).join('')}
     </table></div>
     <div style="margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
@@ -2025,18 +2039,20 @@ function xferPanelHtml(proj,b,it){
   const sibs=childProjects(proj.parentId).filter(k=>k.id!==proj.id);
   return `<tr><td colspan="8" style="padding:10px;background:rgba(56,189,248,.08);border-left:3px solid #38bdf8">
     <div class="rowline" style="align-items:center;margin-bottom:6px"><b style="font-size:13.5px">↗ 把「${esc(it.name)}」轉一部分出去</b><span style="flex:1"></span><button class="btn sub sm" data-xfercancel="1">取消</button></div>
-    <div class="muted" style="font-size:12px;margin-bottom:8px">目前這條是 <b>${U.txt(cur)}</b>，已完成 <b>${U.txt(done)}</b><span title="讀最新一期填的完成度。數字不對的話先到「進度請款」最新一期改，再回來轉">（第 ${(proj.periods[proj.periods.length-1]||{}).no||'-'} 期填的）</span>。
-      填要轉出多少${esc(U.unit)}，預設帶「<b>他還沒做的量</b>」（${qfmt(U.out(cur))} − ${qfmt(U.out(done))} ＝ ${qfmt(U.out(+(cur-done).toFixed(4)))} ${esc(U.unit)}）。
-      <b>他已經請過的錢不會變</b>；母專案完全不動。${U.byQty
-        ?`<br>＊這條只有 ${qfmt(cur)} ${esc(b.unit)}，${esc(b.unit)}數拆不動，所以直接照<b>${esc(U.unit)}</b>填（每${esc(b.unit)} ${qfmt(U.q)} ${esc(it.unit)}）。`
-        :`<br>＊<b>一間只做一半</b>的話填右邊的「${esc(it.unit)}」就好（每${esc(b.unit)} ${qfmt(U.q)} ${esc(it.unit)}），兩欄會自己連動。`}</div>
+    <div class="muted" style="font-size:12px;margin-bottom:8px">目前這條是 <b>${U.txtQ(cur)}</b>，已完成 <b>${U.txtQ(done)}</b><span title="讀最新一期填的完成度。數字不對的話先到「進度請款」最新一期改，再回來轉">（第 ${(proj.periods[proj.periods.length-1]||{}).no||'-'} 期填的）</span>。
+      填要轉出多少${esc(U.hasQty?U.qUnit:U.blkUnit)}，預設帶「<b>他還沒做的量</b>」（${esc(U.txtQ(cur-done))}）。
+      <b>他已經請過的錢不會變</b>；母專案完全不動。${U.hasQty
+        ?`<br>＊照<b>${esc(U.qUnit)}</b>填就好（每${esc(b.unit)} ${qfmt(U.q)} ${esc(U.qUnit)}）。${U.showRooms?`旁邊的${esc(b.unit)}數只是換算給你看的參考，<b>要整間轉也可以直接改它</b>。`:''}`
+        :`<br>＊這條沒有單位數量，所以照<b>${esc(b.unit)}</b>數填。`}</div>
     <div class="rowline" style="gap:10px;flex-wrap:wrap;align-items:flex-end">
-      <div class="field" style="display:flex;flex-direction:column;gap:2px"><label style="font-size:11px;color:var(--muted)">轉出多少${esc(U.unit)}</label>
-        <input class="pin" id="xf-move" data-xfmove="${b.id}::${it.id}" inputmode="decimal" value="${qfmt(U.out(+(cur-done).toFixed(4)))}" style="height:32px;width:110px;text-align:right" title="預設是他還沒做的量（${qfmt(U.out(cur))} − 已完成 ${qfmt(U.out(done))}）"></div>
-      ${U.byQty?'':`<div class="field" style="display:flex;flex-direction:column;gap:2px"><label style="font-size:11px;color:var(--muted)">＝ 多少${esc(it.unit)}</label>
-        <input class="pin" id="xf-moveq" data-xfmoveq="${b.id}::${it.id}" inputmode="decimal" value="${qfmt(+((cur-done)*U.q).toFixed(2))}" style="height:32px;width:110px;text-align:right" title="一間只做一半就填這裡（每${esc(b.unit)} ${qfmt(U.q)} ${esc(it.unit)}）；左邊的${esc(b.unit)}數會自己跟著算"></div>`}
+      ${U.hasQty?`<div class="field" style="display:flex;flex-direction:column;gap:2px"><label style="font-size:11px;color:var(--muted)">轉出多少${esc(U.qUnit)}</label>
+        <input class="pin" id="xf-moveq" data-xfmoveq="${b.id}::${it.id}" inputmode="decimal" value="${qfmt(U.qty(cur-done))}" style="height:32px;width:120px;text-align:right" title="預設是他還沒做的量（${qfmt(U.qty(cur))} − 已完成 ${qfmt(U.qty(done))}）"></div>`:''}
+      ${U.showRooms?`<div class="field" style="display:flex;flex-direction:column;gap:2px"><label style="font-size:11px;color:var(--muted)">＝ 約幾${esc(b.unit)}（參考）</label>
+        <input class="pin" id="xf-rooms" data-xfrooms="${b.id}::${it.id}" inputmode="decimal" value="${qfmt(+(cur-done).toFixed(2))}" style="height:32px;width:100px;text-align:right;opacity:.8" title="換算給你看的。要整間轉就直接改這裡（每${esc(b.unit)} ${qfmt(U.q)} ${esc(U.qUnit)}），左邊的${esc(U.qUnit)}會跟著算"></div>`:''}
+      ${U.hasQty?'':`<div class="field" style="display:flex;flex-direction:column;gap:2px"><label style="font-size:11px;color:var(--muted)">轉出幾${esc(b.unit)}</label>
+        <input class="pin" id="xf-rooms" data-xfrooms="${b.id}::${it.id}" inputmode="decimal" value="${qfmt(cur-done)}" style="height:32px;width:110px;text-align:right"></div>`}
       <div class="field" style="display:flex;flex-direction:column;gap:2px"><label style="font-size:11px;color:var(--muted)">　</label>
-        <div style="height:32px;line-height:32px;font-size:12.5px;color:var(--muted);white-space:nowrap">${esc(proj.vendor||'這家')}剩下 <b data-xfleft="1" style="color:var(--accent)">${qfmt(U.out(done))}</b> ${esc(U.unit)}${U.byQty?'':`（<b data-xfleftq="1">${qfmt(+(done*U.q).toFixed(2))}</b> ${esc(it.unit)}）`}</div></div>
+        <div style="height:32px;line-height:32px;font-size:12.5px;color:var(--muted);white-space:nowrap">${esc(proj.vendor||'這家')}剩下 <b data-xfleft="1" style="color:var(--accent)">${esc(U.txtQ(done))}</b></div></div>
       <div class="field" style="display:flex;flex-direction:column;gap:2px"><label style="font-size:11px;color:var(--muted)">轉給誰</label>
         <select id="xf-to" style="height:32px;min-width:190px">
           <option value="__self__">收回自辦（母專案自己做）</option>
@@ -4290,8 +4306,13 @@ document.addEventListener('click',async e=>{
       const it=sb.items.find(x=>x.id===el.dataset.ximove); if(!it) continue;
       const {max}=xferMaxOf(sp,sb,it);
       const U=xferUnitOf(it,sb);
-      const move=xferMoveFrom(U,raw,max); if(!(move>0)) continue;
-      if(move>max+1e-9){ alert(`「${it.name}」最多只能轉 ${U.txt(max)}（對方已經做掉的量不能轉）。\n\n你填了 ${qfmt(evalExpr(raw)||0)} ${U.unit}。`); el.focus(); return; }
+      // 畫面填的是這條自己的單位（㎡、孔…），一律換回間數；沒有單位數量的才是填間數
+      const move=U.hasQty
+        ? (()=>{ const v=Math.max(0,evalExpr(raw)||0);
+                 return (Math.abs(v-U.qty(max))<0.005)?max:xferRoomsFromQty(it,v); })()
+        : xferMoveFrom(U,raw,max);
+      if(!(move>0)) continue;
+      if(move>max+1e-9){ alert(`「${it.name}」最多只能轉 ${U.txtQ(max)}（對方已經做掉的量不能轉）。\n\n你填了 ${qfmt(evalExpr(raw)||0)} ${U.hasQty?U.qUnit:U.blkUnit}。`); el.focus(); return; }
       const pr=document.querySelector(`[data-xiprice="${it.id}"]`);
       const praw=pr?String(pr.value||'').trim():'';
       // evalExpr 解析失敗原本會變成 0：那條的金額就是 0，接著被「隱藏 0 元項目」
@@ -4317,7 +4338,7 @@ document.addEventListener('click',async e=>{
     const who=sp.vendor||sp.name, me=proj.vendor||proj.name;
     const addAmt=plan.reduce((a,x)=>a+(Number(x.it.qty)||0)*x.price*x.move,0);
     if(!confirm(`從「${who}」轉入 ${plan.length} 條到「${b.name}」？\n\n`
-      +plan.map(x=>`・${x.it.name}　${x.U.txt(x.move)}　單價 ${qfmt(x.price)}`).join('\n')
+      +plan.map(x=>`・${x.it.name}　${x.U.txtQ(x.move)}　單價 ${qfmt(x.price)}`).join('\n')
       +`\n\n・${me} 的合約金額增加 ${money(Math.round(addAmt))}\n`
       +`・${who} 那邊會同步減掉同樣的量（所以母專案的發包總量不變）\n`
       +`・${who} 已經請過的錢不會變\n・母專案的合約明細完全不動`)) return;
@@ -4341,7 +4362,7 @@ document.addEventListener('click',async e=>{
     setTimeout(()=>{ hiliteItem=''; render(); },4000);
     alert(`已從「${who}」轉入 ${n} 條到「${b.name}」。\n\n`
       +landed.map(x=>{ const DU=xferUnitOf(x.it,x.blk);
-        return `・${x.it.name}　${x.merged?'併進原本那條，現在共':'拿到'} ${DU.txt(effCount(x.it,x.blk))}`; }).join('\n')
+        return `・${x.it.name}　${x.merged?'併進原本那條，現在共':'拿到'} ${DU.txtQ(effCount(x.it,x.blk))}`; }).join('\n')
       +(gone?`\n\n其中 ${gone} 條對方整個轉光了，已從他的合約移除（他那邊的回收桶可以復原）。`:'')
       +(zeroHidden?`\n\n有 ${zeroHidden} 條單價是 0（金額 0）。已暫時取消「隱藏 0 元項目」，不然你會看不到它。`:'')
       +`\n\n數量與單價可以再進去改。`+(errs.length?`\n\n有 ${errs.length} 條沒轉成功：\n`+errs.join('\n'):''));
@@ -4355,14 +4376,18 @@ document.addEventListener('click',async e=>{
     const par=parentProject(proj); if(!par){ alert('這不是子專案，沒有母專案可以對應。'); return; }
     const {cur,done,max}=xferMaxOf(proj,b,it);
     const U=xferUnitOf(it,b);
-    const move=xferMoveFrom(U,(g('xf-move')||{}).value||'0',max);
-    if(!(move>0)){ alert(`請填要轉出多少${U.unit}。`); return; }
-    if(move>cur){ alert(`最多只能轉出 ${U.txt(cur)}（這條目前的量）。`); return; }
+    // 「量」是畫面上的真相；間數欄只是參考（而且只留兩位），所以一律從量算回間數
+    const move=U.hasQty
+      ? (()=>{ const v=Math.max(0,evalExpr((g('xf-moveq')||{}).value||'0')||0);
+               return (Math.abs(v-U.qty(max))<0.005)?max:xferRoomsFromQty(it,v); })()
+      : Math.max(0,evalExpr((g('xf-rooms')||{}).value||'0')||0);
+    if(!(move>0)){ alert(`請填要轉出多少${U.hasQty?U.qUnit:U.blkUnit}。`); return; }
+    if(move>cur){ alert(`最多只能轉出 ${U.txtQ(cur)}（這條目前的量）。`); return; }
     if(move>max+1e-9){
       const lastNo=(proj.periods[proj.periods.length-1]||{}).no;
-      alert(`轉太多了。\n\n${proj.vendor||'這家'}已經做了 ${U.txt(done)}，最多只能轉出 ${U.txt(max)}。\n\n`
+      alert(`轉太多了。\n\n${proj.vendor||'這家'}已經做了 ${U.txtQ(done)}，最多只能轉出 ${U.txtQ(max)}。\n\n`
         +`（已經做掉的量不能轉給別人——那是他該請的錢。）\n\n`
-        +`※ 這個「${U.txt(done)}」是讀「第 ${lastNo} 期」（最新一期）填的完成度。\n`
+        +`※ 這個「${U.txtQ(done)}」是讀「第 ${lastNo} 期」（最新一期）填的完成度。\n`
         +`如果他實際沒做那麼多，先到「進度請款」的第 ${lastNo} 期把這條改成實際的數字，再回來轉出。`);
       return;
     }
@@ -4376,7 +4401,7 @@ document.addEventListener('click',async e=>{
       const mIt=(()=>{ for(const mb of par.blocks){ const f=mb.items.find(x=>x.id===it.srcId); if(f) return f; } return null; })();
       if(!mIt){ alert('這條在母專案找不到對應（可能是孤兒發包），沒辦法轉成自辦。\n\n請先到發包分配處理，或改成轉給別的工班。'); return; }
       const add=+(move*(Number(it.qty)||0)).toFixed(4);
-      if(!confirm(`把「${it.name}」轉 ${U.txt(move)} 收回自辦？\n\n・${who} 從 ${U.txt(cur)} 減成 ${U.txt(keep)}\n・母專案那條的自辦量 +${qfmt(add)} ${it.unit}\n・${who} 已經請過的錢不會變\n・母專案的合約明細完全不動`)) return;
+      if(!confirm(`把「${it.name}」轉 ${U.txtQ(move)} 收回自辦？\n\n・${who} 從 ${U.txtQ(cur)} 減成 ${U.txtQ(keep)}\n・母專案那條的自辦量 +${qfmt(add)} ${it.unit}\n・${who} 已經請過的錢不會變\n・母專案的合約明細完全不動`)) return;
       mIt.selfQty=+((Number(mIt.selfQty)||0)+add).toFixed(4);
       if(keep<=0){
         trashPush(proj,b,[it],`全部 ${qfmt(move)} ${b.unit} 收回自辦`);
@@ -4385,12 +4410,12 @@ document.addEventListener('click',async e=>{
       } else {
         rescaleItemCount(proj,b,it,keep);
         if(keep!==(Number(b.count)||0)) it.cnt=keep; else delete it.cnt;
-        xlogPush(it,`${today()} 原 ${U.txt(cur)}，轉 ${U.txt(move)} 給 自辦`);
+        xlogPush(it,`${today()} 原 ${U.txtQ(cur)}，轉 ${U.txtQ(move)} 給 自辦`);
       }
       xfer=null; save(); render();
-      alert(`已轉 ${U.txt(move)} 回自辦。\n\n`+(keep<=0
+      alert(`已轉 ${U.txtQ(move)} 回自辦。\n\n`+(keep<=0
         ?`${who} 這條整個轉走了，已從他的合約移除（可到最下面的回收桶復原）。`
-        :`${who} 這條剩 ${U.txt(keep)}，已請過的金額沒變。`));
+        :`${who} 這條剩 ${U.txtQ(keep)}，已請過的金額沒變。`));
       return;
     }
 
@@ -4407,13 +4432,13 @@ document.addEventListener('click',async e=>{
     }
     const price=priceRaw?(evalExpr(priceRaw)||0):(Number(it.price)||0);
     const destName=kid.vendor||kid.name;
-    if(!confirm(`把「${it.name}」轉 ${U.txt(move)} 給「${destName}」？\n\n・${who} 從 ${U.txt(cur)} 減成 ${U.txt(keep)}\n・${destName} 拿到 ${U.txt(move)}，單價 ${qfmt(price)}\n・${who} 已經請過的錢不會變\n・母專案的合約明細完全不動`)) return;
+    if(!confirm(`把「${it.name}」轉 ${U.txtQ(move)} 給「${destName}」？\n\n・${who} 從 ${U.txtQ(cur)} 減成 ${U.txtQ(keep)}\n・${destName} 拿到 ${U.txtQ(move)}，單價 ${qfmt(price)}\n・${who} 已經請過的錢不會變\n・母專案的合約明細完全不動`)) return;
     const r=xferApply(proj,b,it,kid,move,price);
     if(r.err){ alert(r.err); return; }
     xfer=null; save(); render();
-    alert(`已轉出 ${U.txt(move)} 給「${destName}」。\n\n`+(r.gone
+    alert(`已轉出 ${U.txtQ(move)} 給「${destName}」。\n\n`+(r.gone
       ?`${who} 這條整個轉走了，已從他的合約移除（可到最下面的回收桶復原）。`
-      :`${who} 這條剩 ${U.txt(r.keep)}，已請過的金額沒變。`));
+      :`${who} 這條剩 ${U.txtQ(r.keep)}，已請過的金額沒變。`));
     return;
   }
   if(t.dataset.xcopy){
@@ -4937,41 +4962,41 @@ document.getElementById('backup-import')?.addEventListener('change',()=>{});
 // 轉出面板：邊打邊算「這家剩下幾間」，不用自己心算
 document.addEventListener('input',e=>{
   const t=e.target; if(!t||!t.dataset) return;
-  if(!t.dataset.xfmove&&!t.dataset.xfmoveq) return;
+  if(!t.dataset.xfmoveq&&!t.dataset.xfrooms) return;
   xfSync(t);
 });
-// 轉出面板：間數 ⇄ 量 兩欄連動，外加「這家剩下」即時重算。
-// 關鍵：絕對不要回寫使用者正在打的那一欄。打到「4.」時把它改寫成「4」，
-// 小數點就被吃掉了，再打 5 就變成「45」——打不出小數點就是這樣來的。
+// 轉出面板：量 ⇄ 間數兩欄連動，外加「這家剩下」即時重算。
+// 「量」是真相（他量的就是㎡／孔），間數只是換算給人看的參考，所以只留兩位；
+// 真正要轉多少一律從量算回間數，不然 30 孔 ÷ 22 ＝ 1.3636 間 四捨五入就會差。
+// 另外：絕對不要回寫使用者正在打的那一欄——打到「4.」時改寫成「4」，
+// 小數點就被吃掉了，再打 5 會變成「45」。
 function xfSync(src){
   const proj=curProj(); if(!proj) return;
-  const key=src.dataset.xfmove||src.dataset.xfmoveq; if(!key) return;
+  const key=src.dataset.xfmoveq||src.dataset.xfrooms; if(!key) return;
   const [blkId,itemId]=key.split('::');
   const b=proj.blocks.find(x=>x.id===blkId); if(!b) return;
   const it=b.items.find(x=>x.id===itemId); if(!it) return;
   const U=xferUnitOf(it,b);
   const cur=effCount(it,b), done=doneCountOf(proj,b,it);
-  const max=+(cur-done).toFixed(4);
-  const mv=document.getElementById('xf-move'), q2=document.getElementById('xf-moveq');
+  const max=cur-done;
+  const q2=document.getElementById('xf-moveq'), rm=document.getElementById('xf-rooms');
   let rooms;
   if(src.dataset.xfmoveq){
     // 量 → 間數。剛好等於「還沒做的量」就用精確上限，免得四捨五入留下搬不乾淨的尾數
     const v=Math.max(0,evalExpr(src.value)||0);
-    rooms=(Math.abs(v-(+(max*U.q).toFixed(2)))<0.005)?max:xferRoomsFromQty(it,v);
-    if(mv) mv.value=String(+rooms.toFixed(4));
+    rooms=(Math.abs(v-U.qty(max))<0.005)?max:xferRoomsFromQty(it,v);
+    if(rm) rm.value=String(+rooms.toFixed(2));
   } else {
-    rooms=xferMoveFrom(U,src.value,max);
-    if(q2&&!U.byQty) q2.value=qfmt(+(rooms*U.q).toFixed(2));
+    rooms=Math.max(0,evalExpr(src.value)||0);
+    if(q2) q2.value=qfmt(U.qty(rooms));
   }
-  const left=+(cur-rooms).toFixed(4);
+  const left=cur-rooms;
   const el=document.querySelector('[data-xfleft]');
   if(el){
-    el.textContent=qfmt(U.out(left));
+    el.textContent=U.txtQ(left);
     // 轉超過他還沒做的量＝把人家做掉的活也轉走了，先標紅
     el.style.color=(rooms>cur||left<done-1e-9)?'var(--bad)':'var(--accent)';
   }
-  const lq=document.querySelector('[data-xfleftq]');
-  if(lq) lq.textContent=qfmt(+(left*U.q).toFixed(2));
 }
 document.addEventListener('input',e=>{
   const t=e.target; if(!t||!t.dataset||!t.dataset.gfill) return;
