@@ -142,13 +142,26 @@ const nosOn=async pg=>await pg.evaluate(()=>[...new Set(
   st.projects[0].curPeriod=1;
   const {pg,errs}=await open(st);
   const ids=await pg.evaluate(()=>[...movedIdsOf(calc(curProj(),1).blocks[0])].sort());
-  t('⑤ ★ 只有封板動過，骨架也一起留著', ids.join(',')==='g1,g2');
+  t('⑤ ★ 只有封板動過 → 只留封板那一條（0% 的骨架不列，不然請款單上會印 0／$0）',
+    ids.join(',')==='g2');
   t('⑤ 沒動過的 6.3 還是不留', !ids.includes('i3'));
   await pg.evaluate(()=>{ curProj().onlyNew=true; openGroup.add('G'); render(); });
   await pg.waitForTimeout(400);
   const app=await pg.textContent('#app');
-  t('⑤ 畫面上整組看得到（骨架與封板都在）', /骨架/.test(app)&&/封板/.test(app));
+  t('⑤ 畫面上收合行照樣看得到整組（骨架與封板都在）', /骨架/.test(app)&&/封板/.test(app));
   t('⑤ 6.3 不在畫面上', !/電視牆/.test(app));
+  // 列印才是重點：0% 的那一道不能印出來
+  const doc=await pg.evaluate(()=>{
+    const p=curProj(); p.printScope='new';
+    document.getElementById('print-overlay').innerHTML='';
+    printDoc(p);
+    const html=document.querySelector('#print-overlay .pcontent').innerHTML;
+    document.getElementById('print-overlay').innerHTML='';
+    document.body.classList.remove('printing');
+    return html;
+  });
+  t('⑤ ★ 列印只印本期動過的封板', /封板/.test(doc));
+  t('⑤ ★ 0% 的骨架沒印出來（這就是他看到的 0／0%／$0）', !/骨架/.test(doc));
   t('⑤ 沒有 JS 錯誤', errs.length===0);
   await pg.close();
 }
