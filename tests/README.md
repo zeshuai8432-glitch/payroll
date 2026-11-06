@@ -50,6 +50,7 @@ NODE_PATH=/opt/node22/lib/node_modules /opt/node22/bin/node prog-smoke2.test.js
 | `prog-payout.test.js` | 保留款／暫扣款「部分放款」：填金額就好不用整期整期放。用他的實際數字（保留 36,034、暫扣 20,262）驗放 20,000 後未放款 16,034、本次實請不變而實付 +20,000、列印與累計暫留跟著改、刪得掉、超額會警告且不變負數、整期標記與部分放款並存不重複算（`progress.html`） |
 | `prog-totqty.test.js` | 數量一律改「總量」：轉出過的條目間數是 1.59 這種比例，把總量當單間數量改會整個錯掉。驗總量欄標出來、改 116.4→100 真的是 100、兩欄連動、間數不被 evalExpr 修短、已結算金額不動、整批改那一欄也是總量（`progress.html`） |
 | `prog-halfroom.test.js` | 轉出／轉入一律照「這條自己的單位」填（量），間數只是換算參考：填 4㎡ 參考欄變 0.4 間、反向也連動、超量標紅、收回自辦與轉給別家都驗錢沒動、備註與訊息以量為主、小數點回歸測試（連動不可回寫正在打的那一欄）（`progress.html`） |
+| `wage-entryflash.test.js` | 登記出工「畫面閃一下、輸入的資料跳回上一個」：草稿改成打字當下就同步（number input 的 change 要等失焦）、依案場模式那四格補上同步、重繪後焦點與游標放回原處、按鈕後只重繪一次不連閃兩下，兩種模式的登記都還正常（`payroll.html`） |
 | `wage-measqty.test.js` | payroll 計量明細：隔間㎡ 的數量可切手動輸入（`payroll.html`） |
 | `wage-measlist.test.js` | payroll 計量明細當廠商對圖面的清單：單價可留空、案場可手動輸入、數量可填算式且算式留著（`payroll.html`） |
 | `wage-measgrid.test.js` | payroll 計量明細批次輸入表格：按一下多一列、寬×高自動算面積並存下尺寸、即時小計、壞的列跳過、案場不被重繪清掉、整份沒單價時匯出不印金額與稅額（`payroll.html`） |
