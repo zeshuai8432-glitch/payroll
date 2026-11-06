@@ -528,7 +528,7 @@ const FS_ROOT = 'https://firestore.googleapis.com/v1/projects/'+FS_PROJECT+'/dat
 const FS_DOC_BASE = FS_ROOT+'payroll/';
 const FS_SIG_BASE = FS_ROOT+'payrollSignatures/';
 const FS_REST_URL = FS_DOC_BASE+'main?key='+FS_KEY;
-const APP_VERSION = 'v2026.10.04g-meassort';
+const APP_VERSION = 'v2026.11.06a-entryflash';
 let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], tools:[], locations:[], assets:[], advances:[], accounts:[], ledger:[], deals:[], billings:[], measurements:[], contracts:{}, costs:[], textMemory:{clients:[],companies:[]}, parkAccId:'', oweBonus:{}, minFund:'', shareholderTx:[], myCompanies:[], payrollSnapshots:[], yearIncomeAdj:[], deletedIds:[], resurrected:{ids:[],at:0}, tab:'dash' };
 let cloudStatus='連線中…';
 let localDirty=false, lastCloudTs=0;
@@ -537,6 +537,7 @@ let entryDate='', entrySite='', entryEmp=''; // 登記出工：記住上次選�
 let entryOpenDates={}, entryEditId=null; // 出工紀錄分組收合狀態與正在編輯的紀錄
 let entryKind='work'; // 'work' | 'leave' | 'off'
 let entryNight=false;
+let deferredRender=false;   // 打字中被擋下來的重繪（render() 會清掉，focusout 才補）
 let entryLines=null; // 多案場輸入草稿：[{siteId,hours,overtime,night}]
 function ensureEntryLines(){ if(!Array.isArray(entryLines)||entryLines.length===0){ entryLines=[{siteId:'',hours:'8',overtime:'0',night:false}]; } }
 let entryByMode='emp'; // 'emp'=依員工·多案場 ; 'site'=依案場·多員工
@@ -1755,7 +1756,6 @@ function userIsTyping(){
   }
   return false;
 }
-let deferredRender=false;
 function safeRender(){
   if(userIsTyping()){ deferredRender=true; return; }
   render();
@@ -2106,8 +2106,38 @@ function tabsBar(){
       ${items.map(([id,t])=>`<button class="nav-item ${state.tab===id?'active':''}" data-tab="${id}">${t}</button>`).join('')}
     </div>`).join('');
 }
+// 重繪前記下焦點在哪一個欄位、游標停在第幾個字。
+// 重繪會把整個 body 換掉，焦點跟著消失——畫面「閃一下」就是這個，
+// 而且正在打的那一格會跳回重繪前存的值。焦點放回去就能接著打。
+function _focusSnap(){
+  const el=document.activeElement;
+  if(!el||el===document.body) return null;
+  const tag=(el.tagName||'').toUpperCase();
+  if(tag!=='INPUT'&&tag!=='TEXTAREA'&&tag!=='SELECT') return null;
+  let sel='';
+  if(el.id) sel='#'+(window.CSS&&CSS.escape?CSS.escape(el.id):el.id);
+  else { const a=[...el.attributes].find(x=>x.name.startsWith('data-'));
+         if(a) sel=`[${a.name}="${String(a.value).replace(/"/g,'\\"')}"]`; }
+  if(!sel) return null;
+  let start=null,end=null;
+  try{ start=el.selectionStart; end=el.selectionEnd; }catch(e){}
+  return {sel,start,end};
+}
+function _focusRestore(sn){
+  if(!sn) return;
+  try{
+    const el=document.querySelector(sn.sel);
+    if(!el||el===document.activeElement) return;
+    el.focus({preventScroll:true});
+    if(sn.start!=null&&el.setSelectionRange){
+      try{ el.setSelectionRange(sn.start,sn.end); }catch(e){}
+    }
+  }catch(e){}
+}
 function render(){
   const _sx=window.scrollX,_sy=window.scrollY; // 重繪後還原捲動位置，避免畫面跳動
+  const _fs=_focusSnap();
+  deferredRender=false;   // 這次重繪已經涵蓋了，別再補一次（補的那次就是第二下閃動）
   try{ localStorage.setItem(LS_TAB, state.tab||'entry'); }catch(e){} // 記住目前分頁，重整後留在同一頁
   document.getElementById('sidebar').innerHTML=tabsBar();
   const body=document.getElementById('body');
@@ -2115,6 +2145,7 @@ function render(){
   body.innerHTML = state.tab==='dash'?viewDash():state.tab==='search'?viewSearch():state.tab==='entry'?viewEntry():state.tab==='payroll'?viewPayroll():state.tab==='sites'?viewSites():state.tab==='loans'?viewLoans():state.tab==='tools'?viewTools():state.tab==='advances'?viewAdvances():state.tab==='deals'?viewSettleHub():state.tab==='billing'?viewBillingHub():state.tab==='meas'?viewMeasurements():state.tab==='yearincome'?viewYearIncome():viewManage();
   bind();
   window.scrollTo(_sx,_sy); // 還原捲動位置
+  _focusRestore(_fs);
 }
 
 function entryTodayNoteInner(cs,cd){
@@ -3343,6 +3374,9 @@ function bind(){
     });
   };
   document.querySelectorAll('[data-line-site],[data-line-hours],[data-line-ot],[data-line-night]').forEach(el=>{
+    // input 也要同步：number input 的 change 要等失焦才發，
+    // 中途被重繪（雲端同步、按別的鈕）草稿還是舊值，打的字就跳回去了
+    el.oninput=()=>syncEntryLinesFromDOM();
     el.onchange=()=>syncEntryLinesFromDOM();
   });
   const addLineBtn=document.getElementById('f-addline');
@@ -3417,6 +3451,23 @@ function bind(){
   // 模式切換
   const emEmp=document.getElementById('emode-emp'); if(emEmp) emEmp.onclick=()=>{ entryByMode='emp'; render(); };
   const emSite=document.getElementById('emode-site'); if(emSite) emSite.onclick=()=>{ entryByMode='site'; render(); };
+  // 依案場·多員工：案場／工時／加班／過夜也要記進草稿。
+  // 原本這四格完全沒有同步，只有按下「登記勾選員工」時才讀；
+  // 中間只要重繪一次（雲端同步、切模式、按別的鈕），就全部打回預設值 8／0／未勾。
+  (()=>{
+    const syncSiteMode=()=>{
+      const g=id=>document.getElementById(id);
+      const si=g('es-site'), hh=g('es-hours'), ot=g('es-ot'), ni=g('es-night');
+      if(si) entrySitePick=si.value;
+      if(hh) entrySiteHours=hh.value;
+      if(ot) entrySiteOt=ot.value;
+      if(ni) entrySiteNight=ni.checked;
+    };
+    ['es-site','es-hours','es-ot','es-night'].forEach(id=>{
+      const el=document.getElementById(id); if(!el) return;
+      el.oninput=syncSiteMode; el.onchange=syncSiteMode;
+    });
+  })();
   // 依案場·多員工：勾選狀態記憶
   document.querySelectorAll('[data-empick]').forEach(cb=>cb.onchange=()=>{ if(cb.checked) entryEmpPick[cb.dataset.empick]=true; else delete entryEmpPick[cb.dataset.empick]; });
   const esSelall=document.getElementById('es-selall');
