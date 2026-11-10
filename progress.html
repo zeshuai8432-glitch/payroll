@@ -114,7 +114,7 @@ tr.hilite>td{animation:hlflash 1s ease-in-out 3}
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.11.10a-printtab';
+const APP_VERSION='vG2026.11.10b-pdfname';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -3038,9 +3038,10 @@ function printInvoiceRecon(proj){
     <div class="pcontent" style="padding:14px 0 30px">${inner}</div>`;
   document.body.classList.add('printing');
   const _wrap=['<div id="print-overlay"><div class="pcontent">','</div></div>','printing'];
-  ov.querySelector('#do-print').onclick=()=>printOrOpenTab('補開發票對帳單',()=>inner,_wrap[0],_wrap[1],'printing');
+  const _rn=`${mdOf('')} ${proj.vendor||proj.name} 補開發票對帳單`;
+  ov.querySelector('#do-print').onclick=()=>printOrOpenTab(_rn,()=>inner,_wrap[0],_wrap[1],'printing');
   ov.querySelector('#do-tab').onclick=()=>{
-    if(!openPrintableTab('補開發票對帳單',inner,_wrap[0],_wrap[1],'printing'))
+    if(!openPrintableTab(_rn,inner,_wrap[0],_wrap[1],'printing'))
       alert('開新分頁被瀏覽器擋住了。\n\n請在瀏覽器設定裡允許這個網站開新視窗，或改用電腦列印。');
   };
   ov.querySelector('#close-print').onclick=()=>{document.body.classList.remove('printing');ov.innerHTML='';};
@@ -3308,6 +3309,21 @@ function openPlanModal(proj,onClose){
 // iOS 把網頁「加到主畫面」之後（standalone）、以及 LINE／FB 內建瀏覽器裡，
 // window.print() 是靜默無效的（WebKit 的已知限制，不會報錯也不會有任何反應）。
 // 所以多給一條路：把這份文件原樣開在新分頁，讓他用瀏覽器自己的「分享 → 列印」存 PDF。
+// 瀏覽器「存成 PDF」的預設檔名＝網頁的 <title>，不是列印浮層裡的標題，
+// 所以每一份匯出都叫一樣的名字。列印前暫時把 <title> 換成這份文件的名字。
+// 檔名不能有 / \ : * ? " < > |，一律換成 -（例：11/10 → 11-10）。
+const safeFileName=s=>String(s||'').replace(/[\/\\:*?"<>|]/g,'-').replace(/\s+/g,' ').trim().slice(0,80)||'匯出';
+const mdOf=d=>{ const t=String(d||'').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if(t) return t[2]+'-'+t[3];
+  const n=today(); return n.slice(5,7)+'-'+n.slice(8,10); };
+function printWithName(name){
+  const old=document.title;
+  try{ document.title=safeFileName(name); }catch(e){}
+  const back=()=>{ try{ document.title=old; }catch(e){} window.removeEventListener('afterprint',back); };
+  window.addEventListener('afterprint',back);
+  setTimeout(back,60000);   // 有些瀏覽器不發 afterprint，兜底還原
+  try{ window.print(); }catch(e){ back(); }
+}
 const inAppBrowser=()=>/Line\/|FBAN|FBAV|Instagram|MicroMessenger/i.test(navigator.userAgent||'');
 const iosStandalone=()=>!!(window.navigator&&window.navigator.standalone);
 const printMayFail=()=>iosStandalone()||inAppBrowser();
@@ -3316,7 +3332,7 @@ function openPrintableTab(title,innerHtml,wrapOpen,wrapClose,bodyClass){
   let css=''; try{ css=[...document.querySelectorAll('style')].map(s=>s.textContent).join('\n'); }catch(e){}
   const doc='<!DOCTYPE html><html lang="zh-Hant"><head><meta charset="utf-8">'
     +'<meta name="viewport" content="width=device-width,initial-scale=1">'
-    +'<title>'+String(title||'列印').replace(/[<>&]/g,'')+'</title>'
+    +'<title>'+safeFileName(title).replace(/[<>&]/g,'')+'</title>'
     +'<style>'+css+'</style>'
     +'<style>body{margin:0;background:#fff}#print-overlay{position:static!important;padding:14px;min-height:0!important;background:#fff!important}'
     +'#print-overlay .pbar,.no-print{display:none!important}</style></head>'
@@ -3339,7 +3355,7 @@ function printOrOpenTab(title,getInner,wrapOpen,wrapClose,bodyClass){
   if(printMayFail()){
     if(openPrintableTab(title,getInner(),wrapOpen,wrapClose,bodyClass)) return;
   }
-  try{ window.print(); }catch(e){ openPrintableTab(title,getInner(),wrapOpen,wrapClose,bodyClass); }
+  try{ printWithName(title); }catch(e){ openPrintableTab(title,getInner(),wrapOpen,wrapClose,bodyClass); }
 }
 function printDoc(proj){
   const perIdx=Math.min(proj.curPeriod??proj.periods.length-1,proj.periods.length-1);
@@ -3618,12 +3634,14 @@ function printDoc(proj){
   });
   ov.querySelector('#plan-manage').onclick=()=>openPlanModal(proj,()=>{ printDoc(proj); });
   const _pc=()=>ov.querySelector('.pcontent').innerHTML;
+  // 檔名：期別日期 + 專案（廠商）+ 第幾期，例「11-10 凱子-代工 第5期」
+  const _name=()=>`${mdOf(c.period.date)} ${proj.vendor||proj.name} 第${c.period.no}期`;
   ov.querySelector('#do-print').onclick=()=>{
-    printOrOpenTab('工程估驗請款單',_pc,'<div id="print-overlay"><div class="pcontent">','</div></div>','printing');
+    printOrOpenTab(_name(),_pc,'<div id="print-overlay"><div class="pcontent">','</div></div>','printing');
     offerSettleAfterPrint(proj);
   };
   ov.querySelector('#do-tab').onclick=()=>{
-    if(!openPrintableTab('工程估驗請款單',_pc(),'<div id="print-overlay"><div class="pcontent">','</div></div>','printing'))
+    if(!openPrintableTab(_name(),_pc(),'<div id="print-overlay"><div class="pcontent">','</div></div>','printing'))
       alert('開新分頁被瀏覽器擋住了。\n\n請在瀏覽器設定裡允許這個網站開新視窗，或改用電腦列印。');
   };
   ov.querySelector('#close-print').onclick=()=>{document.body.classList.remove('printing');ov.innerHTML='';};
