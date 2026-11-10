@@ -528,7 +528,7 @@ const FS_ROOT = 'https://firestore.googleapis.com/v1/projects/'+FS_PROJECT+'/dat
 const FS_DOC_BASE = FS_ROOT+'payroll/';
 const FS_SIG_BASE = FS_ROOT+'payrollSignatures/';
 const FS_REST_URL = FS_DOC_BASE+'main?key='+FS_KEY;
-const APP_VERSION = 'v2026.11.06a-entryflash';
+const APP_VERSION = 'v2026.11.10a-printtab';
 let state = { employees:[], sites:[], attendance:[], adjustments:[], loans:[], tools:[], locations:[], assets:[], advances:[], accounts:[], ledger:[], deals:[], billings:[], measurements:[], contracts:{}, costs:[], textMemory:{clients:[],companies:[]}, parkAccId:'', oweBonus:{}, minFund:'', shareholderTx:[], myCompanies:[], payrollSnapshots:[], yearIncomeAdj:[], deletedIds:[], resurrected:{ids:[],at:0}, tab:'dash' };
 let cloudStatus='連線中…';
 let localDirty=false, lastCloudTs=0;
@@ -5140,6 +5140,43 @@ function bind(){
 }
 
 // ---- PDF 匯出（以列印視窗產生，可存成 PDF 或直接列印）----
+// ── 手機按「列印」沒反應的備用路徑 ──
+// iOS 把網頁「加到主畫面」之後（standalone）、以及 LINE／FB 內建瀏覽器裡，
+// window.print() 是靜默無效的（WebKit 的已知限制，不會報錯也不會有任何反應）。
+// 所以多給一條路：把這份文件原樣開在新分頁，讓他用瀏覽器自己的「分享 → 列印」存 PDF。
+const inAppBrowser=()=>/Line\/|FBAN|FBAV|Instagram|MicroMessenger/i.test(navigator.userAgent||'');
+const iosStandalone=()=>!!(window.navigator&&window.navigator.standalone);
+const printMayFail=()=>iosStandalone()||inAppBrowser();
+// 把頁面自己的 <style> 整段搬過去，版面才跟預覽一模一樣（含 @page 與 @media print）
+function openPrintableTab(title,innerHtml,wrapOpen,wrapClose,bodyClass){
+  let css=''; try{ css=[...document.querySelectorAll('style')].map(s=>s.textContent).join('\n'); }catch(e){}
+  const doc='<!DOCTYPE html><html lang="zh-Hant"><head><meta charset="utf-8">'
+    +'<meta name="viewport" content="width=device-width,initial-scale=1">'
+    +'<title>'+String(title||'列印').replace(/[<>&]/g,'')+'</title>'
+    +'<style>'+css+'</style>'
+    +'<style>body{margin:0;background:#fff}#print-overlay{position:static!important;padding:14px;min-height:0!important;background:#fff!important}'
+    +'#print-overlay .pbar,.no-print{display:none!important}</style></head>'
+    +'<body'+(bodyClass?' class="'+bodyClass+'"':'')+'>'
+    +(wrapOpen||'<div id="print-overlay"><div class="pdoc">')
+    +innerHtml
+    +(wrapClose||'</div></div>')
+    +'</body></html>';
+  try{
+    const url=URL.createObjectURL(new Blob([doc],{type:'text/html'}));
+    const a=document.createElement('a');
+    a.href=url; a.target='_blank'; a.rel='noopener';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>{ try{ URL.revokeObjectURL(url); }catch(e){} },60000);
+    return true;
+  }catch(e){ return false; }
+}
+// 兩顆鈕的共用行為：先試 window.print()，沒反應的環境直接走新分頁
+function printOrOpenTab(title,getInner,wrapOpen,wrapClose,bodyClass){
+  if(printMayFail()){
+    if(openPrintableTab(title,getInner(),wrapOpen,wrapClose,bodyClass)) return;
+  }
+  try{ window.print(); }catch(e){ openPrintableTab(title,getInner(),wrapOpen,wrapClose,bodyClass); }
+}
 function printHTML(title, inner, opts){
   // 移除舊浮層
   const old=document.getElementById('print-overlay'); if(old) old.remove();
@@ -5153,12 +5190,19 @@ function printHTML(title, inner, opts){
   if(landscape) ov.classList.add('landscape');
   ov.innerHTML=`
     <div class="pbar">
+      ${printMayFail()?`<span style="font-size:12px;color:#b45309;margin-right:auto;max-width:60%;line-height:1.4">這個瀏覽器的「列印」常常沒反應（主畫面捷徑／LINE 內建瀏覽器），請按右邊的<b>在瀏覽器開啟</b>，再用分享 → 列印。</span>`:''}
       <button class="btn" id="po-print">列印 / 存成 PDF</button>
+      <button class="act" id="po-tab" style="padding:0 14px" title="把這份文件開在新分頁，再用瀏覽器自己的「分享 → 列印」存成 PDF（手機按列印沒反應時用這個）">↗ 在瀏覽器開啟</button>
       <button class="act" id="po-close" style="padding:0 14px">關閉</button>
     </div>
     <div class="pdoc"${landscape?' style="max-width:1100px"':''}>${themed}</div>`;
   document.body.appendChild(ov);
-  document.getElementById('po-print').onclick=()=>window.print();
+  const _inner=()=>`<div class="pdoc"${landscape?' style="max-width:1100px"':''}>${themed}</div>`;
+  document.getElementById('po-print').onclick=()=>printOrOpenTab(title,_inner,'<div id="print-overlay">','</div>');
+  document.getElementById('po-tab').onclick=()=>{
+    if(!openPrintableTab(title,_inner(),'<div id="print-overlay">','</div>'))
+      alert('開新分頁被瀏覽器擋住了。\n\n請在瀏覽器設定裡允許這個網站開新視窗，或改用電腦列印。');
+  };
   document.getElementById('po-close').onclick=()=>ov.remove();
   ov.scrollTop=0;
 }
