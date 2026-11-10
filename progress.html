@@ -114,7 +114,7 @@ tr.hilite>td{animation:hlflash 1s ease-in-out 3}
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.11.01j-payout';
+const APP_VERSION='vG2026.11.10a-printtab';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -3032,10 +3032,17 @@ function printInvoiceRecon(proj){
     <span class="muted" style="font-size:11.5px">＊此設定會記在這個專案；實際採哪一種請以貴公司記帳士的意見為準</span>
     <span style="flex:1"></span>
     <button class="btn" id="do-print">🖨 列印 / 存 PDF</button>
-    <button class="btn sub" id="close-print">關閉</button></div>
+    <button class="btn sub" id="do-tab" title="把這份單開在新分頁，再用瀏覽器自己的「分享 → 列印」存成 PDF（手機按列印沒反應時用這個）">↗ 在瀏覽器開啟</button>
+    <button class="btn sub" id="close-print">關閉</button>
+    ${printMayFail()?`<div style="flex-basis:100%;font-size:12px;color:#fbbf24;line-height:1.4">這個瀏覽器的「列印」常常沒反應，請按<b>↗ 在瀏覽器開啟</b>，再用分享 → 列印。</div>`:''}</div>
     <div class="pcontent" style="padding:14px 0 30px">${inner}</div>`;
   document.body.classList.add('printing');
-  ov.querySelector('#do-print').onclick=()=>window.print();
+  const _wrap=['<div id="print-overlay"><div class="pcontent">','</div></div>','printing'];
+  ov.querySelector('#do-print').onclick=()=>printOrOpenTab('補開發票對帳單',()=>inner,_wrap[0],_wrap[1],'printing');
+  ov.querySelector('#do-tab').onclick=()=>{
+    if(!openPrintableTab('補開發票對帳單',inner,_wrap[0],_wrap[1],'printing'))
+      alert('開新分頁被瀏覽器擋住了。\n\n請在瀏覽器設定裡允許這個網站開新視窗，或改用電腦列印。');
+  };
   ov.querySelector('#close-print').onclick=()=>{document.body.classList.remove('printing');ov.innerHTML='';};
   ov.querySelectorAll('[name=invbase]').forEach(r=>r.onchange=()=>{ proj.invoiceBase=r.value; save(); printInvoiceRecon(proj); });
 }
@@ -3297,6 +3304,43 @@ function openPlanModal(proj,onClose){
     if(e.target.id==='plan-close'||e.target===m){ if(busy){ alert('還在處理圖面，請稍候。'); return; } m.remove(); if(onClose) onClose(); }
   };
 }
+// ── 手機按「列印」沒反應的備用路徑 ──
+// iOS 把網頁「加到主畫面」之後（standalone）、以及 LINE／FB 內建瀏覽器裡，
+// window.print() 是靜默無效的（WebKit 的已知限制，不會報錯也不會有任何反應）。
+// 所以多給一條路：把這份文件原樣開在新分頁，讓他用瀏覽器自己的「分享 → 列印」存 PDF。
+const inAppBrowser=()=>/Line\/|FBAN|FBAV|Instagram|MicroMessenger/i.test(navigator.userAgent||'');
+const iosStandalone=()=>!!(window.navigator&&window.navigator.standalone);
+const printMayFail=()=>iosStandalone()||inAppBrowser();
+// 把頁面自己的 <style> 整段搬過去，版面才跟預覽一模一樣（含 @page 與 @media print）
+function openPrintableTab(title,innerHtml,wrapOpen,wrapClose,bodyClass){
+  let css=''; try{ css=[...document.querySelectorAll('style')].map(s=>s.textContent).join('\n'); }catch(e){}
+  const doc='<!DOCTYPE html><html lang="zh-Hant"><head><meta charset="utf-8">'
+    +'<meta name="viewport" content="width=device-width,initial-scale=1">'
+    +'<title>'+String(title||'列印').replace(/[<>&]/g,'')+'</title>'
+    +'<style>'+css+'</style>'
+    +'<style>body{margin:0;background:#fff}#print-overlay{position:static!important;padding:14px;min-height:0!important;background:#fff!important}'
+    +'#print-overlay .pbar,.no-print{display:none!important}</style></head>'
+    +'<body'+(bodyClass?' class="'+bodyClass+'"':'')+'>'
+    +(wrapOpen||'<div id="print-overlay"><div class="pdoc">')
+    +innerHtml
+    +(wrapClose||'</div></div>')
+    +'</body></html>';
+  try{
+    const url=URL.createObjectURL(new Blob([doc],{type:'text/html'}));
+    const a=document.createElement('a');
+    a.href=url; a.target='_blank'; a.rel='noopener';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>{ try{ URL.revokeObjectURL(url); }catch(e){} },60000);
+    return true;
+  }catch(e){ return false; }
+}
+// 兩顆鈕的共用行為：先試 window.print()，沒反應的環境直接走新分頁
+function printOrOpenTab(title,getInner,wrapOpen,wrapClose,bodyClass){
+  if(printMayFail()){
+    if(openPrintableTab(title,getInner(),wrapOpen,wrapClose,bodyClass)) return;
+  }
+  try{ window.print(); }catch(e){ openPrintableTab(title,getInner(),wrapOpen,wrapClose,bodyClass); }
+}
 function printDoc(proj){
   const perIdx=Math.min(proj.curPeriod??proj.periods.length-1,proj.periods.length-1);
   const c=calc(proj,perIdx);
@@ -3557,7 +3601,9 @@ function printDoc(proj){
     </span>`:''}
     <span style="flex:1"></span>
     <button class="btn" id="do-print">🖨 列印 / 存 PDF</button>
-    <button class="btn sub" id="close-print">關閉</button></div>
+    <button class="btn sub" id="do-tab" title="把這份單開在新分頁，再用瀏覽器自己的「分享 → 列印」存成 PDF（手機按列印沒反應時用這個）">↗ 在瀏覽器開啟</button>
+    <button class="btn sub" id="close-print">關閉</button>
+    ${printMayFail()?`<div style="flex-basis:100%;font-size:12px;color:#fbbf24;line-height:1.4">這個瀏覽器的「列印」常常沒反應（主畫面捷徑／LINE 內建瀏覽器），請按<b>↗ 在瀏覽器開啟</b>，再用分享 → 列印。</div>`:''}</div>
     <div class="pcontent" style="padding:14px 0 30px"></div>`;
   redraw();
   document.body.classList.add('printing');
@@ -3571,7 +3617,15 @@ function printDoc(proj){
     redraw();   // 只重畫預覽，資料不動
   });
   ov.querySelector('#plan-manage').onclick=()=>openPlanModal(proj,()=>{ printDoc(proj); });
-  ov.querySelector('#do-print').onclick=()=>{window.print();offerSettleAfterPrint(proj);};
+  const _pc=()=>ov.querySelector('.pcontent').innerHTML;
+  ov.querySelector('#do-print').onclick=()=>{
+    printOrOpenTab('工程估驗請款單',_pc,'<div id="print-overlay"><div class="pcontent">','</div></div>','printing');
+    offerSettleAfterPrint(proj);
+  };
+  ov.querySelector('#do-tab').onclick=()=>{
+    if(!openPrintableTab('工程估驗請款單',_pc(),'<div id="print-overlay"><div class="pcontent">','</div></div>','printing'))
+      alert('開新分頁被瀏覽器擋住了。\n\n請在瀏覽器設定裡允許這個網站開新視窗，或改用電腦列印。');
+  };
   ov.querySelector('#close-print').onclick=()=>{document.body.classList.remove('printing');ov.innerHTML='';};
   ov.onclick=e2=>{
     const sBtn=e2.target.closest('[data-sig]'),dBtn=e2.target.closest('[data-sigdel]');
