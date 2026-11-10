@@ -101,8 +101,9 @@ const openWage=async(mode)=>{
   const [np]=await Promise.all([ctx.waitForEvent('page'), pg.click('#do-print')]);
   await np.waitForLoadState('domcontentloaded');
   const txt=await np.textContent('body');
-  t('⑤ ★ 新分頁是完整的估驗請款單（含金額）',
-    (await np.title())==='工程估驗請款單'&&/工程估驗請款單/.test(txt)&&/15,000/.test(txt));
+  // 分頁標題＝存檔用的檔名（期別日期＋廠商＋第幾期），見 wage-pdfname
+  t('⑤ ★ 新分頁是完整的估驗請款單（含金額），標題是檔名',
+    /^\d{2}-\d{2} .+ 第1期$/.test(await np.title())&&/工程估驗請款單/.test(txt)&&/15,000/.test(txt));
   t('⑤ ★ 內容看得見（body.printing 的規則沒把它藏掉）',
     await np.isVisible('#print-overlay'));
   t('⑤ 新分頁不含工具列', !/在瀏覽器開啟/.test(txt));
@@ -125,7 +126,7 @@ const openWage=async(mode)=>{
   const [np]=await Promise.all([ctx.waitForEvent('page'), pg.click('#do-tab')]);
   await np.waitForLoadState('domcontentloaded');
   t('⑥ ★ 新分頁是對帳單且看得見',
-    (await np.title())==='補開發票對帳單'&&await np.isVisible('#print-overlay'));
+    /補開發票對帳單$/.test(await np.title())&&await np.isVisible('#print-overlay'));
   t('⑥ 沒有 JS 錯誤', errs.length===0);
   await ctx.close();
 }
