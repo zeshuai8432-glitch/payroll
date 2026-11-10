@@ -45,9 +45,13 @@ const br=await chromium.launch();
   });
   t('① ★ 檔名是「11-10 吳忠智」（期末日 11/10 ＋ 選的員工）', seen==='11-10 吳忠智');
   t('① ★ 斜線換成 -（檔名不能有 /）', !/\//.test(seen));
-  // 真實瀏覽器列印結束會發 afterprint；這裡手動發一次驗還原
+  // 列印結束（afterprint）標題「不」還原——預覽還開著，他常常印完再按一次
+  // 分享→PDF，還原了就又變回網址／網頁名。關掉預覽才還原。
   await pg.evaluate(()=>window.dispatchEvent(new Event('afterprint')));
-  t('① 列印完（afterprint）標題還原，不會卡在檔名上', await pg.title()===pageTitle);
+  t('① 預覽還開著時標題維持檔名（可以再分享一次）', await pg.title()==='11-10 吳忠智');
+  await pg.click('#po-close'); await pg.waitForTimeout(200);
+  t('① ★ 關掉預覽才還原成網頁標題', await pg.title()===pageTitle);
+  await pg.evaluate(()=>exportPayslipPDF('e1'));   // 後面還要再開一次
 
   // 另一位員工 → 另一個檔名
   const seen2=await pg.evaluate(()=>{
@@ -127,9 +131,40 @@ const br=await chromium.launch();
   });
   t('⑤ ★ 請款單檔名是「11-10 東澤 第5期」', seen==='11-10 東澤 第5期');
   await pg.evaluate(()=>window.dispatchEvent(new Event('afterprint')));
-  t('⑤ 標題有還原', await pg.title()===before);
+  t('⑤ 預覽還開著時標題維持檔名', (await pg.title())==='11-10 東澤 第5期');
+  await pg.click('#close-print'); await pg.waitForTimeout(300);
+  t('⑤ ★ 關掉預覽才還原', await pg.title()===before);
   t('⑤ 沒有 JS 錯誤', errs.length===0);
   await ctx.close();
+}
+
+// ⑥ ★ iOS 的「分享 → 選項 → PDF」取的是網址最後一段，不是 <title>——
+//    所以存出來叫 https-:zeshuai8432-glitch.github.io:...:payroll.html.pdf。
+//    開著預覽時網址最後一段要暫時變成檔名，關掉還原。
+{
+  // 用 http 服務（file:// 不動網址），模擬他在 GitHub Pages 上的情形
+  const http=require('http'), fs=require('fs');
+  const html=fs.readFileSync(path.resolve(__dirname,'../payroll.html'));
+  const srv=http.createServer((q,r)=>{ r.writeHead(200,{'content-type':'text/html; charset=utf-8'}); r.end(html); });
+  await new Promise(r=>srv.listen(0,r));
+  const base=`http://127.0.0.1:${srv.address().port}/payroll/payroll.html`;
+  const ctx=await br.newContext(); const pg=await ctx.newPage();
+  await pg.addInitScript(d=>localStorage.setItem('pm_data_v2',JSON.stringify(d)),wageData());
+  const errs=[]; pg.on('pageerror',e=>errs.push(String(e)));
+  await pg.goto(base); await pg.waitForTimeout(1200);
+  const url0=pg.url();
+  t('⑥ 原本的網址結尾是 payroll.html（＝他看到的那個檔名）', /payroll\.html$/.test(url0));
+
+  await pg.evaluate(()=>exportPayslipPDF('e1')); await pg.waitForTimeout(400);
+  const u=decodeURIComponent(pg.url());
+  t('⑥ ★ 打開預覽後，網址最後一段變成檔名（11-10 吳忠智）',
+    u.endsWith('/11-10 吳忠智'));
+  t('⑥ ★ <title> 也是同一個名字', (await pg.title())==='11-10 吳忠智');
+
+  await pg.click('#po-close'); await pg.waitForTimeout(300);
+  t('⑥ ★ 關掉預覽後網址與標題都還原', pg.url()===url0&&(await pg.title())==='點工薪資與案場人事成本管理');
+  t('⑥ 沒有 JS 錯誤', errs.length===0);
+  await ctx.close(); srv.close();
 }
 
 await br.close();

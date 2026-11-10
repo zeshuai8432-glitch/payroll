@@ -114,7 +114,7 @@ tr.hilite>td{animation:hlflash 1s ease-in-out 3}
 
 <script>
 'use strict';
-const APP_VERSION='vG2026.11.10b-pdfname';
+const APP_VERSION='vG2026.11.10c-urlname';
 document.getElementById('ver').textContent=APP_VERSION;
 const LS='pm_progress_v1';
 const FS_KEY='AIzaSyAfEIRpVSpnHfIX0fqb37iUkf3mv_Od9S8';
@@ -3039,12 +3039,13 @@ function printInvoiceRecon(proj){
   document.body.classList.add('printing');
   const _wrap=['<div id="print-overlay"><div class="pcontent">','</div></div>','printing'];
   const _rn=`${mdOf('')} ${proj.vendor||proj.name} 補開發票對帳單`;
+  document.title=safeFileName(_rn); setUrlName(_rn);
   ov.querySelector('#do-print').onclick=()=>printOrOpenTab(_rn,()=>inner,_wrap[0],_wrap[1],'printing');
   ov.querySelector('#do-tab').onclick=()=>{
     if(!openPrintableTab(_rn,inner,_wrap[0],_wrap[1],'printing'))
       alert('開新分頁被瀏覽器擋住了。\n\n請在瀏覽器設定裡允許這個網站開新視窗，或改用電腦列印。');
   };
-  ov.querySelector('#close-print').onclick=()=>{document.body.classList.remove('printing');ov.innerHTML='';};
+  ov.querySelector('#close-print').onclick=()=>{document.body.classList.remove('printing');ov.innerHTML='';clearUrlName();restoreDocTitle();};
   ov.querySelectorAll('[name=invbase]').forEach(r=>r.onchange=()=>{ proj.invoiceBase=r.value; save(); printInvoiceRecon(proj); });
 }
 // 本期算出來是負的：多半是前期進度填多了。只丟一個負數很嚇人，講清楚怎麼處理。
@@ -3316,9 +3317,31 @@ const safeFileName=s=>String(s||'').replace(/[\/\\:*?"<>|]/g,'-').replace(/\s+/g
 const mdOf=d=>{ const t=String(d||'').match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if(t) return t[2]+'-'+t[3];
   const n=today(); return n.slice(5,7)+'-'+n.slice(8,10); };
+// iOS Safari 的「分享 → 選項 → PDF」取的是<網址>最後一段，不是 <title>——
+// 所以存出來會變成 https-:zeshuai8432-glitch.github.io:...:payroll.html.pdf。
+// 開著列印預覽的時候把網址最後一段暫時換成檔名，關掉就還原。
+// 只在 http(s) 下動（file:// 開的不需要），而且用 replaceState 不留歷史。
+const _pageTitle0=document.title;              // 網頁原本的標題，關掉預覽要還原
+const restoreDocTitle=()=>{ try{ document.title=_pageTitle0; }catch(e){} };
+let _urlName=null;
+function setUrlName(name){
+  if(_urlName!==null) return;
+  if(!/^https?:$/.test(location.protocol)) return;
+  try{
+    _urlName=location.href;
+    history.replaceState(null,'',encodeURIComponent(safeFileName(name)));
+  }catch(e){ _urlName=null; }
+}
+function clearUrlName(){
+  if(_urlName===null) return;
+  try{ history.replaceState(null,'',_urlName); }catch(e){}
+  _urlName=null;
+}
+window.addEventListener('beforeunload',clearUrlName);   // 重新整理前先還原，免得停在不存在的網址
 function printWithName(name){
   const old=document.title;
   try{ document.title=safeFileName(name); }catch(e){}
+  setUrlName(name);
   const back=()=>{ try{ document.title=old; }catch(e){} window.removeEventListener('afterprint',back); };
   window.addEventListener('afterprint',back);
   setTimeout(back,60000);   // 有些瀏覽器不發 afterprint，兜底還原
@@ -3636,6 +3659,7 @@ function printDoc(proj){
   const _pc=()=>ov.querySelector('.pcontent').innerHTML;
   // 檔名：期別日期 + 專案（廠商）+ 第幾期，例「11-10 凱子-代工 第5期」
   const _name=()=>`${mdOf(c.period.date)} ${proj.vendor||proj.name} 第${c.period.no}期`;
+  document.title=safeFileName(_name()); setUrlName(_name());
   ov.querySelector('#do-print').onclick=()=>{
     printOrOpenTab(_name(),_pc,'<div id="print-overlay"><div class="pcontent">','</div></div>','printing');
     offerSettleAfterPrint(proj);
@@ -3644,7 +3668,7 @@ function printDoc(proj){
     if(!openPrintableTab(_name(),_pc(),'<div id="print-overlay"><div class="pcontent">','</div></div>','printing'))
       alert('開新分頁被瀏覽器擋住了。\n\n請在瀏覽器設定裡允許這個網站開新視窗，或改用電腦列印。');
   };
-  ov.querySelector('#close-print').onclick=()=>{document.body.classList.remove('printing');ov.innerHTML='';};
+  ov.querySelector('#close-print').onclick=()=>{document.body.classList.remove('printing');ov.innerHTML='';clearUrlName();restoreDocTitle();};
   ov.onclick=e2=>{
     const sBtn=e2.target.closest('[data-sig]'),dBtn=e2.target.closest('[data-sigdel]');
     const period=proj.periods[Math.min(proj.curPeriod??proj.periods.length-1,proj.periods.length-1)];
